@@ -254,14 +254,7 @@ export async function reconcileDurableSubagentKillIntent(params: {
   }
 }
 
-/**
- * Confirms a provisional kill once its canonical outcome is final: after the killed run's
- * controller operation settles, or when the sweeper ages out a kill no settlement reached.
- * A canonical completion the cancellation did not supersede replaces it. Otherwise the kill
- * stands: its obligations retire, which re-evaluates a yielded cohort, and announce cleanup
- * resumes once no cohort holds it.
- */
-export async function reconcileProvisionalSubagentKill(params: {
+type ProvisionalSubagentKillParams = {
   runId: string;
   entry: SubagentRunRecord;
   now: number;
@@ -278,7 +271,63 @@ export async function reconcileProvisionalSubagentKill(params: {
     childAgentId?: string,
   ) => Iterable<SubagentRunRecord>;
   warn: (message: string, meta?: Record<string, unknown>) => void;
-}): Promise<boolean> {
+};
+
+// Runs with a kill confirmation in flight, and whether another confirmation arrived meanwhile.
+const confirmingKills = new Map<string, { requested: boolean }>();
+
+/**
+ * Confirms a provisional kill once its canonical outcome is final: after the killed run's
+ * controller operation settles, or when the sweeper ages out a kill no settlement reached.
+ * A canonical completion the cancellation did not supersede replaces it. Otherwise the kill
+ * stands: its obligations retire, which re-evaluates a yielded cohort, and announce cleanup
+ * resumes once no cohort holds it.
+ *
+ * One confirmation per run is in flight. Settlement, cohort release, and the sweeper can each
+ * ask for the same kill; a request that arrives meanwhile is answered by the in-flight one,
+ * which re-evaluates the run once more before it finishes.
+ */
+export async function reconcileProvisionalSubagentKill(
+  params: ProvisionalSubagentKillParams,
+): Promise<boolean> {
+  const inFlight = confirmingKills.get(params.runId);
+  if (inFlight) {
+    inFlight.requested = true;
+    return false;
+  }
+  const confirmation = { requested: false };
+  confirmingKills.set(params.runId, confirmation);
+  try {
+    let entry = params.entry;
+    for (;;) {
+      let pass: { confirmed: boolean } | { error: unknown };
+      try {
+        pass = { confirmed: await confirmProvisionalSubagentKill({ ...params, entry }) };
+      } catch (error) {
+        pass = { error };
+      }
+      // A request that arrived meanwhile may follow a change this pass already read past,
+      // such as its cohort's release, so it supersedes this pass's outcome. Re-evaluate the
+      // run's current kill, if one remains.
+      const current = params.runs.get(params.runId);
+      if (!confirmation.requested || !current?.killReconciliation) {
+        if ("error" in pass) {
+          throw pass.error;
+        }
+        return pass.confirmed;
+      }
+      confirmation.requested = false;
+      entry = current;
+    }
+  } finally {
+    confirmingKills.delete(params.runId);
+  }
+}
+
+// One confirmation pass over the kill `params.entry` records.
+async function confirmProvisionalSubagentKill(
+  params: ProvisionalSubagentKillParams,
+): Promise<boolean> {
   const { entry, now, runId, runs } = params;
   const killReconciliation = entry.killReconciliation;
   if (!killReconciliation) {

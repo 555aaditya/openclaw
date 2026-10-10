@@ -13,12 +13,14 @@ import * as announceOutput from "../agents/subagents/announce/subagent-announce-
 import { PROVISIONAL_KILL_RECONCILIATION_MS } from "../agents/subagents/registry/subagent-registry-helpers.js";
 import { mutateSubagentRuns } from "../agents/subagents/registry/subagent-registry-persistence.js";
 import { subscribeSubagentRunChanges } from "../agents/subagents/registry/subagent-registry-publication.js";
+import * as sweepKill from "../agents/subagents/registry/subagent-registry-sweep-kill.js";
 import {
   getSubagentRunByRunId,
   resetSubagentRegistryForTests,
   testing as subagentRegistryTesting,
 } from "../agents/subagents/registry/subagent-registry.test-helpers.js";
 import type { SubagentRunRecord } from "../agents/subagents/registry/subagent-registry.types.js";
+import * as sessionReconciliation from "../agents/subagents/registry/subagent-session-reconciliation.js";
 import { sessionControllerMailboxes } from "../sessions/session-controller.mailbox.js";
 import { setUserProfileRole } from "../state/user-profile-writes.worker.js";
 import { ensureProfileForEmail } from "../state/user-profiles.js";
@@ -31,6 +33,8 @@ import {
 import { disconnectGatewayClient, startGatewayWithClient } from "./test-helpers.e2e.js";
 
 vi.mock("../agents/subagents/announce/subagent-announce-output.js", { spy: true });
+vi.mock("../agents/subagents/registry/subagent-registry-sweep-kill.js", { spy: true });
+vi.mock("../agents/subagents/registry/subagent-session-reconciliation.js", { spy: true });
 
 const parentPrompt = "Run the exact Stop then kept-child follow-up proof.";
 const stoppedTask = "Hold this first child execution until it is stopped.";
@@ -500,6 +504,62 @@ function startYieldedOnlyChildModel(child: "hold" | "pause") {
   };
 }
 
+const yieldedPairTasks = [
+  "Hold the first child of a yielded pair until it is stopped.",
+  "Hold the second child of a yielded pair until it is stopped.",
+] as const;
+
+/** A parent spawns two holding children, then yields on both. */
+function startYieldedPairModel() {
+  const spawnedChildren = createDeferred<{ runId: string; sessionKey: string }[]>();
+  const childrenStarted = yieldedPairTasks.map(() => createDeferred());
+  const continuations: string[] = [];
+  let parentRequestCount = 0;
+  return {
+    children: spawnedChildren.promise,
+    childrenStarted: Promise.all(childrenStarted.map((started) => started.promise)),
+    continuations: () => [...continuations],
+    handle: async (
+      body: string,
+      request: IncomingMessage,
+      response: ServerResponse,
+      sequence: number,
+    ) => {
+      if (!body.includes(parentPrompt)) {
+        const index = yieldedPairTasks.findIndex((task) => body.includes(task));
+        if (index < 0) {
+          return false;
+        }
+        await holdUntilStopped(request, response, () => childrenStarted[index]!.resolve());
+        return true;
+      }
+      if (body.includes(stoppedResult)) {
+        throw new Error("A stopped child result reached its requester");
+      }
+      parentRequestCount += 1;
+      if (parentRequestCount <= yieldedPairTasks.length) {
+        return writeToolCall(
+          response,
+          "sessions_spawn",
+          { task: yieldedPairTasks[parentRequestCount - 1], context: "isolated", cleanup: "keep" },
+          sequence,
+        );
+      }
+      if (parentRequestCount === yieldedPairTasks.length + 1) {
+        const spawned = spawnReceipts(body);
+        if (spawned.length !== yieldedPairTasks.length) {
+          throw new Error("Parent did not retain both spawn receipts");
+        }
+        spawnedChildren.resolve(spawned);
+        return writeToolCall(response, "sessions_yield", { waitFor: "message" }, sequence);
+      }
+      // Every later parent request is a continuation the stopped children started.
+      continuations.push(body);
+      return writeVisibleReply(response, "PARENT_RECEIVED_STOPPED_PAIR", sequence);
+    },
+  };
+}
+
 const awaitedChildTask = "Hold the awaited child of a finished parent turn until it is stopped.";
 
 /** A parent spawns one awaited child and ends its turn without yielding; the child holds. */
@@ -877,3 +937,98 @@ it.each([
     }
   },
 );
+
+it("confirms a stopped child's kill without losing either of two overlapping confirmations", async () => {
+  const script = startYieldedPairModel();
+  const model = await startScriptedModel(script.handle);
+  const gateway = await startProofGateway(model.url, "subagent-yielded-pair-parent-stop");
+  const parentRunId = "subagent-yielded-pair-parent-stop-parent";
+  const parentSessionKey = `agent:main:${parentRunId}`;
+  const confirmations = vi.mocked(sweepKill.reconcileProvisionalSubagentKill);
+  const reads = vi.mocked(sessionReconciliation.resolveSubagentSessionCompletion);
+  const { reconcileProvisionalSubagentKill: actualConfirm } = await vi.importActual<
+    typeof sweepKill
+  >("../agents/subagents/registry/subagent-registry-sweep-kill.js");
+  const { resolveSubagentSessionCompletion: actualRead } = await vi.importActual<
+    typeof sessionReconciliation
+  >("../agents/subagents/registry/subagent-session-reconciliation.js");
+  try {
+    await expect(
+      gateway.client.request("chat.send", {
+        sessionKey: parentSessionKey,
+        message: parentPrompt,
+        idempotencyKey: parentRunId,
+        deliver: false,
+      }),
+    ).resolves.toMatchObject({ runId: parentRunId, status: "started" });
+    const children = await script.children;
+    await script.childrenStarted;
+    await expect(
+      gateway.client.request("agent.wait", { runId: parentRunId, timeoutMs: 30_000 }),
+    ).resolves.toMatchObject({ status: "ok" });
+    for (const child of children) {
+      await waitForRun(child.runId, (row) => row.requesterSettleWake?.requesterYieldBatch === true);
+    }
+    // Hold the first confirmation of one stopped child inside its completion read, as a slow
+    // session read does, so a second confirmation of the same kill overlaps it.
+    const [held] = children;
+    const readHeld = createDeferred();
+    const releaseRead = createDeferred();
+    let confirming = 0;
+    let holding = true;
+    confirmations.mockClear();
+    confirmations.mockImplementation(async (params) => {
+      confirming += params.runId === held!.runId ? 1 : 0;
+      try {
+        return await actualConfirm(params);
+      } finally {
+        confirming -= params.runId === held!.runId ? 1 : 0;
+      }
+    });
+    reads.mockImplementation(async (params) => {
+      if (holding && confirming > 0 && params.childSessionKey === held!.sessionKey) {
+        holding = false;
+        readHeld.resolve();
+        await releaseRead.promise;
+      }
+      return await actualRead(params);
+    });
+    // A requester-wide Stop kills both children; each kill confirms once its owner settles.
+    await gateway.client.request("sessions.abort", { key: parentSessionKey, clearQueued: true });
+    await readHeld.promise;
+    // The sweeper confirms the same kill once it ages past the reconciliation window. Sweep
+    // at that later time rather than rewriting the kill record the held confirmation owns.
+    const sweepAt = Date.now() + PROVISIONAL_KILL_RECONCILIATION_MS;
+    const clock = vi.spyOn(Date, "now").mockReturnValue(sweepAt);
+    try {
+      await subagentRegistryTesting.sweepOnceForTests();
+    } finally {
+      clock.mockRestore();
+    }
+    releaseRead.resolve();
+    for (const child of children) {
+      await waitForRunOrRemoval(
+        child.runId,
+        (row) =>
+          row.execution.status === "terminal" &&
+          row.killReconciliation === undefined &&
+          row.requesterSettleWake === undefined,
+      );
+    }
+    await Promise.allSettled(confirmations.mock.results.map((result) => result.value));
+    expect(
+      confirmations.mock.settledResults.filter((result) => result.type === "rejected"),
+      "an overlapping confirmation never loses the kill it confirms",
+    ).toEqual([]);
+    for (const child of children) {
+      expect(owedControllerInputs(child.runId), "the stopped child owes nothing").toEqual([]);
+    }
+    // The requester stopped its own children, so it already knows.
+    expect(script.continuations()).toEqual([]);
+  } finally {
+    confirmations.mockImplementation(actualConfirm);
+    reads.mockImplementation(actualRead);
+    await gateway.close();
+    await model.close();
+  }
+});
