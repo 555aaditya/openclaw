@@ -168,7 +168,10 @@ vi.mock("./doctor-whatsapp-responsiveness.js", () => ({
   noteWhatsappResponsivenessHealth: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock("./doctor-workspace-status.js", () => ({}));
+vi.mock("./doctor-workspace-status.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./doctor-workspace-status.js")>()),
+  collectWorkspaceStatusHealthFindings: vi.fn().mockReturnValue([]),
+}));
 
 vi.mock("../flows/doctor-startup-channel-maintenance.js", () => ({
   maybeRunDoctorStartupChannelMaintenance: vi.fn().mockResolvedValue(undefined),

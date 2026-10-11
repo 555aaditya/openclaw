@@ -513,7 +513,8 @@ vi.mock("../cli/daemon-cli/status.gather.js", () => ({
   gatherDaemonStatus: mocks.gatherDaemonStatus,
 }));
 
-vi.mock("../commands/doctor-workspace-status.js", () => ({
+vi.mock("../commands/doctor-workspace-status.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../commands/doctor-workspace-status.js")>()),
   collectWorkspaceStatusHealthFindings: mocks.collectWorkspaceStatusHealthFindings,
 }));
 
