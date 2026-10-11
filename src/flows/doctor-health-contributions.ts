@@ -412,6 +412,14 @@ async function runGatewayHealthChecks(ctx: DoctorHealthFlowContext): Promise<voi
   const { healthOk, authenticated, status } = await checkGatewayHealth({
     runtime: ctx.runtime,
     cfg: ctx.cfg,
+    onFinding: (finding) => {
+      recordDoctorHealthWarnings(
+        ctx,
+        [finding],
+        finding.severity === "error" ? [`${finding.checkId}: ${finding.message}`] : [],
+      );
+      renderStructuredHealthFindings(ctx, [finding]);
+    },
   });
   ctx.gatewayHealthSkipped = false;
   ctx.healthOk = healthOk;

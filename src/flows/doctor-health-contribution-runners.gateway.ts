@@ -6,8 +6,10 @@ import { NON_DEFAULT_INSTALL_SERVICE_SKIP_REASON } from "../infra/gateway-superv
 import { runWriteConfigHealth } from "./doctor-health-contribution-runners.config.js";
 import type { DoctorHealthFlowContext } from "./doctor-health-contribution-types.js";
 import { resolveDoctorMode } from "./doctor-health-contribution-utils.js";
-import { renderStructuredHealthFindings } from "./doctor-health-contribution.js";
-import { recordDoctorHealthWarnings } from "./doctor-health-contribution.js";
+import {
+  renderStructuredHealthFindings,
+  recordDoctorHealthWarnings,
+} from "./doctor-health-contribution.js";
 
 export async function runCommandOwnerHealth(ctx: DoctorHealthFlowContext): Promise<void> {
   const { noteCommandOwnerHealth } = await import("../commands/doctor-command-owner.js");
@@ -67,6 +69,14 @@ export async function runGatewayServicesHealth(ctx: DoctorHealthFlowContext): Pr
     ctx.prompter,
     {
       allowExecSecretRefs: ctx.options.allowExec === true,
+      onFinding: (finding) => {
+        recordDoctorHealthWarnings(
+          ctx,
+          [finding],
+          finding.severity === "error" ? [`${finding.checkId}: ${finding.message}`] : [],
+        );
+        renderStructuredHealthFindings(ctx, [finding]);
+      },
       writeConfig: (nextConfig) => writeDoctorGatewayConfig(ctx, nextConfig),
     },
   );
@@ -97,7 +107,18 @@ export async function runSecurityHealth(ctx: DoctorHealthFlowContext): Promise<v
   const { securityAuditFindingToHealthFinding } = await import("./health-check-adapter.js");
   const findings = await noteSecurityWarnings(ctx.cfg);
   recordDoctorHealthWarnings(ctx, findings.map(securityAuditFindingToHealthFinding));
-  await noteInstallPolicyHealth(ctx.cfg, { deep: ctx.options.deep === true, env: ctx.env });
+  await noteInstallPolicyHealth(ctx.cfg, {
+    deep: ctx.options.deep === true,
+    env: ctx.env,
+    onFinding: (finding) => {
+      recordDoctorHealthWarnings(
+        ctx,
+        [finding],
+        finding.severity === "error" ? [`${finding.checkId}: ${finding.message}`] : [],
+      );
+      renderStructuredHealthFindings(ctx, [finding]);
+    },
+  });
 }
 
 export async function runWebFetchProxyHealth(ctx: DoctorHealthFlowContext): Promise<void> {
