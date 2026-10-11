@@ -408,3 +408,29 @@ recovery copy. A candidate Doctor cannot add resources to an original capture
 already created by an older installed updater; it preserves that original copy
 as evidence. Keep those retained copies, and do not assume an older capture
 includes the newly declared external resources.
+
+### Older updater recovery copies
+
+An updater installed before a plugin declared its migration files may have an
+original recovery copy that omits those files. The candidate keeps that admitted
+copy unchanged. Before update-driven Doctor repairs modify declared files missing
+from that copy, Doctor saves a separate `doctor-…/manifest.json` pre-repair copy
+using the current plugin inventory. The output names its location. Keep both copies;
+the extra copy is for manual recovery and does not extend automatic rollback.
+This is a full pre-repair copy and can require additional disk space and time on
+the first update from an older updater.
+When the original already covers the declared files, no extra copy is needed.
+
+If that required update-time copy fails, Doctor refuses state repair before plugin
+migrations start. Check the named paths, access permissions, and free disk space,
+then inspect `openclaw update status --json` before retrying. Standalone Doctor keeps
+its existing best-effort repair behavior when its optional pre-repair copy fails;
+save a verified backup of state and configured plugin data before further repairs.
+Undeclared third-party migration files remain unknown: ask the plugin maintainer
+to declare them before relying on recovery coverage.
+
+Candidate validation uses disposable rehearsal state and defers plugins whose
+declared migration data is outside that rehearsal. After schema admission, Doctor
+does not create a manual recovery copy for those disposable checks. The live
+Doctor repair takes the required pre-repair copy independently before modifying
+host files.

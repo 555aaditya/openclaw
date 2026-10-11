@@ -3,6 +3,8 @@ import { createDoctorPrompter } from "../commands/doctor-prompter.js";
 import type { DoctorHealthFlowContext } from "./doctor-health-contribution-types.js";
 import {
   createDoctorHealthContribution,
+  createDoctorHealthFindingBuffer,
+  collectDoctorHealthResultWarnings,
   renderStructuredHealthFindings,
   showDoctorHealthSummary,
 } from "./doctor-health-contribution.js";
@@ -68,6 +70,35 @@ describe("Doctor current-state summary", () => {
       }
     },
   );
+
+  it("retains startup warning receipts after the shared summary queue is drained", () => {
+    const ctx = context();
+    const { buffer, reportFindings } = createDoctorHealthFindingBuffer(ctx.runtime);
+    const rawWarning = "Original migration advisory";
+    reportFindings(
+      [
+        {
+          checkId: "example/startup",
+          severity: "warning",
+          message: "Startup advisory",
+          category: "recommended",
+        },
+      ],
+      [rawWarning],
+    );
+    ctx.healthFindings = buffer.healthFindings;
+    showDoctorHealthSummary(ctx);
+    expect(buffer.healthFindings).toEqual([]);
+    reportFindings([
+      { checkId: "example/deferred", severity: "warning", message: "Deferred capture advisory" },
+    ]);
+    expect(ctx.healthFindings).toBe(buffer.healthFindings);
+    expect(
+      collectDoctorHealthResultWarnings({
+        startupWarnings: buffer.updateWarnings,
+      }),
+    ).toEqual([rawWarning, "example/deferred: Deferred capture advisory"]);
+  });
 
   it("prioritizes current failures and explains history without diagnostic severity labels", () => {
     const ctx = context();

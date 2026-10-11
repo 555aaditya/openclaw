@@ -39,11 +39,18 @@ import { withCommandProcessScope } from "../process/exec-spawn.js";
 import { withDeferredDebugProxyCapture } from "../proxy-capture/runtime-deferral.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { UpdateSchemaRefusalError } from "../state/openclaw-update-schema-refusal.js";
-import { showDoctorHealthSummary } from "./doctor-health-contribution.js";
+import {
+  collectDoctorHealthResultWarnings,
+  createDoctorHealthFindingBuffer,
+  recordDoctorHealthWarnings,
+  renderStructuredHealthFindings,
+  showDoctorHealthSummary,
+} from "./doctor-health-contribution.js";
 import type { DoctorHealthFlowContext } from "./doctor-health-contributions.js";
 import {
   exitDoctorHealthFlow,
   showDoctorIntro,
+  runDoctorInstallationChecks,
   showDoctorOutro,
   showDoctorConfigWriteRefusal,
 } from "./doctor-health-startup.js";
@@ -138,6 +145,8 @@ async function runDoctorHealthFlowWithResult(
   let sqliteReclamationAgents: readonly AgentDatabaseMigrationTarget[] | undefined;
   let exitCode: number | undefined;
   let healthContext: DoctorHealthFlowContext | undefined;
+  const { buffer: startupFindings, reportFindings } =
+    createDoctorHealthFindingBuffer(effectiveRuntime);
   let preparedArchiveDiscovery: DoctorDatabasePreflight["agentDatabaseMigrationDiscovery"];
   let doctorResult: UpdatePostInstallDoctorResult = { status: "error" };
   const recordConfigWriteRefusal = (ctx: DoctorHealthFlowContext): boolean => {
@@ -209,6 +218,7 @@ async function runDoctorHealthFlowWithResult(
           writeAuthority,
           rehearsalRoot: preCaptureRehearsalRoot,
           json: options.json,
+          reportFindings,
         }),
       }),
     );
@@ -355,17 +365,7 @@ async function runDoctorHealthFlowWithResult(
         doctorRuntime.log(message);
       }
       // Keep side-effect-heavy legacy checks before structured contributions until fully migrated.
-      const { maybeRepairUiProtocolFreshness } = await import("../commands/doctor-ui.js");
-      const { noteSourceInstallIssues } = await import("../commands/doctor-install.js");
-      const { noteBunCliLauncherIssues } = await import("../commands/doctor-bun-cli-launcher.js");
-      const { noteStalePluginRuntimeSymlinks } =
-        await import("../commands/doctor/shared/plugin-runtime-symlinks.js");
-      const { noteStartupOptimizationHints } = await import("../commands/doctor-platform-notes.js");
-      await maybeRepairUiProtocolFreshness(doctorRuntime, prompter);
-      await noteSourceInstallIssues(root);
-      await noteBunCliLauncherIssues({ root, prompter });
-      await noteStalePluginRuntimeSymlinks(root);
-      noteStartupOptimizationHints();
+      await runDoctorInstallationChecks(root, prompter, doctorRuntime);
 
       const discovery = schemas.agentDatabaseMigrationDiscovery;
       if (discovery && discovery.stateDir === preparedArchiveDiscovery?.stateDir) {
@@ -408,6 +408,7 @@ async function runDoctorHealthFlowWithResult(
       const { CONFIG_PATH } = await import("../config/config.js");
       const ctx: DoctorHealthFlowContext = {
         runtime: doctorRuntime,
+        healthFindings: startupFindings.healthFindings,
         options,
         prompter,
         configResult,
@@ -418,7 +419,10 @@ async function runDoctorHealthFlowWithResult(
         stateDirExistedAtStart,
         gatewayMaintenanceActive: maintenance !== undefined,
         agentDatabaseRefusals,
-        updateWarnings: deletionJournal.warnings,
+        updateWarnings: normalizeUpdatePostInstallDoctorWarnings([
+          ...(startupFindings.updateWarnings ?? []),
+          ...deletionJournal.warnings,
+        ]),
         preparedAgentCount: Math.max(
           admissionSchemas.agentDatabaseMigrationDiscovery?.configuredAgentDatabaseTargets.length ??
             0,
@@ -519,7 +523,6 @@ async function runDoctorHealthFlowWithResult(
     if (diagnostics.length > 0) {
       const { collectPluginLoadHealthFindings } =
         await import("../commands/doctor-workspace-status.js");
-      const { renderStructuredHealthFindings } = await import("./doctor-health-contribution.js");
       const findings = collectPluginLoadHealthFindings(diagnostics);
       renderStructuredHealthFindings(ctx, findings);
       pluginWarnings.push(...findings.map((finding) => `${finding.checkId}: ${finding.message}`));
@@ -568,6 +571,7 @@ async function runDoctorHealthFlowWithResult(
       error.refusal.kind === "deferred" &&
       isDoctorUpdateRepairMode(resolveDoctorRepairMode(options))
     ) {
+      showDoctorHealthSummary(healthContext ?? startupFindings);
       writeAuthority?.assertCurrent();
       // Admission restored its service before refusing; no migration work has started.
       const { recordUpdateDoctorRefusal } = await import("../commands/doctor-update-refusal.js");
@@ -601,7 +605,6 @@ async function runDoctorHealthFlowWithResult(
         ? error.failureFacts.map(formatUpdateFailureFact)
         : [];
     if (healthContext && refusalWarnings.length > 0) {
-      const { recordDoctorHealthWarnings } = await import("./doctor-health-contribution.js");
       recordDoctorHealthWarnings(healthContext, [], refusalWarnings, { prepend: true });
     }
     if (error instanceof DoctorStateMigrationRefusalError) {
@@ -613,9 +616,7 @@ async function runDoctorHealthFlowWithResult(
         recordUpdateDoctorRefusal(error.message);
       }
     }
-    if (healthContext) {
-      showDoctorHealthSummary(healthContext);
-    }
+    showDoctorHealthSummary(healthContext ?? startupFindings);
     const causes = collectNestedErrorCandidates(error);
     const { classifyDoctorMaintenanceRefusal } =
       await import("../commands/doctor-maintenance-inspection.js");
@@ -672,17 +673,12 @@ async function runDoctorHealthFlowWithResult(
         for (const change of updateResult.capture.configChanges) {
           createSubsystemLogger("update").warn(formatUpdateDoctorConfigChange(change));
         }
-        const contributionWarnings = healthContext?.updateWarnings ?? [];
-        const deferredCount = healthContext?.updateBudget?.deferred.size ?? 0;
-        // Contributions put deferrals first; retain migration advisories before other diagnostics.
-        const warnings = normalizeUpdatePostInstallDoctorWarnings([
-          ...contributionWarnings.slice(0, deferredCount),
-          ...(doctorResult.warnings ?? []),
-          ...(maintenance?.warnings ?? []).filter(
-            (warning) => !doctorResult.warnings?.includes(warning),
-          ),
-          ...contributionWarnings.slice(deferredCount),
-        ]);
+        const warnings = collectDoctorHealthResultWarnings({
+          healthContext,
+          startupWarnings: startupFindings.updateWarnings,
+          resultWarnings: doctorResult.warnings,
+          maintenanceWarnings: maintenance?.warnings,
+        });
         await writeUpdatePostInstallDoctorResult({
           resultPath: updateResult.resultPath,
           result: {

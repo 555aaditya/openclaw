@@ -129,7 +129,7 @@ async function runStructuredDoctorHealthContribution(params: {
 }
 
 export function recordDoctorHealthWarnings(
-  ctx: DoctorHealthFlowContext,
+  ctx: Pick<DoctorHealthFlowContext, "updateWarnings">,
   findings: readonly HealthFinding[],
   warnings: readonly string[] = [],
   options?: { prepend?: boolean },
@@ -191,4 +191,40 @@ export function showDoctorHealthSummary(
       );
     }
   }
+}
+
+/** Preserve priority order in the updater receipt independently of summary rendering. */
+export function collectDoctorHealthResultWarnings(params: {
+  healthContext?: Pick<DoctorHealthFlowContext, "updateWarnings" | "updateBudget">;
+  startupWarnings?: readonly string[];
+  resultWarnings?: readonly string[];
+  maintenanceWarnings?: readonly string[];
+}): string[] {
+  const contributionWarnings = [
+    ...(params.healthContext?.updateWarnings ?? []),
+    ...(params.startupWarnings ?? []),
+  ];
+  const deferredCount = params.healthContext?.updateBudget?.deferred.size ?? 0;
+  return normalizeUpdatePostInstallDoctorWarnings([
+    ...contributionWarnings.slice(0, deferredCount),
+    ...(params.resultWarnings ?? []),
+    ...(params.maintenanceWarnings ?? []).filter(
+      (warning) => !params.resultWarnings?.includes(warning),
+    ),
+    ...contributionWarnings.slice(deferredCount),
+  ]);
+}
+
+/** Startup repairs may report before the full health context exists. */
+export function createDoctorHealthFindingBuffer(runtime: DoctorHealthFlowContext["runtime"]) {
+  const buffer: Pick<DoctorHealthFlowContext, "runtime" | "healthFindings" | "updateWarnings"> & {
+    healthFindings: HealthFinding[];
+  } = { runtime, healthFindings: [] };
+  return {
+    buffer,
+    reportFindings(this: void, findings: readonly HealthFinding[], warnings?: readonly string[]) {
+      buffer.healthFindings.push(...findings);
+      recordDoctorHealthWarnings(buffer, warnings ? [] : findings, warnings);
+    },
+  };
 }

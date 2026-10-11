@@ -162,9 +162,7 @@ vi.mock("./doctor-whatsapp-responsiveness.js", () => ({
   noteWhatsappResponsivenessHealth: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock("./doctor-workspace-status.js", () => ({
-  noteWorkspaceStatus: vi.fn(),
-}));
+vi.mock("./doctor-workspace-status.js", () => ({}));
 
 vi.mock("../flows/doctor-startup-channel-maintenance.js", () => ({
   maybeRunDoctorStartupChannelMaintenance: vi.fn().mockResolvedValue(undefined),

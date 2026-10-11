@@ -158,8 +158,7 @@ const mocks = vi.hoisted(() => ({
     issues: [],
   }),
   gatherDaemonStatus: vi.fn(),
-  noteWorkspaceStatus: vi.fn(),
-  collectWorkspaceStatusHealthFindings: vi.fn().mockResolvedValue([]),
+  collectWorkspaceStatusHealthFindings: vi.fn((): HealthFinding[] => []),
   collectWorkspaceBackupTip: vi.fn<(workspaceDir: string) => string | undefined>(() => undefined),
   shouldSuggestMemorySystem: vi.fn<(workspaceDir: string) => Promise<boolean>>(async () => false),
   collectDiskSpaceHealthFindings: vi.fn((): readonly HealthFinding[] => []),
@@ -516,7 +515,6 @@ vi.mock("../cli/daemon-cli/status.gather.js", () => ({
 }));
 
 vi.mock("../commands/doctor-workspace-status.js", () => ({
-  noteWorkspaceStatus: mocks.noteWorkspaceStatus,
   collectWorkspaceStatusHealthFindings: mocks.collectWorkspaceStatusHealthFindings,
 }));
 
@@ -734,7 +732,7 @@ describe("doctor health contributions", () => {
     });
     mocks.gatherDaemonStatus.mockResolvedValue({});
     mocks.resolveGatewayService.mockReturnValue({ isLoaded: mocks.gatewayServiceIsLoaded });
-    mocks.collectWorkspaceStatusHealthFindings.mockResolvedValue([]);
+    mocks.collectWorkspaceStatusHealthFindings.mockReturnValue([]);
     mocks.maybeMigrateHeartbeatCadenceToCron.mockResolvedValue({ changes: [], warnings: [] });
     mocks.maybeMigrateHeartbeatFilesToScratch.mockResolvedValue({ changes: [], warnings: [] });
     mocks.maybeMigrateToolsMd.mockResolvedValue({ changes: [], warnings: [] });
@@ -1404,7 +1402,7 @@ describe("doctor health contributions", () => {
         runningGatewayVersion: "2026.6.1",
       },
     });
-    mocks.collectWorkspaceStatusHealthFindings.mockResolvedValueOnce([
+    mocks.collectWorkspaceStatusHealthFindings.mockReturnValueOnce([
       {
         checkId: "core/doctor/workspace-status",
         severity: "warning",
@@ -1475,7 +1473,7 @@ describe("doctor health contributions", () => {
 
     await contribution.run(createDoctorHealthFlowContext({ cfg }));
 
-    expect(mocks.noteWorkspaceStatus).toHaveBeenCalledWith(cfg, {
+    expect(mocks.collectWorkspaceStatusHealthFindings).toHaveBeenCalledWith(cfg, {
       pluginVersionReadiness: undefined,
     });
   });
@@ -1493,7 +1491,7 @@ describe("doctor health contributions", () => {
     } as unknown as Parameters<(typeof contribution)["run"]>[0]);
 
     expect(mocks.gatherDaemonStatus).not.toHaveBeenCalled();
-    expect(mocks.noteWorkspaceStatus).toHaveBeenCalledWith(cfg, {
+    expect(mocks.collectWorkspaceStatusHealthFindings).toHaveBeenCalledWith(cfg, {
       pluginVersionReadiness: undefined,
     });
   });
@@ -1507,7 +1505,7 @@ describe("doctor health contributions", () => {
     await contribution.run(createDoctorContext({ cfg, options: { nonInteractive: true } }));
 
     expect(mocks.gatherDaemonStatus).not.toHaveBeenCalled();
-    expect(mocks.noteWorkspaceStatus).toHaveBeenCalledWith(cfg, {
+    expect(mocks.collectWorkspaceStatusHealthFindings).toHaveBeenCalledWith(cfg, {
       pluginVersionReadiness: undefined,
     });
 

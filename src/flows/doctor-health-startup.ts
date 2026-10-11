@@ -3,7 +3,7 @@ import { intro as clackIntro, outro as clackOutro } from "@clack/prompts";
 import { stylePromptTitle } from "../../packages/terminal-core/src/prompt-style.js";
 import { exitCliAfterOutput } from "../cli/one-shot-exit.js";
 import type { DoctorDatabasePreflight } from "../commands/doctor-database-preflight.js";
-import type { DoctorOptions } from "../commands/doctor-prompter.js";
+import type { DoctorOptions, DoctorPrompter } from "../commands/doctor-prompter.js";
 import { resolveDoctorRepairMode } from "../commands/doctor-repair-mode.js";
 import { resolveIsNixMode, resolveStateDir } from "../config/paths.js";
 import type { UpdatePostInstallDoctorResult } from "../infra/update-doctor-result.js";
@@ -155,4 +155,22 @@ export function showDoctorConfigWriteRefusal(
       }),
     ],
   };
+}
+
+export async function runDoctorInstallationChecks(
+  root: string | null,
+  prompter: DoctorPrompter,
+  runtime: RuntimeEnv,
+) {
+  const { maybeRepairUiProtocolFreshness } = await import("../commands/doctor-ui.js");
+  const { noteSourceInstallIssues } = await import("../commands/doctor-install.js");
+  const { noteBunCliLauncherIssues } = await import("../commands/doctor-bun-cli-launcher.js");
+  const { noteStalePluginRuntimeSymlinks } =
+    await import("../commands/doctor/shared/plugin-runtime-symlinks.js");
+  const { noteStartupOptimizationHints } = await import("../commands/doctor-platform-notes.js");
+  await maybeRepairUiProtocolFreshness(runtime, prompter);
+  await noteSourceInstallIssues(root);
+  await noteBunCliLauncherIssues({ root, prompter });
+  await noteStalePluginRuntimeSymlinks(root);
+  noteStartupOptimizationHints();
 }

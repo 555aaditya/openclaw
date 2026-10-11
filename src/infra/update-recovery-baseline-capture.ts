@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { BigIntStats } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -54,10 +55,8 @@ import {
 import { createUpdateDatabaseBackup } from "./update-database-backup.js";
 import { readUpdateDatabaseGenerations } from "./update-database-generations.js";
 import type { UpdateRecoveryCaptureAcquisition } from "./update-recovery-capture-acquisition.js";
-import { hasPendingUpdateRecoverySeal } from "./update-recovery-capture-seal.js";
 import { canonicalEntryPath } from "./update-recovery-path.js";
 import { readUpdateRunDriver, type UpdateRunDriver } from "./update-run-driver.js";
-import { getUpdateRunAsync } from "./update-run-reader.js";
 
 declare const SEALED_RUNTIME_BUILD: boolean;
 
@@ -142,7 +141,7 @@ function maintenanceOwnerMayReadGenerationsInProcess(
 
 /** Capture for manual recovery under the original invocation's live custody.
  * Sources may remain active; final revalidation is not authority to restore them. */
-export function captureUpdateRecoveryBaseline(params: {
+type RecoveryBaselineCaptureParams = {
   runId: string;
   installRoot: string;
   env: NodeJS.ProcessEnv;
@@ -152,11 +151,82 @@ export function captureUpdateRecoveryBaseline(params: {
   nodeRunner?: string;
   timeoutMs?: number;
   acquisition?: UpdateRecoveryCaptureAcquisition;
-}) {
+};
+
+export function captureUpdateRecoveryBaseline(params: RecoveryBaselineCaptureParams) {
   // Sealed helpers consume retained evidence; the installed CLI owns fresh capture.
   if (typeof SEALED_RUNTIME_BUILD === "boolean" && SEALED_RUNTIME_BUILD) {
     throw new Error("Fresh original-state capture requires the installed CLI.");
   }
+  return captureRecoveryBaseline(params);
+}
+
+type DoctorRecoveryCaptureResult =
+  | { kind: "covered"; warnings: PluginDoctorMigrationBackupWarning[] }
+  | ({ kind: "captured"; runId: string } & Awaited<
+      ReturnType<typeof captureUpdateRecoveryBaseline>
+    >);
+
+/** A separate manual copy never replaces an installed updater's admitted originals. */
+export async function captureDoctorRecoveryBaseline(
+  params: Omit<RecoveryBaselineCaptureParams, "runId" | "acquisition"> & {
+    retainedOriginal?: UpdateRecoveryBackupManifest;
+  },
+): Promise<DoctorRecoveryCaptureResult> {
+  const scope = getOpenClawDatabaseMaintenanceScope();
+  if (!scope?.ownsSchemaMaintenance) {
+    throw new Error("Pre-repair Doctor capture requires admitted maintenance ownership.");
+  }
+  const assertCurrent = () => {
+    params.signal?.throwIfAborted();
+    params.assertCurrent();
+    scope.assertOwnerCurrent();
+  };
+  assertCurrent();
+  if (params.retainedOriginal) {
+    const { snapshot } = await createConfigIO({
+      env: params.env,
+      configPath: resolveConfigPath(params.env),
+      observe: false,
+      pluginValidation: "core-only",
+    }).readConfigFileSnapshotForWrite();
+    if (snapshot.exists && snapshot.raw === null) {
+      throw new Error("Pre-repair Doctor configuration is unreadable.");
+    }
+    const warnings: PluginDoctorMigrationBackupWarning[] = [];
+    const inventory = await withOpenClawStateDatabaseReadSnapshot(
+      () =>
+        preparePluginDoctorMigrationBackupResources({
+          config: snapshot.sourceConfig,
+          env: params.env,
+          stateDir: resolvePathViaExistingAncestorSync(resolveStateDir(params.env)),
+          warnings,
+          requireLocalResources: true,
+        }),
+      { env: params.env },
+    );
+    assertCurrent();
+    inventory.assertCurrent();
+    const covered = new Set([
+      ...params.retainedOriginal.protectedPaths,
+      ...params.retainedOriginal.entries.map((entry) => entry.sourcePath),
+    ]);
+    if (inventory.resources.every((resource) => covered.has(canonicalEntryPath(resource.path)))) {
+      return { kind: "covered", warnings };
+    }
+  }
+  // This namespace has no update lineage and cannot impersonate its original capture.
+  const runId = `doctor-${randomUUID()}`;
+  const captured = await captureRecoveryBaseline({
+    ...params,
+    runId,
+    assertCurrent,
+    acquisition: { mode: "maintenance-owner" },
+  });
+  return { kind: "captured", runId, ...captured };
+}
+
+function captureRecoveryBaseline(params: RecoveryBaselineCaptureParams) {
   return withArtifactPreservingStateReads(async () => {
     const runId = params.runId;
     if (!/^[a-zA-Z0-9_-]{1,128}$/u.test(runId)) {
@@ -603,87 +673,16 @@ export function captureUpdateRecoveryBaseline(params: {
         diagnostics: { databaseWarnings: databases.warnings },
       };
     } catch (cause) {
-      throw new Error(`Original update capture failed; evidence retained at ${directory}`, {
-        cause,
-      });
+      throw new Error(
+        `Original update capture failed: ${truncateUtf16Safe(formatErrorMessage(cause), 600)}; evidence retained at ${directory}`,
+        {
+          cause,
+        },
+      );
     } finally {
       await pin.close();
     }
   });
 }
 
-const STANDALONE_DOCTOR_CAPTURE_RETENTION_MS = 30 * 24 * 60 * 60_000;
-
-/** Only sealed, unassociated standalone originals are eligible for retirement. */
-export async function retireExpiredStandaloneDoctorCaptures(params: {
-  stateDir: string;
-  keepRunId: string;
-  now?: number;
-  assertCurrent: () => void;
-}): Promise<{ retired: string[]; warnings: string[] }> {
-  const retired: string[] = [];
-  const warnings: string[] = [];
-  const root = resolveUpdateCaptureRoot(params.stateDir);
-  const now = params.now ?? Date.now();
-  let names: string[];
-  try {
-    names = await fs.readdir(root);
-  } catch (error) {
-    if (!hasErrnoCode(error, "ENOENT")) {
-      warnings.push(
-        `Standalone Doctor capture retirement unavailable at ${root}: ${formatErrorMessage(error)}`,
-      );
-    }
-    return { retired, warnings };
-  }
-  for (const name of names.toSorted()) {
-    if (
-      name === params.keepRunId ||
-      !/^doctor-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(name)
-    ) {
-      continue;
-    }
-    const directory = path.join(root, name);
-    try {
-      const entry = await fs.lstat(directory);
-      if (!entry.isDirectory() || entry.isSymbolicLink()) {
-        continue;
-      }
-      if (
-        (await hasPendingUpdateRecoverySeal(directory)) ||
-        !(await statOrMissing(path.join(directory, "manifest.json")))
-      ) {
-        continue;
-      }
-      const source = await safeRoot(directory, { symlinks: "reject", hardlinks: "reject" });
-      const manifest = parseUpdateRecoveryBackupManifest(
-        await source.readText("manifest.json", { maxBytes: 128 * 1024 * 1024 }),
-      );
-      const createdAt = Date.parse(manifest.createdAt);
-      if (
-        manifest.runId !== name ||
-        manifest.schemaVersion !== 2 ||
-        manifest.generation?.kind !== "baseline" ||
-        !Number.isFinite(createdAt) ||
-        now - createdAt <= STANDALONE_DOCTOR_CAPTURE_RETENTION_MS ||
-        (await statOrMissing(path.join(directory, "outcome.json"))) ||
-        (await getUpdateRunAsync(manifest.runId, {
-          path: path.join(params.stateDir, "state", "openclaw.sqlite"),
-        })) !== undefined
-      ) {
-        continue;
-      }
-      if (await hasPendingUpdateRecoverySeal(directory)) {
-        continue;
-      }
-      params.assertCurrent();
-      await fs.rm(directory, { recursive: true });
-      retired.push(directory);
-    } catch (error) {
-      warnings.push(
-        `Standalone Doctor capture retained at ${directory}: ${formatErrorMessage(error)}`,
-      );
-    }
-  }
-  return { retired, warnings };
-}
+export { retireExpiredStandaloneDoctorCaptures } from "./update-doctor-capture-retention.js";
