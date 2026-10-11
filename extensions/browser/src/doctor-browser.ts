@@ -159,7 +159,7 @@ export async function collectBrowserReadinessFindings(
           ? [
               "No DISPLAY or WAYLAND_DISPLAY is set, and browser.headless is false. Managed browser launch needs a desktop session, Xvfb, or browser.headless: true.",
             ]
-          : missingDisplay.map((error) => `${error.message}`)),
+          : missingDisplay.map((error) => error.message)),
       );
     }
     if (shouldWarnRootNoSandbox) {
