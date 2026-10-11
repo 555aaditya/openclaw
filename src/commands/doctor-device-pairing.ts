@@ -1,5 +1,4 @@
 import { normalizeUniqueSingleOrTrimmedStringList } from "@openclaw/normalization-core/string-normalization";
-import { note } from "../../packages/terminal-core/src/note.js";
 import { sanitizeTerminalText } from "../../packages/terminal-core/src/safe-text.js";
 import { formatCliCommand } from "../cli/command-format.js";
 import { quoteCliArg } from "../cli/quote-cli-arg.js";
@@ -387,17 +386,4 @@ export async function collectDevicePairingHealthFindings(params: {
     ...collectPairedRecordFindings(snapshot),
     ...(await collectLocalDeviceAuthFindings(snapshot)),
   ];
-}
-
-/** Render the same local migration and pairing findings as structured Doctor output. */
-export async function noteDevicePairingHealth(params: {
-  cfg: OpenClawConfig;
-  healthOk: boolean;
-  env?: NodeJS.ProcessEnv;
-}): Promise<void> {
-  const findings = await collectDevicePairingHealthFindings(params);
-  if (findings.length === 0) {
-    return;
-  }
-  note(findings.map((finding) => `- ${finding.message}`).join("\n"), "Device pairing");
 }

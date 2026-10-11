@@ -91,13 +91,14 @@ export function collectSessionSqliteMigrationFindings(
           : `Inspect with "${inspect}" before attempting recovery.`,
         docsUrl: "https://docs.openclaw.ai/cli/doctor/sqlite-maintenance#session-sqlite-migration",
       };
-      const findings: HealthFinding[] = issues
-        .slice(0, MIGRATION_WARNING_EXAMPLE_LIMIT)
-        .map((issue) => ({
+      const findings: HealthFinding[] = [];
+      for (const issue of issues.slice(0, MIGRATION_WARNING_EXAMPLE_LIMIT)) {
+        findings.push({
           ...common,
           errorCode: issue.code,
           message: issue.message,
-        }));
+        });
+      }
       if (issues.length > MIGRATION_WARNING_EXAMPLE_LIMIT) {
         findings.push({
           ...common,

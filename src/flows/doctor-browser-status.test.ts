@@ -126,7 +126,7 @@ it.each([false, true])(
     ]);
     const findings = await check.detect(repairContext());
     expect(findings).toEqual(ctx.healthFindings);
-    expect(check.repair).toBeUndefined();
+    expect(check.repair === undefined).toBe(true);
     const run = await runDoctorHealthRepairs(repairContext(), { checks: [check] });
     expect(run).toMatchObject({
       checksRun: 1,

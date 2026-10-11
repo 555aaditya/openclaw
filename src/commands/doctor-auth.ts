@@ -491,10 +491,13 @@ async function inspectAuthProfileHealthTarget(params: {
     ({ store, summary } = loadAuthProfileHealth({ ...params, allowKeychainPrompt: false }));
   }
   const findings = await collectAuthProfileTargetFindings({ ...params, store, summary });
-  return findings.map((finding) => {
+  for (const [index, finding] of findings.entries()) {
     const error = finding.target && refreshErrors.get(finding.target);
-    return error ? { ...finding, message: `${finding.message} ${error}` } : finding;
-  });
+    if (error) {
+      findings[index] = { ...finding, message: `${finding.message} ${error}` };
+    }
+  }
+  return findings;
 }
 
 export async function inspectAuthProfileHealth(params: {

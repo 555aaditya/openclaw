@@ -167,7 +167,6 @@ const mocks = vi.hoisted(() => ({
   collectHeartbeatTaskMigrationFindings: vi.fn(async () => [] as unknown[]),
   maybeMigrateHeartbeatTasksToCron: vi.fn().mockResolvedValue({ changes: [], warnings: [] }),
   collectWhatsappResponsivenessHealthFindings: vi.fn((): readonly HealthFinding[] => []),
-  noteWhatsappResponsivenessHealth: vi.fn().mockResolvedValue(undefined),
   collectDevicePairingHealthFindings: vi.fn(async () => []),
   collectLegacyCronStoreHealthFindings: vi.fn(async (): Promise<readonly HealthFinding[]> => []),
   collectLegacyWhatsAppCrontabHealthWarning: vi.fn(
@@ -549,14 +548,14 @@ vi.mock("../commands/doctor-heartbeat-task-migration.js", () => ({
   maybeMigrateHeartbeatTasksToCron: mocks.maybeMigrateHeartbeatTasksToCron,
 }));
 
+// mock-isolation: Contribution fixtures provide Gateway pressure facts without host process enumeration.
 vi.mock("../commands/doctor-whatsapp-responsiveness.js", () => ({
   collectWhatsappResponsivenessHealthFindings: mocks.collectWhatsappResponsivenessHealthFindings,
-  noteWhatsappResponsivenessHealth: mocks.noteWhatsappResponsivenessHealth,
 }));
 
+// mock-isolation: Contribution fixtures supply pairing findings without reading device identity or SQLite.
 vi.mock("../commands/doctor-device-pairing.js", () => ({
   collectDevicePairingHealthFindings: mocks.collectDevicePairingHealthFindings,
-  noteDevicePairingHealth: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("../commands/doctor/cron/index.js", () => ({
@@ -733,7 +732,6 @@ describe("doctor health contributions", () => {
     mocks.maybeMigrateHeartbeatFilesToScratch.mockResolvedValue({ changes: [], warnings: [] });
     mocks.maybeMigrateToolsMd.mockResolvedValue({ changes: [], warnings: [] });
     mocks.maybeMigrateHeartbeatTasksToCron.mockResolvedValue({ changes: [], warnings: [] });
-    mocks.noteWhatsappResponsivenessHealth.mockResolvedValue(undefined);
     mocks.maybeRepairLegacyCronStore.mockResolvedValue(undefined);
     mocks.repairCronCodexModelRefsAfterConfigWrite.mockResolvedValue({
       changes: [],

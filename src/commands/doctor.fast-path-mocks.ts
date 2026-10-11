@@ -81,8 +81,9 @@ vi.mock("./doctor/cron/legacy-repair.js", () => ({
   repairLegacyCronStoreWithoutPrompt: vi.fn().mockResolvedValue({ changes: [], warnings: [] }),
 }));
 
+// mock-isolation: Fast-path Doctor fixtures exclude device identity and pairing-store reads.
 vi.mock("./doctor-device-pairing.js", () => ({
-  noteDevicePairingHealth: vi.fn().mockResolvedValue(undefined),
+  collectDevicePairingHealthFindings: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock("./doctor-gateway-daemon-flow.js", () => ({
@@ -164,8 +165,9 @@ vi.mock("./doctor-ui.js", () => ({
   maybeRepairUiProtocolFreshness: vi.fn().mockResolvedValue(undefined),
 }));
 
+// mock-isolation: Fast-path Doctor fixtures exclude host process enumeration.
 vi.mock("./doctor-whatsapp-responsiveness.js", () => ({
-  noteWhatsappResponsivenessHealth: vi.fn().mockResolvedValue(undefined),
+  collectWhatsappResponsivenessHealthFindings: vi.fn().mockReturnValue([]),
 }));
 
 vi.mock("./doctor-workspace-status.js", async (importOriginal) => ({
