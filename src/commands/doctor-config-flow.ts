@@ -15,6 +15,7 @@ import { findLegacyConfigRuleIssues } from "../config/legacy.js";
 import { resolveLegacyAgentRosterOwner } from "../config/legacy.roster.js";
 import { CONFIG_PATH } from "../config/paths.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { HealthFinding } from "../flows/health-checks.js";
 import { callGateway } from "../gateway/call.js";
 import type { PreparedAgentDatabaseMigrationDiscovery } from "../infra/state-migrations.media-persistence-targets.js";
 import { resolvePluginDoctorProviderRenames } from "../plugins/doctor-contract-registry.js";
@@ -73,6 +74,7 @@ export async function loadAndMaybeMigrateDoctorConfig(params: {
   confirm: (p: { message: string; initialValue: boolean }) => Promise<boolean>;
   runtime?: RuntimeEnv;
   prompter?: DoctorPrompter;
+  reportFindings?: (findings: readonly HealthFinding[], warnings?: readonly string[]) => void;
 }) {
   const shouldRepair = params.options.repair === true || params.options.yes === true;
   const preflight = await withProgress(
@@ -484,6 +486,7 @@ export async function loadAndMaybeMigrateDoctorConfig(params: {
       state,
       installedPluginIdRecovery: installedPluginRecovery.recovery,
       doctorFixCommand,
+      reportFindings: params.reportFindings,
       env: process.env,
       blockedCodexProviderPlan,
       pluginMetadataSnapshotState,
@@ -520,7 +523,9 @@ export async function loadAndMaybeMigrateDoctorConfig(params: {
     emitDoctorNotes({
       note,
       changeNotes: repairSequence.changeNotes,
-      warningNotes: repairSequence.warningNotes,
+      warningNotes: params.reportFindings
+        ? repairSequence.displayWarningNotes
+        : repairSequence.warningNotes,
     });
     for (const configChange of repairSequence.configChangeNotes ?? []) {
       changesPanelSink.emit([configChange]);

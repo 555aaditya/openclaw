@@ -304,3 +304,32 @@ attach fails, run `openclaw browser extension status --json`, then
 `openclaw browser extension install` if repair is needed. These explicit commands
 may request browser profile access. See [browser setup](/tools/browser/setup) and
 [browser troubleshooting](/tools/browser/troubleshooting).
+
+### Auth migration recovery
+
+Auth imports retain their original warning receipts and recovery copies. The
+final summary distinguishes the remaining work:
+
+- **Fix now:** an auth source or SQLite owner cannot be inspected, an import
+  cannot be verified, OAuth credentials are unavailable, or an alias would
+  overwrite a different account. Follow the named path or account finding.
+  Correct access or source errors before rerunning `openclaw doctor --fix`.
+  For account conflicts, compare `openclaw models status` with your expected
+  accounts and preserve both profiles before changing `auth.profiles` or
+  `auth.order`. Do not delete the credential database to force an import.
+- **Recommended improvements:** plaintext catalog credentials or retired
+  profiles remain after declining a repair. `openclaw doctor --fix` verifies
+  credentials in SQLite and cleans stale references. Native provider login
+  remains unchanged when a retired CLI profile is removed.
+- **Historical recovery notices:** an archive could not be finalized, an
+  unparseable source was archived without import, or a verified catalog's old
+  source could not be removed. Keep these copies. Check expected accounts with
+  `openclaw models status`; if they work, retained data alone requires no
+  credential repair. Correct the reported filesystem issue and rerun Doctor
+  only to complete unfinished archival or cleanup.
+
+A changed recorded account requires comparing the retained archive with the
+current account before retrying migration. Do not overwrite a current account
+or delete recovery data merely to clear a notice. For unavailable credentials,
+use the configured provider's `openclaw models auth login --provider <provider-id>`
+flow. Pre-June `oauth.json` requires the documented [2026.9.5 bridge upgrade](/install/updating#upgrading-very-old-versions).

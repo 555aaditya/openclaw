@@ -9,6 +9,7 @@ vi.mock("./doctor-bootstrap-size.js", () => ({
   noteBootstrapFileSize: vi.fn().mockResolvedValue(undefined),
 }));
 
+// mock-isolation: Scenario fixtures own credential state and migration outcomes; isolate filesystem writes and provider login effects proved by their owner suites.
 vi.mock("./doctor-auth-flat-profiles.js", () => ({
   maybeRepairLegacyAuthProfileStores: ({
     profileIdMap,
@@ -17,6 +18,7 @@ vi.mock("./doctor-auth-flat-profiles.js", () => ({
   }) => ({
     changes: [],
     warnings: [],
+    findings: [],
     profileIdMap,
   }),
   collectOpenAICodexAuthProfileStoreIdMap: vi.fn(() => new Map()),
@@ -25,6 +27,8 @@ vi.mock("./doctor-auth-flat-profiles.js", () => ({
     changes: [],
     migratedProfileIds: new Set<string>(),
     blockedProfileIds: new Set<string>(),
+    findings: [],
+    aliasFindings: [],
     warnings: [],
   }),
   maybeRepairOpenAICodexAuthConfig: vi.fn((cfg: unknown) => ({
@@ -34,9 +38,11 @@ vi.mock("./doctor-auth-flat-profiles.js", () => ({
   })),
 }));
 
+// mock-isolation: Scenario fixtures own credential state and migration outcomes; isolate filesystem writes and provider login effects proved by their owner suites.
 vi.mock("./doctor-auth-legacy-oauth.js", () => ({
   maybeRepairLegacyOAuthProfileIds: vi.fn(async (cfg: unknown) => ({
     config: cfg,
+    findings: [],
     retiredProfileCleanupPlans: [],
   })),
 }));

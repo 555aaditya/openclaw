@@ -3,6 +3,7 @@ import fs from "node:fs";
 import nodePath from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDoctorConfigSnapshot } from "../commands/doctor-config-snapshot.test-helpers.js";
+import { createAuthProfileImportResult } from "../commands/doctor/auth-profile-repair.test-support.js";
 import { ConfigWritePostCommitError } from "../config/io.write-errors.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { LegacyStateMigrationStepReceipt } from "../infra/state-migrations.types.js";
@@ -39,13 +40,7 @@ const mocks = vi.hoisted(() => ({
   maybeRunConfiguredPluginInstallReleaseStep: vi.fn(),
   registerBundledHealthChecks: vi.fn((): HealthFinding[] => []),
   runDoctorHealthRepairs: vi.fn(),
-  maybeMigrateAuthProfileJsonStoresToSqlite: vi.fn().mockResolvedValue({
-    detected: [],
-    changes: [],
-    migratedProfileIds: new Set<string>(),
-    blockedProfileIds: new Set<string>(),
-    warnings: [],
-  }),
+  maybeMigrateAuthProfileJsonStoresToSqlite: vi.fn(),
   collectOpenAICodexAuthProfileStoreIdMap: vi.fn(() => new Map<string, string>()),
   maybeRepairOpenAICodexAuthConfig: vi.fn((cfg: unknown) => ({
     config: cfg,
@@ -65,6 +60,7 @@ const mocks = vi.hoisted(() => ({
   maybeRepairGatewayDaemon: vi.fn().mockResolvedValue(undefined),
   maybeRepairLegacyOAuthProfileIds: vi.fn(async (cfg: unknown) => ({
     config: cfg,
+    findings: [],
     retiredProfileCleanupPlans: [] as Array<{
       agentDir?: string;
       profileIds: readonly string[];
@@ -281,6 +277,7 @@ vi.mock("../commands/doctor-gateway-services.js", () => ({
   maybeResolveDuelingSystemdGatewayScopes: mocks.maybeResolveDuelingSystemdGatewayScopes,
 }));
 
+// mock-isolation: Scenario fixtures own credential state and migration outcomes; isolate filesystem writes and provider login effects proved by their owner suites.
 vi.mock("../commands/doctor-auth-flat-profiles.js", () => ({
   maybeRepairLegacyAuthProfileStores: ({
     profileIdMap,
@@ -289,6 +286,7 @@ vi.mock("../commands/doctor-auth-flat-profiles.js", () => ({
   }) => ({
     changes: [],
     warnings: [],
+    findings: [],
     profileIdMap,
   }),
   collectOpenAICodexAuthProfileStoreIdMap: mocks.collectOpenAICodexAuthProfileStoreIdMap,
@@ -341,6 +339,7 @@ vi.mock("../daemon/systemd.js", async (importOriginal) => {
   };
 });
 
+// mock-isolation: Scenario fixtures own credential state and migration outcomes; isolate filesystem writes and provider login effects proved by their owner suites.
 vi.mock("../commands/doctor-auth-legacy-oauth.js", () => ({
   maybeRepairLegacyOAuthProfileIds: mocks.maybeRepairLegacyOAuthProfileIds,
 }));
@@ -683,13 +682,9 @@ describe("doctor health contributions", () => {
 
   beforeEach(() => {
     vi.resetAllMocks();
-    mocks.maybeMigrateAuthProfileJsonStoresToSqlite.mockResolvedValue({
-      detected: [],
-      changes: [],
-      migratedProfileIds: new Set<string>(),
-      blockedProfileIds: new Set<string>(),
-      warnings: [],
-    });
+    mocks.maybeMigrateAuthProfileJsonStoresToSqlite.mockResolvedValue(
+      createAuthProfileImportResult(),
+    );
     mocks.maybeMigrateLegacyPluginModelCatalogs.mockResolvedValue({
       detected: 0,
       migrated: 0,
@@ -1926,6 +1921,7 @@ describe("doctor health contributions", () => {
     };
     mocks.maybeRepairLegacyOAuthProfileIds.mockResolvedValue({
       config: repairedCfg,
+      findings: [],
       retiredProfileCleanupPlans: [
         {
           agentDir: "/tmp/openclaw/agents/main",
@@ -1972,6 +1968,7 @@ describe("doctor health contributions", () => {
     const cfg = {};
     mocks.maybeRepairLegacyOAuthProfileIds.mockResolvedValue({
       config: { agents: { defaults: { model: { primary: "anthropic/claude-sonnet-4-6" } } } },
+      findings: [],
       retiredProfileCleanupPlans: [
         {
           agentDir: "/tmp/openclaw/agents/main",

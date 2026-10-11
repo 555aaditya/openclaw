@@ -1,7 +1,11 @@
 import { isDeepStrictEqual } from "node:util";
 import { emitDoctorNotes } from "../commands/doctor/emit-notes.js";
 import type { DoctorHealthFlowContext } from "./doctor-health-contribution-types.js";
-import { renderStructuredHealthFindings } from "./doctor-health-contribution.js";
+import {
+  recordDoctorHealthWarnings,
+  renderStructuredHealthFindings,
+} from "./doctor-health-contribution.js";
+import type { HealthFinding } from "./health-checks.js";
 
 export async function runAuthProfileMigration(ctx: DoctorHealthFlowContext): Promise<void> {
   ctx.authProfileHealthReady = false;
@@ -28,8 +32,10 @@ export async function runAuthProfileMigration(ctx: DoctorHealthFlowContext): Pro
     emitDoctorNotes({
       note,
       changeNotes: authRepair.storeChanges,
-      warningNotes: authRepair.warnings,
+      warningNotes: [],
     });
+    recordDoctorHealthWarnings(ctx, [], authRepair.warnings);
+    renderStructuredHealthFindings(ctx, authRepair.findings);
     ctx.cfg = authRepair.config;
     ctx.configResult.openAICodexAuthProfileIdMap = authRepair.profileIdMap;
     if (authRepair.changes.length > 0) {
@@ -44,10 +50,16 @@ export async function runAuthProfileMigration(ctx: DoctorHealthFlowContext): Pro
     ...(ctx.env ? { env: ctx.env } : {}),
     prompter: ctx.prompter,
     runtime: ctx.runtime,
+    reportFindings: (findings: readonly HealthFinding[], warnings?: readonly string[]) => {
+      recordDoctorHealthWarnings(ctx, warnings ? [] : findings, warnings);
+      renderStructuredHealthFindings(ctx, findings);
+    },
   });
   await maybeMigrateLegacyPluginModelCatalogs(migrationContext());
   const modelsBeforeRepair = ctx.cfg.agents?.defaults?.models;
   const legacyOAuthRepair = await maybeRepairLegacyOAuthProfileIds(ctx.cfg, ctx.prompter);
+  recordDoctorHealthWarnings(ctx, legacyOAuthRepair.findings);
+  renderStructuredHealthFindings(ctx, legacyOAuthRepair.findings);
   ctx.cfg = legacyOAuthRepair.config;
   if (legacyOAuthRepair.retiredProfileCleanupPlans.length > 0) {
     ctx.configResult.retiredAuthProfileCleanupPlans = [
@@ -81,7 +93,20 @@ export async function runAuthProfileMigration(ctx: DoctorHealthFlowContext): Pro
   ctx.authProfileHealthReady = authProfileHealthReady;
   ctx.gatewayDetails = buildGatewayConnectionDetails({ config: ctx.cfg });
   if (ctx.gatewayDetails.remoteFallbackNote) {
-    note(ctx.gatewayDetails.remoteFallbackNote, "Gateway");
+    const findings: HealthFinding[] = [
+      {
+        checkId: "core/doctor/gateway-remote-config",
+        severity: "warning",
+        category: "fix-now",
+        message:
+          "Gateway remote mode is configured without a remote Gateway URL; Doctor fell back to the local address.",
+        fixHint:
+          "Set gateway.remote.url to your remote Gateway address, or set gateway.mode=local if this host owns the Gateway. Run openclaw gateway status after correcting the configuration.",
+        docsUrl: "https://docs.openclaw.ai/gateway/remote",
+      },
+    ];
+    recordDoctorHealthWarnings(ctx, [], [ctx.gatewayDetails.remoteFallbackNote]);
+    renderStructuredHealthFindings(ctx, findings);
   }
 }
 
