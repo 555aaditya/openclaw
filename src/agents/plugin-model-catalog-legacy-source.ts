@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { hasErrnoCode } from "../infra/errno.js";
 
 export type PluginModelCatalogMigrationIssue = {
   kind:
@@ -30,7 +31,7 @@ export function readLegacyPluginModelCatalog(pathname: string): string | null {
   try {
     return readFileSync(pathname, "utf8");
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+    if (hasErrnoCode(error, "ENOENT")) {
       return null;
     }
     throw error;
