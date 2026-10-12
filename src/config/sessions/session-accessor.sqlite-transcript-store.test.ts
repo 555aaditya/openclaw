@@ -229,23 +229,47 @@ describe("SQLite exact transcript rewrite", () => {
       name: "model projection",
       metadata: { modelPromptProjection: { version: 1, text: "changed" } },
     },
+    {
+      name: "unchanged first projection",
+      metadata: { modelPromptProjection: { version: 1, text: "question" } },
+    },
+    {
+      name: "existing model projection",
+      beforeMetadata: {
+        steerTargetRunId: "running-turn",
+        modelPromptProjection: { version: 1, text: "previous" },
+      },
+      metadata: { modelPromptProjection: { version: 1, text: "question" } },
+    },
     { name: "branch parent", envelope: { parentId: null } },
   ])(
     "invalidates admissions when steering metadata accompanies $name changes",
-    async ({ message, metadata, envelope }) => {
-      await withRewriteFixture(({ snapshot, rewrite }) => {
-        const before = snapshot();
-        rewrite({
-          ...rewriteEvents[1],
-          ...envelope,
-          message: {
-            ...rewriteEvents[1].message,
-            ...message,
-            __openclaw: { steerTargetRunId: "running-turn", ...metadata },
-          },
-        });
-        expect(snapshot().generation).not.toBe(before.generation);
-      });
+    async ({ message, metadata, envelope, beforeMetadata }) => {
+      await withRewriteFixture(
+        ({ snapshot, rewrite }) => {
+          const before = snapshot();
+          rewrite({
+            ...rewriteEvents[1],
+            ...envelope,
+            message: {
+              ...rewriteEvents[1].message,
+              ...message,
+              __openclaw: { steerTargetRunId: "running-turn", ...metadata },
+            },
+          });
+          expect(snapshot().generation).not.toBe(before.generation);
+        },
+        beforeMetadata
+          ? [
+              rewriteEvents[0],
+              {
+                ...rewriteEvents[1],
+                message: { ...rewriteEvents[1].message, __openclaw: beforeMetadata },
+              },
+              rewriteEvents[2],
+            ]
+          : rewriteEvents,
+      );
     },
   );
 

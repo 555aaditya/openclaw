@@ -1,5 +1,6 @@
 // User turn transcript tests cover transcript extraction for user turns.
 import path from "node:path";
+import { readSessionTranscriptRawDelta } from "openclaw/plugin-sdk/session-transcript-runtime";
 import { castAgentMessage } from "openclaw/plugin-sdk/test-fixtures";
 import { afterAll, describe, expect, it } from "vitest";
 import { createDeferred } from "../../test/helpers/promise.js";
@@ -218,10 +219,12 @@ describe("user turn transcript persistence", () => {
       });
       const steered = await steering.persistApproved();
       const text = "prepend\n\nreplacement model prompt\n\nappend";
+      const initialGeneration = recorder.getAdmissionReceipt()?.generation;
       const captured = await recorder.captureModelPromptProjection!(text, () => {});
       recorder.markSentToProvider?.();
       const generation = recorder.getAdmissionReceipt()?.generation;
 
+      expect(generation).not.toBe(initialGeneration);
       expect(captured.content).toBe(input.text);
       expect(captured.timestamp).toBe(input.timestamp);
       expect(await recorder.captureModelPromptProjection!(text, () => {})).toEqual(captured);
@@ -238,6 +241,41 @@ describe("user turn transcript persistence", () => {
         reopened.captureModelPromptProjection!("different hook output", () => {}),
       ).rejects.toThrow("cannot be changed");
       await expect(readTranscriptMessages(target)).resolves.toEqual([captured, steered?.message]);
+
+      const bootstrap = await readSessionTranscriptRawDelta(target);
+      expect(bootstrap.kind).toBe("page");
+      if (bootstrap.kind !== "page") {
+        throw new Error(`expected bootstrap page, got ${bootstrap.kind}`);
+      }
+      expect(bootstrap.hasMore).toBe(false);
+      const nextInput = { text: "next ordinary prompt", idempotencyKey: "projection:next" };
+      const next = createUserTurnTranscriptRecorder({ input: nextInput, target });
+      await next.persistApproved();
+      const nextCaptured = await next.captureModelPromptProjection!(nextInput.text, () => {});
+      next.markSentToProvider?.();
+      expect(await next.captureModelPromptProjection!(nextInput.text, () => {})).toEqual(
+        nextCaptured,
+      );
+      await expect(
+        next.captureModelPromptProjection!("later enrichment", () => {}),
+      ).rejects.toThrow("cannot be changed");
+      const resumed = await readSessionTranscriptRawDelta({ ...target, cursor: bootstrap.cursor });
+      expect(resumed.kind, JSON.stringify(resumed)).toBe("page");
+      if (resumed.kind !== "page") {
+        throw new Error(`expected resumed page, got ${resumed.kind}`);
+      }
+      expect(resumed.hasMore).toBe(false);
+      expect(resumed.events.map(({ event }) => event)).toEqual([
+        expect.objectContaining({
+          type: "message",
+          message: expect.objectContaining({
+            content: nextInput.text,
+            __openclaw: expect.objectContaining({
+              modelPromptProjection: { version: 1, text: nextInput.text },
+            }),
+          }),
+        }),
+      ]);
     });
 
     it("uses the persisted target's redaction for capture, dispatch, and reopened replay", async () => {

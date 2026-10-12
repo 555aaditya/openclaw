@@ -143,6 +143,10 @@ or copy it onto the media's new user message. Compaction retires the projection
 with its source message, and reset or replacement cannot transfer it to another
 turn. No separate table, cache, sidecar, or configuration option is added.
 
+First capture of identical string content keeps the transcript generation. A
+cursor already past that message does not revisit the no-op annotation; enriched
+capture and projection edits still invalidate admissions and cursors.
+
 Messages without the field retain legacy replay behavior. The version-1 reader
 rejects malformed or unsupported projection formats before provider dispatch
 and asks for a compatible OpenClaw version or a new session. This stored-shape

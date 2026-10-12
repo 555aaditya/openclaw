@@ -7,32 +7,47 @@ import {
   transcriptEventContextEligibility,
 } from "./session-transcript-projection-append.js";
 
-export function isSteerConfirmationRewrite(beforeJson: string, afterJson: string): boolean {
+export function isUserTurnBookkeepingRewrite(beforeJson: string, afterJson: string): boolean {
   const before: unknown = JSON.parse(beforeJson);
   const after: unknown = JSON.parse(afterJson);
-  for (const event of [before, after]) {
-    if (
-      !isRecord(event) ||
-      event.type !== "message" ||
-      !isRecord(event.message) ||
-      event.message.role !== "user"
-    ) {
-      return false;
-    }
-    const metadata = event.message["__openclaw"];
-    if (metadata !== undefined && !isRecord(metadata)) {
-      return false;
-    }
-    if (event === after) {
-      const target = normalizePersistedSteerTargetRunId(metadata?.steerTargetRunId);
-      if (!target || target !== metadata?.steerTargetRunId) {
-        return false;
-      }
-    }
-    if (metadata) {
-      delete metadata.steerTargetRunId;
+  if (
+    !isRecord(before) ||
+    !isRecord(after) ||
+    before.type !== "message" ||
+    after.type !== "message" ||
+    !isRecord(before.message) ||
+    !isRecord(after.message) ||
+    before.message.role !== "user" ||
+    after.message.role !== "user"
+  ) {
+    return false;
+  }
+  const beforeMetadata = before.message["__openclaw"];
+  const afterMetadata = after.message["__openclaw"];
+  if (
+    (beforeMetadata !== undefined && !isRecord(beforeMetadata)) ||
+    (afterMetadata !== undefined && !isRecord(afterMetadata))
+  ) {
+    return false;
+  }
+  const unchangedPromptCapture =
+    typeof before.message.content === "string" &&
+    !Object.hasOwn(beforeMetadata ?? {}, "modelPromptProjection") &&
+    isDeepStrictEqual(afterMetadata?.modelPromptProjection, {
+      version: 1,
+      text: before.message.content,
+    });
+  const target = normalizePersistedSteerTargetRunId(afterMetadata?.steerTargetRunId);
+  if (!unchangedPromptCapture && (!target || target !== afterMetadata?.steerTargetRunId)) {
+    return false;
+  }
+  const field = unchangedPromptCapture ? "modelPromptProjection" : "steerTargetRunId";
+  for (const message of [before.message, after.message]) {
+    const metadata = message["__openclaw"];
+    if (isRecord(metadata)) {
+      delete metadata[field];
       if (Object.keys(metadata).length === 0) {
-        delete event.message["__openclaw"];
+        delete message["__openclaw"];
       }
     }
   }
