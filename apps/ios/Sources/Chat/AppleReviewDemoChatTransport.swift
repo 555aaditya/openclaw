@@ -22,6 +22,8 @@ enum ScreenshotFixtureMode {
     static let gatewayName = "OpenClaw Gateway"
     static let gatewayAddress = "Gateway on local network"
     static let gatewayID = "screenshot-fixture-gateway"
+    // Verbatim transcript marker asserted by the child-session screenshot test.
+    static let helperSessionMarker = "OPENCLAW_HELPER_SESSION"
     static var reactionsEnabled: Bool {
         !ProcessInfo.processInfo.arguments.contains("--openclaw-no-reactions-fixture")
     }
@@ -511,7 +513,7 @@ private actor LocalFixtureChatStore {
         {
             [Self.message(
                 role: "assistant",
-                text: "OPENCLAW_HELPER_SESSION",
+                text: ScreenshotFixtureMode.helperSessionMarker,
                 timestamp: 1,
                 transcriptMessageID: "fixture-helper-answer")]
         } else {
