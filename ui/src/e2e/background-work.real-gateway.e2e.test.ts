@@ -261,11 +261,11 @@ suite.define(() => {
         await childOpen.click();
         const detail = subagents.locator(".chat-subagent-detail");
         await detail.getByText(fixture.childTask, { exact: false }).waitFor();
-        proof.stage = "observe child in-flight history response";
+        proof.stage = "observe child in-flight startup response";
         const history = payloadOf(
           await wire.waitFor(
             (rpc) =>
-              rpc.request.method === "chat.history" &&
+              rpc.request.method === "chat.startup" &&
               paramsOf(rpc).sessionKey === childKey &&
               Boolean((rpc.response.payload as ChatHistoryResult | undefined)?.inFlightRun),
           ),

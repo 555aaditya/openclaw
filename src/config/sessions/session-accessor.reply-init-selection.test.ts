@@ -23,7 +23,9 @@ it.each(["durable", "memory"])(
           ? `agent:main:dashboard:incognito-${suffix.toLowerCase()}`
           : `agent:main:${suffix}`;
       const sessionKey = sessionKeyFor("reply");
-      const parentKey = sessionKeyFor("matrix:group:!Parent:example.org");
+      const parentKey = sessionKeyFor(
+        backend === "memory" ? "parent" : "matrix:group:!Parent:example.org",
+      );
       const storedParentKey = sessionKeyFor("stored-parent");
       const unrelatedKey = sessionKeyFor(
         backend === "memory" ? "unrelated" : "matrix:group:!parent:example.org",
