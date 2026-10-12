@@ -17,10 +17,8 @@ import { seedSessionActorTranscriptContext } from "../config/sessions/session-ac
 import { withActor } from "../config/sessions/session-actor-worker.test-support.js";
 import type { PreparedSessionTranscriptHydration } from "../config/sessions/session-history-read.types.js";
 import { runSqliteImmediateTransactionSync } from "../infra/sqlite-transaction.js";
-import {
-  readActivitySummaryBatchFromReplica,
-  readActivitySummarySource,
-} from "./session-activity-summary-source.js";
+import { readActivitySummaryBatchFromReplica } from "./session-activity-summary-replica.js";
+import { readActivitySummarySource } from "./session-activity-summary-source.js";
 import { readActivitySummaryBatch } from "./session-activity-summary-source.worker.js";
 
 // mock-isolation: The fixture owns its database and transcript maintenance lifetime.

@@ -118,6 +118,7 @@ describe("SQLite trajectory runtime retention", () => {
     await addSession("history");
     const database = openOpenClawAgentDatabase({ agentId: "main", path: sqlitePath() });
     const scopes = [sqliteSessionIdWriteScope("session-1"), sqliteSessionIdWriteScope("history")];
+    using _ = { [Symbol.dispose]: retainAgentDatabase(database.db) };
     const token = readSqliteDatabaseScopedWriteToken(database.db, scopes);
     expect(token).toBeTypeOf("string");
     appendSqliteTrajectoryRuntimeEvents({ sessionId: "history", storePath }, [

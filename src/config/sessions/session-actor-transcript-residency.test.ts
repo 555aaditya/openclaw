@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
 import { trackSqliteStatementExecutions } from "../../../test/helpers/sqlite-statement-execution-counter.js";
-import { readActivitySummaryBatchFromReplica } from "../../gateway/session-activity-summary-source.js";
+import { readActivitySummaryBatchFromReplica } from "../../gateway/session-activity-summary-replica.js";
 import { runSqliteImmediateTransactionSync } from "../../infra/sqlite-transaction.js";
 import { readSessionTranscriptBoundedActiveContextCore } from "./session-accessor.sqlite-active-context.js";
 import {
