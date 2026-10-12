@@ -425,11 +425,7 @@ it.for([
           | undefined;
         try {
           await withinTest(
-            awaitGateBeforeSettlement(
-              blockStarted.promise,
-              dispatch,
-              "dispatch settled before the first transport started",
-            ),
+            awaitGateBeforeSettlement(blockStarted.promise, dispatch, "first transport start"),
             signal,
           );
           otherDispatch = dispatchInboundMessageWithBufferedDispatcher({

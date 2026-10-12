@@ -61,7 +61,6 @@ import {
 import type { BoardWriteOperations, BoardWriteOutcome } from "./sqlite-board-operations.js";
 import {
   ensureBoardSchema,
-  hasBoardSession,
   applyBoardOpsToDatabase,
   putBoardWidgetInDatabase,
   grantBoardWidgetInDatabase,
@@ -140,7 +139,11 @@ export class SqliteBoardStore implements BoardStore {
     target: BoardSessionTarget,
     options: BoardWriteOptions | undefined,
     operationLabel: string,
-    native: (database: OpenClawAgentDatabase, sessionKey: string) => T,
+    native: (
+      database: OpenClawAgentDatabase,
+      sessionKey: string,
+      expectedSession: BoardSessionIdentity | undefined,
+    ) => T,
     worker: (
       scope: Pick<SqliteWorkerStore<BoardWriteOperations>, "execute">,
       sessionKey: string,
@@ -221,13 +224,7 @@ export class SqliteBoardStore implements BoardStore {
               return runOpenClawAgentWriteTransaction(
                 (current) => {
                   assertPreparedCurrent();
-                  if (!hasBoardSession(current, resolved.sessionKey, expectedSession)) {
-                    throw new BoardValidationError(
-                      "invalid_operation",
-                      "board session changed; retry",
-                    );
-                  }
-                  const value = native(current, resolved.sessionKey);
+                  const value = native(current, resolved.sessionKey, expectedSession);
                   assertPreparedCurrent();
                   return value;
                 },
@@ -470,7 +467,8 @@ export class SqliteBoardStore implements BoardStore {
       target,
       options,
       "board.apply-ops",
-      (database, sessionKey) => applyBoardOpsToDatabase(database, sessionKey, capturedOps),
+      (database, sessionKey, expectedSession) =>
+        applyBoardOpsToDatabase(database, sessionKey, capturedOps, expectedSession),
       (scope, sessionKey) =>
         scope.execute({
           type: "boards.applyOps",
@@ -504,12 +502,13 @@ export class SqliteBoardStore implements BoardStore {
       params,
       options,
       "board.put-widget",
-      (database, sessionKey) =>
+      (database, sessionKey, expectedSession) =>
         putBoardWidgetInDatabase(
           database,
           sessionKey,
           normalizeBoardWidgetPutParams(preparedParams, sessionKey),
           viewGeneration,
+          expectedSession,
         ),
       (scope, sessionKey) =>
         scope.execute({
@@ -538,8 +537,16 @@ export class SqliteBoardStore implements BoardStore {
       target,
       options,
       "board.grant-widget",
-      (database, sessionKey) =>
-        grantBoardWidgetInDatabase(database, sessionKey, name, decision, revision, instanceId),
+      (database, sessionKey, expectedSession) =>
+        grantBoardWidgetInDatabase(
+          database,
+          sessionKey,
+          name,
+          decision,
+          revision,
+          instanceId,
+          expectedSession,
+        ),
       (scope, sessionKey) =>
         scope.execute({
           type: "boards.grant",

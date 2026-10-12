@@ -45,10 +45,17 @@ it("publishes agent mutations before acknowledging immediate session and roster 
   const releasePublication = createDeferred();
   const creationBookkeepingCompleted = createDeferred();
   let publicationHeld = false;
+  let publicationStage = "not entered";
+  let cliOutputReceived = false;
   let phase = "preparing fixture";
   const operatorStages: string[] = [];
   onTestFailed(() => {
-    console.error("Agent config readiness failure", { phase, publicationHeld, operatorStages });
+    console.error("Agent config readiness failure", {
+      phase,
+      publicationStage,
+      cliOutputReceived,
+      operatorStages,
+    });
   });
   let reloadScheduler: GatewayScheduler | undefined;
   const startReloader = configReload.startGatewayConfigReloader;
@@ -61,10 +68,14 @@ it("publishes agent mutations before acknowledging immediate session and roster 
         onHotReload: async (...args) => {
           if (!publicationHeld && args[1].agents?.entries?.[agentId]) {
             publicationHeld = true;
+            publicationStage = "held";
             publicationEntered.resolve();
             await releasePublication.promise;
           }
-          return options.onHotReload(...args);
+          publicationStage = "applying runtime configuration";
+          const result = await options.onHotReload(...args);
+          publicationStage = "runtime configuration applied";
+          return result;
         },
       });
     });
@@ -152,6 +163,9 @@ it("publishes agent mutations before acknowledging immediate session and roster 
           });
           phase = "creating agent through CLI with publication held";
           const creation = runCliProcessChild({
+            onStdout: () => {
+              cliOutputReceived = true;
+            },
             nodeArgs: [
               ...cliEntrypoint,
               "agents",
@@ -216,16 +230,19 @@ it("publishes agent mutations before acknowledging immediate session and roster 
           } finally {
             releasePublication.resolve();
           }
-          phase = "awaiting creation and immediate session publication";
+          phase = "awaiting CLI creation completion";
           await expect(creation).resolves.toMatchObject({ agentId });
+          phase = "reading immediate agent roster";
           await expect(client.request("agents.list", {})).resolves.toMatchObject({
             agents: expect.arrayContaining([expect.objectContaining({ id: agentId })]),
           });
+          phase = "awaiting immediate session creation";
           const createdSession = await withinTest(firstSession, signal);
           if (!createdSession.ok) {
             throw createdSession.error;
           }
           expect(createdSession.value).toMatchObject({ key });
+          phase = "reading immediate session roster";
           await expect(client.request("sessions.list", { agentId })).resolves.toMatchObject({
             sessions: expect.arrayContaining([expect.objectContaining({ key })]),
           });
