@@ -8,6 +8,6 @@
     "noUnusedParameters": true,
     "tsBuildInfoFile": ".artifacts/tsgo-cache/ui.tsbuildinfo"
   },
-  "include": ["ui/**/*", "packages/mermaid-renderer/**/*", "src/plugin-sdk/control-ui*.ts", "src/**/*.d.ts", "packages/**/*.d.ts"],
+  "include": ["ui/**/*", "packages/mermaid-renderer/**/*", "extensions/*/src/control-ui.tsx", "src/plugin-sdk/control-ui*.ts", "src/**/*.d.ts", "packages/**/*.d.ts"],
   "exclude": ["node_modules", "dist", "**/dist/**", "**/*.test.ts", "**/*.test.tsx", "**/*test-helpers.ts", "**/*test-harness.ts", "**/*test-support.ts", "test/**"]
 }
