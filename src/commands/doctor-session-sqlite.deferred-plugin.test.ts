@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, aroundEach, describe, expect, it, vi } from "vitest";
 import { SessionStoreMigrationRequiredError } from "../config/sessions/migration-required.js";
 import {
   loadExactSessionEntry,
@@ -18,6 +18,7 @@ import * as directoryDurability from "../infra/directory-durability.js";
 import { readMigrationArtifactIdentity } from "../infra/session-sqlite-migration-artifact.js";
 import { isSessionSqliteMigrationWarning } from "../infra/session-sqlite-migration-issues.js";
 import * as migrationRun from "../infra/session-sqlite-migration-manifest.js";
+import { withSqliteReadOnlyWorkerScope } from "../infra/sqlite-readonly-worker.js";
 import { autoMigrateLegacyState } from "../infra/state-migrations.doctor.js";
 import { EMPTY_LEGACY_SESSION_SURFACES } from "../plugins/legacy-session-surfaces.types.js";
 import { completeAgentDeletionJournalInDatabase } from "../state/agent-deletion-journal.js";
@@ -41,6 +42,7 @@ import { runDoctorSessionSqlite } from "./doctor-session-sqlite.js";
 import { noteSessionTranscriptHealth } from "./doctor-session-transcripts.js";
 
 afterEach(() => vi.restoreAllMocks());
+aroundEach((runTest) => withSqliteReadOnlyWorkerScope(runTest));
 
 type SessionScope = Awaited<ReturnType<typeof seedDeferredPluginSessionSource>>["scope"];
 
