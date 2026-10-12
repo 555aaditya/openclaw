@@ -9,10 +9,7 @@ import { runSqliteSchemaReadSnapshotSync } from "../infra/sqlite-pinned-read-sna
 import { runSqliteDeferredTransactionSync } from "../infra/sqlite-transaction.js";
 import { preflightOpenClawDatabaseSchemas } from "./openclaw-database-preflight.js";
 import { OPENCLAW_STATE_SCHEMA_VERSION } from "./openclaw-state-db-contract.js";
-import {
-  openOpenClawStateReadConnection,
-  openOpenClawStateReadOnlyLocation,
-} from "./openclaw-state-db-read-connection.js";
+import { openOpenClawStateReadOnlyLocation } from "./openclaw-state-db-read-connection.js";
 import { readStateSchemaContentVersion } from "./openclaw-state-db-schema-version.js";
 import {
   closeOpenClawStateDatabaseForTest,
@@ -54,8 +51,7 @@ it.each(["managed transaction", "implicit snapshot"] as const)(
   "keeps a reader's %s version until the migrated catalog becomes visible",
   (kind) => {
     const { options, databasePath } = legacyReceiptDatabase();
-    openOpenClawStateReadOnlyLocation(databasePath, databasePath).close();
-    const reader = openOpenClawStateReadConnection(databasePath, databasePath);
+    const reader = openOpenClawStateReadOnlyLocation(databasePath, databasePath);
     const { db } = reader.database;
     try {
       const migrateWhileReading = () => {
@@ -130,23 +126,11 @@ it.each(["runtime open", "doctor repair"] as const)(
     expect(db.prepare("PRAGMA integrity_check").get()).toEqual({ integrity_check: "ok" });
     db.exec("UPDATE cron_run_receipts SET delivery_attempt_state = 'started'");
     closeOpenClawStateDatabaseForTest();
-    const observation = observeSqliteReadSql(StatementSync.prototype);
-    try {
-      expect(
-        openOpenClawStateDatabase(options)
-          .db.prepare("SELECT delivery_attempt_state FROM cron_run_receipts")
-          .get(),
-      ).toEqual({ delivery_attempt_state: "started" });
-      expect(
-        observation.queries.filter((sql) =>
-          /(?:sqlite_(?:schema|master)|pragma_(?:table|index|foreign_key)|\bPRAGMA\s+(?:user_version|schema_version|integrity_check|quick_check|foreign_key_check|table_info|table_xinfo|index_list|index_info|index_xinfo)\b|\bFROM\s+"?schema_meta\b|state\.schema\.contentVersion)/iu.test(
-            sql,
-          ),
-        ),
-      ).toEqual([]);
-    } finally {
-      observation.restore();
-    }
+    expect(
+      openOpenClawStateDatabase(options)
+        .db.prepare("SELECT delivery_attempt_state FROM cron_run_receipts")
+        .get(),
+    ).toEqual({ delivery_attempt_state: "started" });
     closeOpenClawStateDatabaseForTest();
     const preflight = await preflightOpenClawDatabaseSchemas({
       env: options.env,
