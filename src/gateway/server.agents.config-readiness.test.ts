@@ -48,6 +48,7 @@ it("publishes agent mutations before acknowledging immediate session and roster 
   let publicationStage = "not entered";
   let cliOutputReceived = false;
   let phase = "preparing fixture";
+  let operationFailure: string | undefined;
   const operatorStages: string[] = [];
   onTestFailed(() => {
     console.error("Agent config readiness failure", {
@@ -55,6 +56,7 @@ it("publishes agent mutations before acknowledging immediate session and roster 
       publicationStage,
       cliOutputReceived,
       operatorStages,
+      operationFailure,
     });
   });
   let reloadScheduler: GatewayScheduler | undefined;
@@ -302,6 +304,7 @@ it("publishes agent mutations before acknowledging immediate session and roster 
                         workspace: path.join(state.home, overlapAgentId),
                       }),
                     ).resolves.toMatchObject({ agentId: overlapAgentId });
+                    operatorStages[index] = `creating session for ${overlapAgentId}`;
                     await expect(
                       operator.request("sessions.create", {
                         agentId: "main",
@@ -362,7 +365,11 @@ it("publishes agent mutations before acknowledging immediate session and roster 
               ),
               signal,
             );
+          } catch (error) {
+            operationFailure = String(error);
+            throw error;
           } finally {
+            phase = "disconnecting peer operator";
             await disconnectGatewayClient(peer);
           }
 
@@ -462,12 +469,19 @@ it("publishes agent mutations before acknowledging immediate session and roster 
           ).toBeDefined();
           expect(getRuntimeConfig().agents?.entries?.["saved-only"]).toBeUndefined();
           expect(recoveryRestart).not.toHaveBeenCalled();
+        } catch (error) {
+          operationFailure ??= String(error);
+          throw error;
         } finally {
+          phase = "disconnecting primary operator";
           await disconnectGatewayClient(client);
         }
       } finally {
+        phase = "closing Gateway";
         await server.close();
+        phase = "releasing Gateway owner";
         await owner.release();
+        phase = "releasing test ports";
         await claim.release();
       }
     },

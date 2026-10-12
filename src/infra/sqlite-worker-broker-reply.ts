@@ -114,6 +114,7 @@ export async function dispatchSqliteWorkerJob(
       databaseAdmissionCursors.set(slot, admissionCursor);
     }
     job.request.databaseAdmissions = captureSqliteDatabaseAdmissions(admissionCursor);
+    job.request.timing = job.observation.timing;
     const request = prepareSqliteWorkerRequest(job);
     assertDispatchable();
     job.nativeDispatched = true;
@@ -122,10 +123,16 @@ export async function dispatchSqliteWorkerJob(
       job.dispatchState.dispatched = true;
     }
     job.requestPosted = true;
+    if (request.timing) {
+      request.timing.posted = performance.now();
+    }
     slot.worker.postMessage(
       request,
       request.operationAdmission ? [request.operationAdmission] : [],
     );
+    if (request.timing) {
+      request.timing.postFinished = performance.now();
+    }
   } catch (error) {
     onRejected(error, job.requestPosted === true);
   }
@@ -394,6 +401,9 @@ export function receiveSqliteWorkerReply(
   if (!job || reply.id !== job.request.id) {
     owner.fail(new Error("SQLite worker returned an unexpected response"));
     return;
+  }
+  if (job.observation.timing && reply.timing) {
+    Object.assign(job.observation.timing, reply.timing, { replyReceived: performance.now() });
   }
   if (reply.databaseAdmissions) {
     installSqliteDatabaseAdmissions(reply.databaseAdmissions);

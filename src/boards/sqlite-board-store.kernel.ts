@@ -273,7 +273,7 @@ function deleteRemovedTabs(
   }
 }
 
-export function hasBoardSession(
+function hasBoardSession(
   database: BoardDatabaseHandle,
   sessionKey: string,
   expected?: BoardSessionIdentity,

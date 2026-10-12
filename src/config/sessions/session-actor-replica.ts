@@ -466,7 +466,7 @@ export function readSessionActorCompleteTranscriptFromReplica(params: {
     ? {
         snapshot,
         rows: context.rows,
-        activeLeafEntryId: context.exact.snapshot.activeLeafEntryId,
+        activeLeafEntryId: context.activeLeafEntryId,
       }
     : undefined;
 }

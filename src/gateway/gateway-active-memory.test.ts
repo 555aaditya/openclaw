@@ -86,6 +86,7 @@ describe("Gateway Active Memory", () => {
           }
           signal.throwIfAborted();
           const home = createTempDir("openclaw-active-memory-gateway-");
+          const timelinePath = path.join(home, "gateway-timeline.jsonl");
           const workspace = path.join(home, "workspace");
           const memoryFact = "The user's usual lunch is ginger ramen.";
           const mainReply = "ACTIVE_MEMORY_RUNTIME_PROOF_OK";
@@ -100,7 +101,7 @@ describe("Gateway Active Memory", () => {
           } = {};
           let sessionFound = false;
           let modelSelectionLocked = false;
-          onTestFailed(() => {
+          onTestFailed(async () => {
             const gatewayLogs = instance?.logs() ?? "";
             console.info({
               phase,
@@ -123,8 +124,10 @@ describe("Gateway Active Memory", () => {
               noToolAuthorityObserved: gatewayLogs.includes(
                 "active-memory: recall skipped because this prompt has no turn tool authority",
               ),
-              gatewayLogTail: gatewayLogs.slice(-12_000),
             });
+            console.info("Active Memory Gateway log tail", gatewayLogs.slice(-12_000));
+            const timeline = await fs.readFile(timelinePath, "utf8").catch(() => "unavailable");
+            console.info("Active Memory request timeline tail", timeline.slice(-24_000));
           });
           const server = createServer((request, response) => {
             const handler = (async () => {
@@ -278,6 +281,8 @@ describe("Gateway Active Memory", () => {
               OPENCLAW_BUNDLED_PLUGINS_DIR: undefined,
               OPENCLAW_DISABLE_BUNDLED_PLUGINS: undefined,
               OPENCLAW_GATEWAY_STARTUP_TRACE: "1",
+              OPENCLAW_DIAGNOSTICS: "1",
+              OPENCLAW_DIAGNOSTICS_TIMELINE_PATH: timelinePath,
             },
           });
           signal.throwIfAborted();
