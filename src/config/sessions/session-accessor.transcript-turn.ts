@@ -10,7 +10,7 @@ import {
   resolveTerminalAssistantTranscriptRunId,
 } from "../../sessions/transcript-events.js";
 import { IncognitoSessionMissingError } from "../../state/incognito-session-error.js";
-import { getRuntimeConfig } from "../io.js";
+import { captureRuntimeConfigAsyncReader, getRuntimeConfigSnapshot } from "../io.js";
 import { tryResolveLegacyCompatibilityAgentId } from "../legacy.default-agent-owner.js";
 import type { OpenClawConfig } from "../types.openclaw.js";
 import { resolveSessionStorePathCore } from "./paths.js";
@@ -465,7 +465,8 @@ async function prepareTranscriptTurnTarget(
     );
     return { ...runtimeTarget, storePath: memory.path, env: scope.env };
   }
-  const effectiveConfig = config ?? getRuntimeConfig();
+  const effectiveConfig =
+    config ?? getRuntimeConfigSnapshot() ?? (await captureRuntimeConfigAsyncReader()());
   const agentId = resolveTranscriptTurnAgentId({
     config: effectiveConfig,
     scopeAgentId: scope.agentId,
@@ -490,7 +491,7 @@ async function prepareTranscriptTurnTarget(
     sessionKey,
     storePath,
   });
-  const runtimeTarget = await resolveSessionTranscriptRuntimeTarget(binding, config, {
+  const runtimeTarget = await resolveSessionTranscriptRuntimeTarget(binding, effectiveConfig, {
     keyFormat: "agent-qualified",
   });
   // Keep the selected locator and private storage namespace across the await.
