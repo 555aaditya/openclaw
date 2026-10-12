@@ -19,6 +19,7 @@ export const databaseWorkerCoreTestFiles = [
   "src/acp/translator.permission-relay.test.ts",
   "src/acp/translator.session-setup.test.ts",
   "src/acp/translator.stop-reason.test.ts",
+  "src/agents/scheduled-message-invocation.test.ts",
   "src/agents/embedded-agent-runner.prompt-cache.test.ts",
   "src/agents/embedded-agent-runner.responses-cold-prefix.test.ts",
   "src/agents/workspace-sandbox.test.ts",

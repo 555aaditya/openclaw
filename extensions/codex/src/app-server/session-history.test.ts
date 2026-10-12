@@ -832,7 +832,10 @@ describe("readCodexMirroredSessionHistoryMessages", () => {
 it.each([false, true])(
   "bounds prepared Codex history without truncating native evidence (incognito=%s)",
   async (incognito) => {
-    const fixture = await writeSqliteSession({ incognito });
+    const fixture = await writeSqliteSession({
+      incognito,
+      ...(incognito ? { sessionKey: "agent:main:dashboard:incognito-Bounded-MiXeD" } : {}),
+    });
     const source = await SessionManager.openAsync(fixture.sessionTarget);
     for (let index = 0; index < 30; index += 1) {
       await source.appendMessageAsync({

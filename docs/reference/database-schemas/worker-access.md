@@ -2781,9 +2781,14 @@ at transaction and commit admission. Committed progress and identity notificatio
 precede the reset callback, and accepted callbacks settle inside the physical
 writer FIFO. Lost replies use the acknowledged candidate without repeating the
 builder or SQL; uncertain outcomes remain fenced. Bundled reply initialization
-uses a typed upsert descriptor while its projection and opaque transaction
+uses a typed upsert descriptor and reuses the lifecycle planner's selected-row
+snapshot for ordinary commits, including declared related rows and the stored
+model parent. Parent-fork preparation and creation-authority binding retain their
+earlier snapshot before effects. The existing lifecycle commit checks its
+prepared row and preserves intervening same-session metadata. Opaque transaction
 callbacks retain their existing owner. Native-binding settlement remains a
-separate contract; incognito resets use the memory actor. These changes require no schema, durability,
+separate contract; incognito resets use the memory actor's selected rows. These
+changes require no schema, durability,
 retention, configuration, or update migration.
 
 Durable Goal management commits its current session reread, reducer, receipt replay,
@@ -5602,7 +5607,10 @@ Replay eligibility and events share one statement, including complete empty
 replays. Plugin-state keyed lookup and lookupMany reuse the same bounded receipt
 postimages and tombstones as observe when every key is resident. Cold batches
 still read through the worker; expiry and committed native or worker writes
-invalidate or replace cached values. Returned JSON remains caller-owned.
+invalidate or replace cached values. Publication identities use SQLite's text-key
+normalization, so accepted lone UTF-16 surrogates and their replacement-character
+aliases share invalidation. Public comparison-token scopes remain unchanged.
+Returned JSON remains caller-owned.
 
 Namespace lists share that cache owner with a 64-namespace, 8 MiB bound. A
 committed write invalidates its namespace, unknown settlement invalidates the
