@@ -528,7 +528,7 @@ Usage:
   scripts/pr review-tests <PR> <test-file> [<test-file> ...]
   scripts/pr prepare-init <PR>
   scripts/pr prepare-correction-init <PR>
-  scripts/pr prepare-correction-review-init <PR>
+  scripts/pr prepare-correction-review-init <PR> [--recover-incoming <metadata.json> <metadata.env> <review.json>]
   scripts/pr prepare-baseline-refresh <PR> --expected-head <SHA> --baseline <SHA> [--resolutions <file>]
   scripts/pr prepare-baseline-successor <PR> --expected-head <SHA> --expected-tree <OID> --expected-review <OID> --predecessor-head <SHA> --predecessor-binding <OID> --baseline <SHA> [--resolutions <file>]
   scripts/pr prepare-validate-commit <PR>
@@ -871,8 +871,8 @@ main() {
       prepare_baseline_successor "$@"
       ;;
     prepare-correction-review-init)
-      [ "$#" -eq 1 ] || { usage; exit 2; }
-      prepare_correction_review_init "$1"
+      { [ "$#" -eq 1 ] || { [ "$#" -eq 5 ] && [ "$2" = --recover-incoming ]; }; } || { usage; exit 2; }
+      prepare_correction_review_init "$@"
       ;;
     prepare-init)
       local pr="${1-}"

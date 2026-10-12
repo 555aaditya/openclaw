@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join, delimiter } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../helpers/temp-dir.js";
@@ -294,6 +294,61 @@ describePosix("native successor source admission entry", () => {
       f.pass("lock-recover", [lock, "--confirmed-no-running-tools"]);
     }
     expect(archives()).toMatchObject(retained);
+
+    // Exercise the public recovery entry after two signed successor generations.
+    // Git publication is real and local; the retained receipt and hosted review
+    // are fixture observations, never a live GitHub approval or gate verdict.
+    const published = f.git(f.worktree, "rev-parse", "HEAD");
+    f.git(f.worktree, "push", "origin", "HEAD:refs/heads/topic");
+    const incomingMeta = JSON.parse(readFileSync(f.local("pr-meta.json"), "utf8"));
+    const inputs = ["pr-meta.json", "pr-meta.env", "review.json"];
+    const originals = [
+      "correction-incoming-meta.json",
+      "correction-incoming-meta.env",
+      "correction-original-review.json",
+    ];
+    for (const [index, name] of inputs.entries()) {
+      writeFileSync(f.local(`original-${name}`), readFileSync(f.local(name)));
+      rmSync(f.local(originals[index]!));
+    }
+    writeFileSync(
+      f.local("pr-meta.json"),
+      JSON.stringify({ ...incomingMeta, headRefOid: published }),
+    );
+    writeFileSync(
+      f.local("pr-meta.env"),
+      `PR_NUMBER=42\nPR_HEAD=topic\nPR_HEAD_SHA=${published}\n`,
+    );
+    const hostedReview = validReview(published);
+    hostedReview.issueValidation.status = "valid";
+    writeFileSync(f.local("review.json"), JSON.stringify(hostedReview));
+    writeFileSync(
+      f.local("prepare-push-result.env"),
+      `PUSH_PREP_HEAD_SHA=${published}\nPUSH_LOCAL_PREP_HEAD_SHA=${published}\nPUSHED_FROM_SHA=${incomingMeta.headRefOid}\nPUSH_REPLACED_HOSTED_ANCESTRY=false\nPR_HEAD_SHA_AFTER_PUSH=${published}\n`,
+    );
+    const context = readFileSync(f.local("prep-context.env"));
+    const binding = readFileSync(f.local("prepare-baseline.json"));
+    const hostedMetadata = readFileSync(f.local("pr-meta.json"));
+    writeFileSync(join(f.worktree, "docs/ci-followup.md"), "post-publication correction\n");
+    f.git(f.worktree, "add", "docs/ci-followup.md");
+    f.git(f.worktree, "commit", "-qm", "fix: published CI follow-up");
+    const candidate = f.git(f.worktree, "rev-parse", "HEAD");
+    f.pass("prepare-correction-review-init", [
+      "--recover-incoming",
+      ...inputs.map((name) => f.local(`original-${name}`)),
+    ]);
+    const recovered = JSON.parse(readFileSync(f.local("correction-review.json"), "utf8"));
+    expect(recovered.pr.headSha).toBe(candidate);
+    expect(recovered.recommendation).toBe("NEEDS WORK");
+    expect(recovered.correction.incomingHeadSha).toBe(incomingMeta.headRefOid);
+    expect(recovered.correction.publishedReview.headSha).toBe(published);
+    expect(readFileSync(f.local("prep-context.env"))).toEqual(context);
+    expect(readFileSync(f.local("prepare-baseline.json"))).toEqual(binding);
+    expect(readFileSync(f.local("pr-meta.json"))).toEqual(hostedMetadata);
+    expect(archives()).toMatchObject(retained);
+    // Subsequent initialization consumes the retained originals, not supplied paths.
+    f.pass("prepare-correction-review-init");
+    expect(f.git(f.worktree, "rev-parse", "HEAD")).toBe(candidate);
   });
   it.each(["branch", "closed", "head", "work", "branch-after-live", "closed-after-live"])(
     "preserves transition custody when %s authority changes during replay",
