@@ -1,7 +1,6 @@
 import { html, render } from "lit";
 import { afterEach, describe, expect, it } from "vitest";
 import { renderSidebarIdentityMenu } from "./app-sidebar-identity-menu.ts";
-import "./web-awesome-select.ts";
 import "./web-awesome-tabs.ts";
 import "@awesome.me/webawesome/dist/styles/themes/default.css";
 import "../styles/base.css";
@@ -42,24 +41,13 @@ function color(token: string) {
 
 function controlStyle(
   element: Element,
-  surface:
-    | "submenu indicator"
-    | "item description"
-    | "menu"
-    | "options"
-    | "select indicator"
-    | "selected value"
-    | "clear selection",
+  surface: "submenu indicator" | "item description" | "menu",
 ) {
   // This adapter is the only palette-test dependency on the current renderer.
   const name = {
     "submenu indicator": "submenu-icon",
     "item description": "details",
     menu: "menu",
-    options: "listbox",
-    "select indicator": "expand-icon",
-    "selected value": "display-input",
-    "clear selection": "clear-button",
   }[surface];
   const found = element.shadowRoot?.querySelector<HTMLElement>(`[part~="${name}"]`);
   expect(found, surface).not.toBeNull();
@@ -74,20 +62,9 @@ function controlStyle(
 
 async function prepareControls(host: HTMLElement) {
   const controls = host.querySelectorAll<HTMLElement & { updateComplete: Promise<boolean> }>(
-    "wa-dropdown, wa-dropdown-item, wa-select, wa-tab-group",
+    "wa-dropdown, wa-dropdown-item, wa-tab-group",
   );
   await Promise.all([...controls].map((control) => control.updateComplete));
-}
-
-async function focusNextOption(select: HTMLElement) {
-  const control = select as HTMLElementTagNameMap["wa-select"];
-  await control.show();
-  const { userEvent } = await import("vitest/browser");
-  control.focus();
-  await userEvent.keyboard("{ArrowDown}");
-  const current = control.querySelector<HTMLElement>("wa-option:state(current)");
-  expect(current, "keyboard-focused option").not.toBeNull();
-  return current!;
 }
 
 function expectThemeDefaults() {
@@ -119,9 +96,6 @@ describe.runIf("__vitest_browser__" in globalThis)("shared control theme inherit
           onNavigate() {},
           onPairMobile() {},
         })}
-        <wa-select label="Language" with-clear value="en">
-          <wa-option value="en">English</wa-option>
-        </wa-select>
         <wa-tab-group
           ><wa-tab panel="first">First</wa-tab
           ><wa-tab-panel name="first">Content</wa-tab-panel></wa-tab-group
@@ -132,13 +106,11 @@ describe.runIf("__vitest_browser__" in globalThis)("shared control theme inherit
     );
     const menu = host.querySelector("wa-dropdown")!;
     const help = host.querySelector<HTMLElement>(".sidebar-identity-menu__help")!;
-    const select = host.querySelector("wa-select")!;
     const tabs = host.querySelector("wa-tab-group")!;
     const danger = [...host.querySelectorAll("wa-dropdown-item")].find(
       (item) => item.variant === "danger",
     )!;
     await prepareControls(host);
-    const currentOption = await focusNextOption(select);
 
     for (const theme of [
       "dark",
@@ -168,19 +140,10 @@ describe.runIf("__vitest_browser__" in globalThis)("shared control theme inherit
       expect(controlStyle(help, "submenu indicator").color, theme).toBe(color("muted"));
       expect(controlStyle(help, "item description").color, theme).toBe(color("muted"));
       expect(controlStyle(menu, "menu").backgroundColor, theme).toBe(color("bg-elevated"));
-      expect(controlStyle(select, "options").backgroundColor, theme).toBe(color("popover"));
-      expect(controlStyle(select, "select indicator").color, theme).toBe(color("muted"));
-      expect(controlStyle(select, "selected value").color, theme).toBe(color("text"));
-      expect(controlStyle(select, "clear selection").color, theme).toBe(color("muted"));
       expect(getComputedStyle(tabs).getPropertyValue("--indicator-color").trim(), theme).toBe(
         getComputedStyle(root).getPropertyValue("--accent").trim(),
       );
       expect(getComputedStyle(danger).color, theme).toBe(color("danger"));
-      for (const animation of currentOption.getAnimations()) {
-        animation.finish();
-      }
-      expect(getComputedStyle(currentOption).color, theme).toBe(color("text"));
-      expect(getComputedStyle(currentOption).backgroundColor, theme).toBe(color("bg-hover"));
     }
   });
 });

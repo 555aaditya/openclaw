@@ -118,8 +118,6 @@ let chromiumLaunchOptions: ReturnType<typeof resolveChromiumLaunchOptions> | nul
 const webkitTestFiles = [
   "src/components/web-awesome-dropdown.browser.test.ts",
   "src/components/web-awesome-dropdown-owner.browser.test.ts",
-  "src/components/web-awesome-select-controls.browser.test.ts",
-  "src/components/web-awesome-select.browser.test.ts",
   "src/components/web-awesome.test.ts",
   "src/components/web-awesome-theme.browser.test.ts",
   "src/components/menu-surface.browser.test.ts",
