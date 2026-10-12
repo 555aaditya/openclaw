@@ -1,5 +1,11 @@
 // These consumers need the host-owned SQLite broker, which runs in forked processes.
 export const databaseWorkerCoreTestFiles = [
+  "src/cli/plugin-invocation-resources.owner.test.ts",
+  "src/gateway/config-revision-token.test.ts",
+  "src/gateway/local-request-context.session-archive.test.ts",
+  "src/gateway/local-request-context.session-rename.test.ts",
+  "src/plugin-sdk/provider-catalog-runtime.test.ts",
+  "test/talk-browser-defaults.test.ts",
   "src/acp/event-ledger.prepared.test.ts",
   "src/acp/event-ledger.test.ts",
   "src/acp/translator.cancel-scoping.test.ts",
@@ -894,6 +900,8 @@ export const databaseWorkerCoreTestFiles = [
   "src/agents/tools/swarm-tools.integration.test.ts",
   "src/audit/execution-owner-lifecycle-receipts.test.ts",
   "src/claws/provenance-runtime-read.async.test.ts",
+  "src/claws/provenance-runtime-read.test.ts",
+  "src/claws/tool-policy-runtime.integration.test.ts",
   "src/projects/project-registry.test.ts",
   "src/commands/doctor-project-clone-shape.test.ts",
   "src/auto-reply/reply/commands-plugins.install.test.ts",

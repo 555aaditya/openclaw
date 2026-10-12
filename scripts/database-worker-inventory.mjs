@@ -152,15 +152,6 @@ const reviewed = new Map([
     },
   ],
   [
-    "src/gateway/operator-approval-store.boot.ts",
-    {
-      tier: "T2",
-      priority: 99,
-      evidence:
-        "Only server-aux-handlers.ts calls orphan closure and terminal pruning during Gateway boot admission; ordinary approval operations use the worker.",
-    },
-  ],
-  [
     "src/gateway/worker-environments/store.ts",
     { priority: 7, evidence: "Environment access listing and prepared-pool maintenance" },
   ],
@@ -1286,17 +1277,6 @@ const reviewedOperations = new Map([
     ],
   ],
   [
-    "src/gateway/config-revision-token.ts",
-    [
-      {
-        tier: "T2",
-        operations: ["loadOrCreateConfigRevisionKey", "loadGatewayConfigRevisionKey"],
-        evidence:
-          "Gateway construction at server-kernel-request-runtime.ts:48; local-request-context.ts:107 also initializes it via agents/agent-command-local.ts:61 for standalone commands/boot. Existing Gateway scopes return before local allocation at local-request-context.ts:237. Request hashing captures the key and performs no SQL.",
-      },
-    ],
-  ],
-  [
     "src/gateway/github-personal-publication-store.ts",
     [
       {
@@ -1788,9 +1768,19 @@ const reviewedOperations = new Map([
     [
       {
         tier: "T2",
-        operations: ["terminalizeBoundDeliveryQueueEntry", "pruneOrdinaryDeliveryReceipts"],
+        operations: [
+          "terminalizeBoundDeliveryQueueEntry",
+          "pruneOrdinaryDeliveryReceipts",
+          "pruneDeliveryQueueTombstones",
+        ],
         evidence:
-          "Native migration: src/infra/outbound/delivery-queue-migration.ts:308; schema backfill: src/state/openclaw-state-db-delivery-queue-backfill.ts:93. Other terminalization/pruning callers are delivery-queue.worker.ts:117,316,387,457 and session-delivery-queue.worker.ts:264.",
+          "Native migration: src/infra/outbound/delivery-queue-migration.ts:308; schema backfill: src/state/openclaw-state-db-delivery-queue-backfill.ts:93. Bounded pruning also serves native namespace migration through delivery-queue-sqlite.kernel.ts:192. Other terminalization/pruning callers are delivery-queue.worker.ts:117,316,387,457 and session-delivery-queue.worker.ts:264.",
+      },
+      {
+        tier: "W",
+        operations: ["pruneDeliveryQueueTombstoneAges"],
+        evidence:
+          "Sole runtime caller: src/infra/delivery-queue.worker.ts:480 → delivery-queue-sqlite.kernel.ts:409.",
       },
     ],
   ],
@@ -2255,9 +2245,9 @@ const reviewedOperations = new Map([
     [
       {
         tier: "T3",
-        operations: ["repairOpenClawAgentDatabasePathAliases"],
+        operations: ["repairOpenClawAgentDatabasePaths"],
         evidence:
-          "src/commands/doctor-agent-database-paths.ts:24 under Doctor repair; registered health runner src/flows/doctor-health-contribution-runners.state.ts:122.",
+          "Only noteDoctorAgentDatabasePathHealth calls the repair, within its Doctor transaction. Entry: runStateIntegrityHealth in src/flows/doctor-health-contribution-runners.state.ts.",
       },
     ],
   ],
@@ -2443,6 +2433,7 @@ const workerModules = new Set([
   "src/config/sessions/session-pending-input-history.kernel.ts", // History-read worker owns all remaining callers.
   "src/config/sessions/session-pending-input-history-reconcile.ts", // Pending-input execution registry dispatches only in openclaw-agent-execution.worker.ts.
   "src/infra/session-cost-usage-cache-read.ts", // Usage-cache reads run only in session-transcript.worker.ts.
+  "src/claws/provenance-runtime-read.kernel.ts", // Only openclaw-state-worker-runtime.ts reads consent rows; host imports are types.
   "src/state/user-profiles.worker.ts", // Registered profile operations; Gateway submits commands through user-profile-operations.ts.
   "src/state/user-profile-writes.worker.ts", // Shared-state profile mutation implementation; loaded by the profile worker only.
   "src/state/user-profile-read.worker.ts", // Shared-state read registry owns catalog identity and channel identity reads.
