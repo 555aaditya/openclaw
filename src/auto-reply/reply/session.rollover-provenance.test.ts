@@ -8,14 +8,20 @@ import {
   writeSessionStore as writeSessionStoreFast,
 } from "./test/session.test-support.js";
 
-vi.mock("../../plugins/hook-runner-global.js", () => ({ getGlobalHookRunner: () => null }));
-vi.mock("../../plugin-sdk/browser-maintenance.js", () => ({
+vi.mock("../../plugins/hook-runner-global.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../plugins/hook-runner-global.js")>()),
+  getGlobalHookRunner: () => null,
+}));
+vi.mock("../../plugin-sdk/browser-maintenance.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../plugin-sdk/browser-maintenance.js")>()),
   closeTrackedBrowserTabsForSessions: vi.fn(async () => 0),
 }));
-vi.mock("../../infra/channel-summary.js", () => ({
+vi.mock("../../infra/channel-summary.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../infra/channel-summary.js")>()),
   buildChannelSummary: vi.fn(async () => [] as string[]),
 }));
-vi.mock("../../agents/prepared-model-catalog.js", () => ({
+vi.mock("../../agents/prepared-model-catalog.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../agents/prepared-model-catalog.js")>()),
   loadProviderScopedThinkingCatalog: vi.fn(async () => []),
   readPreparedModelCatalog: vi.fn(async () => [
     { provider: "minimax", id: "m2.7", name: "M2.7" },

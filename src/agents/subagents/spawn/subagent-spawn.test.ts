@@ -903,7 +903,7 @@ describe("spawnSubagentDirect seam flow", () => {
     { required: false, source: "profile", sandbox: "inherit" },
     { required: true, source: "profile", sandbox: "require" },
   ] as const)(
-    "inherits native child $source provenance without host session SQL ($required) with sandbox=$sandbox",
+    "separates native child creator from $source isolation without host session SQL ($required) with sandbox=$sandbox",
     async ({ required, source, sandbox }) => {
       await withOpenClawTestState({ prefix: "openclaw-spawn-required-parent-" }, async (state) => {
         const storePath = state.statePath("agents", "main", "sessions", "sessions.json");
@@ -945,7 +945,10 @@ describe("spawnSubagentDirect seam flow", () => {
           expect(result.status).toBe("accepted");
           const child = persistedStore?.[result.childSessionKey as string];
           expect(child).toMatchObject({ createdVia: "spawn", parentSessionKey });
-          expect(child?.createdActor).toEqual(required ? actor : { type: "agent", id: "main" });
+          expect(child?.createdActor).toEqual({ type: "agent", id: "main" });
+          expect(child?.sandboxProvenance).toEqual({
+            actor: required ? actor : { type: "agent", id: "main" },
+          });
           expect(child?.sandbox).toBe(required ? "required" : undefined);
           expect(sql.queries.filter(isSessionEntryDataSql)).toEqual([]);
         } finally {

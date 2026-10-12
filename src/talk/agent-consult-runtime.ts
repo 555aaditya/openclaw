@@ -14,11 +14,12 @@ import { getReplyPayloadMetadata } from "../auto-reply/reply-payload.js";
 import type { ReplyToolAuthorityOverlay } from "../auto-reply/reply/reply-run-registry.contracts.js";
 import { resolveLoadedSessionThreadInfo } from "../channels/plugins/session-thread-info-loaded.js";
 import { buildSpawnAuthorityReceipt } from "../config/sessions/session-entry-lineage.js";
+import { projectPublicSessionEntry } from "../config/sessions/session-entry-projection.js";
 import {
   buildSessionCreationStamp,
   inheritSessionCreationPolicy,
 } from "../config/sessions/session-entry-provenance.js";
-import type { SessionEntry } from "../config/sessions/types.js";
+import type { InternalSessionEntry, SessionEntry } from "../config/sessions/types.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { RuntimeLogger, PluginRuntimeCore } from "../plugins/runtime/types-core.js";
 import { parseAgentSessionKey } from "../routing/session-key.js";
@@ -280,21 +281,32 @@ async function resolveRealtimeVoiceAgentConsultSessionEntry(params: {
   const deliveryFields = resolveDeliverySessionFields(params.deliveryContext);
   const requesterSessionKey = params.spawnedBy?.trim();
   const requesterAgentId = parseAgentSessionKey(requesterSessionKey)?.agentId;
+  // Core creation needs the private containment facts intentionally omitted by plugin reads.
+  const { readSessionEntryReadOnlyInWorker } =
+    await import("../config/sessions/session-entry-read-runtime.js");
+  const { patchSessionEntryCore } = await import("../config/sessions/session-accessor.js");
+  params.assertCurrent();
   const requesterEntry = requesterSessionKey
-    ? await params.agentRuntime.session.getSessionEntryAsync({
-        agentId: requesterAgentId ?? params.agentId,
-        storePath: params.agentRuntime.session.resolveStorePath(params.cfg.session?.store, {
+    ? await readSessionEntryReadOnlyInWorker(
+        {
           agentId: requesterAgentId ?? params.agentId,
-        }),
-        sessionKey: requesterSessionKey,
-        readConsistency: "latest",
-      })
+          storePath: params.agentRuntime.session.resolveStorePath(params.cfg.session?.store, {
+            agentId: requesterAgentId ?? params.agentId,
+          }),
+          sessionKey: requesterSessionKey,
+          readConsistency: "latest",
+        },
+        params.assertCurrent,
+      )
     : undefined;
+  params.assertCurrent();
   const creationStamp = buildSessionCreationStamp({
     via: "talk",
     ...inheritSessionCreationPolicy(
       requesterEntry,
-      requesterSessionKey ? { type: "agent", id: requesterSessionKey } : undefined,
+      requesterEntry?.sandbox !== "required" && requesterSessionKey
+        ? { type: "agent", id: requesterSessionKey }
+        : undefined,
     ),
   });
   // A consult child records the same lineage receipt as a native spawn: the requester's
@@ -311,10 +323,12 @@ async function resolveRealtimeVoiceAgentConsultSessionEntry(params: {
     (!requesterAgentId || requesterAgentId === params.agentId);
   let forkDecisionWarning: string | undefined;
 
-  let patched: SessionEntry | null = null;
+  let patched: InternalSessionEntry | null = null;
   if (shouldFork) {
     const { forkSessionEntryFromParent } = await import("../auto-reply/reply/session-fork.js");
+    params.assertCurrent();
     const forked = await forkSessionEntryFromParent({
+      commitGuard: params.assertCurrent,
       storePath: params.storePath,
       parentSessionKey: requesterSessionKey,
       agentId: params.agentId,
@@ -341,17 +355,10 @@ async function resolveRealtimeVoiceAgentConsultSessionEntry(params: {
     }
   }
 
-  patched ??= await params.agentRuntime.session.prepareSessionEntryPatch({
-    agentId: params.agentId,
-    storePath: params.storePath,
-    sessionKey: params.sessionKey,
-    fallbackEntry: {
-      ...creationStamp,
-      sessionId: "",
-      updatedAt: now,
-    },
-    authority: { kind: "host", assertCurrent: params.assertCurrent },
-    prepare: (entry) => {
+  patched ??= await patchSessionEntryCore(
+    { agentId: params.agentId, storePath: params.storePath, sessionKey: params.sessionKey },
+    (entry) => {
+      params.assertCurrent();
       if (entry.sessionId?.trim()) {
         return { ...deliveryFields, updatedAt: now };
       }
@@ -362,12 +369,16 @@ async function resolveRealtimeVoiceAgentConsultSessionEntry(params: {
         updatedAt: now,
       };
     },
-  });
+    {
+      fallbackEntry: { ...creationStamp, sessionId: "", updatedAt: now },
+      workerGuard: { assertCurrent: params.assertCurrent },
+    },
+  );
   if (forkDecisionWarning) {
     params.logger.warn(`[talk] ${forkDecisionWarning}`);
   }
   if (patched?.sessionId?.trim()) {
-    return patched;
+    return projectPublicSessionEntry(patched);
   }
   throw new Error("realtime voice agent consult session could not be initialized");
 }

@@ -125,7 +125,8 @@ test("sessions.create atomically persists trusted visible-spawn tool policy with
     inheritedToolPolicyVersion: 1,
     inheritedToolAllow: ["read", "sessions_spawn"],
     inheritedToolDeny: ["exec"],
-    createdActor: actor,
+    createdActor: { type: "agent", id: "main" },
+    sandboxProvenance: { actor },
   });
   expect(child?.sandbox).toBe("required");
 });

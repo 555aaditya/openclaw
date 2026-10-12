@@ -3,10 +3,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readSessionMessageIdentity } from "../../packages/gateway-client/src/session-projection-message-identity.js";
 import type { RunEmbeddedAgentParams } from "../agents/embedded-agent-runner/run/params.js";
 import { resolveAgentRunSessionTarget } from "../agents/run-session-target.js";
+import { resolveSandboxRuntimeStatus } from "../agents/sandbox/runtime-status.js";
 import { guardSessionManager } from "../agents/session-tool-result-guard-wrapper.js";
 import { SessionManager } from "../agents/sessions/index.js";
 import { makeAgentAssistantMessage } from "../agents/test-helpers/agent-message-fixtures.js";
-import { loadSessionEntry, replaceSessionEntry } from "../config/sessions/session-accessor.js";
+import {
+  appendTranscriptMessage,
+  loadSessionEntry,
+  replaceSessionEntry,
+} from "../config/sessions/session-accessor.js";
+import type { SessionEntry } from "../config/sessions/types.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { resolveMemoryAudienceFromEntry } from "../plugins/memory-audience.js";
 import { createRuntimeAgent } from "../plugins/runtime/runtime-agent.js";
@@ -148,19 +154,20 @@ describe("voice consult concrete store ownership", () => {
   });
 
   it.each([
-    { parentAgentId: "main", locked: false },
-    { parentAgentId: "other", locked: false },
-    { parentAgentId: "main", locked: true },
-  ])(
-    "keeps parent $parentAgentId policy and routing in its configured store (locked=$locked)",
-    async ({ parentAgentId, locked }) => {
+    { parentAgentId: "main", locked: false, contextMode: "isolated" },
+    { parentAgentId: "main", locked: false, contextMode: "fork" },
+    { parentAgentId: "other", locked: false, contextMode: "isolated" },
+    { parentAgentId: "main", locked: true, contextMode: "isolated" },
+  ] as const)(
+    "keeps parent $parentAgentId isolation and routing in its configured store ($contextMode, locked=$locked)",
+    async ({ parentAgentId, locked, contextMode }) => {
       const cfg: OpenClawConfig = {
         agents: {
           entries: { main: { workspace: state.workspaceDir }, other: {} },
           ownership: "explicit",
         },
       };
-      const runEmbeddedAgent = vi.fn(async () => ({
+      const runEmbeddedAgent = vi.fn(async (_params: RunEmbeddedAgentParams) => ({
         payloads: [{ text: "Checked" }],
         meta: { durationMs: 0 },
       }));
@@ -181,6 +188,9 @@ describe("voice consult concrete store ownership", () => {
           updatedAt: 1,
           createdVia: "operator",
           createdActor,
+          sandboxProvenance: {
+            actor: { type: "human", source: "profile", id: "retained-isolation" },
+          },
           sandbox: "required",
           modelSelectionLocked: locked,
           delivery: normalizeSessionDeliveryState({
@@ -188,8 +198,49 @@ describe("voice consult concrete store ownership", () => {
           }),
         },
       );
+      if (contextMode === "fork") {
+        await appendTranscriptMessage(
+          {
+            agentId: parentAgentId,
+            sessionKey: spawnedBy,
+            sessionId: "parent-session",
+            storePath: parentStore,
+          },
+          {
+            eventId: "consult-parent-input",
+            message: {
+              role: "user",
+              content: [{ type: "text", text: "Retained consult context" }],
+              timestamp: 2,
+            },
+            now: 2,
+          },
+        );
+      }
       const sessionKey = "agent:main:voice-child";
-      const storePath = state.statePath("consult", "sessions.sqlite");
+      const storePath =
+        contextMode === "fork" ? parentStore : state.statePath("consult", "sessions.sqlite");
+      runEmbeddedAgent.mockImplementation(async () => {
+        expect(
+          resolveSandboxRuntimeStatus({
+            cfg: { ...cfg, session: { store: storePath } },
+            agentId: "main",
+            sessionKey,
+          }),
+        ).toMatchObject({
+          sandboxRequired: true,
+          isolationSubject: { kind: "profile", profileId: "retained-isolation" },
+        });
+        return { payloads: [{ text: "Checked" }], meta: { durationMs: 0 } };
+      });
+      expect(
+        await agentRuntime.session.getSessionEntryAsync({
+          agentId: parentAgentId,
+          sessionKey: spawnedBy,
+          storePath: parentStore,
+        }),
+      ).not.toHaveProperty("sandboxProvenance");
+      const prepareToolContext = vi.fn((_entry: SessionEntry) => ({}));
       const consult = consultRealtimeVoiceAgent({
         cfg,
         agentRuntime,
@@ -198,7 +249,8 @@ describe("voice consult concrete store ownership", () => {
         sessionKey,
         storePath,
         spawnedBy,
-        contextMode: "isolated",
+        contextMode,
+        prepareToolContext,
         messageProvider: "webchat",
         lane: "talk",
         runIdPrefix: "test-consult",
@@ -217,8 +269,20 @@ describe("voice consult concrete store ownership", () => {
       expect(loadSessionEntry({ agentId: "main", sessionKey, storePath })).toMatchObject({
         sandbox: "required",
         createdActor,
+        sandboxProvenance: {
+          actor: { type: "human", source: "profile", id: "retained-isolation" },
+        },
         spawnedBy,
       });
+      if (contextMode === "fork") {
+        expect(
+          loadSessionEntry({ agentId: "main", sessionKey, storePath })?.forkSource?.sessionKey,
+        ).toBe(spawnedBy);
+      }
+      expect(prepareToolContext.mock.calls[0]?.[0]).not.toHaveProperty("sandboxProvenance");
+      expect(runEmbeddedAgent.mock.calls[0]?.[0].execSession).not.toHaveProperty(
+        "sandboxProvenance",
+      );
       expect(runEmbeddedAgent).toHaveBeenCalledWith(
         expect.objectContaining({
           messageProvider: "discord",
