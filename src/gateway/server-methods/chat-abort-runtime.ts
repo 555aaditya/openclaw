@@ -24,6 +24,7 @@ import {
   getLatestLiveSubagentRunByChildSessionKey,
   isSubagentRunQueued,
 } from "../../agents/subagents/registry/subagent-registry-read.js";
+import { resolveActiveReplyRunOwnerForSignal } from "../../auto-reply/reply/reply-run-registry.state.js";
 import {
   getAgentEventLifecycleGeneration,
   isAgentEventLifecycleGenerationCurrent,
@@ -450,15 +451,19 @@ function prepareChatSessionAbort(
       !embeddedController &&
       (sessionEmbeddedRun
         ? sessionEmbeddedRun.abort()
-        : params.requiredSessionId === undefined && abortEmbeddedAgentRun(persistedSessionId)),
+        : params.requiredSessionId === undefined &&
+          !authorizedRuns.some(
+            ({ entry }) =>
+              resolveActiveReplyRunOwnerForSignal(entry.controller.signal)?.sessionId ===
+              persistedSessionId,
+          ) &&
+          abortEmbeddedAgentRun(persistedSessionId)),
     );
-    if (embeddedAborted) {
-      result.aborted = true;
-      if (sessionEmbeddedRun) {
-        recordRun(sessionEmbeddedRun.runId);
-        embeddedAbortPersistence = persistSessionAbort(sessionEmbeddedRun);
-        void embeddedAbortPersistence.catch(() => undefined);
-      }
+    result.aborted ||= embeddedAborted;
+    if (embeddedAborted && sessionEmbeddedRun) {
+      recordRun(sessionEmbeddedRun.runId);
+      embeddedAbortPersistence = persistSessionAbort(sessionEmbeddedRun);
+      void embeddedAbortPersistence.catch(() => undefined);
     }
     for (const admitted of admittedRuns) {
       params.assertCurrent?.();
@@ -497,9 +502,7 @@ function prepareChatSessionAbort(
         return;
       }
       params.assertCurrent?.();
-      if (commands.cancel()) {
-        result.aborted = true;
-      }
+      result.aborted = commands.cancel() || result.aborted;
       // With no owned Gateway run, the exact persisted session is the boundary,
       // matching sessions.steer's operator.write behavior for ownerless work.
       abortAdditional();
@@ -553,9 +556,7 @@ function prepareChatSessionAbort(
     // alone must not let the callback abort work intentionally excluded above.
     abortAdditional();
     params.assertCurrent?.();
-    if (commands.cancel()) {
-      result.aborted = true;
-    }
+    result.aborted = commands.cancel() || result.aborted;
     for (const { runId, sessionKey, sessionId, agentId, entry } of authorizedRuns) {
       params.assertCurrent?.();
       if (
@@ -566,7 +567,7 @@ function prepareChatSessionAbort(
       ) {
         continue;
       }
-      const res = abortChatRunById(params.ops, {
+      abortChatRunById(params.ops, {
         runId,
         sessionKey,
         stopReason: params.stopReason,
@@ -578,9 +579,6 @@ function prepareChatSessionAbort(
           );
         },
       });
-      if (res.aborted) {
-        recordRun(runId);
-      }
     }
     const endedAt = Date.now();
     const stopReason = params.stopReason ?? "rpc";
@@ -708,17 +706,14 @@ export async function abortChatRunsForSessionKeyWithPartials(
     failure = { error };
   }
   // Cancellation consumed these buffers before awaited descendant work could fail.
-  let warning: string | undefined;
-  try {
-    warning = await plan.finish();
-  } catch (error) {
+  const warning = await plan.finish().catch((error: unknown) => {
     if (!failure) {
       throw error;
     }
     throw new AggregateError([failure.error, error], "Chat cancellation and persistence failed", {
       cause: error,
     });
-  }
+  });
   if (failure) {
     throw abortedPartialPersistenceError(failure.error, warning);
   }

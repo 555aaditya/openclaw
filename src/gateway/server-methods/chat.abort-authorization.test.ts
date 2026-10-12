@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../test/helpers/promise.js";
+import { createReplyOperation } from "../../auto-reply/reply/reply-run-registry.operation.js";
 import type { QueuedChatTurnEntry } from "../chat-queued-turns.js";
 import { registerWorkerInferenceSessionControl } from "../worker-environments/inference-control-internal.js";
 import { createWorkerInferenceCancellationService } from "../worker-environments/inference-control.test-helpers.js";
@@ -283,6 +284,21 @@ describe("chat.abort authorization", () => {
 });
 
 describe("chat.abort queued-turn contract", () => {
+  it("cancels a controller-less startup reply before the embedded runner exists", async () => {
+    const operation = createReplyOperation({
+      sessionKey: "agent:main:main",
+      sessionId: "main-session",
+      resetTriggered: false,
+    });
+    try {
+      const respond = await abortAsAdmin({ context: createChatAbortContext() });
+      expectAbortPayload(requireLastRespondCall(respond)[1], { aborted: true, runIds: [] });
+      expect(operation.abortSignal.aborted).toBe(true);
+    } finally {
+      operation.complete();
+    }
+  });
+
   it("cancels queued turns before session cleanup and the active run", async () => {
     const order: string[] = [];
     const queuedController = new AbortController();

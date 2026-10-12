@@ -26,6 +26,7 @@ import { isSameSubagentRunOwner } from "../../agents/subagents/registry/subagent
 import { enqueueSwarmRun, releaseSwarmRun } from "../../agents/subagents/swarm/swarm-scheduler.js";
 import { formatAbortReplyText, tryFastAbortFromMessage } from "../../auto-reply/reply/abort.js";
 import { createReplyOperation } from "../../auto-reply/reply/reply-run-registry.js";
+import { isReplyRunAbortableForSignal } from "../../auto-reply/reply/reply-run-registry.state.js";
 import { initSessionState } from "../../auto-reply/reply/session.js";
 import { buildTestCtx } from "../../auto-reply/reply/test-ctx.js";
 import { getRuntimeConfig } from "../../config/config.js";
@@ -36,6 +37,7 @@ import {
   readSessionTranscriptWatermark,
   replaceSessionEntrySync,
 } from "../../config/sessions/session-accessor.js";
+import { getAgentEventLifecycleGeneration } from "../../infra/agent-events.js";
 import { isPathInside } from "../../infra/path-guards.js";
 import { beginSessionWorkAdmission } from "../../sessions/session-lifecycle-admission.js";
 import {
@@ -43,13 +45,19 @@ import {
   openOpenClawAgentDatabase,
 } from "../../state/openclaw-agent-db.js";
 import { listOpenClawAgentDatabasesForTest } from "../../state/openclaw-agent-db.test-support.js";
+import { prepareAgentWaitForTurn } from "../agent-turn/agent-wait.js";
+import { registerChatAbortController } from "../chat-abort.js";
 import { finishFailedGatewayHttpResponse } from "../http-common.js";
+import { createGatewayRequestContext } from "../server-request-context.js";
+import { makeContextParams } from "../server-request-context.test-support.js";
 import { handleSessionKillHttpRequest } from "../session-kill-http.js";
+import { sharingPolicyClient } from "../session-sharing.test-utils.js";
 import * as sessionUtils from "../session-utils.js";
 import {
   handleChatAbortRequest,
   handleChatAbortRequestWithLifecycle,
 } from "./chat-abort-handler.js";
+import { createChatSendDispatchErrorLifecycle } from "./chat-send-dispatch-errors.js";
 import { handleChatSend } from "./chat-send-handler.js";
 import {
   createActiveRun,
@@ -62,6 +70,125 @@ import { sessionMutationHandlers } from "./sessions-mutations.js";
 
 const fixture = useChatAbortRegistryFixture();
 afterEach(() => vi.restoreAllMocks());
+
+it("sessions.delete retains the cancellation reason when a reply dispatch rejects", async ({
+  signal,
+}) => {
+  const sessionKey = "agent:main:direct:delete-reply";
+  const sessionId = "delete-reply-session";
+  const runId = "delete-reply-run";
+  const storePath = path.join(fixture.stateDir, "agents/main/sessions/sessions.json");
+  replaceSessionEntrySync(
+    { storePath, sessionKey },
+    { sessionId, updatedAt: Date.now(), lifecycleRevision: "delete-reply-lifecycle" },
+  );
+  const context = createGatewayRequestContext(makeContextParams());
+  const lifecycleGeneration = getAgentEventLifecycleGeneration();
+  const registration = registerChatAbortController({
+    chatAbortControllers: context.chatAbortControllers,
+    runId,
+    sessionId,
+    sessionKey,
+    agentId: "main",
+    timeoutMs: 60_000,
+    lifecycleGeneration,
+    isAbortable: (entry) => isReplyRunAbortableForSignal(entry.controller.signal),
+  });
+  if (!registration.registered) {
+    throw new Error("Expected an owned reply controller");
+  }
+  const operation = createReplyOperation({
+    sessionKey,
+    sessionId,
+    resetTriggered: false,
+    upstreamAbortSignal: registration.controller.signal,
+  });
+  operation.attachBackend({ kind: "embedded", isStreaming: () => true, cancel: () => {} });
+  const admission = await beginSessionWorkAdmission({
+    scope: storePath,
+    identities: [sessionKey, sessionId],
+    assertAllowed: () => {},
+    onInterrupt: (reason) => {
+      if (!registration.controller.signal.aborted) {
+        registration.entry.abortStopReason = "rpc";
+        registration.controller.abort(reason);
+      }
+    },
+  });
+  const lifecycle = createChatSendDispatchErrorLifecycle({
+    admission: {
+      activeRunAbort: registration,
+      cleanupAdmittedRun: admission.release,
+      lifecycleGeneration,
+      restartSafeAdmission: undefined,
+      sessionBinding: registration.entry,
+    },
+    context,
+    isAgentRunStarted: () => false,
+    isQueuedFollowupEnqueued: () => false,
+    isReplyDispatchRun: () => true,
+    persistUserTurnTranscript: async () => {},
+    session: {
+      agentId: "main",
+      backingSessionId: sessionId,
+      cfg: getRuntimeConfig(),
+      clientRunId: runId,
+      now: Date.now(),
+      rawSessionKey: sessionKey,
+      sessionKey,
+    },
+    terminalizeRestartSafeAdmission: async () => false,
+    userTurnRecorder: { hasPersisted: () => true, isBlocked: () => false },
+  });
+  const dispatched = createDeferred<never>();
+  const rejectDispatch = () => dispatched.reject(operation.abortSignal.reason);
+  operation.abortSignal.addEventListener("abort", rejectDispatch, { once: true });
+  const settled = dispatched.promise
+    .catch(async (error: unknown) => {
+      await lifecycle.handleError(error);
+      await lifecycle.finalize();
+    })
+    .finally(() => operation.complete());
+  const respond = vi.fn();
+  try {
+    await withinTest(
+      Promise.resolve(
+        sessionDeleteHandlers["sessions.delete"]!({
+          params: { key: sessionKey, deleteTranscript: true },
+          context,
+          respond,
+          client: sharingPolicyClient({ scopes: ["operator.admin"] }),
+          req: { type: "req", id: "delete-reply", method: "sessions.delete" },
+          isWebchatConnect: () => false,
+        }),
+      ),
+      signal,
+    );
+    await withinTest(settled, signal);
+    expect(respond).toHaveBeenCalledWith(
+      true,
+      expect.objectContaining({ ok: true, deleted: true }),
+      undefined,
+    );
+    expect(loadExactSessionEntryReadOnly({ storePath, sessionKey })?.entry).toBeUndefined();
+    const observation = await prepareAgentWaitForTurn(context, {
+      runId,
+      timeoutMs: 0,
+    }).wait();
+    expect(observation.result).toMatchObject({
+      runId,
+      stopReason: "delete",
+      endedAt: expect.any(Number),
+    });
+  } finally {
+    operation.abortSignal.removeEventListener("abort", rejectDispatch);
+    dispatched.reject(new Error("test cleanup"));
+    await settled.finally(() => {
+      registration.cleanup();
+      admission.release();
+    });
+  }
+});
 
 async function corruptChildDatabase(storePath: string, sessionKey: string) {
   const database = listOpenClawAgentDatabasesForTest().find(
