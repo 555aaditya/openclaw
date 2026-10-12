@@ -1189,7 +1189,7 @@ async function prepareCliRunContextWithinReadFence(
       skipLocalCredential: skipLocalCredentialEpoch,
     });
     const authBindingFingerprint = params.onSuccessfulAuthBinding
-      ? resolveCliAuthBindingFingerprint({
+      ? await resolveCliAuthBindingFingerprint({
           provider: params.provider,
           config: runConfig,
           agentDir,
@@ -1442,6 +1442,11 @@ async function prepareCliRunContextWithinReadFence(
           modelDisplay,
           agentId: sessionAgentId,
           systemPrompt: builtSystemPrompt,
+          openClawMcpToolNames: systemAgentMcpConfig
+            ? ["openclaw"]
+            : bundleMcpEnabled
+              ? projectedTools.map((tool) => tool.name)
+              : [],
         }) ?? builtSystemPrompt)
       : builtSystemPrompt;
     const turnRuntimeFacts =

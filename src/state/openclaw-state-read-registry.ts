@@ -15,10 +15,7 @@ import {
 import { runSqliteDeferredTransactionSync } from "../infra/sqlite-transaction.js";
 import { readAgentDeletionJournalStatusInDatabase } from "./agent-deletion-journal.read.js";
 import { readProcessAgentDatabaseLeasesInDatabase } from "./openclaw-agent-db-lease-process.read.js";
-import type {
-  OpenClawStateReadCommand,
-  OpenClawStateReadResult,
-} from "./openclaw-state-read.types.js";
+import type { OpenClawStateReadCommand } from "./openclaw-state-read.types.js";
 
 export function readStateRegistryCommand(
   db: DatabaseSync,
@@ -39,7 +36,7 @@ export function readStateRegistryCommand(
         | "sandboxRegistry.browsers";
     }
   >,
-): OpenClawStateReadResult {
+) {
   if (command.type === "preparedPoolPresence.read") {
     return { type: command.type, demand: readPreparedPoolPresenceDemandInDatabase(db) };
   }
