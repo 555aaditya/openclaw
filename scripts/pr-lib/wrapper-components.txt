@@ -1841,6 +1841,7 @@ src/state/openclaw-state-db-task-delivery-recovery.ts
 src/state/openclaw-state-db-transaction.ts
 src/state/openclaw-state-db.paths.ts
 src/state/openclaw-state-db.ts
+src/state/openclaw-state-feature-schema-ensure.ts
 src/state/openclaw-state-feature-schema.ts
 src/state/openclaw-state-lease-acquisition.ts
 src/state/openclaw-state-lease-cleanup.ts

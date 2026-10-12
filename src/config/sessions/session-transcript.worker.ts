@@ -357,7 +357,7 @@ serveOwnedWorkerTasks(
       }
       if (request.kind === "session-row-backfill") {
         const { readSessionRowTranscriptFields } =
-          await import("../../gateway/session-row-transcript-backfill.kernel.js");
+          await import("../../gateway/session-row-transcript-backfill.worker.js");
         return {
           kind: "session-row-backfill" as const,
           fields: readSessionRowTranscriptFields(request.params),
