@@ -55,9 +55,24 @@ export function registerCronCreatorSessionTests(fixture: {
     expectCronSuccess(respond);
   });
 
-  it.each(["agent-runtime", "operator"] as const)(
-    "binds isolated delivery to the canonical creating conversation for %s",
-    async (caller) => {
+  it.each([
+    {
+      caller: "agent-runtime",
+      payload: { kind: "agentTurn", message: "report", toolsAllow: ["*"] },
+    },
+    { caller: "operator", payload: { kind: "agentTurn", message: "report", toolsAllow: ["*"] } },
+    {
+      caller: "agent-runtime",
+      payload: { kind: "script", script: "return { notify: 'report' };", toolsAllow: [] },
+    },
+    {
+      caller: "operator",
+      payload: { kind: "script", script: "return { notify: 'report' };", toolsAllow: [] },
+    },
+    { caller: "operator", payload: { kind: "command", argv: ["echo", "report"] } },
+  ])(
+    "captures the fallback conversation for isolated $caller $payload.kind jobs",
+    async ({ caller, payload }) => {
       const sourceConversation = {
         sessionKey: "agent:ops:conversation",
         sessionId: "creating-session",
@@ -73,7 +88,7 @@ export function registerCronCreatorSessionTests(fixture: {
       });
       const { context, respond } = await invokeCron(
         "cron.add",
-        agentTurnCronParams({ agentId: "ops", sessionKey: "conversation" }),
+        agentTurnCronParams({ agentId: "ops", sessionKey: "conversation", payload }),
         caller === "agent-runtime"
           ? { client: callerClient("ops", undefined, sourceConversation.sessionKey) }
           : undefined,
