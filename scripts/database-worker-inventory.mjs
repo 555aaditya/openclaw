@@ -2400,10 +2400,16 @@ const reviewedOperations = new Map([
     "src/trajectory/runtime-store.sqlite.ts",
     [
       {
+        tier: "W",
+        operations: ["appendSqliteTrajectoryRuntimeEventsWithWriter"],
+        evidence:
+          "Durable sinks dispatch trajectory.events.append through openclaw-agent-execution-operations.ts. Incognito sinks append through the session actor memory backend without SQLite. Synchronous fixture append and retention exist only in runtime-store.test-support.ts.",
+      },
+      {
         tier: "T3",
         operations: ["loadSqliteTrajectoryRuntimeEventRowsSync"],
         evidence:
-          "Native row reads are CLI-only: commands/sessions-tail.ts tail/follow and trajectory export. The other caller is session-history-read-operation.worker.ts. The runtime-testing SDK exports the async loader, not this native row reader. Native append and retention remain T1.",
+          "Native row reads are CLI-only: commands/sessions-tail.ts tail/follow. The other caller is session-history-read-operation.worker.ts. Trajectory export and the runtime-testing SDK use the async loader, not this native row reader.",
       },
     ],
   ],
@@ -2424,6 +2430,7 @@ const reviewedOperations = new Map([
   ],
 ]);
 const workerModules = new Set([
+  "src/trajectory/runtime-retention.sqlite.ts", // SQL runs only through agent execution, session-history read, and entry-patch workers; runtime-retention.ts uses only the pure due/state helpers.
   "src/config/sessions/session-reaction-store.read.ts", // Only the history worker reader calls reaction SQL; synchronous test inspection lives in test support.
   "src/config/sessions/session-sharing-store.native.ts", // Membership mutations run only in session-sharing-store.worker.ts; host imports are type-only.
   "src/config/sessions/session-accessor.sqlite-participants.native.ts", // Participant mutation SQL runs only through the sharing worker; host imports are type-only.

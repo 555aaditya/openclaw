@@ -1,5 +1,4 @@
 import path from "node:path";
-import { isMainThread } from "node:worker_threads";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import {
@@ -39,10 +38,7 @@ import {
   withOpenClawAgentDatabaseRuntime,
 } from "../state/openclaw-agent-db.js";
 import type { AgentDatabaseRequestExecutionSource } from "../state/openclaw-agent-execution-admission-contract.js";
-import {
-  captureOpenClawAgentDatabaseExecution,
-  supportsOpenClawAgentDatabaseExecution,
-} from "../state/openclaw-agent-execution.js";
+import { captureOpenClawAgentDatabaseExecution } from "../state/openclaw-agent-execution.js";
 import {
   runOpenClawAgentWorkerWrite,
   runOpenClawAgentWriteAdmission,
@@ -53,7 +49,6 @@ import type {
   SerializedTrajectoryEvent,
   SqliteTrajectoryRuntimeAppend,
 } from "./runtime-store.contract.js";
-import { appendSqliteTrajectoryRuntimeEvents } from "./runtime-store.sqlite.js";
 import type { TrajectoryEvent } from "./types.js";
 
 type TrajectoryRuntimeSinkParams = {
@@ -248,43 +243,27 @@ function buildSqliteTrajectoryRuntimeSink(
           discardPrevious = false;
           const events = [...batch.events.keys()];
           try {
-            if (isMainThread && supportsOpenClawAgentDatabaseExecution(databaseOptions)) {
-              await appendSqliteTrajectoryRuntimeEventsInWorker(
-                databaseOptions,
-                database,
-                {
-                  events,
-                  discardPrevious: batch.discardPrevious,
-                  maxRuntimeBytes: params.maxRuntimeFileBytes,
-                  sessionId: marker.sessionId,
-                },
-                params.assertCommitAllowed,
-                (outcome) => {
-                  if (outcome === "committed") {
-                    inFlight = undefined;
-                  } else {
-                    unsettledAppend = new SqliteWorkerError(
-                      "Trajectory append outcome is unknown; pending events cannot be replayed",
-                      "outcome-unknown",
-                    );
-                  }
-                },
-              );
-            } else {
-              appendSqliteTrajectoryRuntimeEvents(
-                {
-                  agentId: marker.agentId,
-                  discardPrevious: batch.discardPrevious,
-                  env: databaseOptions.env,
-                  maxRuntimeBytes: params.maxRuntimeFileBytes,
-                  sessionId: marker.sessionId,
-                  storePath: database.path,
-                  assertCommitAllowed: params.assertCommitAllowed,
-                },
+            await appendSqliteTrajectoryRuntimeEventsInWorker(
+              databaseOptions,
+              database,
+              {
                 events,
-              );
-              inFlight = undefined;
-            }
+                discardPrevious: batch.discardPrevious,
+                maxRuntimeBytes: params.maxRuntimeFileBytes,
+                sessionId: marker.sessionId,
+              },
+              params.assertCommitAllowed,
+              (outcome) => {
+                if (outcome === "committed") {
+                  inFlight = undefined;
+                } else {
+                  unsettledAppend = new SqliteWorkerError(
+                    "Trajectory append outcome is unknown; pending events cannot be replayed",
+                    "outcome-unknown",
+                  );
+                }
+              },
+            );
           } finally {
             if (inFlight === batch && !unsettledAppend) {
               inFlight = undefined;

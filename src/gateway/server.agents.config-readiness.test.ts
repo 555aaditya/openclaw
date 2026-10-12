@@ -3,8 +3,12 @@ import "../agents/prepared-model-runtime.js";
 import "./server-start.js";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { assert, expect, it, onTestFinished, vi } from "vitest";
-import { createDeferred, withinTest } from "../../test/helpers/promise.js";
+import { assert, expect, it, onTestFailed, onTestFinished, vi } from "vitest";
+import {
+  awaitGateBeforeSettlement,
+  createDeferred,
+  withinTest,
+} from "../../test/helpers/promise.js";
 import { localStateOwnerFixtureEntrypoint } from "../cli/cli-entrypoint.test-support.js";
 import { runCliProcessChild } from "../cli/cli-process-child.test-helpers.js";
 import {
@@ -41,6 +45,11 @@ it("publishes agent mutations before acknowledging immediate session and roster 
   const releasePublication = createDeferred();
   const creationBookkeepingCompleted = createDeferred();
   let publicationHeld = false;
+  let phase = "preparing fixture";
+  const operatorStages: string[] = [];
+  onTestFailed(() => {
+    console.error("Agent config readiness failure", { phase, publicationHeld, operatorStages });
+  });
   let reloadScheduler: GatewayScheduler | undefined;
   const startReloader = configReload.startGatewayConfigReloader;
   const reloaderSpy = vi
@@ -108,6 +117,7 @@ it("publishes agent mutations before acknowledging immediate session and roster 
         allowInTests: true,
       });
       assert.isNotNull(owner);
+      phase = "starting Gateway";
       const server = await startGatewayServer(claim.port, {
         gatewayStateOwner: owner,
         bind: "loopback",
@@ -116,7 +126,9 @@ it("publishes agent mutations before acknowledging immediate session and roster 
         hotReloadRecovery: recoveryRestart,
       });
       try {
+        phase = "settling Gateway startup";
         await server.startupSettled;
+        phase = "connecting operator";
         const client = await connectGatewayClient({
           url: `ws://127.0.0.1:${claim.port}`,
           token,
@@ -138,6 +150,7 @@ it("publishes agent mutations before acknowledging immediate session and roster 
           await expect(fs.stat(path.join(state.home, "workspace-retired"))).rejects.toMatchObject({
             code: "ENOENT",
           });
+          phase = "creating agent through CLI with publication held";
           const creation = runCliProcessChild({
             nodeArgs: [
               ...cliEntrypoint,
@@ -203,6 +216,7 @@ it("publishes agent mutations before acknowledging immediate session and roster 
           } finally {
             releasePublication.resolve();
           }
+          phase = "awaiting creation and immediate session publication";
           await expect(creation).resolves.toMatchObject({ agentId });
           await expect(client.request("agents.list", {})).resolves.toMatchObject({
             agents: expect.arrayContaining([expect.objectContaining({ id: agentId })]),
@@ -216,6 +230,7 @@ it("publishes agent mutations before acknowledging immediate session and roster 
             sessions: expect.arrayContaining([expect.objectContaining({ key })]),
           });
 
+          phase = "updating agent";
           await expect(
             client.request("agents.update", {
               agentId,
@@ -235,6 +250,7 @@ it("publishes agent mutations before acknowledging immediate session and roster 
             client.request("sessions.create", { agentId, key: `agent:${agentId}:after-update` }),
           ).resolves.toMatchObject({ key: `agent:${agentId}:after-update` });
 
+          phase = "deleting agent";
           await expect(
             client.request("agents.delete", { agentId, deleteFiles: false }),
           ).resolves.toMatchObject({ ok: true, agentId });
@@ -249,6 +265,7 @@ it("publishes agent mutations before acknowledging immediate session and roster 
           }
           expect(getRuntimeConfig().agents?.entries?.[agentId]).toBeUndefined();
 
+          phase = "overlapping agent mutations";
           const peer = await connectGatewayClient({
             url: `ws://127.0.0.1:${claim.port}`,
             token,
@@ -261,6 +278,7 @@ it("publishes agent mutations before acknowledging immediate session and roster 
                   const otherOperator = index === 0 ? peer : client;
                   for (let round = 0; round < 4; round += 1) {
                     const overlapAgentId = `overlap-${index}-${round}`;
+                    operatorStages[index] = `creating ${overlapAgentId}`;
                     await expect(
                       operator.request("agents.create", {
                         name: overlapAgentId,
@@ -273,6 +291,7 @@ it("publishes agent mutations before acknowledging immediate session and roster 
                         key: `agent:main:${overlapAgentId}`,
                       }),
                     ).resolves.toMatchObject({ key: `agent:main:${overlapAgentId}` });
+                    operatorStages[index] = `deleting ${overlapAgentId}`;
                     const deletion = { agentId: overlapAgentId, deleteFiles: false };
                     if (round === 0) {
                       const results = await Promise.allSettled([
@@ -349,6 +368,7 @@ it("publishes agent mutations before acknowledging immediate session and roster 
           });
           try {
             for (const reason of ["storage-error", "lifecycle-busy"] as const) {
+              phase = `hot reload refusal: ${reason}`;
               written = createDeferred();
               const unavailableAgent = `unavailable-${reason}`;
               awaitingAgent = unavailableAgent;
@@ -361,7 +381,18 @@ it("publishes agent mutations before acknowledging immediate session and roster 
                   (value) => ({ value }),
                   (error: unknown) => ({ error }),
                 );
-              await withinTest(written.promise, signal);
+              await withinTest(
+                awaitGateBeforeSettlement(
+                  written.promise,
+                  failedCreation.then((result) => {
+                    if ("error" in result) {
+                      throw result.error;
+                    }
+                  }),
+                  "Agent creation settled before writing its configuration",
+                ),
+                signal,
+              );
               const acquire = vi
                 .spyOn(pluginLifecycleLease, "withPluginLifecycleLease")
                 .mockRejectedValue(
@@ -394,6 +425,7 @@ it("publishes agent mutations before acknowledging immediate session and roster 
             await scheduler.stop();
           }
 
+          phase = "saving with reload disabled";
           const saved = (await readConfigFileSnapshot()).sourceConfig;
           await state.writeConfig({
             ...saved,

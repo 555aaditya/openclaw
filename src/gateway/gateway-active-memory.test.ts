@@ -123,6 +123,7 @@ describe("Gateway Active Memory", () => {
               noToolAuthorityObserved: gatewayLogs.includes(
                 "active-memory: recall skipped because this prompt has no turn tool authority",
               ),
+              gatewayLogTail: gatewayLogs.slice(-12_000),
             });
           });
           const server = createServer((request, response) => {

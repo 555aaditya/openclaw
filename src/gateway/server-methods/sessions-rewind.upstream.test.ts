@@ -4,7 +4,6 @@ import { expect, it, vi } from "vitest";
 import { ErrorCodes } from "../../../packages/gateway-protocol/src/index.js";
 import { awaitGateBeforeSettlement } from "../../../test/helpers/promise.js";
 import { resolveSessionStorePathCore } from "../../config/sessions/paths.js";
-import { waitForSessionTranscriptIndexReconcile } from "../../config/sessions/session-transcript-reconcile.js";
 import * as workerAdmission from "../../infra/sqlite-worker-operation-admission.js";
 import { createEmptyPluginRegistry } from "../../plugins/registry-empty.js";
 import { setActivePluginRegistry } from "../../plugins/runtime.js";
@@ -64,7 +63,6 @@ it.each(
     await withOpenClawTestState({ label: "message-cut-upstream-commit" }, async (testState) => {
       await testState.writeConfig(cfg);
       const scope = await seedMessageCutSource();
-      await waitForSessionTranscriptIndexReconcile({ agentId: scope.agentId });
       const before = await readMutationStorage(scope);
       const shared = openOpenClawStateDatabase();
       await closeOpenClawStateDatabaseAsync();
