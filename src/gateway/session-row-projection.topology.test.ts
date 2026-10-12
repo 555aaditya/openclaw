@@ -42,6 +42,7 @@ import { retainSessionListForegroundWork } from "./session-projection-work.js";
 import { bindSessionRowProjection } from "./session-row-projection-access.js";
 import { ready } from "./session-row-projection-record.js";
 import { createSessionRowProjection } from "./session-row-projection.js";
+import { listProjectedSessions } from "./session-utils-list.js";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -152,6 +153,50 @@ function holdTopologyRead() {
   });
   return { entered, release };
 }
+
+it("keeps newly configured agents visible when config changes during topology discovery", async ({
+  signal,
+}) => {
+  await withOpenClawTestState({ scenario: "minimal" }, async () => {
+    let cfg: OpenClawConfig = { agents: { entries: { main: {} } } };
+    setRuntimeConfigSnapshot(cfg);
+    const query = { agentId: "work", key: "agent:work:topology" };
+    replaceSessionEntrySync(
+      { agentId: query.agentId, sessionKey: query.key },
+      { sessionId: "work-topology", updatedAt: 1 },
+    );
+    const releaseForeground = retainSessionListForegroundWork();
+    const projection = await createSessionRowProjection({
+      cfg,
+      getConfig: () => cfg,
+      modelCatalog: [],
+    });
+    const { entered, release } = holdTopologyRead();
+    sessionChanges.emit({ all: true, scope: "stores" });
+    const pending = projection.prepareMembership();
+    const settled = Promise.allSettled([pending]);
+    try {
+      await withinTest(
+        awaitGateBeforeSettlement(entered.promise, pending, "Topology discovery did not start"),
+        signal,
+      );
+      cfg = { agents: { entries: { main: {}, work: {} } } };
+      setRuntimeConfigSnapshot(cfg);
+      release.resolve();
+      await pending;
+      const listed = await listProjectedSessions({
+        projection,
+        opts: { configuredAgentsOnly: true },
+      });
+      expect(listed.sessions.map((row) => row.key)).toContain(query.key);
+    } finally {
+      release.resolve();
+      await settled;
+      projection.dispose();
+      releaseForeground();
+    }
+  });
+});
 
 it("publishes an initially unseen retired-agent event from its default store", async () => {
   await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
