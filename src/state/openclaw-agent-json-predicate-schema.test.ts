@@ -82,9 +82,9 @@ describe("agent JSON predicate migration", () => {
       `{"type":"message","nested":${"[".repeat(1001)}0${"]".repeat(1001)}}`,
     ];
     const insertEvent = database.prepare(`INSERT INTO transcript_events
-      (session_id, seq, event_json, created_at) VALUES ('history', ?, ?, 1)`);
+      (rowid, session_id, seq, event_json, created_at) VALUES (?, 'history', ?, ?, 1)`);
     for (const [index, event] of events.entries()) {
-      insertEvent.run(index + 1, event);
+      insertEvent.run(-100 - index, index + 1, event);
     }
     const compressedEvent = '{"type":"message","message":{"role":"user"}}';
     const compressedBytes = zstdCompressSync(Buffer.from(compressedEvent));
@@ -110,6 +110,7 @@ describe("agent JSON predicate migration", () => {
         (advancement_key, engine_id, session_id, payload_json, created_at) VALUES (?, 'engine', 'history', ?, 1)`)
         .run(String(index), JSON.stringify(payload));
     }
+    expect(() => migrateAgentJsonPredicatesInTransaction(database)).toThrow(/active transaction/u);
     database.exec("BEGIN IMMEDIATE");
     migrateAgentJsonPredicatesInTransaction(database);
     database.exec("COMMIT");
@@ -132,6 +133,12 @@ describe("agent JSON predicate migration", () => {
       FROM transcript_events WHERE session_id = 'history' AND seq = ?`);
     for (const [index, event] of [...events, compressedEvent].entries()) {
       expect(readEvent.get(index + 1), event).toEqual(deriveTranscriptPredicateFields(event));
+      if (index < events.length) {
+        expect(
+          database.prepare("SELECT rowid FROM transcript_events WHERE seq = ?").get(index + 1)
+            ?.rowid,
+        ).toBe(-100 - index);
+      }
     }
     expect(
       database
@@ -160,7 +167,34 @@ describe("agent JSON predicate migration", () => {
     }
   });
 
-  it.each(["commit", "rollback", "without-outbox"] as const)(
+  it("backfills large sparse histories without narrowing rowids", () => {
+    using database = new DatabaseSync(":memory:");
+    seedSchema(database);
+    const insert = database.prepare(`INSERT INTO transcript_events
+      (rowid, session_id, seq, event_json, created_at)
+      VALUES (?, 'history', ?, '{"type":"message","message":{"role":"user"}}', 1)`);
+    insert.setReadBigInts(true);
+    for (let index = 0; index < 1100; index++) {
+      insert.run(-9223372036854775808n + BigInt(index) * 1000000n, index + 1);
+    }
+    insert.run(9223372036854775807n, 1101);
+    database.exec("BEGIN IMMEDIATE");
+    migrateAgentJsonPredicatesInTransaction(database);
+    database.exec("COMMIT");
+    expect(
+      database
+        .prepare(`SELECT count(*) AS count FROM transcript_events
+      WHERE navigation_type = 'message' AND message_role = 'user'`)
+        .get()?.count,
+    ).toBe(1101);
+    const bounds = database.prepare(
+      "SELECT min(rowid) AS first, max(rowid) AS last FROM transcript_events",
+    );
+    bounds.setReadBigInts(true);
+    expect(bounds.get()).toEqual({ first: -9223372036854775808n, last: 9223372036854775807n });
+  });
+
+  it.each(["commit", "rollback", "catalog-rollback", "without-outbox"] as const)(
     "publishes both version markers only with the complete migration (%s)",
     async (outcome) => {
       await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
@@ -176,11 +210,15 @@ describe("agent JSON predicate migration", () => {
           role: "agent",
           agentId: "main",
         });
-        if (outcome === "rollback") {
+        const rollback = outcome === "rollback" || outcome === "catalog-rollback";
+        if (rollback) {
           database.setAuthorizer((action, name, value) =>
-            action === constants.SQLITE_PRAGMA &&
-            name === "user_version" &&
-            value === String(OPENCLAW_AGENT_SCHEMA_VERSION)
+            (outcome === "catalog-rollback" &&
+              action === constants.SQLITE_UPDATE &&
+              name === "sqlite_master") ||
+            (action === constants.SQLITE_PRAGMA &&
+              name === "user_version" &&
+              value === String(OPENCLAW_AGENT_SCHEMA_VERSION))
               ? constants.SQLITE_DENY
               : constants.SQLITE_OK,
           );
@@ -192,14 +230,14 @@ describe("agent JSON predicate migration", () => {
               env: state.env,
               path: pathname,
             });
-          if (outcome === "rollback") {
+          if (rollback) {
             expect(migrate).toThrow(/authoriz/u);
           } else {
             migrate();
           }
         });
         database.setAuthorizer(null);
-        const expectedVersion = outcome === "rollback" ? 25 : OPENCLAW_AGENT_SCHEMA_VERSION;
+        const expectedVersion = rollback ? 25 : OPENCLAW_AGENT_SCHEMA_VERSION;
         expect(database.prepare("PRAGMA user_version").get()?.user_version).toBe(expectedVersion);
         expect(
           database.prepare("SELECT schema_version FROM schema_meta").get()?.schema_version,
@@ -214,7 +252,8 @@ describe("agent JSON predicate migration", () => {
           .prepare("PRAGMA table_info(transcript_events)")
           .all()
           .map((row) => row.name);
-        expect(columns.includes("navigation_type")).toBe(outcome !== "rollback");
+        expect(columns.includes("navigation_type")).toBe(!rollback);
+        expect(() => database.exec("UPDATE session_nodes SET entry_valid = 9")).toThrow(/CHECK/u);
         if (outcome === "without-outbox") {
           expect(
             database

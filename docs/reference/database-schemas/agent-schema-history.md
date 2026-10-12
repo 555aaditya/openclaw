@@ -81,6 +81,14 @@ semantics. Optional outbox tables remain absent until first use. Fresh and
 incognito databases start at schema 26. Later opens reuse admitted schema facts;
 runtime predicates do not fall back to JSON or re-run the backfill.
 
+The migration installs the constant-default columns together in each table's
+schema, reparses that schema, and backfills each transcript row directly. It runs
+one `quick_check` per touched table before publishing schema 26, instead of
+rechecking the entire STRICT table after each column addition. Bounded rowid
+batches share one transaction, limiting temporary statement-journal space.
+The pre-migration integrity check, transaction rollback,
+normal journal settings, and verified-backup requirements remain in place.
+
 The [accepted design](https://github.com/openclaw/openclaw/issues/169254) keeps
 predicate types portable and uses the same derivations for future engine adapters.
 PostgreSQL bootstrap DDL is generated from the canonical schema; an engine that
