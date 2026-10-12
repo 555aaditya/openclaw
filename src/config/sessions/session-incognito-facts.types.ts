@@ -53,6 +53,7 @@ export type IncognitoSessionFacts = {
     | "lifecycleRevision"
     | "skillLibrarySelections"
     | "sandbox"
+    | "sandboxProvenance"
     | "sandboxMode"
     | "createdActor"
     | "agentRuntimeOverride"

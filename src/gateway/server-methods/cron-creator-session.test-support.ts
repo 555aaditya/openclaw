@@ -47,10 +47,24 @@ export function registerCronCreatorSessionTests(fixture: {
       },
     };
 
-    const { context, respond } = await invokeCron("cron.add", agentTurnCronParams(), { client });
+    loadGatewaySessionEntry.mockReturnValue({
+      canonicalKey: "agent:main:foreign",
+      entry: {
+        sessionId: "foreign",
+        createdActor: { type: "human", source: "profile", id: "foreign-person" },
+      },
+    });
+    const { context, respond } = await invokeCron(
+      "cron.add",
+      agentTurnCronParams({ sessionKey: "agent:main:foreign" }),
+      { client },
+    );
 
     const options = requireRecord(context.cron.add.mock.calls[0]?.[1], "cron.add options");
     expect(options.createdActor).toEqual({ type: "human", source: "profile", id: "profile-ada" });
+    expect(options.sandboxProvenance).toEqual({
+      actor: { type: "human", source: "profile", id: "profile-ada" },
+    });
     expect(requireCronAddPayload(context)).not.toHaveProperty("createdActor");
     expectCronSuccess(respond);
   });
@@ -99,9 +113,13 @@ export function registerCronCreatorSessionTests(fixture: {
       if (caller === "operator") {
         expect(options).not.toHaveProperty("skillLibrarySelections");
         expect(options).not.toHaveProperty("createdActor");
+        expect(options.sandboxProvenance).toEqual({ actor: undefined });
       } else {
         expect(options.skillLibrarySelections).toEqual([]);
         expect(options.createdActor).toEqual({ type: "agent", id: "ops" });
+        expect(options.sandboxProvenance).toEqual({
+          actor: { type: "human", source: "profile", id: "profile-ada" },
+        });
       }
       expect(requireCronAddPayload(context)).not.toHaveProperty("sourceConversation");
       expect(resolveCronDeliveryPreview).toHaveBeenCalledWith(
@@ -207,11 +225,16 @@ export function registerCronCreatorSessionTests(fixture: {
 
   it.each([
     { createdActor: { type: "human", source: "profile", id: "spoofed-profile" } },
+    { sandboxProvenance: { actor: { type: "human", source: "profile", id: "spoofed-profile" } } },
+    { sandbox: "required" },
     { sourceConversation: { sessionKey: "agent:main:other", sessionId: "spoofed-session" } },
   ])("rejects caller-supplied private cron creator facts: %j", async (privateFields) => {
     const { context, respond } = await invokeCron("cron.add", agentTurnCronParams(privateFields));
 
     expect(context.cron.add).not.toHaveBeenCalled();
     expectResponseError(respond, { code: "INVALID_REQUEST" });
+    const update = await invokeCron("cron.update", { id: "existing-job", patch: privateFields });
+    expect(update.context.cron.update).not.toHaveBeenCalled();
+    expectResponseError(update.respond, { code: "INVALID_REQUEST" });
   });
 }

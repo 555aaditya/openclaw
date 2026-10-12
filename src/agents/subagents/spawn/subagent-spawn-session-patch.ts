@@ -66,7 +66,10 @@ export async function createInitialSubagentSession(input: {
   senderIsOwner?: boolean;
   expectedParentSessionId?: string;
   assertActive?: SessionSourceAssertion;
-  creationPolicy: Pick<Parameters<typeof buildSessionCreationStamp>[0], "actor" | "sandbox">;
+  creationPolicy: Pick<
+    Parameters<typeof buildSessionCreationStamp>[0],
+    "actor" | "sandbox" | "sandboxProvenance"
+  >;
   completionOwnerSessionKey: string;
   spawnedWorkspaceDir?: string;
   spawnedCwd?: string;
@@ -489,15 +492,11 @@ export async function createInitialSubagentSession(input: {
                   ...buildSessionCreationStamp({
                     via: "spawn",
                     ...params.creationPolicy,
-                    ...(params.creationPolicy.sandbox !== "required"
-                      ? {
-                          actor: resolveDelegatedSessionCreator(
-                            parentEntry,
-                            params.creationPolicy.actor,
-                            params.requesterProfileId,
-                          ),
-                        }
-                      : {}),
+                    actor: resolveDelegatedSessionCreator(
+                      parentEntry,
+                      params.creationPolicy.actor,
+                      params.requesterProfileId,
+                    ),
                     ...(!params.incognito
                       ? {
                           inheritedGitContributorProfileIds:

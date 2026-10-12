@@ -28,6 +28,7 @@ import {
   runExclusiveSessionLifecycleMutation,
 } from "../sessions/session-lifecycle-admission.js";
 import { runExclusiveSessionLifecycle } from "../sessions/session-lifecycle-admission.test-support.js";
+import { closeOpenClawAgentDatabasesAsync } from "../state/openclaw-agent-db.js";
 import { captureOpenClawAgentDatabaseExecution } from "../state/openclaw-agent-execution.js";
 import { closeOpenClawStateDatabaseForTest } from "../state/openclaw-state-db.js";
 import { disposeSessionReadContexts } from "./server-methods/sessions-read-cache.test-support.js";
@@ -944,6 +945,12 @@ test("sessions.reset preserves explicit session preferences across session rollo
   const { dir, storePath } = await createSessionStoreDir();
   await writeSingleLineSession(dir, "sess-main", "hello");
   const preferences = {
+    createdActor: { type: "human", source: "profile", id: "creator-bob" },
+    sandbox: "required",
+    sandboxProvenance: { actor: { type: "human", source: "profile", id: "isolation-alice" } },
+    spawnedBy: "global",
+    spawnedByAgentId: "main",
+    createdVia: "spawn",
     responseUsage: "tokens",
     pinnedAt: 123,
     label: "Operator session",
@@ -966,6 +973,13 @@ test("sessions.reset preserves explicit session preferences across session rollo
   }>("sessions.reset", { key: "main" });
 
   expect(reset.ok).toBe(true);
-  expect(reset.payload?.entry).toMatchObject(preferences);
+  const { sandboxProvenance: _privateIsolation, ...publicPreferences } = preferences;
+  expect(reset.payload?.entry).toMatchObject(publicPreferences);
+  expect(reset.payload?.entry).not.toHaveProperty("sandboxProvenance");
+  expect(reset.payload?.entry.lifecycleRevision).toEqual(expect.any(String));
   expect(loadSessionEntry({ sessionKey: "agent:main:main", storePath })).toMatchObject(preferences);
+  await closeOpenClawAgentDatabasesAsync();
+  expect(
+    loadSessionEntry({ sessionKey: "agent:main:main", storePath, readConsistency: "latest" }),
+  ).toMatchObject(preferences);
 });

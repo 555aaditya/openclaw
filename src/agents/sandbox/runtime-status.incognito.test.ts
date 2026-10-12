@@ -105,6 +105,8 @@ it("classifies sandbox policy and revokes native consent from acknowledged actor
       entry: {
         sessionId: "required-policy",
         updatedAt: 1,
+        createdActor: { type: "human", source: "profile", id: "bob" },
+        sandboxProvenance: { actor: { type: "human", source: "profile", id: "alice" } },
         incognito: true,
         sandbox: "required",
         sandboxMode: "off",
@@ -113,6 +115,7 @@ it("classifies sandbox policy and revokes native consent from acknowledged actor
     expect(resolveSandboxRuntimeStatus({ cfg, sessionKey: requiredKey })).toMatchObject({
       sandboxRequired: true,
       sandboxed: true,
+      isolationSubject: { kind: "profile", profileId: "alice" },
     });
   });
 });

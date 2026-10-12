@@ -463,6 +463,7 @@ it.each([
           material_sequence: spawned.sequence,
         });
         expect(sourceBoundary.entry).toMatchObject({
+          sandboxProvenance: { actor: { type: "agent", id: "main" } },
           spawnedBy: parentSessionKey,
           parentSessionKey,
           spawnedBySessionId: "parent-session",

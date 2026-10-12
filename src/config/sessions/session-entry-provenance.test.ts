@@ -1,9 +1,13 @@
 import { expect, it } from "vitest";
 import {
   inheritSpawnSessionOwner,
+  inheritSessionCreationPolicy,
+  sessionSandboxActor,
+  preserveCreationStamp,
   sessionPersonalProfileId,
   type SessionActor,
   type SessionCreatedActor,
+  type SessionSandboxProvenance,
 } from "./session-entry-provenance.js";
 
 type Source = Parameters<typeof sessionPersonalProfileId>[0];
@@ -91,5 +95,28 @@ it("inherits only the requesting human's current owner, including canonical prof
       assignedBy: spawningAgent,
       assignedAt: now ?? expect.any(Number),
     });
+  }
+});
+
+it("keeps required isolation separate from explicit and actorless creation attribution", () => {
+  const actor = { type: "human", source: "profile", id: "alice" } as const;
+  const requester = { type: "human", source: "profile", id: "bob" } as const;
+  const cases: Array<SessionSandboxProvenance | undefined> = [undefined, {}, { actor }];
+  for (const sandboxProvenance of cases) {
+    const source = { createdActor: actor, sandbox: "required" as const, sandboxProvenance };
+    const isolation = sandboxProvenance === undefined ? actor : sandboxProvenance.actor;
+    const next = inheritSessionCreationPolicy(source, requester);
+    expect(next).toMatchObject({
+      actor: requester,
+      sandbox: "required",
+      sandboxProvenance: { actor: isolation },
+    });
+    expect(inheritSessionCreationPolicy(source).actor).toEqual(actor);
+    expect(
+      sessionSandboxActor({ createdActor: requester, sandboxProvenance: next.sandboxProvenance }),
+    ).toEqual(isolation);
+    expect(
+      preserveCreationStamp({ sandboxProvenance: { actor: requester } }, source).sandboxProvenance,
+    ).toEqual(sandboxProvenance);
   }
 });

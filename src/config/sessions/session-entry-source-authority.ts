@@ -55,6 +55,7 @@ const metadataFields: ReadonlySet<string> = new Set([
   "createdActor",
   "owner",
   "sandbox",
+  "sandboxProvenance",
   "spawnedBy",
   "spawnDepth",
   "parentSessionKey",

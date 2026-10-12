@@ -22,6 +22,7 @@ import { assertSessionEntryCohortScope } from "../../config/sessions/session-ent
 import { captureNativeSessionEntryCurrentRead } from "../../config/sessions/session-entry-current-runtime.js";
 import {
   sessionCreatorProfileId,
+  sessionSandboxActor,
   type SessionCreatedActor,
 } from "../../config/sessions/session-entry-provenance.js";
 import { SessionEntryChangedDuringReadError } from "../../config/sessions/session-entry-read-errors.js";
@@ -55,7 +56,7 @@ import {
   normalizeStoreSessionKey,
   resolveSessionEntryCandidates,
 } from "../../config/sessions/store-entry.js";
-import type { SessionEntry } from "../../config/sessions/types.js";
+import type { InternalSessionEntry as SessionEntry } from "../../config/sessions/types.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { resolveSessionAgentId } from "../agent-scope.js";
 import { auditSandboxToolPolicyBlock, escapeControlCharsVisible } from "../tool-policy-audit.js";
@@ -76,12 +77,14 @@ type SandboxRuntimeIsolation =
       sandboxRequired: false;
       isolationSubject?: never;
       createdActor?: never;
+      sandboxProvenance?: never;
       workspaceAccess?: never;
     }
   | {
       sandboxRequired: true;
       isolationSubject: SandboxIsolationSubject;
       createdActor?: SessionCreatedActor;
+      sandboxProvenance?: SessionEntry["sandboxProvenance"];
       workspaceAccess: SandboxWorkspaceAccess;
     };
 
@@ -93,7 +96,10 @@ type SandboxRuntimeStatusParams = {
   classificationSessionKey?: string;
   classificationAgentId?: string;
   /** Trusted canonical candidate for the classification identity; null means no stored entry. */
-  preparedSessionEntry?: Pick<SessionEntry, "sandbox" | "sandboxMode" | "createdActor"> | null;
+  preparedSessionEntry?: Pick<
+    SessionEntry,
+    "sandbox" | "sandboxMode" | "createdActor" | "sandboxProvenance"
+  > | null;
 };
 
 export function resolveSandboxRuntimeStatus(params: SandboxRuntimeStatusParams) {
@@ -534,11 +540,13 @@ function resolveSandboxRuntimeStatusForClassification(
           )
         : undefined;
   const sandboxRequired = session?.existing?.sandbox === "required";
-  const profileId = sessionCreatorProfileId(session?.existing?.createdActor)?.trim();
+  const isolationActor = sessionSandboxActor(session?.existing);
+  const profileId = sessionCreatorProfileId(isolationActor)?.trim();
   const isolation: SandboxRuntimeIsolation = sandboxRequired
     ? {
         sandboxRequired: true,
         createdActor: session.existing?.createdActor,
+        sandboxProvenance: { actor: isolationActor },
         isolationSubject: profileId
           ? { kind: "profile", profileId }
           : { kind: "session", sessionKey: session.normalizedKey },

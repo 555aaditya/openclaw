@@ -41,7 +41,11 @@ import {
 import type { PluginHookBeforeMessageWriteEvent } from "../../plugins/types.js";
 import { getSessionWorkAdmissionRelease } from "../../sessions/session-lifecycle-admission.js";
 import { prepareUserProfileCatalog } from "../../state/user-profile-list.js";
-import { linkEmail, syncGitHubIdentity } from "../../state/user-profile-writes.worker.js";
+import {
+  linkEmail,
+  setUserProfileRole,
+  syncGitHubIdentity,
+} from "../../state/user-profile-writes.worker.js";
 import { ensureProfileForEmail } from "../../state/user-profiles.js";
 import { createGatewayMethodRegistry } from "../methods/registry.js";
 import { captureGatewayOperatorRunAuthority } from "../operator-run-authority.js";
@@ -216,6 +220,18 @@ async function createHostedChildFixture(
       ],
       registry,
     );
+  const sourceAccess = system
+    ? undefined
+    : resolveSessionMutationAuthorization({
+        client: identifiedClient(profile.id),
+        context,
+        method: "chat.send",
+        requestParams: { sessionKey: parentKey, message: "Delegate this work" },
+      });
+  expect(sourceAccess?.error ?? null).toBeNull();
+  const sourceAuthorization = system
+    ? undefined
+    : expectDefined(sourceAccess?.authorization, "original source authorization");
   const captured = system
     ? undefined
     : await captureGatewayOperatorRunAuthority({
@@ -223,6 +239,7 @@ async function createHostedChildFixture(
         context,
         sourceAuthority: {
           assertCurrent: () => {
+            sourceAuthorization?.assertCurrent();
             if (!sourceCurrent) {
               throw new Error("original operator source revoked");
             }
@@ -568,6 +585,7 @@ describe("hosted creation transfers accepted child input", () => {
     await fixture.send();
     expect(loadSessionEntry(fixture.scope())).toMatchObject({
       createdActor: { type: "human", source: "profile", id: fixture.profileId },
+      sandboxProvenance: { actor: { type: "agent", id: "main" } },
       owner: {
         actor: { type: "human", id: fixture.profileId },
         assignedBy: { type: "agent", id: "main" },
@@ -644,6 +662,64 @@ describe("hosted creation transfers accepted child input", () => {
     },
   );
 
+  it("keeps autonomous visible descendants independent of a creator role change", async () => {
+    await using fixture = await createHostedChildFixture(
+      true,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      { parentCreatedVia: "spawn" },
+    );
+    using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
+    await fixture.send();
+    await fixture.finish();
+    expect(fixture.readChild()).toMatchObject({
+      createdActor: { type: "human", source: "profile", id: fixture.profileId },
+      sandboxProvenance: { actor: { type: "agent", id: "main" } },
+    });
+    const cfg = getRuntimeConfig();
+    setRuntimeConfigSnapshot({
+      ...cfg,
+      gateway: {
+        ...cfg.gateway,
+        roles: {
+          default: "restricted",
+          definitions: {
+            restricted: {
+              agents: "*",
+              scopes: ["operator.read", "operator.write"],
+              sessions: { others: "write" },
+              sandbox: "required",
+            },
+          },
+        },
+      },
+    });
+    setUserProfileRole(fixture.profileId, "restricted");
+    const nested = await fixture.sendNested();
+    await fixture.finish();
+    expect(loadSessionEntry(fixture.scope(nested.key))).toMatchObject({
+      createdActor: { type: "human", source: "profile", id: fixture.profileId },
+      sandboxProvenance: { actor: { type: "agent", id: "main" } },
+    });
+    expect(loadSessionEntry(fixture.scope(nested.key))?.sandbox).toBeUndefined();
+    expect(fixture.provider).toHaveBeenCalledTimes(2);
+    // Causal bookkeeping does not give the now-restricted human a host-run grant.
+    const humanRun = resolveSessionMutationAuthorization({
+      client: identifiedClient(fixture.profileId),
+      context: fixture.context,
+      method: "chat.send",
+      requestParams: { sessionKey: nested.key, message: "This human turn must stay restricted" },
+    });
+    expect(humanRun.error).toMatchObject({
+      code: "FORBIDDEN",
+      message: expect.stringMatching(/sandbox/i),
+    });
+  });
+
   it("does not replace the owner of an existing target session", async () => {
     await using fixture = await createHostedChildFixture(false, false, true);
     await expect(fixture.send()).rejects.toThrow("spawn tool policy requires a new session");
@@ -684,13 +760,49 @@ describe("hosted creation transfers accepted child input", () => {
     });
   });
 
-  it("keeps agent ownership when required sandbox provenance retains a human creator", async () => {
+  it("keeps autonomous creator and ownership separate from required human isolation", async () => {
     await using fixture = await createHostedChildFixture(true, false, false, false, true, true);
     await fixture.send();
     expect(loadSessionEntry(fixture.scope())).toMatchObject({
-      createdActor: { type: "human", source: "profile", id: fixture.profileId },
+      createdActor: { type: "agent", id: "main" },
+      sandboxProvenance: { actor: { type: "human", source: "profile", id: fixture.profileId } },
       owner: { actor: { type: "agent", id: "main" } },
       sandbox: "required",
+    });
+  });
+
+  it("keeps B as creator without moving A's required isolation or transferring controls to an assignee", async () => {
+    await using fixture = await createHostedChildFixture(
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      { foreignSandboxCreator: true },
+    );
+    const parent = expectDefined(loadSessionEntry(fixture.parentScope), "source");
+    await fixture.send();
+    await fixture.finish();
+    const child = expectDefined(loadSessionEntry(fixture.scope()), "child");
+    expect(child).toMatchObject({
+      createdActor: { type: "human", source: "profile", id: fixture.profileId },
+      sandbox: "required",
+      sandboxProvenance: { actor: parent.createdActor },
+      owner: { actor: { type: "agent", id: "main" } },
+    });
+    const request = {
+      key: fixture.scope().sessionKey,
+      expectedSessionId: child.sessionId,
+      archived: true,
+    };
+    await expect(
+      fixture.patchAs(expectDefined(parent.createdActor?.id, "A"), request),
+    ).rejects.toThrow("Only the session creator or an admin");
+    await fixture.patchAs(fixture.profileId, request);
+    expect(loadSessionEntry(fixture.scope())?.sandboxProvenance).toEqual({
+      actor: parent.createdActor,
     });
   });
 
@@ -743,15 +855,15 @@ describe("hosted creation transfers accepted child input", () => {
   it.each(["source", "host", "signal", "gateway", "ACL", "lifecycle", "replacement"] as const)(
     "retains the original %s boundary after child ACK and parent closure",
     async (change) => {
-      // A creator keeps access to their own draft. Exercise ACL revocation with
-      // a shared sandbox whose isolation creator is a different person instead.
+      // The new child belongs to this requester; drafting it cannot revoke its
+      // creator. Revoke access to the original foreign source instead.
       await using fixture = await createHostedChildFixture(
         false,
         false,
         false,
         false,
         true,
-        change === "ACL",
+        false,
         false,
         { foreignSandboxCreator: change === "ACL" },
       );
@@ -771,7 +883,7 @@ describe("hosted creation transfers accepted child input", () => {
       } else if (change === "gateway") {
         fixture.closeGateway();
       } else if (change === "ACL") {
-        await patchSessionEntryCore(scope, () => ({ visibility: "draft" }));
+        await patchSessionEntryCore(fixture.parentScope, () => ({ visibility: "draft" }));
       } else if (change === "lifecycle") {
         await patchSessionEntryCore(scope, () => ({ lifecycleRevision: "replaced-generation" }));
       } else {

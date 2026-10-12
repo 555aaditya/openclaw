@@ -19,6 +19,20 @@ export type SessionActor = SchemaContract<
 export type SessionCreatedActor = SessionActor &
   ({ type: "human"; source: "profile" | "channel" | "unknown" } | { type: "agent" | "system" });
 
+/** Host-authored isolation identity; an empty record deliberately has no human subject. */
+export type SessionSandboxProvenance = { actor?: SessionCreatedActor };
+
+/** Legacy rows use their creator; new attribution must not retarget isolation. */
+export function sessionSandboxActor(
+  entry:
+    | { createdActor?: SessionCreatedActor; sandboxProvenance?: SessionSandboxProvenance }
+    | undefined,
+): SessionCreatedActor | undefined {
+  return entry?.sandboxProvenance !== undefined
+    ? entry.sandboxProvenance.actor
+    : entry?.createdActor;
+}
+
 export function sessionCreatorProfileId(
   actor: (SessionActor & { source?: unknown }) | undefined,
 ): string | undefined {
@@ -141,6 +155,7 @@ export function buildSessionCreationStamp(params: {
   actor?: SessionCreatedActor;
   now?: number;
   sandbox?: "required";
+  sandboxProvenance?: SessionSandboxProvenance;
   incognito?: boolean;
   skillLibrarySelections?: SkillLibrarySelection[];
   inheritedGitContributorProfileIds?: string[];
@@ -150,6 +165,7 @@ export function buildSessionCreationStamp(params: {
   createdActor?: SessionCreatedActor;
   createdAt: number;
   sandbox?: "required";
+  sandboxProvenance?: SessionSandboxProvenance;
   skillLibrarySelections?: SkillLibrarySelection[];
   inheritedGitContributorProfileIds?: string[];
 } {
@@ -159,6 +175,9 @@ export function buildSessionCreationStamp(params: {
     ...(params.actor ? { createdActor: params.actor } : {}),
     createdAt: params.now ?? Date.now(),
     ...(params.sandbox === "required" ? { sandbox: "required" as const } : {}),
+    ...(params.sandboxProvenance !== undefined
+      ? { sandboxProvenance: structuredClone(params.sandboxProvenance) }
+      : {}),
     ...(params.via === "spawn" && !params.incognito && params.inheritedGitContributorProfileIds
       ? { inheritedGitContributorProfileIds: [...params.inheritedGitContributorProfileIds] }
       : {}),
@@ -209,6 +228,7 @@ export function preserveCreationStamp<
         createdVia: authoritative.createdVia,
         createdSurface: authoritative.createdSurface,
         createdActor: authoritative.createdActor,
+        sandboxProvenance: authoritative.sandboxProvenance,
         createdAt: authoritative.createdAt,
         inheritedGitContributorProfileIds: authoritative.inheritedGitContributorProfileIds,
         ...(authoritative.sandbox === "required" ? { sandbox: authoritative.sandbox } : {}),
@@ -216,12 +236,13 @@ export function preserveCreationStamp<
     : entry;
 }
 
-/** Delegation keeps a required parent's human isolation identity, regardless of current roles. */
+/** Required containment follows its original subject, independently of the new creator. */
 export function inheritSessionCreationPolicy(
   source:
     | {
         createdActor?: SessionCreatedActor;
         sandbox?: "required";
+        sandboxProvenance?: SessionSandboxProvenance;
         skillLibrarySelections?: SkillLibrarySelection[];
       }
     | undefined,
@@ -229,11 +250,16 @@ export function inheritSessionCreationPolicy(
 ): {
   actor?: SessionCreatedActor;
   sandbox?: "required";
+  sandboxProvenance?: SessionSandboxProvenance;
   skillLibrarySelections?: SkillLibrarySelection[];
 } {
   return {
     ...(source?.sandbox === "required"
-      ? { actor: source.createdActor, sandbox: "required" as const }
+      ? {
+          actor: actor ?? source.createdActor,
+          sandbox: "required" as const,
+          sandboxProvenance: { actor: sessionSandboxActor(source) },
+        }
       : { actor }),
     ...(source?.skillLibrarySelections
       ? {

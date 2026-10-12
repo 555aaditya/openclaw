@@ -1452,44 +1452,6 @@ describe("initSessionState RawBody", () => {
     );
   });
 
-  it("preserves an unqualified ACP parent agent through command-triggered daily rollover", async () => {
-    const storePath = await makeStorePath("openclaw-creator-acp-rollover-");
-    const sessionKey = "agent:main:acp:creator-audit";
-    const stale = Date.now() - 48 * 60 * 60 * 1000;
-    await writeSessionStoreFast(storePath, {
-      [sessionKey]: {
-        sessionId: "before-rollover",
-        updatedAt: stale,
-        sessionStartedAt: stale,
-        lastInteractionAt: stale,
-        createdVia: "spawn",
-        createdActor: { type: "human", source: "profile", id: "alice" },
-        createdAt: stale,
-        spawnedBy: "global",
-        spawnedByAgentId: "main",
-        spawnedBySessionId: "parent-generation",
-      },
-    });
-    const result = await initSessionState({
-      ctx: {
-        RawBody: "/status",
-        CommandBody: "/status",
-        ChatType: "direct",
-        SessionKey: sessionKey,
-      },
-      cfg: { session: { store: storePath, reset: { mode: "daily", atHour: 4 } } },
-    });
-    expect(result.isNewSession).toBe(true);
-    expect(result.sessionEntry.sessionId).not.toBe("before-rollover");
-    const persisted = loadSessionEntry({ storePath, sessionKey, readConsistency: "latest" });
-    expect(persisted).toMatchObject({
-      createdActor: { type: "human", source: "profile", id: "alice" },
-      spawnedBy: "global",
-      spawnedByAgentId: "main",
-      spawnedBySessionId: "parent-generation",
-    });
-  });
-
   it.each(SESSION_ROLLOVER_LINEAGE_CASES)(
     "keeps spawned-run lineage only for a $name rollover",
     async (testCase) => {

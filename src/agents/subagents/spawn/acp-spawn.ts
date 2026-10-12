@@ -478,6 +478,7 @@ export async function spawnAcpDirect(
       });
       const creationStamp = buildSessionCreationStamp({
         via: "spawn",
+        sandboxProvenance: { actor: { type: "agent", id: requesterAgentId } },
         actor: resolveDelegatedSessionCreator(
           parentEntry,
           { type: "agent", id: requesterAgentId },

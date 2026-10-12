@@ -10,6 +10,7 @@ import {
   inheritSessionGitContributorProfileIds,
   inheritSpawnSessionOwner,
   resolveDelegatedSessionCreator,
+  sessionSandboxActor,
   type SessionOwnerAssignment,
 } from "../config/sessions/session-entry-provenance.js";
 import { readSessionEntryReadOnlyInWorker } from "../config/sessions/session-entry-read-runtime.js";
@@ -17,6 +18,7 @@ import { inheritSessionSelection } from "../config/sessions/session-entry-select
 import { isModelSelectionLocked } from "../sessions/model-overrides.js";
 import { waitForSessionParticipantRecording } from "../sessions/session-participant-recording.js";
 import { readResidentUserProfileId } from "../state/user-profile-list.js";
+import { resolveCreatorSandbox } from "./operator-role-policy.js";
 import type { CreateGatewaySessionParams } from "./session-create-service.types.js";
 import { resolvePluginSessionOwnershipError } from "./session-plugin-ownership.js";
 import { invalidSessionRequest } from "./session-request-error.js";
@@ -138,6 +140,7 @@ export function resolveSessionCreateInheritance(params: {
   return {
     creation: {
       ...params.creation,
+      sandboxProvenance: { actor: params.creation.actor },
       ...inheritSessionCreationPolicy(
         params.parent,
         resolveDelegatedSessionCreator(
@@ -150,6 +153,22 @@ export function resolveSessionCreateInheritance(params: {
     },
     ...(ownerAssignment ? { ownerAssignment } : {}),
   };
+}
+
+/** Resolve containment independently of the new node's attribution. */
+export function resolveSessionCreateSandbox(
+  cfg: CreateGatewaySessionParams["cfg"],
+  creation: SessionCreation | undefined,
+) {
+  return (
+    creation?.sandbox ??
+    resolveCreatorSandbox(cfg, {
+      actor: sessionSandboxActor({
+        createdActor: creation?.actor,
+        sandboxProvenance: creation?.sandboxProvenance,
+      }),
+    })
+  );
 }
 
 /** Project the trusted spawn policy only onto a genuinely new child row. */

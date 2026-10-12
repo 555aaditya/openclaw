@@ -2,7 +2,7 @@ import type { SqliteWorkerCommand } from "../../infra/sqlite-worker-contract.js"
 import type { SessionCreationSnapshot } from "./session-accessor.sqlite-creation-read.js";
 import type { TranscriptEvent } from "./session-accessor.types.js";
 import type { SessionOwnerAssignment } from "./session-entry-provenance.js";
-import type { SessionEntry } from "./types.js";
+import type { InternalSessionEntry as SessionEntry } from "./types.js";
 
 export type IncognitoEntryCreationOperations = {
   "session.entry.creation.prepare": {

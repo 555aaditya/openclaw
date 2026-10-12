@@ -58,7 +58,7 @@ import {
   runExclusiveSessionLifecycleMutation,
 } from "../sessions/session-lifecycle-admission.js";
 import { normalizeSessionDeliveryState } from "../utils/delivery-context.shared.js";
-import { authorizeGatewaySessionCreation, resolveCreatorSandbox } from "./operator-role-policy.js";
+import { authorizeGatewaySessionCreation } from "./operator-role-policy.js";
 import { ADMIN_SCOPE } from "./operator-scopes.js";
 import {
   prepareSessionCreateFilesystemRoot,
@@ -78,6 +78,7 @@ import {
   inheritSessionCreateParentFields,
   prepareSessionCreateParent,
   resolveSessionCreateInheritance,
+  resolveSessionCreateSandbox,
   resolveSessionCreateSpawnPolicy,
 } from "./session-create-inheritance.js";
 import { buildDashboardSessionKey, resolveSessionCreateTargetKey } from "./session-create-key.js";
@@ -561,9 +562,7 @@ async function createAdmittedGatewaySession(
       return targetRead;
     }
     const currentTargetEntry = targetRead.value;
-    // Delegated isolation survives changes to the creator's current role.
-    const creationSandbox =
-      creation?.sandbox ?? (creation ? resolveCreatorSandbox(params.cfg, creation) : undefined);
+    const creationSandbox = resolveSessionCreateSandbox(params.cfg, creation);
     const sandboxRequired =
       currentTargetEntry?.sandbox === "required" || creationSandbox === "required";
     const forkWorkspace =

@@ -14,7 +14,7 @@ import type { IncognitoPendingInputOperations } from "./session-incognito-pendin
 import type { IncognitoSideDataOperations } from "./session-incognito-side-data-contract.js";
 import type { IncognitoTranscriptOperations } from "./session-incognito-transcript-contract.js";
 import type { IncognitoSessionTurnOperations } from "./session-turn.types.js";
-import type { SessionEntry } from "./types.js";
+import type { InternalSessionEntry as SessionEntry } from "./types.js";
 
 export type {
   IncognitoSessionAuthority,

@@ -50,6 +50,7 @@ export function projectIncognitoSessionRuntimeFacts(
           lifecycleRevision: entry.lifecycleRevision,
           skillLibrarySelections: entry.skillLibrarySelections,
           sandbox: entry.sandbox,
+          sandboxProvenance: entry.sandboxProvenance,
           sandboxMode: entry.sandboxMode,
           createdActor: entry.createdActor,
           agentRuntimeOverride: entry.agentRuntimeOverride,
