@@ -240,10 +240,11 @@ suite.define(() => {
         await childOpen.click();
         const detail = subagents.locator(".chat-subagent-detail");
         await detail.getByText(fixture.childTask, { exact: false }).waitFor();
+        // The detail pane owns its startup receipt; list metrics history is optional.
         const history = payloadOf(
           await wire.waitFor(
             (rpc) =>
-              rpc.request.method === "chat.history" &&
+              rpc.request.method === "chat.startup" &&
               paramsOf(rpc).sessionKey === childKey &&
               Boolean((rpc.response.payload as ChatHistoryResult | undefined)?.inFlightRun),
           ),
