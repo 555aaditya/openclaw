@@ -10,7 +10,7 @@ import {
   clearEmbeddedSessionPromptStates,
   retainEmbeddedSessionPromptState,
 } from "../../agents/embedded-agent-runner/session-prompt-state.js";
-import { resolveSandboxRuntimeStatus } from "../../agents/sandbox/runtime-status.js";
+import { resolvePreparedSandboxRuntimeStatus } from "../../agents/sandbox/runtime-status.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import type { InternalSessionEntry as SessionEntry } from "../../config/sessions.js";
 import {
@@ -27,7 +27,7 @@ import {
 } from "../../config/sessions/session-lineage.test-support.js";
 import { runExclusiveSessionStoreWrite } from "../../config/sessions/store-writer.js";
 import { resolveWorkerPlacementSessionTarget } from "../../gateway/server-worker-placement-session-target.js";
-import { resolveGatewaySessionStoreTargetWithStore } from "../../gateway/session-utils-store-lookup.js";
+import { resolveGatewaySessionStoreTargetInWorker } from "../../gateway/session-utils-store-worker.js";
 import { resolveCanonicalSessionEntryFromStoreKeys } from "../../gateway/session-utils-store.js";
 import {
   testing as sessionBindingTesting,
@@ -696,7 +696,7 @@ describe("initSessionState thread forking", () => {
         loadSessionEntry({ storePath, sessionKey: threadSessionKey })?.nativeRuntimeConsent,
       ).toBeUndefined();
       expect(
-        resolveSandboxRuntimeStatus({
+        resolvePreparedSandboxRuntimeStatus({
           cfg,
           sessionKey: threadSessionKey,
           preparedSessionEntry: result.sessionEntry,
@@ -1336,7 +1336,7 @@ describe("initSessionState RawBody", () => {
       expect(stored.permissionMode).toBe("full");
       expect(stored.nativeRuntimeConsent).toBeUndefined();
       expect(
-        resolveSandboxRuntimeStatus({ cfg, sessionKey, preparedSessionEntry: stored }),
+        resolvePreparedSandboxRuntimeStatus({ cfg, sessionKey, preparedSessionEntry: stored }),
       ).toMatchObject({ sandboxed: required, sandboxRequired: required });
     },
   );
@@ -1389,7 +1389,7 @@ describe("initSessionState RawBody", () => {
     // entry against its live worktree.
     const placement = await resolveWorkerPlacementSessionTarget({
       sessionRuntime: {
-        resolveGatewaySessionStoreTargetWithStore,
+        resolveGatewaySessionStoreTargetInWorker,
         resolveCanonicalSessionEntryFromStoreKeys,
         managedWorktrees: {
           findLiveByOwner: async (_kind, ownerId) => ({

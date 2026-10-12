@@ -239,7 +239,10 @@ async function agentCommandInternal(
           sessionStoreRuntime && storePath && sessionKey
             ? sessionSource
               ? readCapturedSessionActorEntry(sessionSource, normalizeStoreSessionKey(sessionKey))
-              : sessionStoreRuntime.loadSessionEntry({ ...scope, readConsistency: "latest" })
+              : await sessionStoreRuntime.readSessionEntryInWorker({
+                  ...scope,
+                  readConsistency: "latest",
+                })
             : sessionEntry;
         if (!currentEntry && preparedSessionId) {
           throw createSessionWorkStartChangedError(sessionKey ?? sessionId);

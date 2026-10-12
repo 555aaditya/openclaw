@@ -21,7 +21,6 @@ import {
 } from "./session-accessor.sqlite-entry-cache-state.js";
 import {
   createSessionEntryCreationOperation,
-  assertSessionEntryCreationCurrent,
   assertSessionEntryCreationTarget,
   type SessionEntryCreationTarget,
   projectSessionSharingEntry,
@@ -132,10 +131,13 @@ export function publishSessionEntryWorkerMetadataInvalidation(params: {
   storePath: string;
   databaseIdentity: string;
   sessionKey: string;
+  entry?: SessionEntry;
 }): void {
   invalidateSessionEntryCaches(params.databaseIdentity);
   for (const read of retainedSharingReads(params.databaseIdentity, params.sessionKey) ?? []) {
-    publishRetainedSessionEntryPredicate(read, undefined, false);
+    publishRetainedSessionEntryPredicate(read, params.entry, params.entry !== undefined, {
+      preserveMatchingEntry: true,
+    });
   }
   const change: SessionRowChange = {
     agentId: params.agentId,
@@ -205,7 +207,6 @@ export function runWithSessionEntryCreationPublication<T>(
   run: () => Promise<T>,
 ): Promise<T> {
   const creation = preparedSharingChanges.operations.get(operation);
-  assertSessionEntryCreationCurrent(creation);
   return preparedSharingChanges.current.run(creation, run);
 }
 

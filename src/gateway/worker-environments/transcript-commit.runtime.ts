@@ -173,6 +173,7 @@ async function applyWorkerTranscriptCommit(params: {
             storePath: execution.path,
             databaseIdentity: databaseIdentity.physicalIdentity,
             sessionKey: target.sessionKey,
+            entry: committed.entry,
           });
         }
         if (committed.projectionNeedsReconcile) {

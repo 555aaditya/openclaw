@@ -59,7 +59,7 @@ it("classifies unbound memory policy and rejects execution after permission or s
         permissionMode: "full" as const,
       };
       expect(resolveSandboxRuntimeStatus({ cfg, sessionKey }).sandboxed).toBe(false);
-      expect(assertAgentHarnessExecutionEnvironment(harness, params)).toBe(true);
+      await expect(assertAgentHarnessExecutionEnvironment(harness, params)).resolves.toBe(true);
       expect(
         resolveSandboxRuntimeStatus({
           cfg,
@@ -71,7 +71,7 @@ it("classifies unbound memory policy and rejects execution after permission or s
         withSandboxRuntimeStatusesInWorker([{ cfg, sessionKey }], source, (statuses) => statuses),
       ).resolves.toMatchObject([{ sandboxed: false }]);
       await upsertSessionEntryCore(scope, { permissionMode: "workspace" });
-      expect(() => assertAgentHarnessExecutionEnvironment(harness, params)).toThrow(
+      await expect(assertAgentHarnessExecutionEnvironment(harness, params)).rejects.toThrow(
         "requires Full access",
       );
       await expect(

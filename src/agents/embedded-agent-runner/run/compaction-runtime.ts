@@ -1,5 +1,4 @@
 import { acknowledgeReplySessionTransition } from "../../../auto-reply/reply/reply-run-registry.state.js";
-import { loadSessionEntry } from "../../../config/sessions/session-accessor.js";
 import {
   captureSessionActorStorageOwner,
   readCapturedSessionActorEntry,
@@ -159,7 +158,7 @@ export async function compactEmbeddedRunForRecovery(
     sessionId: activeSession.id,
     sessionKey: input.resolvedSessionKey,
     agentId: input.sessionAgentId,
-    sessionTarget: buildContextEngineCompactionSessionTarget({
+    sessionTarget: await buildContextEngineCompactionSessionTarget({
       agentId: input.sessionAgentId,
       config: runParams.config,
       sessionFile: activeSession.file,
@@ -326,25 +325,21 @@ export function createEmbeddedRunCompactionRuntime(input: {
     ) {
       throw new SessionTranscriptWriterClaimReboundError();
     }
-    const entry =
-      target?.sessionKey && target.storePath
-        ? incognito
-          ? readCapturedSessionActorEntry(incognito, target.sessionKey)
-          : loadSessionEntry({
-              agentId: target.agentId,
-              sessionKey: target.sessionKey,
-              storePath: target.storePath,
-              readConsistency: "latest",
-            })
-        : undefined;
-    if (
-      !writerFence ||
-      writerFence.expectedWriterRunId !== runId ||
-      entry?.sessionId !== sessionId ||
-      entry.lifecycleRevision !== writerFence.expectedLifecycleRevision ||
-      entry.activeWriterRunId !== writerFence.expectedWriterRunId
-    ) {
+    if (!writerFence || writerFence.expectedWriterRunId !== runId) {
       throw new SessionTranscriptWriterClaimReboundError();
+    }
+    if (incognito) {
+      const entry =
+        target?.sessionKey && target.storePath
+          ? readCapturedSessionActorEntry(incognito, target.sessionKey)
+          : undefined;
+      if (
+        entry?.sessionId !== sessionId ||
+        entry.lifecycleRevision !== writerFence.expectedLifecycleRevision ||
+        entry.activeWriterRunId !== writerFence.expectedWriterRunId
+      ) {
+        throw new SessionTranscriptWriterClaimReboundError();
+      }
     }
   };
   const assertRecoveryActive = () => assertRecoveryTarget(sessionPromptState.sessionTarget);

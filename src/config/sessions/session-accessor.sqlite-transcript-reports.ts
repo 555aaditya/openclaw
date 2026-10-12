@@ -38,6 +38,7 @@ import type {
   AbortedSessionTranscriptPartial,
   AbortedSessionTranscriptPartialResult,
   TranscriptReport,
+  TranscriptReportCommit,
   TranscriptReportWorkerOperations,
 } from "./session-accessor.sqlite-transcript-reports.types.js";
 import type { TranscriptReportWorkerTarget } from "./session-accessor.sqlite-transcript-reports.worker.js";
@@ -103,11 +104,12 @@ async function withReportWorker<T>(
   run: (
     operation: Pick<SqliteWorkerStore<TranscriptReportWorkerOperations>, "execute">,
     assertCurrent: () => void,
-    publish: (result: {
-      projectionNeedsReconcile: boolean;
-      cliHistoryChanged?: boolean;
-      sessionEntryChanged?: boolean;
-    }) => void,
+    publish: (
+      result: Pick<
+        TranscriptReportCommit,
+        "projectionNeedsReconcile" | "cliHistoryChanged" | "sessionEntryChanged" | "entry"
+      >,
+    ) => void,
   ) => Promise<Result<T, TranscriptAppendRefusal>>,
   sessionEntryCurrent?: SessionEntryCurrentCheck,
 ): Promise<Result<T, TranscriptAppendRefusal>> {
@@ -282,6 +284,7 @@ async function withReportWorker<T>(
                           storePath: execution.path,
                           databaseIdentity,
                           sessionKey: resolved.sessionKey,
+                          entry: publication.entry,
                         });
                       }
                       if (publication.projectionNeedsReconcile) {

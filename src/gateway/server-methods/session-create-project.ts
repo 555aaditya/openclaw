@@ -7,8 +7,9 @@ import {
   type ErrorShape,
   type SessionsCreateParams,
 } from "../../../packages/gateway-protocol/src/index.js";
-import { loadSessionEntry, patchSessionEntryCore } from "../../config/sessions/session-accessor.js";
+import { patchSessionEntryCore } from "../../config/sessions/session-accessor.js";
 import { withSessionActorStorage } from "../../config/sessions/session-actor-storage-binding.js";
+import { readSessionEntryReadOnlyInWorker } from "../../config/sessions/session-entry-read-runtime.js";
 import { captureSessionEntryMetadataRead } from "../../config/sessions/session-entry-source-authority.js";
 import {
   sessionEntryCommitGuardOptions,
@@ -383,7 +384,9 @@ export async function prepareSessionWorkspaceForRun(params: {
   const prepare = () =>
     workspacePreparations.enqueue(`${storePath}\0${sessionKey}`, async () => {
       assertRunOwnership();
-      const saved = metadata ? metadata.readCurrent() : loadSessionEntry(target);
+      const saved = metadata
+        ? metadata.readCurrent()
+        : await readSessionEntryReadOnlyInWorker(target, assertRunOwnership);
       if (
         !saved ||
         saved.sessionId !== entry.sessionId ||
@@ -459,6 +462,7 @@ export async function prepareSessionWorkspaceForRun(params: {
         // Direct bindings still require containment. Pending managed checkouts use
         // the saved child requirement and source custody in the preparation owner.
         enforceSandboxContainment: !pending && Boolean(project || saved.projectId),
+        sandboxRequired: saved.sandbox === "required",
         requestedProjectId: project?.id ?? saved.projectId,
         sessionCwd: directory,
         sessionKey,

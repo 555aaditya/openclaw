@@ -4,9 +4,9 @@ import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { observeHostDataSql } from "../../test/helpers/sqlite-statement-execution-counter.js";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
-import { setReplyPayloadMetadata } from "../auto-reply/reply-payload.js";
+import { getReplyPayloadMetadata, setReplyPayloadMetadata } from "../auto-reply/reply-payload.js";
 import {
-  assertReplyPayloadSessionWriterDeliveryAuthorized,
+  assertSessionWriterDeliveryAuthorized,
   isDispatchFinalReplySessionWriterAuthorized,
 } from "../auto-reply/reply/session-writer-delivery-authority.js";
 import {
@@ -322,15 +322,24 @@ it.each([true, false])(
     });
 
     expect(result.pendingFinalDeliveryMarkerPersisted).toBe(true);
+    expect(
+      getReplyPayloadMetadata(payload)?.sessionWriterDeliveryAuthority?.readCurrentSession,
+    ).toBeTypeOf("function");
     expect(isDispatchFinalReplySessionWriterAuthorized(payload)).toBe(true);
-    expect(() => assertReplyPayloadSessionWriterDeliveryAuthorized(payload)).not.toThrow();
+    expect(() =>
+      assertSessionWriterDeliveryAuthorized(
+        getReplyPayloadMetadata(payload)?.sessionWriterDeliveryAuthority,
+      ),
+    ).not.toThrow();
     await runWithSessionActorStorage(binding, () =>
       patchSessionEntryCore(target, () => ({ activeWriterRunId: "replacement-writer" })),
     );
     expect(isDispatchFinalReplySessionWriterAuthorized(payload)).toBe(false);
-    expect(() => assertReplyPayloadSessionWriterDeliveryAuthorized(payload)).toThrow(
-      /writer changed/i,
-    );
+    expect(() =>
+      assertSessionWriterDeliveryAuthorized(
+        getReplyPayloadMetadata(payload)?.sessionWriterDeliveryAuthority,
+      ),
+    ).toThrow(/writer changed/i);
   },
 );
 
@@ -339,7 +348,7 @@ it.each([false, true])("force-clear preserves a later session update: %s", async
     lifecycleRunId: "running",
     startedAt: 1,
   });
-  const snapshot = runWithSessionActorStorage(binding, () =>
+  const snapshot = await runWithSessionActorStorage(binding, () =>
     tryLoadForceClearSessionSnapshot(target.sessionKey, "main", "running"),
   );
   expect(snapshot).toBeDefined();

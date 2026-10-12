@@ -3,10 +3,15 @@ import {
   hasMainSessionRecoveryClaim,
   isMainRestartRecoveryCandidate,
 } from "../../config/sessions/restart-recovery-state.js";
-import { loadExactSessionEntry } from "../../config/sessions/session-accessor.js";
+import { retainPreparedSessionEntryPredicate } from "../../config/sessions/session-accessor.sqlite-entry-cache-publication-state.js";
+import {
+  withSessionEntriesFromStoreInWorker,
+  withSessionStoreReaderInWorker,
+} from "../../config/sessions/session-entry-read-runtime.js";
 import { captureSessionEntryMetadataRead } from "../../config/sessions/session-entry-source-authority.js";
 import type { InternalSessionEntry as SessionEntry } from "../../config/sessions/types.js";
 import type { ExpectedRestartRecoveryTarget } from "./main-session-restart-recovery-shared.js";
+import { resolveRestartRecoveryDispatchIdentity } from "./main-session-restart-recovery-target.js";
 
 type ExpectedRecoveryRead = {
   expected: ExpectedRestartRecoveryTarget;
@@ -40,25 +45,68 @@ function matchesExpectedRecoveryTarget(
   );
 }
 
-/** Retain the memory owner and current recovery predicates across admission waits. */
-export function captureExpectedRestartRecoveryCurrent(params: ExpectedRecoveryRead): () => boolean {
+/** Keep one recovery read current through admission using the owner's write receipts. */
+export async function prepareExpectedRestartRecoveryCurrent(
+  params: ExpectedRecoveryRead,
+): Promise<{ isCurrent: () => boolean; release: () => void }> {
   const expected = {
     ...params.expected,
     claim: params.expected.claim && { ...params.expected.claim },
   };
-  const target = { ...expected, storePath: params.storePath };
+  const target = {
+    ...expected,
+    storePath: params.storePath,
+    agentId: resolveRestartRecoveryDispatchIdentity({
+      ...expected,
+      storePath: params.storePath,
+    }).agentId,
+  };
   const source = captureSessionEntryMetadataRead(target, () => {});
   if (source) {
-    return () => {
-      const current = source.readCurrent();
-      return matchesExpectedRecoveryTarget(current, expected, hasMainSessionRecoveryClaim(current));
+    return {
+      isCurrent: () => {
+        const current = source.readCurrent();
+        return matchesExpectedRecoveryTarget(
+          current,
+          expected,
+          hasMainSessionRecoveryClaim(current),
+        );
+      },
+      release() {},
     };
   }
-  return () => {
-    const exact = loadExactSessionEntry({ ...target, readConsistency: "latest" });
-    const current = exact?.sessionKey === target.sessionKey ? exact.entry : undefined;
-    return matchesExpectedRecoveryTarget(current, expected, hasMainSessionRecoveryClaim(current));
-  };
+  let release = () => {};
+  let databaseIdentity: string | undefined;
+  try {
+    return await withSessionEntriesFromStoreInWorker(
+      { ...target, sessionKeys: [target.sessionKey], projection: "list" },
+      async (read) => {
+        const entry = read.result.entries.find(
+          ({ sessionKey }) => sessionKey === target.sessionKey,
+        )?.entry;
+        const matches = (current: SessionEntry | undefined) =>
+          matchesExpectedRecoveryTarget(current, expected, hasMainSessionRecoveryClaim(current));
+        if (!databaseIdentity || !matches(entry)) {
+          return { isCurrent: () => false, release() {} };
+        }
+        const retained = retainPreparedSessionEntryPredicate({
+          databaseIdentity,
+          sessionKey: target.sessionKey,
+          entry,
+          matches: (_before, current) => matches(current),
+        });
+        release = retained.release;
+        return { isCurrent: retained.isCurrent, release };
+      },
+      false,
+      (_database, identity) => {
+        databaseIdentity = identity.key;
+      },
+    );
+  } catch (error) {
+    release();
+    throw error;
+  }
 }
 
 export async function loadExpectedRestartRecoveryTarget(
@@ -71,12 +119,18 @@ export async function loadExpectedRestartRecoveryTarget(
     readConsistency: "latest" as const,
   };
   const source = captureSessionEntryMetadataRead(target, () => {});
-  const exact = source ? undefined : loadExactSessionEntry(target);
+  const exact = source
+    ? undefined
+    : await withSessionStoreReaderInWorker(target, ({ reader, database, continuation }) =>
+        reader.readExactEntries({
+          sessionKeys: [target.sessionKey],
+          env: database.env,
+          continuation,
+        }),
+      );
   const entry = source
     ? source.readCurrent()
-    : exact?.sessionKey === target.sessionKey
-      ? exact.entry
-      : undefined;
+    : exact?.entries.find(({ sessionKey }) => sessionKey === target.sessionKey)?.entry;
   return matchesExpectedRecoveryTarget(entry, target, hasMainSessionRecoveryClaim(entry))
     ? entry
     : undefined;

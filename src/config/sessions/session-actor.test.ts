@@ -5,6 +5,7 @@ import { readOpenClawAgentDatabaseIdentity } from "../../state/openclaw-agent-db
 import { getOpenClawAgentDatabaseIfOpen } from "../../state/openclaw-agent-db.js";
 import { resolveIncognitoOpenClawAgentSqlitePath } from "../../state/openclaw-agent-db.paths.js";
 import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
+import { retainPreparedSessionEntryPredicate } from "./session-accessor.sqlite-entry-cache-publication-state.js";
 import { patchSessionEntryCore } from "./session-accessor.sqlite-entry.js";
 import type { SessionActorAuthority } from "./session-actor-contract.js";
 import { createDurableSessionActorFactory } from "./session-actor-durable.js";
@@ -122,6 +123,13 @@ it.each([false, true])(
         });
         expect(fixture.read()).toEqual(beforeEntry);
 
+        const retained = retainPreparedSessionEntryPredicate({
+          databaseIdentity: `file:${identity.identity}`,
+          sessionKey: fixture.scope.sessionKey,
+          entry: fixture.read(),
+          matches: (before, after) => before?.updatedAt === after?.updatedAt,
+        });
+        using _ = { [Symbol.dispose]: retained.release };
         const result = await actor.patch(
           {
             commandId: "durable",
@@ -129,6 +137,7 @@ it.each([false, true])(
             reducers: [{ kind: "activity", updatedAt: 543 }],
           },
           authority,
+          { committed: () => expect(retained.isCurrent()).toBe(false) },
         );
         expect(result.kind).toBe("committed");
         if (result.kind !== "committed") {

@@ -5,15 +5,13 @@ import {
   hasRestartRecoveryTerminalRun,
 } from "../config/sessions/restart-recovery-state.js";
 import type { HarnessCompletionRecovery } from "../config/sessions/restart-recovery-types.js";
-import {
-  loadExactSessionEntry,
-  readSessionSubmittedInput,
-} from "../config/sessions/session-accessor.js";
+import { readSessionSubmittedInput } from "../config/sessions/session-accessor.js";
 import {
   captureSessionActorStorageOwner,
   withSessionActorStorage,
   type SessionActorStorageBinding,
 } from "../config/sessions/session-actor-storage-binding.js";
+import { readSessionEntriesFromStoreInWorker } from "../config/sessions/session-entry-read-runtime.js";
 import type { InternalSessionEntry as SessionEntry } from "../config/sessions/types.js";
 import {
   getAgentRunContext,
@@ -36,9 +34,12 @@ function sameRequester(claim: HarnessCompletionRecovery, entry: SessionEntry): b
 }
 
 type CompletionTarget = { agentId: string; sessionKey: string; storePath: string };
-function readCurrent(target: CompletionTarget): SessionEntry | undefined {
-  const loaded = loadExactSessionEntry({ ...target, readConsistency: "latest" });
-  return loaded?.sessionKey === target.sessionKey ? loaded.entry : undefined;
+async function readCurrent(target: CompletionTarget): Promise<SessionEntry | undefined> {
+  const loaded = await readSessionEntriesFromStoreInWorker({
+    ...target,
+    sessionKeys: [target.sessionKey],
+  });
+  return loaded.entries.find(({ sessionKey }) => sessionKey === target.sessionKey)?.entry;
 }
 
 /** Only current process owners can hold admission before its input is committed. */
@@ -172,7 +173,7 @@ function reconcileMemoryHarnessCompletionDelivery(
 async function reconcileCurrentHarnessCompletionDelivery(
   params: CompletionTarget & { sourceRunId: string; taskRunId?: string },
 ): Promise<"unowned" | "pending" | "delivered" | "blocked"> {
-  const entry = readCurrent(params);
+  const entry = await readCurrent(params);
   if (!entry) {
     // No saved claim means this reconciler owns nothing; normal admission still
     // applies its existing requester lifecycle checks.
@@ -196,7 +197,7 @@ async function reconcileCurrentHarnessCompletionDelivery(
       { ...params, sessionId: entry.sessionId },
       `${params.sourceRunId}:user`,
     );
-    const current = readCurrent(params);
+    const current = await readCurrent(params);
     return !current ||
       current.sessionId !== entry.sessionId ||
       current.lifecycleRevision !== entry.lifecycleRevision ||

@@ -7,9 +7,7 @@ import {
   type CliHistoryWriter,
 } from "../../config/sessions/cli-history-boundary.js";
 import {
-  loadSessionEntryReadOnly,
   patchSessionEntryCore,
-  readSessionTranscriptWatermark,
   resolveSessionTranscriptDatabasePath,
   waitForSessionTranscriptProjection,
 } from "../../config/sessions/session-accessor.js";
@@ -197,16 +195,27 @@ async function prepareCliHistoryBoundaryOnce(
     authFingerprint: boundary.authFingerprint,
     lifecycleRevision: snapshot.lifecycleRevision,
     assertCurrent: assertWriterCurrent,
-    assertReadable: () => {
+    assertReadable: async () => {
+      assertWriterCurrent();
+      assertPhysicalSource();
+      const authority = memory
+        ? undefined
+        : (
+            await readSessionTranscriptAnchorsAsync(
+              target,
+              { entryIds: [], contextAuthority: true },
+              params.abortSignal,
+            )
+          ).contextAuthority;
       assertWriterCurrent();
       assertPhysicalSource();
       const facts =
         memory?.binding?.actor.target.sessionKey === target.sessionKey
           ? memory.binding.actor.snapshot(memory.authority)
           : memory?.owner?.readSession(target.sessionKey, memory.authority);
-      const current = memory ? facts?.entry : loadSessionEntryReadOnly(target);
+      const current = memory ? facts?.entry : authority?.entry;
       const proof = current?.cliHistoryBoundary;
-      const tip = memory ? facts?.transcript.watermark : readSessionTranscriptWatermark(target);
+      const tip = memory ? facts?.transcript.watermark : authority?.watermark;
       if (
         !current ||
         current.sessionId !== target.sessionId ||

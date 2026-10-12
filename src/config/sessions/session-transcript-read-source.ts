@@ -147,7 +147,7 @@ export async function withSessionTranscriptReadSource<T>(
         {
           agentId: selected.logicalAgentId,
           databaseAgentId: selected.database.agentId,
-          path: selected.database.path,
+          path: identity.canonicalPath,
           ownerStorePath: storePath,
           env: selected.database.env,
           sessionKey: selected.sessionKey,
@@ -190,7 +190,7 @@ export async function withSessionTranscriptReadSource<T>(
           };
           assertSource();
           const result = await readResolved(
-            { ...resolved, path: databasePath },
+            { ...resolved, path: selectedIdentity.canonicalPath },
             selectedIdentity,
             assertSource,
             [storePath],

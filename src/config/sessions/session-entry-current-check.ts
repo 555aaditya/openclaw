@@ -156,7 +156,14 @@ async function prepareSessionEntryCurrentCheck(inputParams: SessionEntryCurrentC
     };
     const identity = incognito ? undefined : readDatabasePathIdentitySync(target.storePath);
     const selectedStore = owner.selectedStore;
+    let active = true;
+    const release = () => {
+      active = false;
+    };
     const sourceIsCurrent = () => {
+      if (!active) {
+        return false;
+      }
       if (incognito) {
         incognito.assertCurrent();
         return true;
@@ -433,6 +440,7 @@ async function prepareSessionEntryCurrentCheck(inputParams: SessionEntryCurrentC
       assertCurrentAsync,
       source: preparedSource,
       entryCurrent,
+      release,
     };
   });
 }
@@ -448,5 +456,6 @@ export async function captureSessionEntryCurrentCheckAsyncInternal(
     assertCurrent: prepared.assertCurrentAsync,
     source: prepared.source,
     entryCurrent: prepared.entryCurrent,
+    release: prepared.release,
   };
 }

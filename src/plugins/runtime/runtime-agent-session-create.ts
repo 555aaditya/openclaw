@@ -1,15 +1,18 @@
 import { isDeepStrictEqual } from "node:util";
 import {
   deleteSessionEntryLifecycle,
-  loadSessionEntryReadOnly,
   patchSessionEntryCore as patchAccessorSessionEntry,
   rollbackAgentHarnessSessionEntryLifecycle,
   rollbackPluginOwnedSessionEntryLifecycle,
 } from "../../config/sessions/session-accessor.js";
 import { captureMemoryExactSessionReader } from "../../config/sessions/session-accessor.memory-exact-read.js";
+import { retainPreparedSessionEntryPredicate } from "../../config/sessions/session-accessor.sqlite-entry-cache-publication-state.js";
 import { resolveSqliteSessionKey } from "../../config/sessions/session-accessor.sqlite-scope-helpers.js";
 import { captureSessionActorStorageOwner } from "../../config/sessions/session-actor-storage-binding.js";
-import { readSessionEntryReadOnlyInWorker } from "../../config/sessions/session-entry-read-runtime.js";
+import {
+  readSessionEntryReadOnlyInWorker,
+  withSessionEntryReadOnlyInWorker,
+} from "../../config/sessions/session-entry-read-runtime.js";
 import { sessionEntryCommitGuardOptions } from "../../config/sessions/session-source-authority.js";
 import type { SessionAcpMeta, SessionEntry } from "../../config/sessions/types.js";
 import {
@@ -135,6 +138,10 @@ export async function createRuntimeSessionEntry(
         creationOwner.assertCurrent();
         const afterCreate = params.afterCreate;
         let initialization: ReturnType<typeof createSessionInitialization> | undefined;
+        let initializationReceipt:
+          | ReturnType<typeof retainPreparedSessionEntryPredicate>
+          | undefined;
+        let initializationEntry: SessionEntry | undefined;
         let callbackContext: CreatedContext | undefined;
         let finalEntryPatch: { pluginExtensions: SessionEntry["pluginExtensions"] } | undefined;
         let rollbackExpectedEntry: SessionEntry | undefined;
@@ -168,6 +175,34 @@ export async function createRuntimeSessionEntry(
             sessionKey: captured.key,
             storePath: captured.storePath,
           });
+          if (!memory) {
+            await withSessionEntryReadOnlyInWorker(
+              {
+                sessionKey: captured.key,
+                agentId: captured.agentId,
+                storePath: captured.storePath,
+              },
+              creationOwner.assertCurrent,
+              async (read, owner) => {
+                if (!read.ok) {
+                  throw read.error;
+                }
+                if (!isDeepStrictEqual(read.value, expected) || !owner.source) {
+                  throw new Error(`Session initialization owner changed: ${captured.key}`);
+                }
+                initializationEntry = read.value;
+                initializationReceipt = retainPreparedSessionEntryPredicate({
+                  databaseIdentity: `file:${owner.source.databaseIdentity}`,
+                  sessionKey: captured.key,
+                  entry: expected,
+                  matches: (_before, after) => {
+                    initializationEntry = after;
+                    return after === undefined || isDeepStrictEqual(after, expected);
+                  },
+                });
+              },
+            );
+          }
           initialization = createSessionInitialization(
             {
               storePath: captured.storePath,
@@ -181,14 +216,12 @@ export async function createRuntimeSessionEntry(
               } else {
                 creationOwner.assertCurrent();
               }
-              const current = memory
-                ? memory.read(captured.key)
-                : loadSessionEntryReadOnly({
-                    sessionKey: captured.key,
-                    storePath: captured.storePath,
-                    readConsistency: "latest",
-                  });
-              const matches = isDeepStrictEqual(current, expected);
+              // This synchronous guard also runs immediately before external policy injection.
+              const current = memory ? memory.read(captured.key) : initializationEntry;
+              if (!memory && !initializationReceipt?.isCurrent()) {
+                throw new Error(`Session initialization owner changed: ${captured.key}`);
+              }
+              const matches = memory ? isDeepStrictEqual(current, expected) : true;
               if (
                 deleted
                   ? current !== undefined
@@ -486,6 +519,7 @@ export async function createRuntimeSessionEntry(
           throw error;
         } finally {
           initialization?.close();
+          initializationReceipt?.release();
         }
       },
     });

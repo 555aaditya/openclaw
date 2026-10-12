@@ -192,9 +192,10 @@ function replaceOverrides(scope: Scope, overrides?: Overrides) {
     install(
       deliveryRuntime.captureRequesterSessionEntryCurrent,
       () => vi.spyOn(deliveryRuntime, "captureRequesterSessionEntryCurrent"),
-      (...args) =>
-        () =>
-          current.loadRequesterSessionEntry!(...args).entry,
+      async (...args) => ({
+        readCurrent: () => current.loadRequesterSessionEntry!(...args).entry,
+        release() {},
+      }),
     );
   }
   if (current.loadSessionEntryByKey) {

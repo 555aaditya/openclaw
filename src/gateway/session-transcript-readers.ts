@@ -14,6 +14,7 @@ import type {
   SessionArtifactReadQuery,
   SessionArtifactReadResult,
 } from "./session-artifact-read.js";
+import { aggregateSessionTranscriptUsage } from "./session-transcript-derived-readers.js";
 import { createSessionActorTranscriptReader } from "./session-transcript-memory-reader.js";
 import type {
   ReadSessionMessagesAsyncOptions,
@@ -171,6 +172,31 @@ export const readRecentSessionMessagesWithStatsAsync = createHistoryPageReader(
   ) => reader.readRecentSessionMessagesWithStatsAsync(scope, options),
   (read, target, options) => read({ kind: "recent-page", params: { target, options } }),
 );
+
+const readRecentSessionUsage = createHistoryPageReader(
+  async (reader, target, maxBytes: number) =>
+    aggregateSessionTranscriptUsage(
+      (
+        await reader.readRecentSessionMessagesWithStatsAsync(target, {
+          maxBytes,
+          maxLines: 1000,
+          maxMessages: 1000,
+        })
+      ).messages,
+    ),
+  async (read, target, maxBytes) => read({ kind: "recent-usage", params: { target, maxBytes } }),
+);
+
+/** Prepare bounded usage in the history owner before rendering a status response. */
+export async function readRecentSessionUsageFromTranscriptAsync(
+  scope: SessionTranscriptReadScope,
+  maxBytes: number,
+) {
+  return readRecentSessionUsage(
+    scope,
+    Math.max(1024, Math.floor(Number.isFinite(maxBytes) ? maxBytes : 8 * 1024 * 1024)),
+  );
+}
 
 export const readSessionMessagesPageWithStatsAsync = createHistoryPageReader(
   (

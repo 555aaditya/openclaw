@@ -37,9 +37,12 @@ export function prepareMemorySessionMutationFacts(
     storageTarget: { agentId, canonicalKey, storePath: memory.location.path },
     // The actor installs creation and its sharing facts together before acknowledgement.
     bindCreation() {},
+    prepareRead() {
+      return undefined;
+    },
     readCurrent(cfg: OpenClawConfig) {
       assertRoutingCurrent(cfg);
-      return memory.readCurrent();
+      return { ...memory.readCurrent(), readSource: memory.source };
     },
     release() {
       memoryActive = false;

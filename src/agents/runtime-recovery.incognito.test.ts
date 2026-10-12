@@ -22,7 +22,7 @@ import {
   setActiveEmbeddedRun,
 } from "./embedded-agent-runner/runs.js";
 import { createEmbeddedRunHandle, testing } from "./embedded-agent-runner/runs.test-support.js";
-import { captureRestartRecoveryDeliveryCurrent } from "./main-session-recovery/main-session-restart-recovery-delivery.js";
+import { prepareRestartRecoveryDeliveryCurrent } from "./main-session-recovery/main-session-restart-recovery-delivery.js";
 import { retryRestartAbortedMainSessionRecovery } from "./main-session-recovery/main-session-restart-recovery-runtime.js";
 import { resolveAgentRunSessionTarget } from "./run-session-target.js";
 
@@ -173,39 +173,76 @@ it("keeps selected absence missing without discovering a durable or successor ow
   expect(memorySessionActorOwners.read({ agentId: "main", path: storePath })).toBeUndefined();
 });
 
-it("force-clears an active run through its memory snapshot", async () => {
-  const target = await create("cancel-snapshot", {
-    lifecycleRunId: "cancel-run",
-    startedAt: 9_000,
-  });
-  setRuntimeConfigSnapshot({
-    session: { store: path.join(env.OPENCLAW_STATE_DIR!, "sessions.json") },
-  });
-  const aborted = vi.fn();
-  setActiveEmbeddedRun(
-    target.sessionId,
-    createEmbeddedRunHandle({ runId: "cancel-run", abort: aborted }),
-    target.sessionKey,
-    undefined,
-    "main",
-  );
-  await expect(
-    withMemory(target, () =>
-      abortAndDrainEmbeddedAgentRun({
-        sessionId: target.sessionId,
-        sessionKey: target.sessionKey,
-        forceClear: true,
-        settleMs: 0,
-      }),
-    ),
-  ).resolves.toMatchObject({ forceCleared: true });
-  expect(aborted).toHaveBeenCalledOnce();
-  expect(actor.readSession(target.sessionKey, authority)?.entry).toMatchObject({
-    status: "killed",
-    abortedLastRun: true,
-  });
-  expect(isEmbeddedAgentRunHandleActive(target.sessionId)).toBe(false);
-});
+it.each(["settle", "replacement"] as const)(
+  "force-clears from memory and honors %s before terminal persistence",
+  async (outcome) => {
+    const target = await create(`cancel-snapshot-${outcome}`, {
+      lifecycleRunId: "cancel-run",
+      startedAt: 9_000,
+    });
+    setRuntimeConfigSnapshot({
+      session: { store: path.join(env.OPENCLAW_STATE_DIR!, "sessions.json") },
+    });
+    const aborted = vi.fn();
+    setActiveEmbeddedRun(
+      target.sessionId,
+      createEmbeddedRunHandle({ runId: "cancel-run", abort: aborted }),
+      target.sessionKey,
+      undefined,
+      "main",
+    );
+    let replacementRegistered = false;
+    const replacementAbort = vi.fn();
+    const acquire = actor.acquireExisting.bind(actor);
+    const preparation = vi
+      .spyOn(actor, "acquireExisting")
+      .mockImplementationOnce(async (...args) => {
+        expect(aborted).toHaveBeenCalledOnce();
+        if (outcome === "replacement") {
+          replacementRegistered = true;
+          setActiveEmbeddedRun(
+            target.sessionId,
+            createEmbeddedRunHandle({ runId: "replacement-run", abort: replacementAbort }),
+            target.sessionKey,
+            undefined,
+            "main",
+          );
+        }
+        return acquire(...args);
+      });
+    try {
+      await expect(
+        withMemory(target, () =>
+          abortAndDrainEmbeddedAgentRun({
+            sessionId: target.sessionId,
+            sessionKey: target.sessionKey,
+            forceClear: true,
+            settleMs: 0,
+          }),
+        ),
+      ).resolves.toMatchObject({ forceCleared: true });
+      expect(aborted).toHaveBeenCalledOnce();
+      const entry = actor.readSession(target.sessionKey, authority)?.entry;
+      expect(replacementRegistered).toBe(outcome === "replacement");
+      if (outcome === "replacement") {
+        expect(entry).toMatchObject({ sessionId: target.sessionId, lifecycleRunId: "cancel-run" });
+        expect(entry?.status).toBeUndefined();
+        expect(entry?.abortedLastRun).toBeUndefined();
+        expect(isEmbeddedAgentRunHandleActive(target.sessionId)).toBe(true);
+        expect(replacementAbort).not.toHaveBeenCalled();
+      } else {
+        expect(entry).toMatchObject({
+          sessionId: target.sessionId,
+          status: "killed",
+          abortedLastRun: true,
+        });
+        expect(isEmbeddedAgentRunHandleActive(target.sessionId)).toBe(false);
+      }
+    } finally {
+      preparation.mockRestore();
+    }
+  },
+);
 
 it("settles same-process recovery through its original actor after preparation yields", async () => {
   const target = await create("pending-recovery", {
@@ -250,20 +287,24 @@ it("rechecks delivery policy and exact actor lifetime in retained notice callbac
     restartRecoveryDeliveryContext: deliveryContext,
   });
   await withMemory(target, async () => {
-    const isCurrent = captureRestartRecoveryDeliveryCurrent({
+    const { isCurrent, release } = await prepareRestartRecoveryDeliveryCurrent({
       ...target,
       recoveryRunId: "notice-run",
       lifecycleGeneration: getAgentEventLifecycleGeneration(),
       deliveryContext,
       cfg: {},
     });
-    expect(isCurrent()).toBe(true);
-    await patchSessionEntryCore(target, () => ({ sendPolicy: "deny" }));
-    expect(isCurrent()).toBe(false);
-    await patchSessionEntryCore(target, () => ({ sendPolicy: "allow" }));
-    expect(isCurrent()).toBe(true);
-    actor.closeSession(target.sessionKey);
-    expect(() => isCurrent()).toThrow("closed");
+    try {
+      expect(isCurrent()).toBe(true);
+      await patchSessionEntryCore(target, () => ({ sendPolicy: "deny" }));
+      expect(isCurrent()).toBe(false);
+      await patchSessionEntryCore(target, () => ({ sendPolicy: "allow" }));
+      expect(isCurrent()).toBe(true);
+      actor.closeSession(target.sessionKey);
+      expect(() => isCurrent()).toThrow("closed");
+    } finally {
+      release();
+    }
   });
 });
 

@@ -115,6 +115,7 @@ it.each(["worker", "compatibility"] as const)(
   "retains supplied %s source policy alongside an overlay through final native admission",
   async (kind) => {
     await withOpenClawTestState({ scenario: "minimal" }, async () => {
+      setRuntimeConfigSnapshot({});
       const source = await createPolicyOperation("source");
       const target = await createPolicyOperation("target");
       const assertSourcePolicy = (fingerprint: string | undefined) => {
@@ -199,6 +200,7 @@ it.each([
   "retains file policy lineage in $admission admission after $change",
   async ({ change, admission }) => {
     await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
+      setRuntimeConfigSnapshot({});
       const multipleStores = change.startsWith("other-store") || change === "missing-store";
       const store = state.statePath(
         "configured",

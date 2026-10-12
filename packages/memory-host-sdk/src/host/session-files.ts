@@ -584,8 +584,9 @@ export async function buildSessionEntry(
 export async function buildSessionEntryInProcess(
   absPath: string,
   opts: BuildSessionEntryOptions = {},
+  snapshot?: SessionEntrySnapshot,
 ): Promise<SessionFileEntry | null> {
-  return buildSessionEntryFromSource(absPath, opts);
+  return buildSessionEntryFromSource(absPath, opts, snapshot);
 }
 
 /** Project an actor-owned snapshot without reopening its physical store on the caller. */

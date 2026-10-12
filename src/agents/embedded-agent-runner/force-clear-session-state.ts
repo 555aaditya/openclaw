@@ -1,6 +1,6 @@
 import { getRuntimeConfig } from "../../config/io.js";
 import { resolveSessionStorePathCore } from "../../config/sessions/paths.js";
-import { loadSessionEntry, patchSessionEntryCore } from "../../config/sessions/session-accessor.js";
+import { patchSessionEntryCore } from "../../config/sessions/session-accessor.js";
 import {
   acquireSessionActorStorage,
   captureSessionActorStorageOwner,
@@ -8,6 +8,7 @@ import {
   runWithSessionActorStorage,
   type CapturedSessionActorStorageOwner,
 } from "../../config/sessions/session-actor-storage-binding.js";
+import { readSessionEntryReadOnlyInWorker } from "../../config/sessions/session-entry-read-runtime.js";
 import { diagnosticLogger as diag } from "../../logging/diagnostic.js";
 import { resolveSessionAgentId } from "../agent-scope.js";
 
@@ -20,11 +21,11 @@ type ForceClearSessionSnapshot = {
   updatedAt: number;
 };
 
-export function tryLoadForceClearSessionSnapshot(
+export async function tryLoadForceClearSessionSnapshot(
   sessionKey: string,
   preparedAgentId?: string,
   runId?: string,
-): ForceClearSessionSnapshot | undefined {
+): Promise<ForceClearSessionSnapshot | undefined> {
   try {
     const cfg = getRuntimeConfig();
     const agentId = resolveSessionAgentId({ config: cfg, sessionKey, agentId: preparedAgentId });
@@ -41,7 +42,7 @@ export function tryLoadForceClearSessionSnapshot(
     // Cancellation must not queue behind the run whose settlement it is waiting for.
     const entry = source
       ? readCapturedSessionActorEntry(source, sessionKey)
-      : loadSessionEntry({ agentId, sessionKey, storePath });
+      : await readSessionEntryReadOnlyInWorker({ agentId, sessionKey, storePath });
     if (
       !entry ||
       entry.status !== undefined ||

@@ -105,7 +105,7 @@ export async function prepareAndAdmitChatSend(
     return undefined;
   }
   if (normalizedRequest.value.mentions) {
-    const mentions = context.mentionInbox?.validateRecipients(
+    const mentions = await context.mentionInbox?.validateRecipientsAsync(
       client,
       loadedSession.value.entry
         ? { sessionKey: loadedSession.value.sessionKey, agentId: loadedSession.value.agentId }
@@ -164,6 +164,7 @@ export async function prepareAndAdmitChatSend(
       onAdmissionOwned,
       hasCurrentClientAuthority,
       withPreparedCurrent: sessionMutationAuthorization?.withPreparedCurrent,
+      followRegistration: sessionMutationAuthorization?.followRegistration,
     });
     if (!admitted.ok) {
       return undefined;

@@ -60,6 +60,9 @@ const tempDirs = useAutoCleanupTempDirTracker(afterEach);
 beforeEach(() => setRuntimeConfigSnapshot({}));
 afterEach(() => clearRuntimeConfigSnapshot());
 
+beforeEach(() => setRuntimeConfigSnapshot({}));
+afterEach(() => clearRuntimeConfigSnapshot());
+
 type TerminalType = Extract<
   SessionTranscriptReconcileWorkerMessage,
   { type: "done" | "failed" }

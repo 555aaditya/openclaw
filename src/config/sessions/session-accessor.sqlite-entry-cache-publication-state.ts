@@ -34,7 +34,7 @@ import {
   type PreparedSessionSharingRead,
   type SessionSharingRetentionRequest,
 } from "./session-accessor.sqlite-sharing-acquisition.js";
-import type { SessionEntry } from "./types.js";
+import type { InternalSessionEntry as SessionEntry } from "./types.js";
 
 export const preparedSharingReads = resolveGlobalSingleton(
   Symbol.for("openclaw.preparedSessionSharingReads"),
@@ -276,8 +276,40 @@ export function retainPreparedSessionSharingFacts(params: SessionSharingRetentio
         !publication.superseded.has(params.sessionKey) &&
         !publication.generationUnchanged.has(params.sessionKey),
     );
+  const predicatePending = () =>
+    (read.predicate?.pending.size ?? 0) > 0 ||
+    [...(pendingSessionEntryPublications.get(key) ?? [])].some((publication) => {
+      if (publication.settled || publication.superseded.has(params.sessionKey)) {
+        return false;
+      }
+      const entryPostimage = publication.entryPostimages?.get(params.sessionKey);
+      if (read.predicate && entryPostimage) {
+        // These fields are unchanged whether the pending transaction commits or rolls back.
+        try {
+          return !read.predicate.matches(entryPostimage);
+        } catch {
+          return true;
+        }
+      }
+      if (!read.predicate || !publication.participantProjections?.has(params.sessionKey)) {
+        return true;
+      }
+      const projection = publication.participantProjections.get(params.sessionKey);
+      if (!projection) {
+        return false;
+      }
+      const postimage = projectSessionEntryPredicateChange(read.predicate, {
+        kind: "participants",
+        projection,
+      });
+      try {
+        return !postimage || !read.predicate.matches(postimage);
+      } catch {
+        return true;
+      }
+    });
   return {
-    hasPendingPublication: () => pending(false, read.predicate?.pending),
+    hasPendingPublication: predicatePending,
     prepareRead: (): Promise<void> | undefined => {
       // Publication begins only after writer admission; queued writers cannot block their owner.
       const completions = [...(pendingSessionEntryPublications.get(key) ?? [])].flatMap(
@@ -295,6 +327,10 @@ export function retainPreparedSessionSharingFacts(params: SessionSharingRetentio
       }
       read.facts = reconcileSessionSharingAcquisition(acquisition, snapshot);
       read.acquisition = undefined;
+      return read.facts;
+    },
+    adoptCreatedEntry: (entry: SessionSharingEntry) => {
+      read.facts = { entry, membership: new Set() };
     },
     readGeneration: () => (active && !generationPending() ? read.generation?.current : undefined),
     readGenerationSettings: () => (active && !pending(true) ? read.generation?.current : undefined),
@@ -335,9 +371,11 @@ export function retainPreparedSessionEntryPredicate(params: {
   });
   let active = true;
   const canRefresh = () => active && predicate.state !== "changed";
+  const isCurrent = () =>
+    canRefresh() && predicate.state === "current" && !retained.hasPendingPublication();
   return {
-    isCurrent: () =>
-      canRefresh() && predicate.state === "current" && !retained.hasPendingPublication(),
+    isCurrent,
+    readCurrent: () => (isCurrent() ? { entry: structuredClone(predicate.entry) } : undefined),
     canRefresh,
     captureRevision: () => predicate.revision,
     acknowledge: (entry: SessionEntry | undefined, revision: number) => {
@@ -403,7 +441,7 @@ export function retainedSharingReads(
 type PreparedSharingChangeRegistry = {
   changes: WeakMap<object, SessionEntryPublicationRecord>;
   operations: WeakMap<SessionEntryCreationOperation, CreationRecord>;
-  current: AsyncLocalStorage<CreationRecord>;
+  current: AsyncLocalStorage<CreationRecord | undefined>;
 };
 
 export const preparedSharingChanges: PreparedSharingChangeRegistry = resolveGlobalSingleton(
@@ -411,7 +449,7 @@ export const preparedSharingChanges: PreparedSharingChangeRegistry = resolveGlob
   () => ({
     changes: new WeakMap<object, SessionEntryPublicationRecord>(),
     operations: new WeakMap<SessionEntryCreationOperation, CreationRecord>(),
-    current: new AsyncLocalStorage<CreationRecord>(),
+    current: new AsyncLocalStorage<CreationRecord | undefined>(),
   }),
 );
 

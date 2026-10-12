@@ -4,6 +4,7 @@ import { createSubsystemLogger } from "../logging/subsystem.js";
 import { normalizeAgentId } from "../routing/session-key.js";
 import { getAsyncWorkSignal, trackAsyncWork } from "../shared/async-work-scope.js";
 import type { UsageOverviewOptions, UsageOverviewSession } from "../shared/usage-types.js";
+import { getAgentDeletionDatabaseCleanup } from "../state/agent-deletion-cleanup.js";
 import { resolveOpenClawAgentSqlitePath } from "../state/openclaw-agent-db.js";
 import { isAbortError } from "./abort-signal.js";
 import { formatErrorMessage } from "./errors.js";
@@ -305,6 +306,16 @@ export function requestCostUsageCacheRefresh(params: UsageCostRefreshRequest): v
       path: params.databasePath,
       env: params.env,
     });
+  // Purge publications must not start rebuildable cache work in the retiring database.
+  if (
+    getAgentDeletionDatabaseCleanup({
+      agentId: params.agentId,
+      path: databasePath,
+      env: params.env,
+    })?.ownsDatabase
+  ) {
+    return;
+  }
   const queueKey = databasePath;
   const refreshes = usageCostRefreshes.get(scopeSignal) ?? new Map<string, UsageCostRefreshState>();
   const existing = refreshes.get(queueKey);

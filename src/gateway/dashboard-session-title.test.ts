@@ -21,6 +21,10 @@ vi.mock("../config/sessions/session-accessor.js", () => ({
 vi.mock("../config/sessions/session-entry-read-runtime.js", () => ({
   readSessionEntryReadOnlyInWorker: loadSessionEntry,
 }));
+// mock-isolation: Title orchestration reads synthetic session entries without starting storage workers.
+vi.mock("../config/sessions/session-entry-read-runtime.js", () => ({
+  readSessionEntryReadOnlyInWorker: async (scope: unknown) => loadSessionEntry(scope),
+}));
 // mock-isolation: Title orchestration tests supply transcript reads without starting workers.
 vi.mock("./session-transcript-title-reader.js", () => ({
   readSessionTitleFieldsFromTranscriptAsync: readSessionTitleFieldsFromTranscript,

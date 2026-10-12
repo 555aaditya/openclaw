@@ -37,7 +37,6 @@ import { withSubagentSessionSource } from "./subagent-session-source.js";
 import type { SpawnSubagentParams } from "./subagent-spawn-contract.js";
 import type { resolveSubagentModelAndThinkingPlan } from "./subagent-spawn-plan.js";
 import {
-  loadSessionEntry,
   emitSessionLifecycleEvent,
   resolveGatewaySessionStoreTargetInWorker,
   upsertSessionEntryCore,
@@ -285,15 +284,12 @@ export async function createInitialSubagentSession(input: {
               );
             };
             const assertParentSkills = () => {
-              if (!parentMemory && !expected) {
+              if (!parentMemory) {
                 return;
               }
               const latest = parentMemory
                 ? parentMemory.actor.snapshot(parentMemory.authority)?.entry
-                : loadSessionEntry({
-                    storePath: parentStorePath,
-                    sessionKey: parentTarget.canonicalKey,
-                  });
+                : undefined;
               if (
                 (latest === undefined) !== (expected === undefined) ||
                 fields.some((field) => !isDeepStrictEqual(latest?.[field], expected?.[field]))

@@ -37,10 +37,7 @@ import {
   onSessionIdentityMutation,
   onSessionLifecycleEvent,
 } from "../sessions/session-lifecycle-events.js";
-import {
-  onInternalSessionTranscriptUpdate,
-  type InternalSessionTranscriptUpdate,
-} from "../sessions/transcript-events.js";
+import { onInternalSessionTranscriptUpdate } from "../sessions/transcript-events.js";
 import { runOutsideAsyncWorkScope } from "../shared/async-work-scope.js";
 import { createDeferredCore } from "../shared/deferred.js";
 import { runInDetachedAsyncContext } from "../shared/detached-async-context.js";
@@ -151,6 +148,7 @@ export function startGatewayEventSubscriptions(params: GatewayEventSubscriptionP
   });
   const sessionObserver = createSessionObserver({
     getConfig: getRuntimeConfig,
+    getSessionRowProjection: params.getSessionRowProjection,
     subscribers: params.sessionMessageSubscribers,
     sessionEventSubscribers: params.sessionEventSubscribers,
     broadcastToConnIds: params.broadcastToConnIds,
@@ -659,16 +657,16 @@ export function startGatewayEventSubscriptions(params: GatewayEventSubscriptionP
     // Committed publication retains Gateway work, not the producer's actor handle.
     const dispatch = runWithRetainedGatewayRootWork(() =>
       runInDetachedAsyncContext(() =>
-        dispatchEventHandler<InternalSessionTranscriptUpdate>({
-          loadHandler: agentHandler
-            ? () =>
-                agentHandler
-                  .then(
-                    (handler) => handler.retireTranscript(evt, publication.promise),
-                    () => undefined,
-                  )
-                  .then(getTranscriptUpdateHandler)
-            : getTranscriptUpdateHandler,
+        dispatchEventHandler({
+          loadHandler: async () => {
+            if (agentHandler) {
+              await agentHandler.then(
+                (handler) => handler.retireTranscript(evt, publication.promise),
+                () => undefined,
+              );
+            }
+            return getTranscriptUpdateHandler();
+          },
           event: evt,
           log: params.log,
           failureMessage: "Transcript update dispatch failed",

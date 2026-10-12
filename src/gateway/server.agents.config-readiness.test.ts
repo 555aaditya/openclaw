@@ -31,6 +31,7 @@ import { acquireTestPortBlock } from "../test-utils/port-claims.js";
 import * as configReload from "./config-reload.js";
 import * as agentDatabases from "./server-reload-agent-databases.js";
 import { startGatewayServer } from "./server.js";
+import * as sessionCreateDiagnostics from "./session-create-diagnostics.js";
 import { connectGatewayClient, disconnectGatewayClient } from "./test-helpers.e2e.js";
 
 const cliEntrypoint = resolveRuntimeWorkerArgv(
@@ -48,7 +49,11 @@ it("publishes agent mutations before acknowledging immediate session and roster 
   let publicationStage = "not entered";
   let cliOutputReceived = false;
   let phase = "preparing fixture";
-  let operationFailure: string | undefined;
+  let operationFailure: { phase: string; message: string } | undefined;
+  const sessionCreates: Array<{
+    phase: sessionCreateDiagnostics.SessionCreatePhase;
+    completed: boolean;
+  }> = [];
   const operatorStages: string[] = [];
   onTestFailed(() => {
     console.error("Agent config readiness failure", {
@@ -57,8 +62,30 @@ it("publishes agent mutations before acknowledging immediate session and roster 
       cliOutputReceived,
       operatorStages,
       operationFailure,
+      sessionCreates,
     });
   });
+  const startSessionCreate = sessionCreateDiagnostics.startSessionCreateDiagnostics;
+  const sessionCreateSpy = vi
+    .spyOn(sessionCreateDiagnostics, "startSessionCreateDiagnostics")
+    .mockImplementation(() => {
+      const diagnostics = startSessionCreate();
+      const progress: (typeof sessionCreates)[number] = { phase: "preflight", completed: false };
+      sessionCreates.push(progress);
+      return {
+        mark(next) {
+          progress.phase = next;
+          diagnostics?.mark(next);
+        },
+        [Symbol.dispose]() {
+          try {
+            diagnostics?.[Symbol.dispose]();
+          } finally {
+            progress.completed = true;
+          }
+        },
+      };
+    });
   let reloadScheduler: GatewayScheduler | undefined;
   const startReloader = configReload.startGatewayConfigReloader;
   const reloaderSpy = vi
@@ -94,6 +121,7 @@ it("publishes agent mutations before acknowledging immediate session and roster 
     releasePublication.resolve();
     reloaderSpy.mockRestore();
     revivalSpy.mockRestore();
+    sessionCreateSpy.mockRestore();
   });
   await withOpenClawTestState(
     {
@@ -366,7 +394,7 @@ it("publishes agent mutations before acknowledging immediate session and roster 
               signal,
             );
           } catch (error) {
-            operationFailure = String(error);
+            operationFailure = { phase, message: String(error) };
             throw error;
           } finally {
             phase = "disconnecting peer operator";
@@ -470,7 +498,7 @@ it("publishes agent mutations before acknowledging immediate session and roster 
           expect(getRuntimeConfig().agents?.entries?.["saved-only"]).toBeUndefined();
           expect(recoveryRestart).not.toHaveBeenCalled();
         } catch (error) {
-          operationFailure ??= String(error);
+          operationFailure ??= { phase, message: String(error) };
           throw error;
         } finally {
           phase = "disconnecting primary operator";

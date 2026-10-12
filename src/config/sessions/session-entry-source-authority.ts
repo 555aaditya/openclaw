@@ -1,7 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
-import { readSqliteNativeMutationRevision } from "../../infra/sqlite-schema-facts.js";
 import { assertExistingDatabaseIdentity } from "../../infra/sqlite-worker-identity.js";
-import { getOpenClawAgentDatabaseIfOpen } from "../../state/openclaw-agent-db.js";
+import { retainPreparedSessionEntryPredicate } from "./session-accessor.sqlite-entry-cache-publication-state.js";
 import { prepareSqliteScope, toDatabaseOptions } from "./session-accessor.sqlite-scope.js";
 import {
   captureSessionActorStorageOwner,
@@ -165,11 +164,17 @@ export function captureSessionEntrySourceAssertion(params: {
       };
       assertCaptured();
       const database = { agentId: source.agentId, path: source.path, env };
-      const native = params.prepareConversations
-        ? undefined
-        : getOpenClawAgentDatabaseIfOpen(database);
-      const revision = native && readSqliteNativeMutationRevision(native.db);
       const retained = retainSessionHistoryWorkerDatabase(database);
+      // Join receipt publication before dispatch so a newer write cannot certify an older read.
+      const predicate = retainPreparedSessionEntryPredicate({
+        databaseIdentity: identity.key,
+        sessionKey: scope.sessionKey,
+        entry: undefined,
+        matches: (_before, current) =>
+          (current === undefined) === (expected === undefined) &&
+          fields.every((field) => isDeepStrictEqual(current?.[field], expected?.[field])),
+      });
+      const revision = predicate.captureRevision();
       let active = true;
       let conversations:
         | Awaited<ReturnType<NonNullable<typeof params.prepareConversations>>>
@@ -178,15 +183,7 @@ export function captureSessionEntrySourceAssertion(params: {
         assertCaptured();
         retained.owner.assertCurrent();
         conversations?.assertCurrent();
-        if (
-          !active ||
-          (!params.prepareConversations &&
-            (getOpenClawAgentDatabaseIfOpen(database) !== native ||
-              (native &&
-                (native.db.isTransaction ||
-                  revision === undefined ||
-                  readSqliteNativeMutationRevision(native.db) !== revision))))
-        ) {
+        if (!active || !predicate.isCurrent()) {
           params.refuse();
         }
       };
@@ -197,18 +194,15 @@ export function captureSessionEntrySourceAssertion(params: {
           includeAuthorization: true,
           env,
         });
-        assertCurrent();
         const entry = result.entries.find((row) => row.sessionKey === scope.sessionKey)?.entry;
         if (
           result.databaseIdentity?.identity !== source.databaseIdentity ||
           result.databaseIdentity?.birthtime !== source.databaseBirthtime ||
-          (entry === undefined) !== (expected === undefined) ||
-          fields.some((field) => !isDeepStrictEqual(entry?.[field], expected?.[field]))
+          !predicate.acknowledge(entry, revision)
         ) {
           params.refuse();
         }
-        // Complete alternative predicates are revalidated by the writer; unrelated native
-        // writes cannot revoke a still-matching branch through a whole-store revision.
+        assertCurrent();
         conversations = await params.prepareConversations?.(async (conversationRefs) => {
           if (conversationRefs.length === 0) {
             return new Map();
@@ -243,11 +237,13 @@ export function captureSessionEntrySourceAssertion(params: {
           ],
           release: () => {
             active = false;
+            predicate.release();
             retained.release();
           },
         };
       } catch (error) {
         active = false;
+        predicate.release();
         await releaseSessionSourceAuthorities([retained], [error]);
         throw error;
       }
