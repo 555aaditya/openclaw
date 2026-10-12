@@ -1,5 +1,6 @@
 import { expect, it, vi } from "vitest";
 import { trackSqliteStatementExecutions } from "../../../test/helpers/sqlite-statement-execution-counter.js";
+import { readActivitySummaryBatchFromReplica } from "../../gateway/session-activity-summary-source.js";
 import { runSqliteImmediateTransactionSync } from "../../infra/sqlite-transaction.js";
 import { readSessionTranscriptBoundedActiveContextCore } from "./session-accessor.sqlite-active-context.js";
 import {
@@ -16,6 +17,7 @@ import {
 import { replaceSqliteTranscriptSuffixInTransaction } from "./session-accessor.sqlite-transcript-suffix.js";
 import {
   createSessionActorReplica,
+  readSessionActorTranscriptAnchorsFromReplica,
   readSessionActorTranscriptReplica,
   retainSessionActorTranscriptReplica,
 } from "./session-actor-replica.js";
@@ -115,6 +117,15 @@ function contextFixture(f: Fixture) {
   return {
     replica,
     seed,
+    anchors() {
+      return readSessionActorTranscriptAnchorsFromReplica(
+        { ...f.scope, path: f.database.path },
+        { entryIds: ["question", "answer"], includeWatermark: true },
+      );
+    },
+    summary() {
+      return readActivitySummaryBatchFromReplica({ scope: f.scope });
+    },
     read() {
       const hot = replica.read();
       return (
@@ -204,6 +215,12 @@ it("advances retained context through native actor appends and preserves it thro
         ),
       ).toBe(true);
       expect(context.read()?.snapshot.events).toHaveLength(5);
+      expect(context.anchors()?.watermark).toEqual(context.replica.read()!.transcript.watermark);
+      expect(context.summary()?.page.events).toHaveLength(4);
+      expect(context.summary()?.page.events.at(-1)?.event).toMatchObject({
+        id: "next-answer",
+        message: { content: "Next answer" },
+      });
     } finally {
       context.replica.close();
     }
@@ -228,6 +245,14 @@ it("invalidates retained context for every nonactor transcript writer class", as
         replace(f);
         const before = context.seed();
         expect(context.read()?.snapshot.events).toEqual(transcript(f));
+        expect(context.anchors()?.anchors.map((anchor) => anchor.entryId)).toEqual([
+          "question",
+          "answer",
+        ]);
+        expect(context.summary()?.page.events.map(({ event }) => event)).toEqual([
+          question,
+          answer,
+        ]);
         runSqliteImmediateTransactionSync(f.database.db, () => {
           if (change === "append") {
             appendTranscriptEventsInTransaction(f.database, f.scope, [
@@ -293,6 +318,8 @@ it("invalidates retained context for every nonactor transcript writer class", as
           }
         });
         expect(context.read(), change).toBeUndefined();
+        expect(context.anchors(), change).toBeUndefined();
+        expect(context.summary(), change).toBeUndefined();
         const after = f.read();
         if (change === "correlation") {
           expect(after.transcript.version.generation).toBe(before.transcript.version.generation);
@@ -355,6 +382,8 @@ it("drops retained context on cold archival and leaves restoration to a fresh bo
         ),
       ).toMatchObject({ archivedTranscripts: 1 });
       expect(context.read()).toBeUndefined();
+      expect(context.anchors()).toBeUndefined();
+      expect(context.summary()).toBeUndefined();
       const plan = {
         kind: "cold-restore" as const,
         databaseOptions,
@@ -366,8 +395,15 @@ it("drops retained context on cold archival and leaves restoration to a fresh bo
         restored: true,
       });
       expect(context.read()).toBeUndefined();
+      expect(context.anchors()).toBeUndefined();
+      expect(context.summary()).toBeUndefined();
       context.seed();
       expect(context.read()?.snapshot.events).toEqual(transcript(f));
+      expect(context.anchors()?.anchors.map((anchor) => anchor.entryId)).toEqual([
+        "question",
+        "answer",
+      ]);
+      expect(context.summary()?.page.events.map(({ event }) => event)).toEqual([question, answer]);
     } finally {
       context.replica.close();
     }

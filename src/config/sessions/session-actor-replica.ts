@@ -432,6 +432,24 @@ function readCurrentEntryCellForPath(params: { path: string; sessionKey: string 
   return undefined;
 }
 
+/** Complete transcript bodies share the actor's receipt token and bounded residency. */
+export function readSessionActorCompleteTranscriptFromReplica(params: {
+  path: string;
+  sessionKey: string;
+  sessionId: string;
+}) {
+  const current = readCurrentEntryCellForPath(params);
+  const snapshot = current?.cell.snapshot;
+  const context = current?.cell.transcript?.context;
+  return snapshot?.entry?.sessionId === params.sessionId && context?.rows
+    ? {
+        snapshot,
+        rows: context.rows,
+        activeLeafEntryId: context.exact.snapshot.activeLeafEntryId,
+      }
+    : undefined;
+}
+
 /** Recorded transcript facts survive actor release; delivery authority stays with the caller. */
 export function readSessionActorTranscriptAnchorsFromReplica(
   params: { path: string; sessionKey: string; sessionId: string; agentId: string },

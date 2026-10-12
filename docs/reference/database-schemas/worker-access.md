@@ -119,6 +119,19 @@ delivery can read committed anchor facts after the actor handle is released;
 the delivery caller still owns current authorization. Reset boundaries, session
 replacement, and transcript edits continue to invalidate retained context.
 
+Trajectory append and retention writers publish the session and trajectory
+sequence range they changed. Their trajectory-only SQL declares no session-row
+or transcript changes, so it does not invalidate unrelated actor facts. Durable
+runtime appends always use the existing agent execution worker. Transcript
+appends, rewrites, rewind, compaction, archive/restore, deletion, and unknown
+writes retain their session-scoped invalidation.
+
+Activity-summary batches also reuse the actor's complete retained linear context
+at its committed write token. The replica and worker share incremental batch
+selection, including byte limits and omitted-content handling. Incomplete or
+invalidated context uses the bounded worker reader; the replica adds no separate
+cache, stored format, retention rule, or permission grant.
+
 Parent forks use the existing session-entry worker for both transcript copying
 and child-row commits. Internal fork transformations are data patches, not native
 callbacks. The writer reads the current parent and child once and merges the
