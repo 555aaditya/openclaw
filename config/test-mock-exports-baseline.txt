@@ -9728,7 +9728,6 @@
 ["ui/src/app/nav-drawer-swipe.runtime.test.ts","./mobile-nav-layout.ts","2871f98b777de8529de76df512db3847186730e3bd0b7516eaf47100dac2b13d",1]
 ["ui/src/app/overlays-update-continuity.test.ts","../lib/toast.ts","68c3a82839bf89ff12172a36802f02e76794e74bef5943b01ea140589a6cb2af",1]
 ["ui/src/app/overlays-update-report.test.ts","./update-failure-report.ts","791cc403b13a7695ebb76971ed6c1d14ece29202adab963104a038925dd12ed6",1]
-["ui/src/app/overlays.test.ts","../build-info.ts","294fb08854d5cfc82a955f16c7f5ab37f47568ada7eb5fa68eea4e788cb02504",1]
 ["ui/src/app/overlays.test.ts","../lib/toast.ts","68c3a82839bf89ff12172a36802f02e76794e74bef5943b01ea140589a6cb2af",1]
 ["ui/src/app/router-outlet-chat.test.ts","../pages/chat/chat-page.ts","0c0b0e4ed29e9fcbd4b068521e045fa1b22727a9e3cdb000c832517add0b1b19",1]
 ["ui/src/app/service-worker-refresh.runtime.test.ts","./stale-chunk-reload.ts","a10a2db3e4d39b687450c377b506abab507e7e1c7c28ad520aa993277f330b7a",1]

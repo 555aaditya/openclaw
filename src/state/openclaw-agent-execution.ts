@@ -40,6 +40,14 @@ const executionState = resolveGlobalSingleton<AgentDatabaseExecutionState>(
 );
 const executions = executionState.owners;
 
+/** Explicit preparation joins the file owner's already-captured creation target. */
+export function captureOpenClawAgentDatabasePreparationExecution(
+  options: OpenClawAgentDatabaseOptions,
+  expectedIdentity?: AgentDatabaseExecutionCaptureConstraints["expectedIdentity"],
+): OpenClawAgentDatabaseExecution {
+  return captureOpenClawAgentDatabaseExecution(options, { expectedIdentity }, true);
+}
+
 /** Only the deleted agent's store needs a fresh, exclusive cleanup owner. */
 export async function captureAgentDeletionDatabaseExecution(
   options: OpenClawAgentDatabaseOptions,
@@ -117,6 +125,7 @@ export function captureExistingOpenClawAgentDatabaseExecution(
 export function captureOpenClawAgentDatabaseExecution(
   options: OpenClawAgentDatabaseOptions,
   constraints: AgentDatabaseExecutionCaptureConstraints = {},
+  inheritCreationIdentity = false,
 ): OpenClawAgentDatabaseExecution {
   assertAgentSessionWriteAdmission(options);
   assertAgentDeletionCleanupAliases(options, isSameOpenClawAgentDatabasePath);
@@ -168,7 +177,7 @@ export function captureOpenClawAgentDatabaseExecution(
   return existing.borrow(
     pathname,
     constraints.expectedIdentity,
-    expectedCreationIdentity,
+    expectedCreationIdentity ?? (inheritCreationIdentity ? existing.creationIdentity : undefined),
     constraints.requestedPath,
   );
 }
