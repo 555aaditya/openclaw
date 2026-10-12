@@ -481,15 +481,21 @@ is_supervised_pr_process() {
 # The supervisor changes cwd to the canonical repo. Resolve explicit body and
 # evidence paths relative to the operator's caller before crossing that
 # boundary; do not read them.
-if [ "${1-}" = merge-run ] || [ "${1-}" = merge-recover ] || [ "${1-}" = prepare-baseline-refresh ] || [ "${1-}" = prepare-baseline-successor ]; then
-  merge_cli_args=() merge_cli_body_next=false
+if [ "${1-}" = merge-run ] || [ "${1-}" = merge-recover ] || [ "${1-}" = prepare-baseline-refresh ] || [ "${1-}" = prepare-baseline-successor ] || [ "${1-}" = prepare-correction-review-init ]; then
+  merge_cli_args=() merge_cli_paths_remaining=0
   for merge_cli_arg in "$@"; do
-    if [ "$merge_cli_body_next" = true ] && [ -n "$merge_cli_arg" ]; then
-      merge_cli_arg=$(node -e 'process.stdout.write(require("node:path").resolve(process.argv[1]))' -- "$merge_cli_arg") || exit 1
+    if [ "$merge_cli_paths_remaining" -gt 0 ]; then
+      if [ -n "$merge_cli_arg" ]; then
+        merge_cli_arg=$(node -e 'process.stdout.write(require("node:path").resolve(process.argv[1]))' -- "$merge_cli_arg") || exit 1
+      fi
+      merge_cli_paths_remaining=$((merge_cli_paths_remaining - 1))
+    else
+      case "$merge_cli_arg" in
+        --recover-incoming) merge_cli_paths_remaining=3 ;;
+        --body-file|--legacy-refusal|--pre-dispatch-refusal|--admin-evidence|--resolutions) merge_cli_paths_remaining=1 ;;
+      esac
     fi
     merge_cli_args+=("$merge_cli_arg")
-    merge_cli_body_next=false
-    if [ "$merge_cli_arg" = --body-file ] || [ "$merge_cli_arg" = --legacy-refusal ] || [ "$merge_cli_arg" = --pre-dispatch-refusal ] || [ "$merge_cli_arg" = --admin-evidence ] || [ "$merge_cli_arg" = --resolutions ]; then merge_cli_body_next=true; fi
   done
   set -- "${merge_cli_args[@]}"
 fi

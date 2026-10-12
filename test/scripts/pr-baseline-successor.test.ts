@@ -144,9 +144,9 @@ if (args[0] === 'api' && args[1] === 'user') {
     fix: "Repair behavior",
   });
   writeFileSync(local("review.json"), JSON.stringify(review));
-  const run = (command: string, args: string[] = [], extra: NodeJS.ProcessEnv = {}) =>
+  const run = (command: string, args: string[] = [], extra: NodeJS.ProcessEnv = {}, cwd = repo) =>
     spawnSync(join(repo, "scripts/pr"), [command, "42", ...args], {
-      cwd: repo,
+      cwd,
       env: { ...env, ...extra },
       encoding: "utf8",
     });
@@ -333,10 +333,19 @@ describePosix("native successor source admission entry", () => {
     f.git(f.worktree, "add", "docs/ci-followup.md");
     f.git(f.worktree, "commit", "-qm", "fix: published CI follow-up");
     const candidate = f.git(f.worktree, "rev-parse", "HEAD");
-    f.pass("prepare-correction-review-init", [
-      "--recover-incoming",
-      ...inputs.map((name) => f.local(`original-${name}`)),
-    ]);
+    const caller = join(f.repo, ".local", "operator cwd");
+    const retainedInputs = join(caller, "retained evidence");
+    mkdirSync(retainedInputs, { recursive: true });
+    for (const name of inputs) {
+      writeFileSync(join(retainedInputs, name), readFileSync(f.local(`original-${name}`)));
+    }
+    const recovery = f.run(
+      "prepare-correction-review-init",
+      ["--recover-incoming", ...inputs.map((name) => `./retained evidence/${name}`)],
+      {},
+      caller,
+    );
+    expect(recovery.status, recovery.stdout + recovery.stderr).toBe(0);
     const recovered = JSON.parse(readFileSync(f.local("correction-review.json"), "utf8"));
     expect(recovered.pr.headSha).toBe(candidate);
     expect(recovered.recommendation).toBe("NEEDS WORK");
@@ -349,6 +358,20 @@ describePosix("native successor source admission entry", () => {
     // Subsequent initialization consumes the retained originals, not supplied paths.
     f.pass("prepare-correction-review-init");
     expect(f.git(f.worktree, "rev-parse", "HEAD")).toBe(candidate);
+    console.info(
+      JSON.stringify({
+        scenario: "caller-relative legacy recovery after two successors",
+        status: recovery.status,
+        stdout: recovery.stdout,
+        original: incomingMeta.headRefOid,
+        published,
+        candidate,
+        recommendation: recovered.recommendation,
+        liveMetadataPreserved: true,
+        baselineBindingPreserved: true,
+        retainedProofPreserved: true,
+      }),
+    );
   });
   it.each(["branch", "closed", "head", "work", "branch-after-live", "closed-after-live"])(
     "preserves transition custody when %s authority changes during replay",

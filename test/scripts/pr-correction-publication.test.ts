@@ -157,6 +157,16 @@ describePosix("correction publication authority handoff", () => {
         `GATES_MODE=remote_crabbox_aws\nHOSTED_GATES_TARGET_HEAD_SHA=''\nLAST_VERIFIED_HEAD_SHA=${hosted}\nFULL_GATES_HEAD_SHA=${hosted}\n`,
       );
       expect(readFileSync(join(f.local, "review.json"), "utf8")).toBe(before);
+      console.info(
+        JSON.stringify({
+          scenario: "owned publication",
+          transport,
+          status: result.status,
+          hosted,
+          local: f.candidate,
+          publicationEvents: readFileSync(join(f.local, "events"), "utf8"),
+        }),
+      );
     },
   );
 
@@ -190,6 +200,56 @@ describePosix("correction publication authority handoff", () => {
         `${transport === "auto" ? "push" : "graphql"}\n`,
       );
       expect(readFileSync(join(f.local, "review.json"), "utf8")).toBe(incomingReview);
+    },
+  );
+
+  it.each(
+    (["auto", "graphql"] as const).flatMap((transport) =>
+      (["foreign receipt", "withdrawn", "reassigned"] as const).map((fault) => ({
+        transport,
+        fault,
+      })),
+    ),
+  )(
+    "refuses $fault authority after $transport planning before any publication I/O",
+    ({ transport, fault }) => {
+      const f = fixture(transport);
+      const result = runCorrection(f, {
+        setup: [
+          "eval \"$(declare -f pr_git | sed '1s/pr_git/fixture_git/')\"",
+          "pr_git() {",
+          '  if [ "$1" = verify-commit ] || [ "$*" = "log -1 --format=%b HEAD" ]; then',
+          "    echo planned > .local/authority-changed",
+          fault === "foreign receipt"
+            ? `    printf 'PUSH_PREP_HEAD_SHA=${f.sameTree}\\nPUSH_LOCAL_PREP_HEAD_SHA=${f.sameTree}\\nPUSHED_FROM_SHA=${f.source}\\nPUSH_REPLACED_HOSTED_ANCESTRY=false\\nPR_HEAD_SHA_AFTER_PUSH=${f.sameTree}\\n' > .local/prepare-push-result.env`
+            : `    jq '${fault === "withdrawn" ? '.state = "CLOSED"' : '.headRepository.nameWithOwner = "replacement/repo"'}' .local/remote-observation.json > .local/changed-observation.json`,
+          ...(fault === "foreign receipt"
+            ? []
+            : ["    mv .local/changed-observation.json .local/remote-observation.json"]),
+          "  fi",
+          '  fixture_git "$@"',
+          "}",
+        ],
+      });
+      expect(existsSync(join(f.local, "authority-changed"))).toBe(true);
+      expect(result.status, result.stdout + result.stderr).not.toBe(0);
+      const refusal =
+        fault === "foreign receipt" ? "Correction review authority changed" : "PR identity changed";
+      expect(result.stdout + result.stderr).toContain(refusal);
+      const events = readFileSync(join(f.local, "events"), "utf8");
+      expect(events).toBe("");
+      expect(f.git("--git-dir", f.remote, "rev-parse", "refs/heads/topic")).toBe(f.source);
+      expect(existsSync(join(f.local, "prep.env"))).toBe(false);
+      console.info(
+        JSON.stringify({
+          scenario: fault,
+          transport,
+          status: result.status,
+          refusal,
+          publicationEvents: events,
+          remoteUnchanged: true,
+        }),
+      );
     },
   );
 
@@ -452,6 +512,18 @@ describePosix("correction publication authority handoff", () => {
       );
       expect(readFileSync(join(f.local, "events"), "utf8")).toBe(
         transport === "auto" ? "push\npush\n" : "graphql\npush\n",
+      );
+      console.info(
+        JSON.stringify({
+          scenario: "hosted review continuation",
+          transport,
+          status: synced.status,
+          original: f.source,
+          hosted,
+          followup,
+          nextHosted,
+          publicationEvents: readFileSync(join(f.local, "events"), "utf8"),
+        }),
       );
     },
   );
