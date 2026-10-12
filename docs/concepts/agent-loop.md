@@ -60,6 +60,11 @@ Before streaming, an admitted run records its durable `activeWriterRunId` claim.
 
 System prompt is built from OpenClaw's base prompt, skills prompt, bootstrap context, and per-run overrides. Model-specific limits and compaction reserve tokens are enforced. See [System prompt](/concepts/system-prompt) for what the model sees.
 
+On Anthropic tool continuations, runtime context following tool results stays in
+the same user message as those results instead of creating a new user turn.
+The context remains available to the model, while transient runtime context stays
+outside the reusable prompt-cache prefix.
+
 ## Hooks
 
 OpenClaw has two in-process hook systems:

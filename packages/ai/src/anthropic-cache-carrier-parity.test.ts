@@ -42,6 +42,58 @@ function appendToolRound(messages: Context["messages"], model: Model, round: num
 describe("Anthropic runtime-context cache lifecycle", () => {
   registerParityHostLifecycle();
 
+  it.each([
+    { runtimeContext: { retained: false } },
+    { runtimeContextCarrier: true, runtimeContextCarrierRetained: true },
+  ])("merges post-tool runtime facts without adding a user turn: %j", async (marker) => {
+    const messages: Context["messages"] = [
+      { role: "user", content: "Send the answer.", timestamp: 1 },
+    ];
+    appendToolRound(messages, anthropicModel, 1);
+    messages.push({
+      role: "user",
+      content: [{ type: "text", text: "Runtime facts must survive." }],
+      timestamp: 4,
+      ...marker,
+    });
+    const before = JSON.stringify(messages);
+    for (const implementation of ["provider", "transport"] as const) {
+      const { payload } = await captureAnthropicRequest(implementation, {
+        cacheRetention: "none",
+        context: { ...context, messages },
+      });
+      expect(payload.messages).toEqual([
+        { role: "user", content: "Send the answer." },
+        {
+          role: "assistant",
+          content: [
+            { type: "tool_use", id: "call_1_a", name: "lookup", input: { query: "call_1_a" } },
+            { type: "tool_use", id: "call_1_b", name: "lookup", input: { query: "call_1_b" } },
+          ],
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "call_1_a",
+              content: "Answer call_1_a",
+              is_error: false,
+            },
+            {
+              type: "tool_result",
+              tool_use_id: "call_1_b",
+              content: "Answer call_1_b",
+              is_error: false,
+            },
+            { type: "text", text: "Runtime facts must survive." },
+          ],
+        },
+      ]);
+      expect(JSON.stringify(messages)).toBe(before);
+    }
+  });
+
   it.each(["provider"] as const)(
     "preserves shipped carrier bytes before signed thinking through %s replay",
     async (implementation) => {
@@ -373,14 +425,30 @@ describe("Anthropic runtime-context cache lifecycle", () => {
             context: { ...context, messages: retained ? messages : [...messages, carrier] },
           });
           const wire = payload.messages as Array<{ role: string; content: unknown }>;
-          const stable = retained ? wire : wire.slice(0, -1);
+          const stable = retained ? wire : [...wire];
           if (!retained) {
-            expect(wire.at(-1)).toEqual({
-              role: "user",
-              content: blocks
-                ? [{ type: "text", text: "OpenClaw runtime context:\nRuntime context" }]
-                : "OpenClaw runtime context:\nRuntime context",
-            });
+            const last = stable.at(-1);
+            if (round === 0) {
+              expect(stable.pop()).toEqual({
+                role: "user",
+                content: "OpenClaw runtime context:\nRuntime context",
+              });
+            } else {
+              if (!last || !Array.isArray(last.content)) {
+                throw new Error("Expected tool-result content blocks");
+              }
+              expect(last.content.at(-1)).toEqual({
+                type: "text",
+                text: "OpenClaw runtime context:\nRuntime context",
+              });
+              stable[stable.length - 1] = { ...last, content: last.content.slice(0, -1) };
+              const { payload: withoutCarrier } = await captureAnthropicRequest(implementation, {
+                model,
+                cacheRetention,
+                context: { ...context, messages },
+              });
+              expect(JSON.stringify(stable)).toBe(JSON.stringify(withoutCarrier.messages));
+            }
           } else {
             const retainedContent = wire[1]?.content;
             expect(
