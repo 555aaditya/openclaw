@@ -111,12 +111,13 @@ async function fixture() {
 }
 
 describe("memory transcript reports and edits", () => {
-  it("reselects a custom report after an intervening in-process append and preserves prepared bytes", async () => {
+  it("reselects a mixed-case session report after an intervening append and preserves prepared bytes", async () => {
     const { storage, hydrate, custom } = await fixture();
+    const reportScope = { ...scope, sessionKey: "agent:main:dashboard:incognito-RePoRtS" };
     await custom("status-1", "first");
     let intervening: Promise<unknown> | undefined;
     let selections = 0;
-    await appendSessionTranscriptReport(scope, {
+    await appendSessionTranscriptReport(reportScope, {
       kind: "custom",
       customTypes: ["status"],
       selectReport(latest) {
@@ -133,14 +134,14 @@ describe("memory transcript reports and edits", () => {
     });
     await intervening;
     expect(selections).toBe(2);
-    expect(await readLatestSessionTranscriptReport(scope, ["status"])).toMatchObject({
+    expect(await readLatestSessionTranscriptReport(reportScope, ["status"])).toMatchObject({
       ok: true,
       value: { content: "after second" },
     });
     const selected = await storage.read(
       {
         type: "session.report.prepare",
-        input: { scope, selection: { kind: "custom", customTypes: ["status"] } },
+        input: { scope: reportScope, selection: { kind: "custom", customTypes: ["status"] } },
       },
       authority,
     );
@@ -153,7 +154,7 @@ describe("memory transcript reports and edits", () => {
         {
           type: "session.report.append",
           input: {
-            scope,
+            scope: reportScope,
             version: selected.value.version,
             report: { kind: "custom", eventJson: bytes },
           },

@@ -2,6 +2,7 @@ import { redactIdentifier } from "@openclaw/normalization-core/node-crypto";
 import { asOptionalRecord, isRecord } from "@openclaw/normalization-core/record-coerce";
 import { readSessionTranscriptRunId } from "../../sessions/transcript-events.js";
 import type { TranscriptAppendRefusal } from "./session-accessor.sqlite-contract.js";
+import { resolveSqliteSessionKey } from "./session-accessor.sqlite-scope-helpers.js";
 import type {
   AbortedSessionTranscriptPartialResult,
   TranscriptReportCommit,
@@ -50,7 +51,8 @@ export function executeSessionActorMemoryReportCommand(
   const { state, agentId, path } = context;
   const { scope } = command.input;
   if (
-    scope.sessionKey !== state.hot.target.sessionKey ||
+    scope.sessionKey === undefined ||
+    resolveSqliteSessionKey(scope.sessionKey, agentId) !== state.hot.target.sessionKey ||
     (scope.agentId !== undefined && scope.agentId !== agentId) ||
     (scope.storePath !== undefined && scope.storePath !== path)
   ) {
