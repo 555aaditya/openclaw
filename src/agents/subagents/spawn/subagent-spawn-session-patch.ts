@@ -46,7 +46,6 @@ import { withSubagentSessionSource } from "./subagent-session-source.js";
 import type { SpawnSubagentParams } from "./subagent-spawn-contract.js";
 import type { resolveSubagentModelAndThinkingPlan } from "./subagent-spawn-plan.js";
 import {
-  loadSessionEntry,
   emitSessionLifecycleEvent,
   resolveGatewaySessionStoreTargetInWorker,
   upsertSessionEntryCore,
@@ -223,7 +222,6 @@ export async function createInitialSubagentSession(input: {
             parentEntry,
             expectedParentSessionId: params.expectedParentSessionId,
             senderIsOwner: params.senderIsOwner,
-            readParentEntry,
           });
           const parentClaim =
             parentBinding && parentEntry
@@ -369,7 +367,6 @@ export async function createInitialSubagentSession(input: {
             initialChildSessionPatch.pendingWorktree = preparedWorktree.pendingWorktree;
           }
           const commit = async (assertSourceCurrent?: SessionSourceAssertion) => {
-            await parentLineage.assertParentUnchanged();
             const fields = ["sessionId", "lifecycleRevision", "skillLibrarySelections"] as const;
             const expected =
               parentEntry && (parentMemory || parentBinding || parentEntry.skillLibrarySelections)
@@ -388,17 +385,12 @@ export async function createInitialSubagentSession(input: {
               if (parentBinding) {
                 assertParentActorCurrent();
               }
-              if (!parentMemory && !parentBinding && !expected) {
+              if (!parentMemory && !parentBinding) {
                 return;
               }
               const latest = parentMemory
                 ? parentMemory.actor.snapshot(parentMemory.authority)?.entry
-                : parentBinding
-                  ? parentBinding.actor.sessions.readPolicy(parentTarget.canonicalKey)
-                  : loadSessionEntry({
-                      storePath: parentStorePath,
-                      sessionKey: parentTarget.canonicalKey,
-                    });
+                : parentBinding?.actor.sessions.readPolicy(parentTarget.canonicalKey);
               if (
                 (latest === undefined) !== (expected === undefined) ||
                 fields.some((field) => !isDeepStrictEqual(latest?.[field], expected?.[field]))
@@ -479,7 +471,7 @@ export async function createInitialSubagentSession(input: {
                     : {}),
                   ...childSessionIdentity,
                   // Stamp after all request patches so model input cannot create a grant.
-                  ...parentLineage.receipt,
+                  ...parentLineage,
                   ...(parentEntry?.skillLibrarySelections
                     ? {
                         skillLibrarySelections: parentEntry.skillLibrarySelections.map(

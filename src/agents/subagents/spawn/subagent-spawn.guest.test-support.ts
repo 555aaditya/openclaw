@@ -3,7 +3,7 @@ import { expect, it, vi, type Mock } from "vitest";
 import { createDeferred, withinTest } from "../../../../test/helpers/promise.js";
 import {
   clearConfigCache,
-  clearRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot,
   type OpenClawConfig,
 } from "../../../config/config.js";
 import {
@@ -26,7 +26,7 @@ import type { EmbeddedAgentRunResult } from "../../embedded-agent.js";
 import { buildAgentInternalEventContext, type AgentInternalEvent } from "../../internal-events.js";
 import { RUNTIME_EVENT_USER_PROMPT } from "../../internal-runtime-context.js";
 import { prepareOperatorModelPolicy } from "../../operator-model-policy.js";
-import { resolveSandboxRuntimeStatus } from "../../sandbox/runtime-status.js";
+import { resolveSandboxRuntimeStatusAsync } from "../../sandbox/runtime-status.js";
 import { runSubagentAnnounceFlow } from "../announce/subagent-announce.js";
 import { settleRequesterAfterSessionSpawns } from "../registry/subagent-registry.js";
 import {
@@ -65,7 +65,7 @@ export async function createGuestSpawnParent(options: {
   };
   await options.writeConfig(runtimeConfig);
   clearConfigCache();
-  clearRuntimeConfigSnapshot();
+  setRuntimeConfigSnapshot(runtimeConfig);
   const modelPolicy = prepareOperatorModelPolicy({
     cfg: runtimeConfig,
     policy: { sourceAgent: "main", allow: ["custom/test-model"] },
@@ -204,7 +204,10 @@ export function registerGuestSpawnCases(options: {
           sandboxProvenance: { actor: isolationActor },
         });
         expect(
-          resolveSandboxRuntimeStatus({ cfg: bound.cfg, sessionKey: details.childSessionKey }),
+          await resolveSandboxRuntimeStatusAsync({
+            cfg: bound.cfg,
+            sessionKey: details.childSessionKey,
+          }),
         ).toMatchObject({
           sandboxRequired: true,
           isolationSubject: { kind: "profile", profileId: isolationActor.id },
