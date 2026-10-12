@@ -60,6 +60,7 @@ async function createFixture(selected = diagnostic) {
     model: selected.model,
   };
   const cfg: OpenClawConfig = { session: { store: storePath } };
+  setRuntimeConfigSnapshot(cfg);
   await replaceSessionEntry({ storePath, sessionKey }, entry);
   const replyOperation = createReplyOperation({
     sessionId: entry.sessionId,

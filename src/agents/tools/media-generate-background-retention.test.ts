@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { captureRuntimeConfigAsyncReader } from "../../config/io.runtime.js";
+import { captureRuntimeConfigAsyncReader } from "../../config/io.js";
 import {
   deleteSessionEntryLifecycle,
   loadTranscriptEvents,

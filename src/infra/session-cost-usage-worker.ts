@@ -209,16 +209,23 @@ export async function executeUsageCostWorker(
     });
     return result.found ? result.value : missing;
   };
-  const readMetadata = async (): Promise<SessionCostUsageRollupRow[]> => {
+  const readMetadata = async (): Promise<{
+    found: boolean;
+    rows: SessionCostUsageRollupRow[];
+  }> => {
     return control.runNativeSection(() =>
       readDatabase(cacheDatabase, () => {
         try {
-          return readCache((db) => readSessionCostUsageRollupRowsInDatabase(db, selectedPaths), []);
+          const result = withOpenClawAgentDatabaseReadOnly(
+            (opened) => readSessionCostUsageRollupRowsInDatabase(opened.db, selectedPaths),
+            { ...cacheDatabase, env },
+          );
+          return { found: result.found, rows: result.found ? result.value : [] };
         } catch (error) {
           if (!isTransientSqliteError(error)) {
             throw error;
           }
-          return [];
+          return { found: false, rows: [] };
         }
       }),
     );
@@ -440,7 +447,7 @@ export async function executeUsageCostWorker(
     }
   }
 
-  const rows = await readMetadata();
+  const { found: cacheFound, rows } = await readMetadata();
   const byPath = new Map(rows.map((row) => [row.key, row]));
 
   const requestedFiles = selectedFiles.filter((file) => file !== undefined);
@@ -460,8 +467,8 @@ export async function executeUsageCostWorker(
       bytes.buffer,
     ]);
   }
-  // An empty prune would materialize a cold database without changing any usage rows.
-  if (pruned && !operation.sessionFiles) {
+  // Missing stores have nothing to prune; a real rollup write owns their creation.
+  if (!operation.sessionFiles && cacheFound) {
     await host("prune", {});
   }
   const minMtimeMs = operation.sessionFiles ? undefined : operation.startMs;

@@ -313,6 +313,7 @@ export async function runEmbeddedAgentAttempt(params: RunEmbeddedAgentAttemptPar
           agentId: sessionAgentId,
           sessionId,
           sessionKey: sessionKey ?? sessionId,
+          sessionLifecycleRevision: sessionEntry?.lifecycleRevision ?? null,
         },
         harness: {
           workspaceDir,
