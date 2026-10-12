@@ -189,6 +189,7 @@ export function projectSettledProviderFailureAttempt(
     getSourceReplyDelivered: () => undefined,
     getSourceReplyDeliveryState: () => undefined,
     endsWithSourceProgress: () => false,
+    endsWithMessagingDelivery: () => false,
     getPendingToolMediaReply: () => undefined,
     getToolAutoDeliveryMediaUrls: () => [],
     getReplayState: () => ({ replayInvalid: false, hadPotentialSideEffects: true }),

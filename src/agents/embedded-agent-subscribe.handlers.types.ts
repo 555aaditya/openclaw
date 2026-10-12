@@ -228,10 +228,10 @@ export type EmbeddedAgentSubscribeState = {
   messageToolOnlySourceReplyDelivered: boolean;
   sourceReplyDelivered?: true;
   sourceReplyDeliveryState?: ReplyDeliveryState;
-  /** Whether the current provider turn's finished tools were only complete source progress. */
-  turnToolsOnlySourceProgress?: boolean;
+  /** Classifies completed tools in this provider turn; mixed work cannot finish a reply. */
+  turnToolDelivery?: "source-progress" | "message" | "other";
   /** The same fact for the latest provider turn that finished any tool. */
-  lastToolTurnOnlySourceProgress?: boolean;
+  lastToolTurnDelivery?: "source-progress" | "message" | "other";
   successfulCronAdds: number;
   pendingToolMediaUrls: string[];
   pendingToolMediaAttachments?: ReplyMediaAttachment[];

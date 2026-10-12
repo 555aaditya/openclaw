@@ -117,6 +117,7 @@ function createResultFixture(params?: {
     getSourceReplyDelivered: () => undefined,
     getSourceReplyDeliveryState: () => undefined,
     endsWithSourceProgress: () => false,
+    endsWithMessagingDelivery: () => false,
     getPendingToolMediaReply: () => params?.pendingToolMediaReply,
     getToolAutoDeliveryMediaUrls: () => params?.toolAutoDeliveryMediaUrls ?? [],
     getReplayState: () => ({ replayInvalid: false, hadPotentialSideEffects: false }),
@@ -730,7 +731,7 @@ describe("trailing source progress at runtime settlement", () => {
   // Native-async calls run while the provider streams; each settles before the next fragment.
   type ModelCall = { tools?: Array<"progress" | "read">; async?: true };
 
-  async function settleRealLoop(calls: ModelCall[]) {
+  async function settleRealLoop(calls: ModelCall[], target = "source") {
     const sessionManager = {};
     const { emit, subscription } = createSubscribedSessionHarness({
       runId: "run-1",
@@ -770,7 +771,7 @@ describe("trailing source progress at runtime settlement", () => {
                   status: "settled",
                   partialDelivery: false,
                   createdThreadIds: [],
-                  sourceReplyDelivered: true,
+                  sourceReplyDelivered: target === "source",
                 },
               },
               true,
@@ -814,7 +815,7 @@ describe("trailing source progress at runtime settlement", () => {
               ? {
                   action: "send",
                   final: false,
-                  target: "channel:source",
+                  target: `channel:${target}`,
                   message: "Started the run, I will report back.",
                 }
               : {},
@@ -882,9 +883,24 @@ describe("trailing source progress at runtime settlement", () => {
   ])("settles source progress with %s", async (_name, calls, delivered) => {
     const { result, finalizerInstruction } = await settleRealLoop(calls);
     expect(result.sourceReplyDeliveryState).toBe(delivered ? "delivered" : "missing");
+    expect(result.endedWithMessagingToolDelivery).toBe(delivered);
     expect(result.messagingToolSentTargets?.map((send) => send.sourceReplyFinal)).toEqual([
       delivered,
     ]);
+    if (delivered) {
+      expect(finalizerInstruction).toBeNull();
+    } else {
+      expect(finalizerInstruction).toContain("did not produce a user-visible answer");
+    }
+  });
+
+  it.each<[string, ModelCall[], boolean]>([
+    ["last tool batch", [{ tools: ["progress"] }, {}], true],
+    ["later work", [{ tools: ["progress"] }, { tools: ["read"] }, {}], false],
+  ])("settles another target's delivery with %s", async (_name, calls, delivered) => {
+    const { result, finalizerInstruction } = await settleRealLoop(calls, "other");
+    expect(result.endedWithMessagingToolDelivery).toBe(delivered);
+    expect(result.sourceReplyDeliveryState).not.toBe("delivered");
     if (delivered) {
       expect(finalizerInstruction).toBeNull();
     } else {

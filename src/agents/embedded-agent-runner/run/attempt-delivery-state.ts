@@ -13,6 +13,7 @@ export function copyAttemptDeliveryState(
     latestMcpAppChannelView: attempt.latestMcpAppChannelView ?? previous?.latestMcpAppChannelView,
     latestMcpConnectAction: attempt.latestMcpConnectAction ?? previous?.latestMcpConnectAction,
     didSendViaMessagingTool: previous?.didSendViaMessagingTool || attempt.didSendViaMessagingTool,
+    endedWithMessagingToolDelivery: attempt.endedWithMessagingToolDelivery,
     sourceReplyDelivered: previous?.sourceReplyDelivered || attempt.sourceReplyDelivered,
     sourceReplyDeliveryState:
       attempt.sourceReplyDeliveryState ?? previous?.sourceReplyDeliveryState,

@@ -488,7 +488,9 @@ export function subscribeEmbeddedAgentSession(input: SubscribeEmbeddedAgentSessi
     getMessagingToolSourceReplyPayloads: () => messagingToolSourceReplyPayloads.slice(),
     getSourceReplyDelivered: () => state.sourceReplyDelivered,
     getSourceReplyDeliveryState: () => state.sourceReplyDeliveryState,
-    endsWithSourceProgress: () => state.lastToolTurnOnlySourceProgress === true,
+    endsWithSourceProgress: () => state.lastToolTurnDelivery === "source-progress",
+    endsWithMessagingDelivery: () =>
+      state.lastToolTurnDelivery === "source-progress" || state.lastToolTurnDelivery === "message",
     getHeartbeatToolResponse: () =>
       state.heartbeatToolResponse ? { ...state.heartbeatToolResponse } : undefined,
     getPendingToolMediaReply: () => readPendingToolMediaReply(state),

@@ -53,6 +53,7 @@ import type { ToolErrorSummary } from "../../tool-error-summary.js";
 import {
   hasCompletedMessagingToolDeliveryEvidence,
   hasVisibleCommittedMessagingToolDeliveryEvidence,
+  isSilentReplyAfterMessagingToolDelivery,
 } from "../delivery-evidence.js";
 import { buildSourceReplyPayloadState } from "./source-reply-payloads.js";
 import { buildFailureWarning } from "./tool-error-warning.js";
@@ -87,6 +88,7 @@ export function buildEmbeddedRunPayloads(params: {
   thinkingLevel?: ThinkLevel;
   toolResultFormat?: ToolResultFormat;
   didSendViaMessagingTool?: boolean;
+  endedWithMessagingToolDelivery?: boolean;
   didDeliverSourceReplyViaMessageTool?: boolean;
   messagingToolSentTargets?: MessagingToolSend[];
   messagingToolSourceReplyPayloads?: MessagingToolSourceReplyPayload[];
@@ -262,6 +264,10 @@ export function buildEmbeddedRunPayloads(params: {
         ? extractAssistantVisibleText(assistantForPayload)
         : "";
       const fallbackRawAnswerText = resolveRawAssistantAnswerText(assistantForPayload);
+      const silentAfterMessagingToolDelivery = isSilentReplyAfterMessagingToolDelivery(
+        fallbackRawAnswerText,
+        params.endedWithMessagingToolDelivery === true,
+      );
       const rawAnswerDirectiveState = fallbackRawAnswerText
         ? parseReplyDirectives(fallbackRawAnswerText)
         : null;
@@ -278,6 +284,7 @@ export function buildEmbeddedRunPayloads(params: {
           ? normalizeTextForComparison(nonEmptyAssistantTexts.join("\n\n"))
           : "";
       const shouldPreferRawAnswerText =
+        silentAfterMessagingToolDelivery ||
         rawAnswerDirectiveState?.isSilent ||
         (rawAnswerHasMedia &&
           (!nonEmptyAssistantTexts.length ||
@@ -312,7 +319,20 @@ export function buildEmbeddedRunPayloads(params: {
               ? [fallbackAnswerDirectiveState]
               : [];
       for (const directives of answerDirectives) {
-        const { text: cleanedText, mediaUrls, mediaFailures, isSilent } = directives;
+        const {
+          text: answerText,
+          mediaUrls,
+          mediaFailures,
+          isSilent: silentDirective,
+        } = directives;
+        const isSilent =
+          silentAfterMessagingToolDelivery ||
+          silentDirective ||
+          isSilentReplyAfterMessagingToolDelivery(
+            answerText,
+            params.endedWithMessagingToolDelivery === true,
+          );
+        const cleanedText = isSilent ? "" : answerText;
         hasIntentionalSilentFinal = isSilent;
         const ttsFacts = shouldUseCanonicalFinalAnswer ? storedDelivery?.tts : undefined;
         const delivery = shouldUseCanonicalFinalAnswer

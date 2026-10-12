@@ -413,32 +413,48 @@ describe("runEmbeddedAgent incomplete-turn safety", () => {
 
   it.each([
     {
-      label: "progress",
+      label: "progress followed by more tool work",
       sourceReplyFinal: false,
       didDeliverSourceReplyViaMessageTool: false,
+      hasVisibleDelivery: true,
       expectedFinalization: true,
     },
     {
       label: "final reply",
       sourceReplyFinal: true,
       didDeliverSourceReplyViaMessageTool: false,
+      hasVisibleDelivery: true,
       expectedFinalization: false,
     },
     {
       label: "legacy source-confirmed send",
       sourceReplyFinal: undefined,
       didDeliverSourceReplyViaMessageTool: true,
+      hasVisibleDelivery: true,
       expectedFinalization: false,
     },
     {
-      label: "legacy coarse outbound send",
+      label: "legacy confirmed outbound send",
       sourceReplyFinal: undefined,
       didDeliverSourceReplyViaMessageTool: false,
+      hasVisibleDelivery: true,
+      expectedFinalization: true,
+    },
+    {
+      label: "attempted send without confirmed output",
+      sourceReplyFinal: undefined,
+      didDeliverSourceReplyViaMessageTool: false,
+      hasVisibleDelivery: false,
       expectedFinalization: true,
     },
   ])(
     "handles $label delivery evidence before settled finalization",
-    ({ sourceReplyFinal, didDeliverSourceReplyViaMessageTool, expectedFinalization }) => {
+    ({
+      sourceReplyFinal,
+      didDeliverSourceReplyViaMessageTool,
+      hasVisibleDelivery,
+      expectedFinalization,
+    }) => {
       const emptyStopAssistant = makeLastAssistant();
       const instruction = resolveSettledToolTerminalContinuationInstruction(
         makeSettledContinuationParams(
@@ -448,16 +464,18 @@ describe("runEmbeddedAgent incomplete-turn safety", () => {
             itemLifecycle: { startedCount: 1, completedCount: 1, activeCount: 0 },
             didSendViaMessagingTool: true,
             didDeliverSourceReplyViaMessageTool,
-            messagingToolSentTexts: ["Writing note.txt…"],
-            messagingToolSentTargets: [
-              {
-                tool: "message",
-                provider: "telegram",
-                to: "chat:123",
-                text: "Writing note.txt…",
-                sourceReplyFinal,
-              },
-            ],
+            messagingToolSentTexts: hasVisibleDelivery ? ["Writing note.txt…"] : [],
+            messagingToolSentTargets: hasVisibleDelivery
+              ? [
+                  {
+                    tool: "message",
+                    provider: "telegram",
+                    to: "chat:123",
+                    text: "Writing note.txt…",
+                    sourceReplyFinal,
+                  },
+                ]
+              : [],
             lastAssistant: emptyStopAssistant,
             currentAttemptAssistant: emptyStopAssistant,
           },

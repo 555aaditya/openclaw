@@ -34,6 +34,7 @@ export type IncompleteTurnAttempt = Pick<
   | "didDeliverSourceReplyViaMessageTool"
   | "messagingToolSourceReplyPayloads"
   | "didSendViaMessagingTool"
+  | "endedWithMessagingToolDelivery"
   | "messagingToolSentTexts"
   | "messagingToolSentMediaUrls"
   | "messagingToolSentTargets"

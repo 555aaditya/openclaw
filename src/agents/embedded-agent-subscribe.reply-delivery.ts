@@ -14,6 +14,7 @@ import {
 } from "../infra/agent-events.js";
 import { normalizeTextForComparison } from "./embedded-agent-helpers.js";
 import type { BlockReplyPayload } from "./embedded-agent-payloads.js";
+import { isSilentReplyAfterMessagingToolDelivery } from "./embedded-agent-runner/delivery-evidence.js";
 import { runBestEffortCallback } from "./embedded-agent-subscribe.callback.js";
 import {
   consumePendingAssistantReplyDirectivesIntoReply,
@@ -200,11 +201,22 @@ export function createReplyDelivery({ params, state, log }: ReplyDeliveryParams)
     drainPartialReply(scope);
   };
   const emitAssistantStreamData: EmbeddedAgentSubscribeContext["emitAssistantStreamData"] = (
-    data,
+    inputData,
     options,
   ) => {
     if (state.unsubscribed) {
       return;
+    }
+    let data = inputData;
+    if (
+      data.phase !== "commentary" &&
+      isSilentReplyAfterMessagingToolDelivery(
+        state.deltaBuffer || data.text,
+        state.lastToolTurnDelivery === "source-progress" ||
+          state.lastToolTurnDelivery === "message",
+      )
+    ) {
+      data = { ...data, text: "", delta: "", replace: true };
     }
     const assistantSource = readAgentAssistantSource(state.lastAssistant);
     let eventData: AssistantStreamData | undefined;
@@ -385,8 +397,25 @@ export function createReplyDelivery({ params, state, log }: ReplyDeliveryParams)
       },
     });
   };
-  const emitBlockReply: EmbeddedAgentSubscribeContext["emitBlockReply"] = (payload, options) => {
+  const emitBlockReply: EmbeddedAgentSubscribeContext["emitBlockReply"] = (
+    inputPayload,
+    options,
+  ) => {
     flushAssistantStream();
+    let payload = inputPayload;
+    if (
+      !payload.isReasoning &&
+      isSilentReplyAfterMessagingToolDelivery(
+        state.deltaBuffer || payload.text,
+        state.lastToolTurnDelivery === "source-progress" ||
+          state.lastToolTurnDelivery === "message",
+      )
+    ) {
+      payload = copyReplyPayloadMetadata(payload, { ...payload, text: undefined });
+      if (!hasAssistantVisibleReply(payload)) {
+        return;
+      }
+    }
     const withAssistantDirectives = consumePendingAssistantReplyDirectivesIntoReply(state, payload);
     const pendingToolMedia =
       payload.isReasoning || options?.consumePendingToolMedia === false

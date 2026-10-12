@@ -129,7 +129,7 @@ function shouldSkipNonVisibleTurnRetry(params: {
   );
 }
 
-/** Allows configured silent handling for replay-safe empty, reasoning-only, or explicit silent turns. */
+/** Allows non-visible completion after confirmed message delivery or when replies are optional. */
 export function shouldTreatEmptyAssistantReplyAsSilent(params: {
   allowEmptyAssistantReplyAsSilent?: boolean;
   onlyExplicitSilentReply?: boolean;
@@ -145,7 +145,7 @@ export function shouldTreatEmptyAssistantReplyAsSilent(params: {
   );
   const assistant = classifyAssistantTurn(params);
   return (
-    completion.outcome === "silent" &&
+    (completion.outcome === "silent" || params.attempt.endedWithMessagingToolDelivery === true) &&
     !shouldSkipNonVisibleTurnRetry({ ...params, tolerateSideEffects: true }) &&
     resolveSourceReplyDelivery(params.attempt) === "missing" &&
     (!params.onlyExplicitSilentReply || assistant.silent) &&
@@ -335,6 +335,10 @@ export function resolveSettledToolTerminalContinuationInstruction(
   );
   if (
     params.payloadCount !== 0 ||
+    shouldTreatEmptyAssistantReplyAsSilent({
+      ...params,
+      terminalReplyExpectation: "required",
+    }) ||
     // Optional authored silence skips generation without clearing tool failure evidence.
     (!params.allowEmptyStopContinuation &&
       assistantState.silent &&

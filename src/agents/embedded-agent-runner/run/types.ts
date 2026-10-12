@@ -400,6 +400,8 @@ export type EmbeddedRunAttemptResult = {
   lastToolError?: ToolErrorSummary;
   didSendViaMessagingTool: boolean;
   didDeliverSourceReplyViaMessageTool?: boolean;
+  /** The latest completed tool batch contained only confirmed visible message deliveries. */
+  endedWithMessagingToolDelivery?: boolean;
   sourceReplyDelivered?: true;
   sourceReplyDeliveryState?: ReplyDeliveryState;
   didSendDeterministicApprovalPrompt?: boolean;

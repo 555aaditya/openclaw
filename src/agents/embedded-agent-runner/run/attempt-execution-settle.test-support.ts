@@ -51,6 +51,7 @@ export function createFixture(mocks: {
     getSourceReplyDelivered: vi.fn(() => undefined),
     getSourceReplyDeliveryState: vi.fn(() => undefined),
     endsWithSourceProgress: vi.fn(() => false),
+    endsWithMessagingDelivery: vi.fn(() => false),
     getPendingToolMediaReply: vi.fn(() => undefined),
     getToolAutoDeliveryMediaUrls: vi.fn(() => []),
     getReplayState: vi.fn(() => ({ replayInvalid: false, hadPotentialSideEffects: false })),

@@ -176,6 +176,65 @@ describe("prepareTerminalWithSettledTurnFinalization", () => {
     expect(result.prepared.payloadsWithToolMedia).toEqual([]);
   });
 
+  it.each([
+    { finalText: "", target: "source" },
+    { finalText: SILENT_REPLY_TOKEN, target: "source" },
+    { finalText: "", target: "other" },
+    { finalText: SILENT_REPLY_TOKEN, target: "other" },
+  ])(
+    "stays silent after a confirmed $target send and final '$finalText'",
+    async ({ finalText, target }) => {
+      const attempt = settledSuccessfulAttempt();
+      const assistant = buildEmbeddedRunnerAssistant({
+        content: [{ type: "text", text: finalText }],
+      });
+      attempt.messagesSnapshot.push(assistant);
+      attempt.assistantTexts = finalText ? [finalText] : [];
+      attempt.lastAssistant = assistant;
+      attempt.currentAttemptAssistant = assistant;
+      attempt.currentAttemptCompletedAssistant = assistant;
+      attempt.didSendViaMessagingTool = true;
+      attempt.endedWithMessagingToolDelivery = true;
+      attempt.messagingToolSentTexts = ["The requested message."];
+      attempt.messagingToolSentTargets = [
+        {
+          tool: "message",
+          provider: "telegram",
+          to: target === "source" ? "chat:source" : "chat:other",
+          text: "The requested message.",
+          sourceReplyFinal: false,
+        },
+      ];
+      const input = finalizationInput(attempt);
+      input.terminalBase.runParams.trigger = "user";
+      input.terminalBase.runParams.sourceReplyDeliveryMode = "automatic";
+
+      const result = await prepareTerminalWithSettledTurnFinalization(input);
+
+      expect(backendMocks.runSettledFinalization).not.toHaveBeenCalled();
+      expect(transcriptMocks.appendAssistantMirrorMessageByIdentity).not.toHaveBeenCalled();
+      expect(result.finalizationOutcome).toBe("not-attempted");
+      expect(result.prepared.payloadsWithToolMedia).toEqual([]);
+      const terminalInput = makeTerminalInput({
+        ...result.prepared,
+        attempt: result.attempt,
+        attemptAssistant: result.attemptAssistant,
+        terminalState: result.terminalState,
+        runParams: input.terminalBase.runParams,
+        settledTurnFinalizationOutcome: result.finalizationOutcome,
+        replayState: { hadPotentialSideEffects: true, replayInvalid: false },
+      });
+      const terminal = await resolveEmbeddedRunTerminal(terminalInput);
+      expect(terminalInput.sessionPromptState.activateInternalPrompt).not.toHaveBeenCalled();
+      expect(terminal.action).toBe("complete");
+      if (terminal.action !== "complete") {
+        throw new Error("expected silent completion");
+      }
+      expect(terminal.result.payloads).toEqual([{ text: SILENT_REPLY_TOKEN }]);
+      expect(terminal.result.meta.error).toBeUndefined();
+    },
+  );
+
   it("preserves truncated completions after commentary when finalization stays empty", async () => {
     const commentary = "I am saving the note.";
     const base = createSettledProviderFailureAttempt({ assistantTexts: [commentary] });
@@ -460,12 +519,35 @@ describe("prepareTerminalWithSettledTurnFinalization", () => {
     expect(transcriptMocks.appendAssistantMirrorMessageByIdentity).not.toHaveBeenCalled();
   });
 
-  it.each(["user", "cron"] as const)(
-    "persists and delivers a %s fallback after empty finalization",
-    async (trigger) => {
+  it.each([
+    { trigger: "user", earlierProgress: false },
+    { trigger: "cron", earlierProgress: false },
+    { trigger: "user", earlierProgress: true },
+  ] as const)(
+    "persists and delivers a $trigger fallback after empty finalization (earlier progress: $earlierProgress)",
+    async ({ trigger, earlierProgress }) => {
       const expectedText =
         trigger === "cron" ? SILENT_REPLY_TOKEN : SETTLED_TOOL_FINALIZATION_FALLBACK_TEXT;
       const attempt = settledSuccessfulAttempt();
+      if (earlierProgress) {
+        attempt.messagesSnapshot.unshift(
+          buildEmbeddedRunnerAssistant({
+            content: [{ type: "text", text: "I am working on the note." }],
+          }),
+        );
+        attempt.didSendViaMessagingTool = true;
+        attempt.endedWithMessagingToolDelivery = false;
+        attempt.messagingToolSentTexts = ["I am working on the note."];
+        attempt.messagingToolSentTargets = [
+          {
+            tool: "message",
+            provider: "telegram",
+            to: "chat:source",
+            text: "I am working on the note.",
+            sourceReplyFinal: false,
+          },
+        ];
+      }
       const emptyAssistant = buildEmbeddedRunnerAssistant({
         content: [{ type: "text", text: "" }],
       });

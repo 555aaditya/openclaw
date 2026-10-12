@@ -428,6 +428,17 @@ export function hasVisibleCommittedMessagingToolDeliveryEvidence(
   );
 }
 
+/** A standalone leading silence directive wins after a confirmed visible tool send. */
+export function isSilentReplyAfterMessagingToolDelivery(
+  text: string | undefined,
+  endedWithMessagingToolDelivery: boolean,
+): boolean {
+  return (
+    endedWithMessagingToolDelivery &&
+    Boolean(text && /^\s*NO_REPLY[^\S\r\n]*(?:\r?\n|$)/i.test(text))
+  );
+}
+
 export function hasCommittedSourceReplyDeliveryEvidence(
   result: SourceReplyDeliveryEvidence,
 ): boolean {

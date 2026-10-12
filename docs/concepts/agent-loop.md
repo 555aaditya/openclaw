@@ -140,13 +140,15 @@ The host decides whether an input requires a visible reply. Direct requests and 
 
 When a required turn exhausts its retries with only reasoning or empty output, OpenClaw reports an error and saves the try-again notice in chat history. This also applies when compaction occurs between retries. Whitespace and zero-width characters alone do not count as a visible answer.
 
-If a required-reply turn ends after a fully settled tool batch without a composed answer, OpenClaw can make a tool-free finalization pass. Earlier tool errors, pre-tool progress, and superseded, undelivered confirmations do not count as a final answer. A progress message fully delivered to the current conversation counts as the answer only when it is the last tool batch of the settled turn and the turn then produces no output: the model wrote it after every other tool result, so a finalization pass could only repeat it. Any later tool work, including work after an asynchronous progress send, still gets a finalization pass. This pass uses the settled results and does not repeat completed tools. Fatal automation failures, including denied execution, remain failures even when finalization produces an answer.
+If a required-reply turn ends after a fully settled tool batch without a composed answer, OpenClaw can make a tool-free finalization pass. Earlier tool errors, pre-tool progress, and superseded, undelivered confirmations do not count as a final answer. A message fully delivered to any conversation counts as the answer when it is the last tool batch of the settled turn and the turn then produces no output: a finalization pass could only repeat the completed delivery. Any later tool work, including work after an asynchronous progress send, still gets a finalization pass. This pass uses the settled results and does not repeat completed tools. If its attempts remain empty and nothing was visibly delivered, the source conversation receives a missing-summary notice. Fatal automation failures, including denied execution, remain failures even when finalization produces an answer.
 
 An optional turn that explicitly finishes with `NO_REPLY` does not need a finalization pass, even after a settled tool failure. The failure remains recorded; a rejected Skill Workshop review still fails without making extra model requests to compose a reply.
 
 A confirmed delivery prevents duplicate generation. Pending delivery or continuation work retains completion ownership without being marked delivered; rejected sends, unflushed deferred text, and missing delivery callbacks are not delivery proof. `NO_REPLY` does not retract text already delivered. Pending tools, accepted child runs, and yielded work keep their existing owners, and assistant errors and aborts are not intentional silence.
 
 Prompt-segment diagnostics attribute attachment/context blocks and generated inbound metadata separately from user text. A prompt containing only those blocks does not need trailing user text for reply processing to complete.
+
+For Anthropic requests, runtime context after a tool result is included in the same user-role message as the tool results, not appended as a new user turn. The context remains available to the model without inviting a separate answer to runtime metadata; transient context stays outside the reusable prompt-cache prefix.
 
 ## Compaction and retries
 

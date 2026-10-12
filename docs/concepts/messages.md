@@ -196,6 +196,8 @@ still apply, and the current-prompt capability expires with its admitted turn.
 
 The silent token `NO_REPLY` (case-insensitive, so `no_reply` also matches) is reserved for sessions connected to external message channels and is never delivered as user-visible text. Subagents, the Control UI, and other internal sessions must return a result or continue unfinished work; a silent token cannot complete their task. When a turn also has pending tool media, such as generated TTS audio, OpenClaw strips the silent text but still delivers the media attachment.
 
+After the final tool batch confirms visible message delivery, an empty final response or `NO_REPLY` does not produce an extra summary in the source conversation, even when the tool sent to another conversation. A final response that starts with a standalone `NO_REPLY` line also stays silent after that confirmed delivery. Attempted, rejected, or still-pending sends do not qualify; progress followed by more tool work still needs a final answer.
+
 Silence policy resolves by conversation type:
 
 - Direct conversations never receive `NO_REPLY` prompt guidance. An undelivered required answer still needs recovery; the token cannot waive that obligation.

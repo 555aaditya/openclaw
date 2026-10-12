@@ -95,7 +95,7 @@ export function createEmbeddedAgentSessionEventHandler(ctx: EmbeddedAgentSubscri
       case "turn_start":
         // Async tool fragments share one provider turn; only a new model call starts a batch.
         void scheduleEvent(evt, () => {
-          ctx.state.turnToolsOnlySourceProgress = undefined;
+          ctx.state.turnToolDelivery = undefined;
         });
         return;
       case "turn_end":

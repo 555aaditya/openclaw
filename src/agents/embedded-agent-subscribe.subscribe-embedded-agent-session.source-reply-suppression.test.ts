@@ -1,7 +1,8 @@
 // Source-reply suppression after message-tool delivery.
 import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import type { AssistantMessage } from "openclaw/plugin-sdk/llm";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { buildEmbeddedRunPayloads } from "./embedded-agent-runner/run/payloads.js";
 import { recordEmbeddedToolReceipt } from "./embedded-agent-runner/tool-send-receipts.js";
 import {
   createSubscribedSessionHarness,
@@ -10,6 +11,7 @@ import {
   emitAssistantTextEnd,
 } from "./embedded-agent-subscribe.e2e-harness.js";
 import { subscribeEmbeddedAgentSession } from "./embedded-agent-subscribe.js";
+import { makeAgentAssistantMessage } from "./test-helpers/agent-message-fixtures.js";
 
 const retryingCompactionEnd = () =>
   ({
@@ -158,6 +160,84 @@ function emitAssistantTextEndBlock(emit: (evt: unknown) => void, text: string) {
 }
 
 describe("subscribeEmbeddedAgentSession", () => {
+  it.each([
+    { deliveryStatus: "sent", text: "NO_REPLY\nREADY", silent: true, breakAt: "message_end" },
+    { deliveryStatus: "sent", text: "NO_REPLY\r\nREADY", silent: true, breakAt: "text_end" },
+    { deliveryStatus: "dry_run", text: "NO_REPLY\nREADY", silent: false, breakAt: "text_end" },
+    { deliveryStatus: "error", text: "NO_REPLY\nREADY", silent: false, breakAt: "message_end" },
+    { deliveryStatus: "sent", text: "NO_REPLY: READY", silent: false, breakAt: "message_end" },
+    { deliveryStatus: "sent", text: "NO_REPLYREADY", silent: false, breakAt: "text_end" },
+    { deliveryStatus: "sent", text: "READY", silent: false, breakAt: "message_end" },
+    { deliveryStatus: "sent", text: "READY\nNO_REPLY", silent: false, breakAt: "message_end" },
+    {
+      deliveryStatus: "sent",
+      text: "NO_REPLY\nREADY",
+      silent: false,
+      breakAt: "message_end",
+      laterWork: true,
+    },
+  ] as const)(
+    "honors standalone silence after $deliveryStatus delivery at $breakAt: $text",
+    async (testCase) => {
+      const { deliveryStatus, text, silent, breakAt } = testCase;
+      const { emit, onBlockReply, onPartialReply, subscription } = createBlockReplyHarness(breakAt);
+      onTestFinished(() => subscription.unsubscribe());
+      await emitMessageToolLifecycle({
+        emit,
+        toolCallId: "tool-message-silence",
+        message: "TOOL_SENT",
+        result: { details: { deliveryStatus } },
+      });
+      await subscription.waitForPendingEvents();
+      expect(subscription.didSendViaMessagingTool()).toBe(deliveryStatus === "sent");
+      if ("laterWork" in testCase) {
+        emit({ type: "turn_start" });
+        emit({
+          type: "tool_execution_start",
+          toolName: "write",
+          toolCallId: "later-write",
+          args: { path: "report.txt", content: "more work" },
+        });
+        emit({
+          type: "tool_execution_end",
+          toolName: "write",
+          toolCallId: "later-write",
+          isError: false,
+          result: { content: [{ type: "text", text: "written" }] },
+        });
+        await subscription.waitForPendingEvents();
+      }
+
+      emit({ type: "message_start", message: { role: "assistant" } });
+      for (const delta of [text.slice(0, 4), text.slice(4)]) {
+        emitAssistantTextDelta({ emit, delta });
+        await subscription.waitForPendingEvents();
+      }
+      emitAssistantTextEnd({ emit });
+      const lastAssistant = makeAgentAssistantMessage({
+        content: [{ type: "text", text }],
+        stopReason: "stop",
+      });
+      emit({ type: "message_end", message: lastAssistant });
+      await subscription.waitForPendingEvents();
+
+      const containsReady = (payload: { text?: string }) =>
+        payload.text?.includes("READY") === true;
+      expect(onBlockReply.mock.calls.some(([payload]) => containsReady(payload))).toBe(!silent);
+      expect(onPartialReply.mock.calls.some(([payload]) => containsReady(payload))).toBe(!silent);
+      const payloads = buildEmbeddedRunPayloads({
+        assistantTexts: subscription.assistantTexts,
+        lastAssistant,
+        currentAssistant: lastAssistant,
+        sessionKey: "agent:test:discord:channel:source",
+        didSendViaMessagingTool: subscription.didSendViaMessagingTool(),
+        endedWithMessagingToolDelivery: subscription.endsWithMessagingDelivery(),
+        messagingToolSentTargets: subscription.getMessagingToolSentTargets(),
+      });
+      expect(payloads.some(containsReady)).toBe(!silent);
+    },
+  );
+
   it("suppresses message_end block replies when the message tool already sent", async () => {
     const { emit, onBlockReply } = createBlockReplyHarness("message_end");
 
@@ -530,6 +610,7 @@ describe("subscribeEmbeddedAgentSession", () => {
       await subscription.waitForPendingEvents();
 
       expect(subscription.endsWithSourceProgress()).toBe(endsWithProgress);
+      expect(subscription.endsWithMessagingDelivery()).toBe(false);
       expect(subscription.getSourceReplyDeliveryState()).toBe("missing");
       subscription.unsubscribe();
     },

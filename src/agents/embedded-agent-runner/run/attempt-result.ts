@@ -327,6 +327,7 @@ export function completeEmbeddedAttemptResult(
     acceptedSessionSpawns,
     lastToolError,
     didSendViaMessagingTool: replayEvidence.didSendViaMessagingTool,
+    endedWithMessagingToolDelivery: subscription.endsWithMessagingDelivery(),
     didSendDeterministicApprovalPrompt: didSendDeterministicApprovalPromptNow,
     messagingToolSentTexts: replayEvidence.messagingToolSentTexts,
     messagingToolSentMediaUrls,
