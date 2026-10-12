@@ -14,6 +14,8 @@ import type {
 } from "./internal-params.js";
 
 async function createSettlementFixture(state: OpenClawTestState) {
+  const config = {};
+  setRuntimeConfigSnapshot(config);
   const { loadSessionEntry, replaceSessionEntry } =
     await import("../../../config/sessions/session-accessor.js");
   const {
@@ -28,8 +30,6 @@ async function createSettlementFixture(state: OpenClawTestState) {
   const { claimAgentSessionWriter } = await import("./session-bootstrap.js");
   const { createEmbeddedRunSessionPromptState } = await import("./session-prompt-state.js");
   const { settleEmbeddedRun } = await import("./run-settlement.js");
-  const config = {};
-  setRuntimeConfigSnapshot(config);
   const target = {
     agentId: "main",
     sessionId: randomUUID(),

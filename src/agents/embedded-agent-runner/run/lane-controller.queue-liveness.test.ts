@@ -62,6 +62,7 @@ function createRunController(overrides: Partial<RunEmbeddedAgentParams> = {}) {
     workspaceDir: "/tmp",
     ...overrides,
   };
+  setRuntimeConfigSnapshot(params.config ?? {});
   const controller = createEmbeddedRunLaneController({
     getLifecycleGeneration: () => lifecycleGeneration,
     getParams: () => params,

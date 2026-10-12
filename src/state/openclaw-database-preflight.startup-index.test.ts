@@ -5,10 +5,8 @@ import { afterEach, expect, it, vi } from "vitest";
 import { withinTest } from "../../test/helpers/promise.js";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import { resolveGatewayStartupFailureExitCode } from "../cli/gateway-cli/startup-maintenance.js";
-import {
-  clearRuntimeConfigSnapshot,
-  setRuntimeConfigSnapshot,
-} from "../config/runtime-snapshot.js";
+import { captureRuntimeConfigAsyncReader } from "../config/io.js";
+import { clearRuntimeConfigSnapshot } from "../config/runtime-snapshot.js";
 import { loadSessionEntry, replaceSessionEntry } from "../config/sessions/session-accessor.js";
 import { activateGatewayAgentDatabaseStartup } from "../gateway/server-agent-database-startup.js";
 import { prepareGatewayStartupSessions } from "../gateway/server-startup-session-migration.js";
@@ -44,8 +42,8 @@ afterEach(async () => {
   setLoggerOverride(null);
   resetLogger();
   vi.restoreAllMocks();
-  vi.unstubAllEnvs();
   clearRuntimeConfigSnapshot();
+  vi.unstubAllEnvs();
 });
 
 async function createFixture(ids: string[], damage: "missing" | "drifted" | "missing table") {
@@ -68,7 +66,7 @@ async function createFixture(ids: string[], damage: "missing" | "drifted" | "mis
     configPath,
     JSON.stringify({ ...config, logging: { level: "warn", file: logPath } }),
   );
-  setRuntimeConfigSnapshot({ ...config, logging: { level: "warn", file: logPath } });
+  await captureRuntimeConfigAsyncReader()();
   setLoggerOverride({ level: "warn", file: logPath, consoleLevel: "silent" });
   const agents = [];
   for (const agentId of ids) {

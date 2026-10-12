@@ -106,9 +106,11 @@ function createInput(options?: {
 }) {
   const replaceSessionMessages = vi.fn();
   const report = options?.report ?? ({} as SessionSystemPromptReport);
+  const attempt = options?.attempt ?? createAttempt({ trigger: "user" });
+  setRuntimeConfigSnapshot(attempt.config ?? {});
   return {
     input: {
-      attempt: options?.attempt ?? createAttempt({ trigger: "user" }),
+      attempt,
       capabilityToolNames: new Set<string>(),
       includeBoundaryTimestamp: false,
       isRawModelRun: false,

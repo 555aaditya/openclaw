@@ -193,5 +193,6 @@ it("gives another agent a turn at a session boundary without a priority queue", 
     await reconcilePool.closeSessionTranscriptReconcileWorkerPool();
     await closeOpenClawAgentDatabasesAsync(stateDir);
     closeOpenClawStateDatabaseForTest();
+    clearRuntimeConfigSnapshot();
   }
 });

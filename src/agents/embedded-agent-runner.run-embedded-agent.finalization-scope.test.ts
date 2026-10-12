@@ -67,8 +67,8 @@ beforeAll(async () => {
 });
 
 afterEach(() => {
-  clearRuntimeConfigSnapshot();
   runAttempt.mockReset();
+  clearRuntimeConfigSnapshot();
 });
 
 describe("nested settled-turn finalization ownership", () => {

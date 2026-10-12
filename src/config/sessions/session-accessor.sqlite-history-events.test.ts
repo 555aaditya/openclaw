@@ -54,7 +54,7 @@ function enforceSqliteVariableLimit(
 describe("SQLite transcript history events", () => {
   const scope = useHistoryEventScope();
   beforeEach(() => setRuntimeConfigSnapshot({}));
-  afterEach(clearRuntimeConfigSnapshot);
+  afterEach(() => clearRuntimeConfigSnapshot());
 
   it("reads fresh generations and rows across empty and populated sessions", async () => {
     const limits = { maxMessages: 20, maxLines: 20, maxBytes: 64 * 1024 };

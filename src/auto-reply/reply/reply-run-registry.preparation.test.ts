@@ -10,6 +10,7 @@ import {
   upsertSessionEntryCore,
 } from "../../config/sessions/session-accessor.js";
 import * as sessionReads from "../../config/sessions/session-entry-read-runtime.js";
+import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { createUserTurnTranscriptRecorder } from "../../sessions/user-turn-transcript.js";
 import { createTestUserTurnTranscriptTarget } from "../../sessions/user-turn-transcript.test-support.js";
 import { observeMainThreadSql } from "../../test-utils/main-thread-sql-spies.test-support.js";
@@ -41,27 +42,19 @@ async function createPolicyOperation(
 ) {
   const { mainAlias } = options;
   const policyKey = `agent:main:${name}-policy`;
-  const run = createQueueTestRun({ prompt: name });
-  Object.assign(run.run, {
-    agentId: "main",
-    sessionId: name,
-    sessionKey: `agent:main:${name}`,
-    runtimePolicySessionKey: mainAlias ? "agent:main:main" : policyKey,
-    senderIsOwner: true,
-    config: {
-      ...(mainAlias || options.store
-        ? {
-            session: {
-              ...(mainAlias ? { mainKey: `${name}-policy` } : {}),
-              ...(options.store ? { store: options.store } : {}),
-            },
-          }
-        : {}),
-      agents: { defaults: { sandbox: { mode: "all" } }, entries: { main: {} } },
-      tools: { sandbox: { tools: { deny: ["exec"] } } },
-    },
-  });
-  setRuntimeConfigSnapshot(run.run.config);
+  const config: OpenClawConfig = {
+    ...(mainAlias || options.store
+      ? {
+          session: {
+            ...(mainAlias ? { mainKey: `${name}-policy` } : {}),
+            ...(options.store ? { store: options.store } : {}),
+          },
+        }
+      : {}),
+    agents: { defaults: { sandbox: { mode: "all" } }, entries: { main: {} } },
+    tools: { sandbox: { tools: { deny: ["exec"] } } },
+  };
+  setRuntimeConfigSnapshot(config);
   const policyEntry = await upsertSessionEntryCore(
     { agentId: "main", sessionKey: policyKey, storePath: options.policyStorePath },
     {
@@ -73,6 +66,15 @@ async function createPolicyOperation(
   if (!policyEntry) {
     throw new Error("Policy fixture entry was not created");
   }
+  const run = createQueueTestRun({ prompt: name });
+  Object.assign(run.run, {
+    agentId: "main",
+    sessionId: name,
+    sessionKey: `agent:main:${name}`,
+    runtimePolicySessionKey: mainAlias ? "agent:main:main" : policyKey,
+    senderIsOwner: true,
+    config,
+  });
   const operation = createTestReplyOperation({ sessionKey: run.run.sessionKey, sessionId: name });
   await operation.bindToolAuthoritySnapshotAsync(prepareReplyToolAuthority(run));
   const fingerprint = await operation.bindToolAuthorityRouteAsync(run.run);

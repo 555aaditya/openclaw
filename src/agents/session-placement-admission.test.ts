@@ -48,11 +48,16 @@ const executeLocalTurn: SessionPlacementAdmissionProvider["executeLocalTurn"] = 
   runLocal,
 ) => await runLocal();
 
+beforeEach(() => {
+  setRuntimeConfigSnapshot({});
+});
+
 afterEach(() => {
   uninstallProvider?.();
   uninstallProvider = undefined;
   settleRequesterAfterSessionSpawns.mockReset();
   settleRequesterAfterSessionSpawns.mockResolvedValue(true);
+  clearRuntimeConfigSnapshot();
 });
 
 describe("captured compaction placement owner", () => {
@@ -123,9 +128,6 @@ describe("captured compaction placement owner", () => {
 });
 
 describe("local turn placement admission", () => {
-  beforeEach(() => setRuntimeConfigSnapshot({}));
-  afterEach(() => clearRuntimeConfigSnapshot());
-
   const turnParams = {
     admittedRunContext: createTestAdmittedRunContext("run-1"),
     sessionId: "session-1",

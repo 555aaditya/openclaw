@@ -59,8 +59,8 @@ const temps = useAutoCleanupTempDirTracker((cleanup) =>
     closeOpenClawAgentDatabasesForTest();
     await closeOpenClawStateDatabaseAsync();
     closeOpenClawStateDatabaseForTest();
-    vi.unstubAllEnvs();
     clearRuntimeConfigSnapshot();
+    vi.unstubAllEnvs();
     expect(
       hasOpenClawAgentDatabaseAsyncResources(),
       "fixture workers must settle before root deletion",
