@@ -28,7 +28,7 @@ describe("chat transcript controller", () => {
     flush();
   }
 
-  it("retains a projected reply target until its row commits and prevents automatic follow from taking over", async () => {
+  it("retains a projected reply target until its measured row commits and prevents automatic follow from taking over", async () => {
     const update = createDeferred<boolean>();
     const transcript = new ChatTranscriptController(
       {
@@ -55,6 +55,7 @@ describe("chat transcript controller", () => {
       transcript,
     );
     try {
+      Object.defineProperty(container, "clientHeight", { configurable: true, value: 600 });
       session.syncMessageRows(
         new Map([
           ["original", "original"],
@@ -70,6 +71,13 @@ describe("chat transcript controller", () => {
       await commitLayout();
       expect(container.querySelector('[data-entry-id="original"]')).toBeNull();
 
+      renderRows([original, tail]);
+      await commitLayout();
+      expect(
+        container
+          .querySelector('[data-entry-id="original"]')
+          ?.classList.contains("chat-bubble--reply-target"),
+      ).toBe(false);
       renderRows([original, tail]);
       await commitLayout();
       expect(

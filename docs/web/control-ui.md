@@ -147,6 +147,8 @@ messages and conversation markers keep them separate. Select the row to show
 the original messages and timestamps in one step, or select the source name to
 open that session. Search results and reply navigation reveal the matching
 messages. This changes only presentation, not stored messages or run ownership.
+Reply navigation into folded work waits for the target's measured geometry to
+commit before scrolling to and highlighting the original message.
 
 When an incoming message causes an unstarted tool call to be skipped, its card
 and work summary show **Skipped**, including after reloading the conversation.

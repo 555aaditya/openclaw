@@ -25,7 +25,10 @@ function requireElement(container: ParentNode, selector: string): HTMLElement {
 }
 
 describe("chat transcript replies", () => {
-  beforeEach(installTranscriptDomMocks);
+  beforeEach(() => {
+    installTranscriptDomMocks();
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(600);
+  });
   afterEach(resetTranscriptTestDom);
 
   async function commitLayout() {
@@ -75,6 +78,10 @@ describe("chat transcript replies", () => {
     async ({ reducedMotion, textless }) => {
       const flushFrames = stubAnimationFrames();
       const commitReplyLayout = async () => {
+        flush();
+        await Promise.resolve();
+        render(renderChatThread(props, transcript), container);
+        transcript.hostUpdated();
         flush();
         await Promise.resolve();
         flushFrames();
@@ -511,6 +518,8 @@ describe("chat transcript replies", () => {
       expect(threadContainer.querySelector(sourceSelector)).toBeNull();
       requireElement(threadContainer, ".chat-reply-attribution button").click();
       await vi.advanceTimersByTimeAsync(0);
+      await commitLayout();
+      rerender();
       await commitLayout();
 
       expect(searchContainer.querySelector("input")).toBeNull();

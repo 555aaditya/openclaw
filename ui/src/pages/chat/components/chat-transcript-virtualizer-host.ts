@@ -670,7 +670,7 @@ export class ChatSessionVirtualizerHost implements ReactiveControllerHost, ChatT
     const rowIndex = rowKey ? this.rowIndexesByKey.get(rowKey) : undefined;
     if (rowIndex !== undefined) {
       virtualizer.scrollToIndex(rowIndex, { align: "center" });
-      this.host.requestUpdate();
+      // Native offset delivery mounts the target; commit retries would starve it.
     }
   }
 
@@ -744,11 +744,12 @@ export class ChatSessionVirtualizerHost implements ReactiveControllerHost, ChatT
   }
 
   private readonly completeLayout = () => {
-    if (!this.connected) {
-      return;
-    }
-    this.completeMessageReveal();
-    if (!this.initialPositionPending || !this.rowKeys.length || !this.scrollElement?.clientHeight) {
+    if (
+      !this.connected ||
+      (!this.initialPositionPending && this.offsetState.scrollCommand?.target !== "message") ||
+      !this.rowKeys.length ||
+      !this.scrollElement?.clientHeight
+    ) {
       return;
     }
     this.layout.sync();
@@ -757,11 +758,12 @@ export class ChatSessionVirtualizerHost implements ReactiveControllerHost, ChatT
       this.host.requestUpdate();
       return;
     }
-    if (this.offsetState.pendingScrollOffset) {
+    if (this.initialPositionPending && this.offsetState.pendingScrollOffset) {
       applyPendingScrollOffset(this.scrollRestoreHost);
       return;
     }
     if (
+      this.initialPositionPending &&
       this.canAutoFollow() &&
       !this.offsetState.pendingInteractionAnchor &&
       !this.offsetState.touchActive
@@ -779,6 +781,10 @@ export class ChatSessionVirtualizerHost implements ReactiveControllerHost, ChatT
         this.host.requestUpdate();
         return;
       }
+    }
+    this.completeMessageReveal();
+    if (!this.initialPositionPending) {
+      return;
     }
     this.initialPositionPending = false;
     this.renderer.syncInitialPosition();
