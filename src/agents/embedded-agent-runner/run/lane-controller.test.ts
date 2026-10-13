@@ -66,7 +66,9 @@ async function expectLaneCounts(lane: string, activeCount: number, queuedCount: 
 }
 
 describe("embedded run session lane", () => {
-  beforeEach(() => setRuntimeConfigSnapshot({}));
+  beforeEach(() => {
+    setRuntimeConfigSnapshot({});
+  });
 
   afterEach(() => {
     resetCommandQueueStateForTest();

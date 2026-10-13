@@ -166,7 +166,7 @@ export async function preparePendingInputStore(
   return {
     sessionActor: undefined,
     assertCurrent: assertOpen,
-    withAdmission<T>(operation: () => Promise<T>, reentrant: boolean): Promise<T> {
+    async withAdmission<T>(operation: () => Promise<T>, reentrant: boolean): Promise<T> {
       let entered = false;
       const run = () =>
         runOpenClawAgentWriteAdmission(
@@ -176,13 +176,15 @@ export async function preparePendingInputStore(
             return operation();
           },
           reentrant,
-        ).catch((error: unknown) => {
-          if (!entered) {
-            unregister();
-          }
-          throw error;
-        });
-      return run();
+        );
+      try {
+        return await run();
+      } catch (error) {
+        if (!entered) {
+          unregister();
+        }
+        throw error;
+      }
     },
     sessionKey: resolved.sessionKey,
     databaseAgentId: options.agentId ?? resolved.agentId,
