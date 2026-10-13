@@ -67,11 +67,16 @@ function answer() {
     });
   }
   const text =
-    active.prompt === "credential"
-      ? `credential:${process.env.META_API_KEY ?? "cli-login"}`
-      : active.prompt === "effort"
-        ? `effort:${active.reasoningEffort}`
-        : `${active.resumed ? "resumed" : "started"}: hello`;
+    active.prompt === "environment"
+      ? JSON.stringify({
+          apiKey: process.env.META_API_KEY,
+          noAutoUpdate: process.env.MUSE_NO_AUTO_UPDATE,
+        })
+      : active.prompt === "credential"
+        ? `credential:${process.env.META_API_KEY ?? "cli-login"}`
+        : active.prompt === "effort"
+          ? `effort:${active.reasoningEffort}`
+          : `${active.resumed ? "resumed" : "started"}: hello`;
   const message = item("agentMessage", "", "inProgress");
   event("item/started", { ...active, item: message });
   event("item/delta", { ...active, itemId: message.itemId, delta: text.slice(0, 8) });

@@ -13,8 +13,8 @@ import type * as ProviderAuthRuntime from "openclaw/plugin-sdk/provider-auth-run
 import type * as TranscriptRuntime from "openclaw/plugin-sdk/session-transcript-runtime";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMuseAgentHarness, type MuseSessionBinding } from "./harness.js";
-import { selectApprovalChoice, type MuseApprovalRequest } from "./src/approvals.js";
-import { MusePool, museEnvironment } from "./src/runtime.js";
+import { createApprovalHandler } from "./src/approvals.js";
+import { MusePool } from "./src/runtime.js";
 
 const writes = vi.hoisted(() => ({
   append: vi.fn(async (params: { messages: unknown[] }) => params.messages),
@@ -872,24 +872,54 @@ describe("Muse native MSP harness", () => {
     }
   });
 
-  it("prefers the OpenClaw-selected key and otherwise keeps Muse's own credential order", () => {
+  it("prefers the OpenClaw-selected key and otherwise keeps Muse's own credential order", async () => {
     vi.stubEnv("META_API_KEY", "ambient-meta");
+    const { harness, params } = setup();
     try {
-      expect(museEnvironment().META_API_KEY).toBe("ambient-meta");
-      expect(museEnvironment("selected").META_API_KEY).toBe("selected");
-      expect(museEnvironment().MUSE_NO_AUTO_UPDATE).toBe("1");
+      const inherited = await harness.runAttempt({ ...params, prompt: "environment" });
+      expect(JSON.parse(inherited.assistantTexts.join(""))).toEqual({
+        apiKey: "ambient-meta",
+        noAutoUpdate: "1",
+      });
+      const selected = await harness.runAttempt({
+        ...params,
+        prompt: "environment",
+        resolvedApiKey: "selected",
+      });
+      expect(JSON.parse(selected.assistantTexts.join(""))).toEqual({
+        apiKey: "selected",
+        noAutoUpdate: "1",
+      });
     } finally {
+      await harness.dispose?.();
       vi.unstubAllEnvs();
     }
   });
 
-  it("fails closed rather than minting approval choices", () => {
-    const request = {
-      availableChoices: [{ choiceId: "server-only", decision: "denied", scope: "once" }],
-    } as MuseApprovalRequest;
-    expect(selectApprovalChoice(request, undefined)).toEqual({ choiceId: "server-only" });
-    expect(() => selectApprovalChoice(request, "allow-once")).toThrow(
-      "no safe approved approval choice",
-    );
+  it("fails closed rather than minting approval choices", async () => {
+    const { params } = setup();
+    vi.mocked(params.hostCapabilities.requestApproval).mockResolvedValueOnce(undefined);
+    const handler = createApprovalHandler(params);
+    const request: Parameters<typeof handler>[0] = {
+      approvalId: "approval-1",
+      availableChoices: [
+        { choiceId: "server-only", decision: "denied", scope: "once", label: "Deny" },
+      ],
+      currentRequirementId: { approvalId: "approval-1", sourceIndex: 0 },
+      itemId: "tool-1",
+      judgeEscalated: false,
+      protectedWrite: false,
+      rawArgs: '{"command":"pwd"}',
+      sessionId: "session-1",
+      sourceRange: { start: 0, end: 1 },
+      subject: { kind: "command", command: "pwd" },
+      taskId: "task-1",
+      toolCallId: "call-1",
+      toolName: "shell",
+      turnId: "turn-1",
+      viewCursor: "1",
+    };
+    await expect(handler(request)).resolves.toEqual({ choiceId: "server-only" });
+    await expect(handler(request)).rejects.toThrow("no safe approved approval choice");
   });
 });
