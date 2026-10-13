@@ -194,6 +194,7 @@
   "string-normalization-runtime",
   "talk-config-runtime",
   "target-resolver-runtime",
+  "terminal-safe-text",
   "test-env",
   "test-fixtures",
   "test-live",

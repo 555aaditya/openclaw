@@ -8,6 +8,10 @@ import {
   codexCatalogSourceForClient,
 } from "../session-catalog-source.js";
 import type { CodexClientRequestAttempt } from "./client-catalog-response.js";
+import {
+  readCodexCatalogDecodeRoute,
+  type CodexCatalogDecodeRoute,
+} from "./client-catalog-route.js";
 import { CodexCatalogWorker, codexCatalogRequestId } from "./client-catalog-worker.js";
 import {
   appendBoundedTail,
@@ -26,8 +30,6 @@ import { CodexAppServerMessageDecoder } from "./client-message-decoder.js";
 import {
   listenCodexAppServerLines,
   createCodexAppServerMessageWriter,
-  readCodexCatalogDecodeRoute,
-  type CodexCatalogDecodeRoute,
 } from "./client-message-frames.js";
 import {
   CodexAppServerNotifications,

@@ -9,7 +9,7 @@ import {
 import { toErrorObject } from "@openclaw/normalization-core/error-coercion";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { resolveIdentityPathViaExistingAncestorSync } from "./boundary-path.js";
-import { StateDatabaseAdmissionPendingError } from "./gateway-state-owner-record.js";
+import { StateDatabaseAdmissionPendingError } from "./gateway-state-owner-errors.js";
 import {
   captureSqliteDatabaseAdmissions,
   createSqliteDatabaseAdmissionCursor,

@@ -1,15 +1,12 @@
-import { sanitizeTerminalText } from "openclaw/plugin-sdk/text-chunking";
+import { sanitizeTerminalText } from "openclaw/plugin-sdk/terminal-safe-text";
 import {
   projectCodexCatalogNativeResponse,
   projectCodexCatalogNativeThread,
   type CodexCatalogPreviewCache,
 } from "../session-catalog-native-projection.js";
+import { codexCatalogResponseRoute, type CodexCatalogDecodeRoute } from "./client-catalog-route.js";
 import { redactCodexAppServerLinePreview } from "./client-line-preview.js";
 import { CodexAppServerMessageDecoder } from "./client-message-decoder.js";
-import {
-  codexCatalogResponseRoute,
-  type CodexCatalogDecodeRoute,
-} from "./client-message-frames.js";
 import { isJsonObject, isRpcResponse } from "./protocol.js";
 import type { CodexRequestAttempt } from "./request-attempt.js";
 

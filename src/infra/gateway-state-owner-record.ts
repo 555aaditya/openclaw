@@ -4,7 +4,6 @@ import path from "node:path";
 import { isMainThread } from "node:worker_threads";
 import { extractErrorCode } from "@openclaw/normalization-core/error-coercion";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
-import { resolveGlobalSingleton } from "../shared/global-singleton.js";
 import { getFileLockProcessStartTime, isPidAlive } from "../shared/pid-alive.js";
 import { resolveOpenClawStateDirForDatabasePath } from "../state/openclaw-state-db.paths.js";
 import {
@@ -14,6 +13,7 @@ import {
   readGatewayLockProcessNamespace,
   type LockPayload,
 } from "./gateway-lock-payload.js";
+import { StateDatabaseAdmissionPendingError } from "./gateway-state-owner-errors.js";
 import { isLockOwnerDefinitelyStale } from "./stale-lock-file.js";
 
 /** Admission and reclamation use the same namespace-qualified PID evidence. */
@@ -31,18 +31,7 @@ export function isGatewayStateOwnerDefinitelyStale(value: unknown, lockPath: str
   );
 }
 
-export const StateDatabaseAdmissionPendingError = resolveGlobalSingleton(
-  Symbol.for("openclaw.stateDatabaseAdmissionPendingError"),
-  () =>
-    class extends Error {
-      constructor(
-        readonly databasePath: string,
-        message: string,
-      ) {
-        super(message);
-      }
-    },
-);
+export { StateDatabaseAdmissionPendingError } from "./gateway-state-owner-errors.js";
 
 /** Persisted ownership can identify a holder but cannot lend this process maintenance authority. */
 export function assertPersistedStateDatabaseAccessAllowed(params: {

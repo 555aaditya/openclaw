@@ -14,7 +14,7 @@ import {
 import {
   installSqliteDatabaseAdmissions,
   withSqliteDatabaseAdmissionExchange,
-} from "./sqlite-database-admission.js";
+} from "./sqlite-database-admission-context.js";
 import {
   bindSqliteDatabaseAdmissionUpstream,
   exchangeSqliteDatabaseAdmissions,

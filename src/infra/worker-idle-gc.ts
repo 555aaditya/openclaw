@@ -3,7 +3,7 @@ import { isMainThread } from "node:worker_threads";
 
 const IDLE_GC_DELAY_MS = 1_000;
 const IDLE_GC_GROWTH_BYTES = 32 * 1024 * 1024;
-let collectedHeap = 0;
+let collectedMemory = { heapUsed: 0, external: 0 };
 let session: Session | null | undefined;
 let pending: NodeJS.Timeout | undefined;
 let collecting = false;
@@ -12,8 +12,12 @@ let generation = 0;
 
 async function collectWorkerIdleGarbage(): Promise<void> {
   pending = undefined;
-  // Detailed heap statistics can walk live objects; this check only needs the byte counter.
-  if (process.memoryUsage().heapUsed <= collectedHeap + IDLE_GC_GROWTH_BYTES) {
+  // These isolate-local counters avoid heap walks; external already includes ArrayBuffers.
+  const memory = process.memoryUsage();
+  if (
+    memory.heapUsed <= collectedMemory.heapUsed + IDLE_GC_GROWTH_BYTES &&
+    memory.external <= collectedMemory.external + IDLE_GC_GROWTH_BYTES
+  ) {
     return;
   }
   const collectingGeneration = generation;
@@ -29,7 +33,7 @@ async function collectWorkerIdleGarbage(): Promise<void> {
     await session.post("HeapProfiler.collectGarbage");
     collecting = false;
     if (collectingGeneration === generation) {
-      collectedHeap = process.memoryUsage().heapUsed;
+      collectedMemory = process.memoryUsage();
     } else if (idle) {
       // A successor finished while GC was pending; its released heap needs a new sample.
       scheduleWorkerIdleGc();

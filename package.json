@@ -460,7 +460,8 @@
     "!dist/plugin-sdk/compiled-subprocess-testing.d.ts",
     "!dist/plugin-sdk/compiled-subprocess-testing.js",
     "!dist/plugin-sdk/memory-host-search.d.ts",
-    "!dist/plugin-sdk/codex-client-version-runtime.d.ts"
+    "!dist/plugin-sdk/codex-client-version-runtime.d.ts",
+    "!dist/plugin-sdk/terminal-safe-text.d.ts"
   ],
   "type": "module",
   "main": "dist/index.js",
@@ -810,6 +811,9 @@
     "./plugin-sdk/text-chunking": {
       "types": "./dist/plugin-sdk/text-chunking.d.ts",
       "default": "./dist/plugin-sdk/text-chunking.js"
+    },
+    "./plugin-sdk/terminal-safe-text": {
+      "default": "./dist/plugin-sdk/terminal-safe-text.js"
     },
     "./plugin-sdk/agent-scope-runtime": {
       "types": "./dist/plugin-sdk/agent-scope-runtime.d.ts",
