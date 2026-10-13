@@ -1,5 +1,5 @@
---- telegram-direct-codex-message-tool.md	sha256=3274699f921e72c65d6f7e9cbef495759e946ada6f5837e1eee262e53b868f0c
-+++ discord-group-codex-message-tool.md	sha256=9f7914ef9e6ddd9f4b0cf0e90b07bcaae821a4ee7eb6bccbdc40542df9febfc8
+--- telegram-direct-codex-message-tool.md	sha256=8f08bbb3bdcd460bee296d1ff1cae1551668acf422d60ce46532072fdca148cf
++++ discord-group-codex-message-tool.md	sha256=133a2504ae12ba89611e0176d241939819d55da2a22dcfa86295de472830ce29
 @@ -1,1 +1,1 @@
 -# Telegram Direct Codex Message Tool Turn
 +# Discord Group Codex Message Tool Turn
@@ -7,7 +7,7 @@
 -- Default happy path: OpenAI model through the Codex harness/runtime, Telegram direct conversation, and message-tool-only visible replies.
 -- A quiet turn is represented by not calling `message(action=send)`; the normal final assistant text is private to OpenClaw/Codex.
 +- Default happy path: the same Codex agent is mentioned in a Discord group/channel while Telegram can remain the user's primary direct interface.
-+- Group-visible output must be explicit through the message tool; the model is also told to mostly lurk unless directly addressed or clearly useful.
++- Group-visible output must use the message tool; mentions require a visible reply, while optional turns can end without text.
 @@ -16,2 +16,2 @@
 -  "channel": "telegram",
 -  "chatType": "direct",
@@ -29,28 +29,28 @@
 -    "dynamicToolsFrom": "codex-dynamic-tools.telegram-direct.json",
 +    "dynamicToolsFrom": "codex-dynamic-tools.discord-group.json",
 @@ -239,1 +239,1 @@
--    "chars": 1348,
-+    "chars": 1347,
+-    "chars": 1416,
++    "chars": 1415,
 @@ -259,2 +259,2 @@
--    "chars": 71622,
--    "roughTokens": 17906
-+    "chars": 72220,
-+    "roughTokens": 18055
+-    "chars": 71589,
+-    "roughTokens": 17898
++    "chars": 72187,
++    "roughTokens": 18047
 @@ -263,2 +263,2 @@
--    "chars": 3194,
--    "roughTokens": 799
-+    "chars": 4142,
-+    "roughTokens": 1036
+-    "chars": 3215,
+-    "roughTokens": 804
++    "chars": 4314,
++    "roughTokens": 1079
 @@ -271,2 +271,2 @@
--    "chars": 27580,
--    "roughTokens": 6895
-+    "chars": 28897,
-+    "roughTokens": 7225
+-    "chars": 27669,
+-    "roughTokens": 6918
++    "chars": 29137,
++    "roughTokens": 7285
 @@ -275,2 +275,2 @@
--    "chars": 99204,
--    "roughTokens": 24801
-+    "chars": 101119,
-+    "roughTokens": 25280
+-    "chars": 99260,
+-    "roughTokens": 24815
++    "chars": 101326,
++    "roughTokens": 25332
 @@ -279,2 +279,2 @@
 -    "chars": 879,
 -    "roughTokens": 220
@@ -66,8 +66,8 @@
 +  "surface": "discord",
 +  "chat_type": "group"
 @@ -515,1 +515,3 @@
--You are in a Telegram direct conversation. Normal final replies are private and are not automatically sent to this conversation. To post visible output here, use the message tool with action=send; the target defaults to this conversation. If no visible direct response is needed, do not call message(action=send). Your normal final answer stays private and will not be posted to the conversation.
-+You are in a Discord group chat. Normal final replies are private and are not automatically sent to this group chat. To post visible output here, use the message tool with action=send; the target defaults to this group chat. Be a good group participant: mostly lurk and follow the conversation; reply only when directly addressed or you can add clear value. Emoji reactions are welcome when available. Write like a human. Avoid Markdown tables. Minimize empty lines and use normal chat conventions, not document-style spacing. Don't type literal \n sequences; use real line breaks sparingly. If addressed to someone else, stay silent unless invited or correcting key facts. Discord: wrap bare URLs like <https://example.com> to suppress embeds. When subagent or session-spawn tools are available and a directly requested group-chat task will require several tool calls, prefer delegating bounded side investigations early so the channel gets a responsive path forward. Keep the critical path local, avoid subagents for simple one-step work, and only surface concise group-visible updates when they add value. If no visible group response is needed, do not call message(action=send).
+-You are in a Telegram direct conversation. Normal final replies are private and are not automatically sent to this conversation. To post visible output here, use the message tool with action=send; the target defaults to this conversation. Required direct turns need a visible message or a final reaction to the current source message. Your normal final answer stays private and will not be posted to the conversation.
++You are in a Discord group chat. Normal final replies are private and are not automatically sent to this group chat. To post visible output here, use the message tool with action=send; the target defaults to this group chat. Be a good group participant: follow current-turn reply requirements. For optional turns, mostly lurk and reply only when you can add clear value. Emoji reactions are welcome when available. Write like a human. Avoid Markdown tables. Minimize empty lines and use normal chat conventions, not document-style spacing. Don't type literal \n sequences; use real line breaks sparingly. For optional turns addressed to someone else, stay silent unless invited or correcting key facts. Discord: wrap bare URLs like <https://example.com> to suppress embeds. When subagent or session-spawn tools are available and a directly requested group-chat task will require several tool calls, prefer delegating bounded side investigations early so the channel gets a responsive path forward. Keep the critical path local, avoid subagents for simple one-step work, and only surface concise group-visible updates when they add value. When the current turn permits silence and nothing needs saying, end your turn without any text. Required turns, including mentions and commands, need a visible reply or a final reaction to the current source message.
 +
 +Activation: trigger-only (you are invoked only when explicitly mentioned; recent context may be included). Address the specific sender noted in the message context.
 @@ -531,1 +533,1 @@

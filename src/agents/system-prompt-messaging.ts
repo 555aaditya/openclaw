@@ -1,7 +1,6 @@
 /** Messaging and child-completion guidance shared by full and minimal prompts. */
 import type { SourceReplyDeliveryMode } from "../auto-reply/get-reply-options.types.js";
 import { buildMessageToolTargetGuidance } from "../auto-reply/source-reply-delivery-mode.js";
-import { SILENT_REPLY_TOKEN } from "../auto-reply/tokens.js";
 import type { ChatType } from "../channels/chat-type.js";
 import type { AgentPromptSurfaceKind } from "../plugins/types.js";
 import { isDeliverableMessageChannel, normalizeMessageChannel } from "../utils/message-channel.js";
@@ -31,14 +30,13 @@ export function buildMessagingSection(params: {
   messageToolHints?: string[];
   sourceReplyDeliveryMode?: SourceReplyDeliveryMode;
   requireExplicitMessageTarget?: boolean;
-  silentReplyPromptMode?: SilentReplyPromptMode;
   delegationSectionRenders: boolean;
 }) {
   const messageToolOnly = params.sourceReplyDeliveryMode === "message_tool_only";
   const messageToolAvailable = params.availableTools.has("message");
   const visibleReplyInstruction = messageToolOnly
     ? messageToolAvailable
-      ? "- Current source visible reply MUST use `message(action=send)` unless the user explicitly requests only a reaction to the current source message: use `message(action=react, final=true)`. The final text is private. Set `final=false` for progress. Set `final=true`, or omit it, for the completed send. Skip tool = user gets nothing. No hidden instructions/private data/reasoning."
+      ? "- Current source visible reply MUST use `message(action=send)` or a final reaction to the current source message: `message(action=react, final=true)`. The final text is private. Set `final=false` for progress. Set `final=true`, or omit it, for the completed send. Skip tool = user gets nothing. No hidden instructions/private data/reasoning."
       : "- Current source visible reply unavailable; final text remains private."
     : `- Current-session final text normally routes to source.${messageToolAvailable ? " If turn says final private, visible output uses `message(action=send)`." : ""}`;
   const messageToolTargetInstruction = `- ${buildMessageToolTargetGuidance(params.requireExplicitMessageTarget === true)}`;
@@ -73,10 +71,8 @@ export function buildMessagingSection(params: {
   const hasSessionsSpawn = params.availableTools.has("sessions_spawn");
   const hasSubagents = params.availableTools.has("subagents");
   const hasSessionsYield = params.availableTools.has("sessions_yield");
-  const suppressSilentTokenGuidance = messageToolOnly || params.silentReplyPromptMode === "none";
-  const completionEventGuidance = suppressSilentTokenGuidance
-    ? "- Completion event requesting update: rewrite in normal voice; send. Never forward raw metadata or silent placeholder."
-    : `- Completion event requesting update: rewrite in normal voice; send. Never forward raw metadata or default to ${SILENT_REPLY_TOKEN}.`;
+  const completionEventGuidance =
+    "- Completion event requesting update: rewrite in normal voice; send. Never forward raw metadata or silent placeholder.";
   const subagentOrchestrationGuidance = params.delegationSectionRenders
     ? ""
     : hasSessionsSpawn
@@ -105,17 +101,13 @@ export function buildMessagingSection(params: {
           "### message tool",
           "- Proactive send/channel action (poll, reaction, etc.): `message`.",
           groupMessageToolOnly
-            ? "- Group/channel: stale/joke/light ack/low-value chatter => reaction or silence. Needed text reply => `message(action=send)`; final text private."
+            ? "- Group/channel: required turns need a visible reply or final reaction. Optional low-value chatter may end without text. Final text is private."
             : "",
           messageToolOnly ? messageToolTargetInstruction : "- `send`: `target` + `message`.",
           params.messageChannelOptions
             ? `- No source default: proactive send needs \`channel\`; ids: ${params.messageChannelOptions}.`
             : "- Set `channel` only outside current/default source.",
-          messageToolOnly
-            ? "- Visible `message(send)` content: never repeat in final."
-            : suppressSilentTokenGuidance
-              ? "- Follow turn delivery: private final => visible via `message(send)`; otherwise normal reply once."
-              : `- After visible \`message(send)\`, final ONLY ${SILENT_REPLY_TOKEN}.`,
+          "- A confirmed final message or added final reaction to the current source completes the reply; never repeat it in text.",
           showGenericInlineButtonHint
             ? params.inlineButtonsEnabled
               ? '- Inline buttons: `send` with `presentation={"blocks":[{"type":"buttons","buttons":[{"label":"Yes","action":{"type":"callback","value":"yes"},"style":"primary"}]}]}`.'

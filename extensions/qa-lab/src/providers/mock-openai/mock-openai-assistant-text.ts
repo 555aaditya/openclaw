@@ -207,7 +207,7 @@ export function buildAssistantText(input: ResponsesInputItem[], body: Record<str
     return "Protocol note: I checked the available runtime context but could not confirm the hidden memory-only fact, so I will not guess.";
   }
   const heartbeatReply = resolveHeartbeatPromptReply(prompt);
-  if (heartbeatReply) {
+  if (heartbeatReply !== undefined) {
     return heartbeatReply;
   }
   const imageReply = buildImageInspectionReply(input, body);

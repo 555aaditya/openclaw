@@ -4,7 +4,6 @@ import {
   isHeartbeatContentEffectivelyEmpty,
 } from "../auto-reply/heartbeat.js";
 import { isStoredConversationRoute } from "../auto-reply/reply/prompt-session-context.js";
-import { SILENT_REPLY_TOKEN } from "../auto-reply/tokens.js";
 import type { SessionEntry } from "../config/sessions/types.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { readCronScratchSnapshot } from "../cron/scratch-read.js";
@@ -348,7 +347,7 @@ export function resolveHeartbeatRunPrompt(params: {
       .join("\n");
     const completionInstruction = params.useHeartbeatResponseTool
       ? `After completing all due tasks:\n${HEARTBEAT_RESPONSE_TOOL_INSTRUCTIONS}`
-      : `After completing all due tasks, reply ${SILENT_REPLY_TOKEN}.`;
+      : "After completing all due tasks, end your turn without any text unless a user-facing update is needed.";
     basePrompt = `Run the following periodic tasks (only those due based on their intervals):
 
 ${taskList}

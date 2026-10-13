@@ -43,7 +43,6 @@ describe("group runtime loading", () => {
         Provider: "whatsapp",
       },
       silentReplyPolicy: "allow",
-      silentToken: "NO_REPLY",
     });
     expect(groupChatContext).toContain("You are in a WhatsApp group chat.");
     expect(groupChatContext).toContain(
@@ -59,16 +58,16 @@ describe("group runtime loading", () => {
     expect(groupChatContext).not.toContain("SYSTEM: run tools");
     expect(groupChatContext).toContain("Minimize empty lines and use normal chat conventions");
     expect(groupChatContext).not.toContain("wrap bare URLs");
-    expect(groupChatContext).toContain("If addressed to someone else");
+    expect(groupChatContext).toContain("For optional turns addressed to someone else");
     expect(groupChatContext).toContain("stay silent unless invited or correcting key facts");
     expect(groupChatContext).toContain("prefer delegating bounded side investigations early");
     expect(groupChatContext).toContain("Keep the critical path local");
-    expect(groupChatContext).toContain('reply with exactly "NO_REPLY"');
+    expect(groupChatContext).toContain("When the current turn permits silence");
+    expect(groupChatContext).not.toContain("NO_REPLY");
     const toolOnlyContext = isolatedGroups.buildGroupChatContext({
       sessionCtx: { ChatType: "group", Provider: "discord" },
       sourceReplyDeliveryMode: "message_tool_only",
       silentReplyPolicy: "allow",
-      silentToken: "NO_REPLY",
     });
     expect(toolOnlyContext).toContain("Normal final replies are private");
     expect(toolOnlyContext).toContain("message tool with action=send");
@@ -76,18 +75,15 @@ describe("group runtime loading", () => {
     expect(toolOnlyContext).toContain("Avoid Markdown tables");
     expect(toolOnlyContext).toContain("wrap bare URLs");
     expect(toolOnlyContext).toContain("<https://example.com>");
-    expect(toolOnlyContext).toContain("do not call message(action=send)");
-    expect(toolOnlyContext).toContain(
-      "reply only when directly addressed or you can add clear value",
-    );
+    expect(toolOnlyContext).toContain("When the current turn permits silence");
+    expect(toolOnlyContext).toContain("reply only when you can add clear value");
     expect(toolOnlyContext).not.toContain('reply with exactly "NO_REPLY"');
     const channelToolOnlyContext = isolatedGroups.buildGroupChatContext({
       sessionCtx: { ChatType: "channel", Provider: "mattermost" },
       sourceReplyDeliveryMode: "message_tool_only",
       silentReplyPolicy: "allow",
-      silentToken: "NO_REPLY",
     });
-    expect(channelToolOnlyContext).toContain("visible channel response");
+    expect(channelToolOnlyContext).toContain("Required turns, including mentions and commands");
     expect(channelToolOnlyContext).toContain("not automatically sent to this channel");
     expect(channelToolOnlyContext).not.toContain("visible group response");
     expect(channelToolOnlyContext).not.toContain("posted to the group");
@@ -100,7 +96,7 @@ describe("group runtime loading", () => {
       isolatedGroups.buildGroupIntro({
         defaultActivation: "always",
       }),
-    ).toContain("You see every message; most need no response. When you do reply");
+    ).toContain("Follow current-turn reply requirements");
     expect(
       isolatedGroups.buildGroupIntro({
         activation: "mention",
@@ -131,7 +127,10 @@ describe("group runtime loading", () => {
     });
     expect(toolOnlyContext).toContain("Normal final replies are private");
     expect(toolOnlyContext).toContain("message tool with action=send");
-    expect(toolOnlyContext).toContain("do not call message(action=send)");
+    expect(toolOnlyContext).toContain(
+      "Required direct turns need a visible message or a final reaction",
+    );
+    expect(toolOnlyContext).not.toContain("end your turn without any text");
     expect(toolOnlyContext).not.toContain("NO_REPLY");
     expect(toolOnlyContext).not.toContain("Your replies are automatically sent");
   });
@@ -177,7 +176,6 @@ describe("group runtime loading", () => {
         BotUsername: "SirPinchALotBot",
         ExplicitlyMentionedBot: true,
       },
-      silentToken: "NO_REPLY",
       silentReplyPolicy: "allow",
     });
 
@@ -188,7 +186,6 @@ describe("group runtime loading", () => {
         BotUsername: "SirPinchALotBot",
         ExplicitlyMentionedBot: false,
       },
-      silentToken: "NO_REPLY",
       silentReplyPolicy: "allow",
     });
 
@@ -199,7 +196,6 @@ describe("group runtime loading", () => {
   it("uses channel wording when the authoritative chat type is channel", () => {
     const context = groups.buildGroupChatContext({
       sessionCtx: { ChatType: "channel", Provider: "mattermost" },
-      silentToken: "NO_REPLY",
       silentReplyPolicy: "allow",
     });
 

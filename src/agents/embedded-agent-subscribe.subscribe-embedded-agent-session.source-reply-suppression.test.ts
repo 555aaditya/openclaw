@@ -396,13 +396,14 @@ describe("subscribeEmbeddedAgentSession", () => {
   });
 
   it.each([
-    { action: "reply", final: true },
-
-    { action: "poll", final: true },
-    { action: "send", final: false },
+    { action: "reply", final: true, mode: "message_tool_only" },
+    { action: "poll", final: true, mode: "message_tool_only" },
+    { action: "send", final: false, mode: "message_tool_only" },
+    { action: "send", final: true, mode: "automatic" },
+    { action: "react", final: true, mode: "automatic" },
   ])(
-    "keeps source progress distinct from final receipts for $action (final=$final)",
-    async ({ action, final }) => {
+    "keeps source progress distinct from final receipts for $action (final=$final, mode=$mode)",
+    async ({ action, final, mode }) => {
       const { session, emit } = createStubSessionHarness();
       const sessionManager = session.sessionManager;
       const onBlockReply = vi.fn();
@@ -410,7 +411,7 @@ describe("subscribeEmbeddedAgentSession", () => {
       const subscription = subscribeEmbeddedAgentSession({
         session,
         runId: "implicit-source",
-        sourceReplyDeliveryMode: "message_tool_only",
+        sourceReplyDeliveryMode: mode as "automatic" | "message_tool_only",
         blockReplyBreak: "message_end",
         onBlockReply,
         onDeliveredMessageToolOnlySourceReply,

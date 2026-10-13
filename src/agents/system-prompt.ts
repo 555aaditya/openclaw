@@ -20,7 +20,6 @@ import {
 } from "@openclaw/normalization-core/string-normalization";
 import type { SourceReplyDeliveryMode } from "../auto-reply/get-reply-options.types.js";
 import type { ReasoningLevel } from "../auto-reply/thinking.js";
-import { SILENT_REPLY_TOKEN } from "../auto-reply/tokens.js";
 import { normalizeChatType } from "../channels/chat-type.js";
 import { CHANNEL_IDS } from "../channels/ids.js";
 import {
@@ -849,8 +848,8 @@ export function buildAgentSystemPrompt(params: {
     !isMinimal &&
       silentReplyPromptMode !== "none" && [
         "## Silent Replies",
-        `Nothing to say: entire reply exactly ${SILENT_REPLY_TOKEN}`,
-        `Never append to real response or wrap in Markdown/code.`,
+        "Only when the current turn allows silence and nothing needs saying, end your turn without any text.",
+        "Required replies need visible text, a final message to the current source, or a final reaction to its current message.",
         "",
       ],
     // Approval UI and owner identity vary by turn, so keep both below the stable prefix.
@@ -909,7 +908,6 @@ export function buildAgentSystemPrompt(params: {
       messageToolHints: params.messageToolHints,
       sourceReplyDeliveryMode: params.sourceReplyDeliveryMode,
       requireExplicitMessageTarget: params.requireExplicitMessageTarget,
-      silentReplyPromptMode,
       delegationSectionRenders: subagentDelegationPreferenceSection.length > 0,
     }),
     // Capability-gated reply guidance stays below the cache boundary so channel changes

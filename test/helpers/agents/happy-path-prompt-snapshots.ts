@@ -14,7 +14,6 @@ import {
 } from "../../../src/auto-reply/reply/inbound-meta.js";
 import { buildReplyPromptEnvelope } from "../../../src/auto-reply/reply/prompt-prelude.js";
 import type { TemplateContext } from "../../../src/auto-reply/templating.js";
-import { SILENT_REPLY_TOKEN } from "../../../src/auto-reply/tokens.js";
 import { normalizeChatType } from "../../../src/channels/chat-type.js";
 import type { OpenClawConfig } from "../../../src/config/types.openclaw.js";
 import type {
@@ -638,7 +637,7 @@ async function createScenarios(codexApi: CodexPromptSnapshotApi): Promise<Prompt
       title: "Discord Group Codex Message Tool Turn",
       notes: [
         "Default happy path: the same Codex agent is mentioned in a Discord group/channel while Telegram can remain the user's primary direct interface.",
-        "Group-visible output must be explicit through the message tool; the model is also told to mostly lurk unless directly addressed or clearly useful.",
+        "Group-visible output must use the message tool; mentions require a visible reply, while optional turns can end without text.",
       ],
       trigger: "user",
       ctx: discordGroupCtx,
@@ -652,7 +651,6 @@ async function createScenarios(codexApi: CodexPromptSnapshotApi): Promise<Prompt
           sessionCtx: discordGroupCtx,
           sourceReplyDeliveryMode: "message_tool_only",
           silentReplyPolicy: "allow",
-          silentToken: SILENT_REPLY_TOKEN,
         }),
         intro: buildGroupIntro({
           defaultActivation: "mention",

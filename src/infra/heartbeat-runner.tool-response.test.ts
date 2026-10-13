@@ -252,7 +252,7 @@ describe("runHeartbeatOnce heartbeat response tool", () => {
           silent: true,
         });
         const call = replySpy.mock.calls[0];
-        expect(call?.[0].Body).toContain(SILENT_REPLY_TOKEN);
+        expect(call?.[0].Body).toContain("end your turn without any text");
         expect(call?.[0].Body).not.toContain("heartbeat_respond");
       },
       { messages: { visibleReplies: "automatic" } },
@@ -305,7 +305,7 @@ describe("runHeartbeatOnce heartbeat response tool", () => {
         const context = replySpy.mock.calls[0]?.[0];
         expect(context?.SessionKey).toMatch(/:heartbeat$/);
         expect(context?.Body).toContain(
-          `${SILENT_REPLY_TOKEN} when nothing needs the user's attention`,
+          "end your turn without any text when nothing needs the user's attention",
         );
         expect(context?.Body).toContain("only the alert text");
         expect(sendTelegram).not.toHaveBeenCalled();

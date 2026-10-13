@@ -23,7 +23,6 @@ import {
 } from "../../../src/auto-reply/reply/inbound-meta.js";
 import { buildReplyPromptEnvelope } from "../../../src/auto-reply/reply/prompt-prelude.js";
 import type { TemplateContext } from "../../../src/auto-reply/templating.js";
-import { SILENT_REPLY_TOKEN } from "../../../src/auto-reply/tokens.js";
 import type { OpenClawConfig } from "../../../src/config/config.js";
 import { makeTempWorkspace, writeWorkspaceFile } from "../../../src/test-helpers/workspace.js";
 
@@ -148,7 +147,6 @@ function buildAutoReplySystemPrompt(params: {
     params.includeGroupChatContext
       ? buildGroupChatContext({
           sessionCtx: params.sessionCtx,
-          silentToken: SILENT_REPLY_TOKEN,
           silentReplyPolicy: "allow",
         })
       : "",

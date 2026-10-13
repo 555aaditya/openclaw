@@ -3,7 +3,6 @@ import {
   parseNonNegativeByteSize,
   resolveCronStyleNow,
   resolveEffectiveCompactionReserveTokens,
-  SILENT_REPLY_TOKEN,
   type MemoryFlushPlan,
   type OpenClawConfig,
 } from "openclaw/plugin-sdk/memory-core-host-runtime-core";
@@ -24,7 +23,7 @@ const DEFAULT_MEMORY_FLUSH_PROMPT = [
   MEMORY_FLUSH_READ_ONLY_HINT,
   MEMORY_FLUSH_APPEND_ONLY_HINT,
   "Do NOT create timestamped variant files (e.g., YYYY-MM-DD-HHMM.md); always use the canonical YYYY-MM-DD.md filename.",
-  `If nothing to store, reply with ${SILENT_REPLY_TOKEN}.`,
+  "If nothing to store, end your turn without any text.",
 ].join(" ");
 
 const DEFAULT_MEMORY_FLUSH_SYSTEM_PROMPT = [
@@ -33,7 +32,7 @@ const DEFAULT_MEMORY_FLUSH_SYSTEM_PROMPT = [
   MEMORY_FLUSH_TARGET_HINT,
   MEMORY_FLUSH_READ_ONLY_HINT,
   MEMORY_FLUSH_APPEND_ONLY_HINT,
-  `You may reply, but usually ${SILENT_REPLY_TOKEN} is correct.`,
+  "This is an internal maintenance turn; normally end it without any text.",
 ].join(" ");
 
 function formatDateStampInTimezone(nowMs: number, timezone: string): string {

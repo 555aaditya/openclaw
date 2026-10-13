@@ -7,7 +7,6 @@ import {
 import { buildInboundMetaSystemPrompt } from "../../auto-reply/reply/inbound-meta.js";
 import { prepareReplyConversation } from "../../auto-reply/reply/prompt-session-context.js";
 import { resolveSessionStableReplyMode } from "../../auto-reply/reply/session-stable-reply-mode.js";
-import { SILENT_REPLY_TOKEN } from "../../auto-reply/tokens.js";
 import type { SessionEntry } from "../../config/sessions/types.js";
 import { resolveSilentReplySettings } from "../../config/silent-reply.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
@@ -72,7 +71,6 @@ export async function prepareCommandConversationContext(params: {
         surface: ctx.Surface ?? ctx.Provider,
         conversationType: shared ? "group" : "direct",
       }).policy,
-      silentToken: SILENT_REPLY_TOKEN,
     });
     if (sourceContext) {
       // Metadata describes the conversation; delivery preflight owns formatting.

@@ -370,7 +370,7 @@ it.each(["automatic", "message_tool"] as const)(
       const prompt = reply.mock.calls[0]?.[0].Body;
       expect(prompt).toContain("duplicate or superseded results");
       expect(prompt).toContain(
-        visibleReplies === "automatic" ? "reply NO_REPLY only" : "notify=false",
+        visibleReplies === "automatic" ? "end your turn without any text" : "notify=false",
       );
       expect(await readProjectionMessages(scenario)).toEqual([]);
       expect(peekSystemEventEntries(scenario.sessionKey)).toEqual([]);

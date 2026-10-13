@@ -15,7 +15,7 @@ The hook ships disabled. Enable it first:
 openclaw hooks enable boot-md
 ```
 
-This hook turns off normal final-response delivery. If a checklist item sends a message, use the message tool. Name a channel and a target in each call. Then reply with the silent token `NO_REPLY`, in any letter case.
+This hook turns off normal final-response delivery. If a checklist item sends a message, use the message tool. Name a channel and a target in each call. When finished, end your turn without any text.
 
 ## Related
 

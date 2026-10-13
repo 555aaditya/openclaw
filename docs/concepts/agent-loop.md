@@ -128,6 +128,7 @@ complete schema still enforces constraints such as `oneOf` exclusivity.
 - Tool start/update/end events emit on the `tool` stream.
 - Tool results are sanitized for size and image payloads before logging/emitting.
 - Messaging tool sends are tracked to suppress duplicate assistant confirmations.
+- A confirmed final send, reply, thread reply, or poll to the current source conversation ends the run loop in both automatic and message-tool delivery modes. An added reaction with explicit `final: true` on the current source message also ends it. Progress actions (`final: false`), reactions elsewhere, removals, and unconfirmed actions do not.
 
 ## Reply shaping
 
@@ -143,7 +144,7 @@ When a required turn exhausts its retries with only reasoning or empty output, O
 
 If a required-reply turn ends after a fully settled tool batch without a composed answer, OpenClaw can make a tool-free finalization pass. Earlier tool errors, pre-tool progress, and superseded, undelivered confirmations do not count as a final answer. A progress message fully delivered to the current conversation counts as the answer only when it is the last tool batch of the settled turn and the turn then produces no output: the model wrote it after every other tool result, so a finalization pass could only repeat it. Any later tool work, including work after an asynchronous progress send, still gets a finalization pass. This pass uses the settled results and does not repeat completed tools. Fatal automation failures, including denied execution, remain failures even when finalization produces an answer.
 
-An optional turn that explicitly finishes with `NO_REPLY` does not need a finalization pass, even after a settled tool failure. The failure remains recorded; a rejected Skill Workshop review still fails without making extra model requests to compose a reply.
+An optional turn can finish without text and does not need a visible-answer finalization pass. Legacy `NO_REPLY` output is still treated as empty text, including after a settled tool failure. The failure remains recorded; a rejected Skill Workshop review still fails without making extra model requests to compose a reply.
 
 Node worker turns use the same settled-tool recovery when the model returns an empty final. The worker makes one tool-free follow-up request. If that request also returns no answer, the turn reports a failure. A worker turn that starts background commands which are still running ends with an explicit status and their process session IDs; it does not claim their results are complete.
 

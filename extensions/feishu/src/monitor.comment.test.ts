@@ -247,6 +247,9 @@ describe("resolveDriveCommentEventTurn", () => {
       `raw_url=https://www.larksuite.com/wiki/${TEST_WIKI_TOKEN} url_kind=wiki ` +
         `wiki_node_token=${TEST_WIKI_TOKEN} resolved_type=docx resolved_token=doc_ref_1 same_as_current_document=no`,
     );
+    expect(turn?.prompt).toContain("Required turns need a visible reply");
+    expect(turn?.prompt).toContain("If the current turn allows silence");
+    expect(turn?.prompt).not.toContain("NO_REPLY");
     expect(wikiGetNode).toHaveBeenCalledWith({ params: { token: TEST_WIKI_TOKEN } });
   });
 

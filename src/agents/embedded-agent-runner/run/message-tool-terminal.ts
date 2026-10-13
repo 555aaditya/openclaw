@@ -1,7 +1,6 @@
 import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import { resolveAgentAssistantTurnId } from "../../../../packages/agent-core/src/tool-execution-context.js";
 import type { SourceReplyDeliveryMode } from "../../../auto-reply/get-reply-options.types.js";
-import { readEmbeddedMessageDeliveryFact } from "../../embedded-agent-message-delivery.js";
 import {
   isDeliveredMessageToolOnlySourceReplyResult,
   resolveMessageToolSourceReplyFinal,
@@ -96,15 +95,20 @@ export function installToolAuthoredSourceReplyTerminalHook(params: {
   };
 }
 
-export function installMessageToolOnlyTerminalHook(
+export function installMessageToolTerminalHook(
   params: MessageToolTerminalRoute & {
     agent: Agent;
     onDeliveredSourceReply?: () => void;
   },
 ): void {
-  if (params.sourceReplyDeliveryMode !== "message_tool_only") {
-    return;
-  }
+  let finalSourceReplyDelivered = false;
+  const previousCompletion = getInternalToolTurnCompletion(params.agent);
+  // Let sibling tools settle, then finish without another model request.
+  setInternalToolTurnCompletion(params.agent, (context) => {
+    const completed = finalSourceReplyDelivered;
+    finalSourceReplyDelivered = false;
+    return previousCompletion?.(context) === true || completed;
+  });
   const previousAfterToolCall = params.agent.afterToolCall?.bind(params.agent);
   params.agent.afterToolCall = async (context, signal) => {
     const hookResult = await previousAfterToolCall?.(context, signal);
@@ -120,9 +124,6 @@ export function installMessageToolOnlyTerminalHook(
     const pendingSend = extractMessagingToolSend(toolName, extractionArgs, params);
     const confirmedSend =
       pendingSend && extractMessagingToolSendResult(pendingSend, context.result);
-    const deliveryFact = readEmbeddedMessageDeliveryFact(
-      readToolResultDetails(context.result)?.messageDelivery,
-    );
     const isError = hookResult?.isError ?? context.isError;
     const delivered = isDeliveredMessageToolOnlySourceReplyResult({
       sourceReplyDeliveryMode: params.sourceReplyDeliveryMode,
@@ -137,16 +138,11 @@ export function installMessageToolOnlyTerminalHook(
         send: confirmedSend,
         deliveredPayload: context.result,
       }),
-      ...(deliveryFact
-        ? {
-            deliveryConfirmed:
-              deliveryFact.status === "settled" && (!isError || deliveryFact.partialDelivery),
-          }
-        : {}),
     });
     if (delivered) {
       params.onDeliveredSourceReply?.();
       if (resolveMessageToolSourceReplyFinal(argsRecordForToolCall(context))) {
+        finalSourceReplyDelivered = true;
         return { ...hookResult, terminate: true };
       }
     }
