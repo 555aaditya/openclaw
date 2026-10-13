@@ -2727,7 +2727,6 @@ describe("dispatchReplyFromConfig", () => {
       );
       const authority = { assertCurrent() {}, authorize() {} };
       const entry = { sessionId: "session-1", updatedAt: 1, pendingFinalDelivery: pending };
-      sessionStoreMocks.currentEntry = entry;
       try {
         readSessionActorStorageResult(
           await actor.storage!.mutate(
@@ -2741,6 +2740,7 @@ describe("dispatchReplyFromConfig", () => {
             authority,
           ),
         );
+        sessionStoreMocks.currentEntry = { ...actor.snapshot(authority)?.entry };
         const onFinalDeliverySuccess = vi.fn();
         const payload = setReplyPayloadMetadata(
           { text: "same" },
