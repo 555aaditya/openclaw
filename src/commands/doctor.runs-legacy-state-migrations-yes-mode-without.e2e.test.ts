@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "../test-utils/prepare-compiled-subprocesses.js";
 import type { ProviderPlugin } from "../plugins/types.js";
+import { withEnvAsync } from "../test-utils/env.js";
 import {
   arrangeLegacyStateMigrationTest,
   confirm,
@@ -108,9 +109,12 @@ describe("doctor command", () => {
       resolveOpenClawPackageRoot.mockResolvedValue(process.cwd());
       migrationCalls = () => runLegacyStateMigrations.mock.calls.length;
       try {
-        await (
-          doctorCommandValue as (runtime: unknown, opts: Record<string, unknown>) => Promise<void>
-        )(runtime, { yes: true });
+        // This fixture has only core legacy state; plugin migration capture has separate proof.
+        await withEnvAsync({ OPENCLAW_DISABLE_BUNDLED_PLUGINS: "1" }, async () => {
+          await (
+            doctorCommandValue as (runtime: unknown, opts: Record<string, unknown>) => Promise<void>
+          )(runtime, { yes: true });
+        });
       } finally {
         doctorSettled = true;
       }
