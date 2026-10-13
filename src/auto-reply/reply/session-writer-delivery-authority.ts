@@ -13,7 +13,7 @@ import {
 } from "../reply-payload.js";
 
 /** Capture before preparation yields; ended actors never enter durable discovery. */
-export function captureSessionWriterDeliveryRead(
+function captureSessionWriterDeliveryRead(
   target: Pick<SessionWriterDeliveryAuthority, "agentId" | "sessionKey" | "storePath">,
 ): SessionWriterDeliveryAuthority["readCurrentSession"] {
   const memory = captureSessionEntryMetadataRead(target, () => {});

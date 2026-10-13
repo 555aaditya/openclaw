@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { prepareReplyToolAuthorityCallerRead } from "../../agents/harness/host-private-capabilities.js";
 import { prepareReplyToolAuthority } from "../../auto-reply/reply/reply-tool-authority.js";
-import { createSessionResetCleanupGuard } from "../../auto-reply/reply/session-reset-cleanup.js";
+import { prepareSessionResetCleanupGuard } from "../../auto-reply/reply/session-reset-cleanup.js";
 import { prepareSteeringDelivery } from "../../auto-reply/reply/steering-delivery-preparation.js";
 import { createCompletionGrantLineageAdmission } from "../../gateway/tool-resolution-completion.js";
 import { runExclusiveSessionLifecycleMutation } from "../../sessions/session-lifecycle-admission.js";
@@ -222,21 +222,22 @@ describe("memory actor effect adapters", () => {
     };
     try {
       await upsertSessionEntryCore(source, entry);
-      const guard = createSessionResetCleanupGuard({
+      const guard = await prepareSessionResetCleanupGuard({
         ...source,
         expectedSession: entry,
       });
-      guard();
+      guard.assertCurrent();
       await upsertSessionEntryCore(source, { ...entry, label: "Unrelated edit" });
-      guard();
+      guard.assertCurrent();
       await upsertSessionEntryCore(source, {
         ...entry,
         sessionId: "replacement-session",
         lifecycleRevision: "replacement-reset",
       });
-      expect(guard).toThrow("session changed before cleanup");
+      expect(() => guard.assertCurrent()).toThrow("session changed before cleanup");
       memorySessionActorOwners.closeDatabase(target);
-      expect(guard).toThrow("closed");
+      expect(() => guard.assertCurrent()).toThrow("closed");
+      guard.release();
     } finally {
       memorySessionActorOwners.closeDatabase(target);
     }
