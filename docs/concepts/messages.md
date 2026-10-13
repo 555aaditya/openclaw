@@ -203,6 +203,8 @@ Optional turns buffer assistant previews until their outcome is known, including
 
 The legacy silent token `NO_REPLY` (case-insensitive, so `no_reply` also matches) is still parsed and stripped for persisted or custom prompts and models that emit it. Surfaces without the `message` tool keep token guidance; heartbeat runs use `heartbeat_respond` when available. When a legacy token accompanies pending tool media, such as generated TTS audio, OpenClaw strips the text but still delivers the attachment. Remove the parser only after no-message surfaces have a structured completion path and persisted/custom prompt compatibility is retired.
 
+Token-only uppercase fragments from `NO_` through `NO_REPL` are also suppressed if a model stops before completing `NO_REPLY`. A final `NO`, mixed-case text such as `No`, and longer replies such as `NO_R alert` remain visible. Streaming previews hold shorter prefixes until the text diverges from the token or the final reply arrives.
+
 Silence policy resolves by conversation type:
 
 - Direct user conversations require an answer. Neither `message(action="none")` nor a legacy token can waive that obligation.
