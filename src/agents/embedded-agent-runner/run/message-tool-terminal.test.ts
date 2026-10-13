@@ -365,6 +365,7 @@ describe("message-tool-only source replies", () => {
         createAfterToolCallContext({
           toolName: "message",
           args: { action: "send", message: "failed reply" },
+          isError: true,
         }),
       ),
     ).resolves.toEqual({

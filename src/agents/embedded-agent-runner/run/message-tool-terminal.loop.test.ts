@@ -23,10 +23,15 @@ const model: Model = {
 };
 
 describe("confirmed message-tool turn completion", () => {
-  it.each([true, false])(
-    "settles sibling tools and requests another model turn only for progress (final=%s)",
-    async (final) => {
+  it.each([
+    { final: true, hookThrows: false },
+    { final: false, hookThrows: false },
+    { final: true, hookThrows: true },
+  ])(
+    "settles sibling tools and only continues progress (final=$final, hookThrows=$hookThrows)",
+    async ({ final, hookThrows }) => {
       let requests = 0;
+      let deliveries = 0;
       const executed: string[] = [];
       const agent = new Agent({
         initialState: {
@@ -79,6 +84,7 @@ describe("confirmed message-tool turn completion", () => {
                   { type: "toolCall", id: "lookup", name: "lookup", arguments: {} },
                 ]
               : [{ type: "text", text: "Another visible answer." }];
+          const stopReason = requests === 1 ? "toolUse" : "stop";
           const message: AssistantMessage = {
             role: "assistant",
             content,
@@ -86,22 +92,37 @@ describe("confirmed message-tool turn completion", () => {
             provider: model.provider,
             model: model.id,
             usage: createZeroUsageFixture(),
-            stopReason: requests === 1 ? "toolUse" : "stop",
+            stopReason,
             timestamp: 0,
           };
           const stream = createAssistantMessageEventStream();
           queueMicrotask(() => {
-            stream.push({ type: "done", reason: message.stopReason, message });
+            stream.push({ type: "done", reason: stopReason, message });
             stream.end();
           });
           return stream;
         },
       });
-      installMessageToolTerminalHook({ agent, sourceReplyDeliveryMode: "automatic" });
+      agent.afterToolCall = async (context) => {
+        if (hookThrows && context.toolCall.name === "message") {
+          context.result.details = { redacted: true };
+          context.args = { action: "send", final: false };
+          throw new Error("Presentation hook failed");
+        }
+        return undefined;
+      };
+      installMessageToolTerminalHook({
+        agent,
+        sourceReplyDeliveryMode: "automatic",
+        onDeliveredSourceReply: () => {
+          deliveries += 1;
+        },
+      });
 
       await agent.prompt("Answer with a source reply.");
 
       expect(executed).toEqual(["message", "lookup"]);
+      expect(deliveries).toBe(1);
       expect(requests).toBe(final ? 1 : 2);
       expect(
         agent.state.messages.some(
@@ -109,6 +130,9 @@ describe("confirmed message-tool turn completion", () => {
             message.role === "assistant" && message.content.some((block) => block.type === "text"),
         ),
       ).toBe(!final);
+      expect(
+        agent.state.messages.some((message) => message.role === "toolResult" && message.isError),
+      ).toBe(hookThrows);
     },
   );
 });

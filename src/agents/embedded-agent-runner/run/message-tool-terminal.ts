@@ -12,7 +12,7 @@ import {
 } from "../../embedded-agent-messaging-extraction.js";
 import type { MessagingToolSourceReplyPayload } from "../../embedded-agent-messaging.types.js";
 import { captureToolAuthoredSourceReply } from "../../embedded-agent-tool-authored-source-reply.js";
-import type { AfterToolCallContext, Agent } from "../../runtime/index.js";
+import type { AfterToolCallContext, AfterToolCallResult, Agent } from "../../runtime/index.js";
 import {
   getInternalToolTurnCompletion,
   setInternalToolTurnCompletion,
@@ -111,9 +111,9 @@ export function installMessageToolTerminalHook(
   });
   const previousAfterToolCall = params.agent.afterToolCall?.bind(params.agent);
   params.agent.afterToolCall = async (context, signal) => {
-    const hookResult = await previousAfterToolCall?.(context, signal);
     const toolName = context.toolCall.name;
     const toolArgs = argsRecordForToolCall(context);
+    const final = resolveMessageToolSourceReplyFinal(toolArgs);
     const extractionArgs =
       toolName === "message" &&
       params.currentProvider &&
@@ -124,28 +124,33 @@ export function installMessageToolTerminalHook(
     const pendingSend = extractMessagingToolSend(toolName, extractionArgs, params);
     const confirmedSend =
       pendingSend && extractMessagingToolSendResult(pendingSend, context.result);
-    const isError = hookResult?.isError ?? context.isError;
-    const delivered = isDeliveredMessageToolOnlySourceReplyResult({
-      sourceReplyDeliveryMode: params.sourceReplyDeliveryMode,
-      toolName,
-      args: toolArgs,
-      result: hookResult ?? context.result,
-      // Middleware may retain a delivery summary while redacting its source receipt.
-      hookResult: context.result,
-      isError,
-      allowExplicitSourceRoute: isDeliveredMessagingToolSendToCurrentSource({
-        ...params,
-        send: confirmedSend,
-        deliveredPayload: context.result,
-      }),
-    });
-    if (delivered) {
-      params.onDeliveredSourceReply?.();
-      if (resolveMessageToolSourceReplyFinal(argsRecordForToolCall(context))) {
-        finalSourceReplyDelivered = true;
-        return { ...hookResult, terminate: true };
+    const isDelivered = (hookResult?: AfterToolCallResult) =>
+      isDeliveredMessageToolOnlySourceReplyResult({
+        sourceReplyDeliveryMode: params.sourceReplyDeliveryMode,
+        toolName,
+        args: toolArgs,
+        result: hookResult ?? context.result,
+        // Middleware may retain a delivery summary while redacting its source receipt.
+        hookResult: context.result,
+        isError: hookResult?.isError ?? context.isError,
+        allowExplicitSourceRoute: isDeliveredMessagingToolSendToCurrentSource({
+          ...params,
+          send: confirmedSend,
+          deliveredPayload: context.result,
+        }),
+      });
+    // Presentation hooks cannot revoke delivery or finality already committed by the tool.
+    let delivered = isDelivered();
+    let hookResult: AfterToolCallResult | undefined;
+    try {
+      hookResult = await previousAfterToolCall?.(context, signal);
+    } finally {
+      delivered ||= isDelivered(hookResult);
+      if (delivered) {
+        finalSourceReplyDelivered ||= final;
+        params.onDeliveredSourceReply?.();
       }
     }
-    return hookResult;
+    return delivered && final ? { ...hookResult, terminate: true } : hookResult;
   };
 }
