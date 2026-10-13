@@ -6,6 +6,10 @@ import {
   type CodexSessionContextReader,
   type CodexSessionContextSnapshot,
 } from "openclaw/plugin-sdk/codex-session-transcript-runtime";
+import {
+  clearRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot,
+} from "openclaw/plugin-sdk/runtime-config-snapshot";
 import { deleteSessionEntry, upsertSessionEntry } from "openclaw/plugin-sdk/session-store-runtime";
 import { appendSessionTranscriptMessagesByIdentity } from "openclaw/plugin-sdk/session-transcript-runtime";
 import { observeHostDataSql } from "openclaw/plugin-sdk/sqlite-runtime-testing";
@@ -14,7 +18,10 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { projectCodexSettledHistoryInWorker } from "./session-history-worker-runtime.js";
 import { settledFixture } from "./src/app-server/session-history.test-support.js";
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  clearRuntimeConfigSnapshot();
+  vi.restoreAllMocks();
+});
 const tempDirs = useAutoCleanupTempDirTracker(afterAll);
 
 function actorHistoryFixture() {
@@ -107,6 +114,7 @@ describe("Codex actor history adapter", () => {
   });
 
   it("resolves marker-only history through unbound memory routing without host SQL", async () => {
+    setRuntimeConfigSnapshot({});
     const env = { OPENCLAW_STATE_DIR: tempDirs.make("codex-marker-actor-") };
     const { target, upstreamPrompt } = actorHistoryFixture();
     const sessionTarget = {

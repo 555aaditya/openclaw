@@ -5,8 +5,8 @@ import type { AgentMessage } from "openclaw/plugin-sdk/agent-harness-runtime";
 import { CURRENT_SESSION_VERSION } from "openclaw/plugin-sdk/agent-sessions";
 import type { AssistantMessage } from "openclaw/plugin-sdk/llm";
 import {
+  captureRuntimeConfigAsyncReader,
   clearRuntimeConfigSnapshot,
-  setRuntimeConfigSnapshot,
 } from "openclaw/plugin-sdk/runtime-config-snapshot";
 import { deleteSessionEntry, upsertSessionEntry } from "openclaw/plugin-sdk/session-store-runtime";
 import { appendSessionTranscriptMessageByIdentity } from "openclaw/plugin-sdk/session-transcript-runtime";
@@ -60,7 +60,7 @@ export function setupSessionHistoryFixtures() {
       env?: NodeJS.ProcessEnv;
     };
   }> {
-    setRuntimeConfigSnapshot({});
+    await captureRuntimeConfigAsyncReader()();
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-codex-session-history-sqlite-"));
     tempDirs.push(dir);
     const env = params.incognito ? { OPENCLAW_STATE_DIR: dir } : undefined;
