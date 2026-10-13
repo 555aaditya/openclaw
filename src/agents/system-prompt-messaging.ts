@@ -1,9 +1,6 @@
 /** Messaging and child-completion guidance shared by full and minimal prompts. */
 import type { SourceReplyDeliveryMode } from "../auto-reply/get-reply-options.types.js";
-import {
-  buildMessageToolTargetGuidance,
-  MESSAGE_TOOL_SILENCE_GUIDANCE,
-} from "../auto-reply/source-reply-delivery-mode.js";
+import { buildMessageToolTargetGuidance } from "../auto-reply/source-reply-delivery-mode.js";
 import type { ChatType } from "../channels/chat-type.js";
 import type { AgentPromptSurfaceKind } from "../plugins/types.js";
 import { isDeliverableMessageChannel, normalizeMessageChannel } from "../utils/message-channel.js";
@@ -67,7 +64,6 @@ export function buildMessagingSection(params: {
       ...(messageToolOnly
         ? [visibleReplyInstruction, ...(messageToolAvailable ? [messageToolTargetInstruction] : [])]
         : []),
-      ...(messageToolAvailable ? [MESSAGE_TOOL_SILENCE_GUIDANCE] : []),
       ...routingGuidance,
       "",
     ];
@@ -96,7 +92,6 @@ export function buildMessagingSection(params: {
   return [
     "## Messaging",
     visibleReplyInstruction,
-    ...(messageToolAvailable ? [MESSAGE_TOOL_SILENCE_GUIDANCE] : []),
     ...(params.availableTools.has("sessions_send")
       ? ["- Cross-session: `sessions_send(sessionKey, message)`."]
       : []),

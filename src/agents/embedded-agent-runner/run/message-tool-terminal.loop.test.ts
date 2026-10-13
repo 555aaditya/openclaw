@@ -5,6 +5,7 @@ import {
 } from "openclaw/plugin-sdk/llm";
 import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
+import { projectIntentionalSilenceHistory } from "../../../gateway/chat-silence-projection.js";
 import { createSubscribedSessionHarness } from "../../embedded-agent-subscribe.e2e-harness.js";
 import { Agent } from "../../runtime/index.js";
 import { makeEmbeddedRunnerAttempt } from "../../test-helpers/embedded-agent-runner-e2e-fixtures.js";
@@ -28,9 +29,16 @@ const model: Model = {
 };
 
 describe("confirmed message-tool turn completion", () => {
-  it.each(["optional", "required"] as const)(
-    "%s silence settles without delivering the preamble or satisfying a required answer",
-    async (terminalReplyExpectation) => {
+  it.each([
+    { terminalReplyExpectation: "optional", hook: "none" },
+    { terminalReplyExpectation: "optional", hook: "replace" },
+    { terminalReplyExpectation: "optional", hook: "error" },
+    { terminalReplyExpectation: "optional", hook: "mutate" },
+    { terminalReplyExpectation: "optional", hook: "throw" },
+    { terminalReplyExpectation: "required", hook: "none" },
+  ] as const)(
+    "$terminalReplyExpectation silence settles durably without a preamble (hook=$hook)",
+    async ({ terminalReplyExpectation, hook }) => {
       let requests = 0;
       let intentionalSilence = false;
       let deliveries = 0;
@@ -81,6 +89,21 @@ describe("confirmed message-tool turn completion", () => {
           return stream;
         },
       });
+      agent.afterToolCall = async (context) => {
+        if (hook === "replace") {
+          return { content: [], details: { redacted: true } };
+        }
+        if (hook === "error") {
+          return { content: [], details: { status: "error" }, isError: true };
+        }
+        if (hook === "mutate" || hook === "throw") {
+          context.result.details = { redacted: true };
+          if (hook === "throw") {
+            throw new Error("Presentation hook failed");
+          }
+        }
+        return undefined;
+      };
       agent.subscribe(harness.emit);
       installMessageToolTerminalHook({
         agent,
@@ -109,6 +132,16 @@ describe("confirmed message-tool turn completion", () => {
           expect(payloads).toEqual([]);
           expect(harness.subscription.assistantTexts).toEqual([]);
           expect(assistant?.content).toContainEqual({ type: "text", text: "I will stay silent." });
+          expect(
+            agent.state.messages.findLast((message) => message.role === "toolResult"),
+          ).toMatchObject({
+            isError: false,
+            details: { messageDelivery: { status: "silent" } },
+          });
+          const reloaded: unknown[] = JSON.parse(JSON.stringify(agent.state.messages));
+          expect(projectIntentionalSilenceHistory(reloaded)).toEqual([
+            expect.objectContaining({ role: "user" }),
+          ]);
           expect(
             shouldTreatEmptyAssistantReplyAsSilent({
               terminalReplyExpectation,

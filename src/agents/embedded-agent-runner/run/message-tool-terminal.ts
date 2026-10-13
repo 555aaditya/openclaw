@@ -21,6 +21,7 @@ import {
 } from "../../runtime/internal-hooks.js";
 import { normalizeToolPolicyName } from "../../tool-policy-shared.js";
 import { isToolResultError, readToolResultDetails } from "../../tool-result-error.js";
+import { log } from "../logger.js";
 
 type MessageToolTerminalRoute = Omit<
   Parameters<typeof isDeliveredMessagingToolSendToCurrentSource>[0],
@@ -117,14 +118,24 @@ export function installMessageToolTerminalHook(
   params.agent.afterToolCall = async (context, signal) => {
     const toolName = context.toolCall.name;
     const toolArgs = argsRecordForToolCall(context);
+    const messageDelivery = readEmbeddedMessageDeliveryFact(
+      readToolResultDetails(context.result)?.messageDelivery,
+    );
     const silent =
       toolName === "message" &&
       toolArgs.action === "none" &&
       params.terminalReplyExpectation === "optional" &&
       !context.isError &&
       !isToolResultError(context.result) &&
-      readEmbeddedMessageDeliveryFact(readToolResultDetails(context.result)?.messageDelivery)
-        ?.status === "silent";
+      messageDelivery?.status === "silent";
+    const acceptedSilence: AfterToolCallResult | undefined = silent
+      ? {
+          content: context.result.content.map((block) => ({ ...block })),
+          details: { messageDelivery },
+          isError: false,
+          terminate: true,
+        }
+      : undefined;
     const final = resolveMessageToolSourceReplyFinal(toolArgs);
     const extractionArgs =
       toolName === "message" &&
@@ -156,6 +167,11 @@ export function installMessageToolTerminalHook(
     let hookResult: AfterToolCallResult | undefined;
     try {
       hookResult = await previousAfterToolCall?.(context, signal);
+    } catch (error) {
+      if (!acceptedSilence) {
+        throw error;
+      }
+      log.warn("Message silence result hook failed after acceptance; retaining silent completion.");
     } finally {
       if (silent) {
         turnCompleted = true;
@@ -167,6 +183,8 @@ export function installMessageToolTerminalHook(
         params.onDeliveredSourceReply?.();
       }
     }
-    return silent || (delivered && final) ? { ...hookResult, terminate: true } : hookResult;
+    return (
+      acceptedSilence ?? (delivered && final ? { ...hookResult, terminate: true } : hookResult)
+    );
   };
 }

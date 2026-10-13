@@ -152,7 +152,7 @@
     },
     "openclaw_source_delivery": {
       "kind": "application",
-      "value": "Current source-delivery policy for this turn (replaces earlier source-delivery guidance):\nVisible source replies are not automatically delivered for this run. Use `message(action=send)` for source output. For progress, set `final=false`. Set `final=true`, or omit it, for a completed reply to the current source. An added reaction to the current source message with `final=true` can also complete the reply. Do not repeat delivered content.\n\nOn optional non-heartbeat turns, call `message(action=\"none\")` when no response is needed.\n\n`send`: `message`; current source is default target. Set `target` only elsewhere.\n\nCommentary is optional progress and may be hidden. Answer user questions or status requests received during ongoing work with `message(action=send, final=false)`, then continue the task. Before finishing, deliver every still-pending answer through this turn's visible-reply route. Do not repeat answers already delivered."
+      "value": "Current source-delivery policy for this turn (replaces earlier source-delivery guidance):\nVisible source replies are not automatically delivered for this run. Use `message(action=send)` for source output. For progress, set `final=false`. Set `final=true`, or omit it, for a completed reply to the current source. An added reaction to the current source message with `final=true` can also complete the reply. Do not repeat delivered content.\n\nWhen no response is needed on a non-heartbeat turn, call `message(action=\"none\")` instead of writing a reply or explaining your silence.\n\n`send`: `message`; current source is default target. Set `target` only elsewhere.\n\nCommentary is optional progress and may be hidden. Answer user questions or status requests received during ongoing work with `message(action=send, final=false)`, then continue the task. Before finishing, deliver every still-pending answer through this turn's visible-reply route. Do not repeat answers already delivered."
     },
     "openclaw_temporal_context": {
       "kind": "application",
@@ -236,8 +236,8 @@ This is the deterministic model-bound layer stack OpenClaw can snapshot for the 
 ```json
 {
   "additionalContext": {
-    "chars": 1430,
-    "roughTokens": 358
+    "chars": 1476,
+    "roughTokens": 369
   },
   "codexCollaborationModeDeveloperInstructions": {
     "chars": 0,
@@ -268,12 +268,12 @@ This is the deterministic model-bound layer stack OpenClaw can snapshot for the 
     "roughTokens": 127
   },
   "totalTextOnly": {
-    "chars": 27504,
-    "roughTokens": 6876
+    "chars": 27550,
+    "roughTokens": 6888
   },
   "totalWithDynamicToolsJson": {
-    "chars": 99322,
-    "roughTokens": 24831
+    "chars": 99368,
+    "roughTokens": 24842
   },
   "userInputText": {
     "chars": 879,
@@ -537,7 +537,7 @@ This turn asks Codex app-server to resolve its built-in Default collaboration-mo
 <openclaw_source_delivery>Current source-delivery policy for this turn (replaces earlier source-delivery guidance):
 Visible source replies are not automatically delivered for this run. Use `message(action=send)` for source output. For progress, set `final=false`. Set `final=true`, or omit it, for a completed reply to the current source. An added reaction to the current source message with `final=true` can also complete the reply. Do not repeat delivered content.
 
-On optional non-heartbeat turns, call `message(action="none")` when no response is needed.
+When no response is needed on a non-heartbeat turn, call `message(action="none")` instead of writing a reply or explaining your silence.
 
 `send`: `message`; current source is default target. Set `target` only elsewhere.
 

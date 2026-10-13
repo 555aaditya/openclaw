@@ -9,6 +9,7 @@ describe("system prompt messaging routing", () => {
         workspaceDir: "/tmp/openclaw",
         promptMode,
         sourceReplyDeliveryMode: "message_tool_only",
+        extraSystemPrompt: "Group participants are talking to each other.",
         toolNames: ["exec", "message"],
         runtimeInfo: { channel: "discord" },
       });
@@ -28,7 +29,10 @@ describe("system prompt messaging routing", () => {
       expect(prompt).not.toContain("Provider messaging: never exec/curl");
       expect(prompt).not.toContain("NO_REPLY");
       expect(prompt).toContain(
-        'On optional non-heartbeat turns, call `message(action="none")` when no response is needed.',
+        'When no response is needed on a non-heartbeat turn, call `message(action="none")` instead of writing a reply or explaining your silence.',
+      );
+      expect(prompt.indexOf('message(action="none")')).toBeGreaterThan(
+        prompt.indexOf("Group participants are talking to each other."),
       );
       expect(prompt).not.toContain("user explicitly requests only a reaction");
     },

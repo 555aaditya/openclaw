@@ -19,6 +19,7 @@ import {
   normalizeUniqueStringEntries,
 } from "@openclaw/normalization-core/string-normalization";
 import type { SourceReplyDeliveryMode } from "../auto-reply/get-reply-options.types.js";
+import { MESSAGE_TOOL_SILENCE_GUIDANCE } from "../auto-reply/source-reply-delivery-mode.js";
 import type { ReasoningLevel } from "../auto-reply/thinking.js";
 import { SILENT_REPLY_TOKEN } from "../auto-reply/tokens.js";
 import { normalizeChatType } from "../channels/chat-type.js";
@@ -928,6 +929,9 @@ export function buildAgentSystemPrompt(params: {
     const contextHeader =
       promptMode === "minimal" ? "## Subagent Context" : "## Conversation Context";
     lines.push(contextHeader, extraSystemPrompt, "");
+  }
+  if (messageToolAvailable) {
+    lines.push("## Silent Replies", MESSAGE_TOOL_SILENCE_GUIDANCE, "");
   }
   if (params.reactionGuidance) {
     const { level, channel } = params.reactionGuidance;

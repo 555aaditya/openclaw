@@ -122,13 +122,21 @@ describe("buildAgentSystemPrompt", () => {
         extraSystemPrompt: "Subagent details",
         ttsHint: "Voice (TTS) is enabled.",
       },
-      ["## Skills", "## Messaging", "## Care", "## Subagent Context", "Subagent details"],
+      [
+        "## Skills",
+        "## Messaging",
+        "## Care",
+        "## Subagent Context",
+        "Subagent details",
+        "## Silent Replies",
+        'message(action="none")',
+      ],
       [
         "## Authorized Senders",
         "## Documentation",
         "### message tool",
         "## Voice (TTS)",
-        "## Silent Replies",
+        "NO_REPLY",
       ],
     ],
     ["adds reasoning tag hint when enabled", { reasoningTagHint: true }, ["## Reasoning Format"]],
@@ -597,7 +605,8 @@ describe("buildAgentSystemPrompt", () => {
       expect(prompt).not.toContain("MEDIA:<path-or-url>");
       expect(prompt).toContain("Group/channel:");
       expect(prompt).toContain("current source is default target");
-      expect(prompt).not.toContain("## Silent Replies");
+      expect(prompt).toContain("## Silent Replies");
+      expect(prompt).toContain('message(action="none")');
       expect(prompt).not.toContain(SILENT_REPLY_TOKEN);
       expect(prompt).not.toContain("`send`: `target` + `message`.");
     },

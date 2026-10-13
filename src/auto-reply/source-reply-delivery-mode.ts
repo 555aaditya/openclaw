@@ -4,7 +4,7 @@ import { buildUiPresentationPrompt } from "../agents/ui-presentation-prompt.js";
 import { SILENT_REPLY_TOKEN } from "./tokens.js";
 
 export const MESSAGE_TOOL_SILENCE_GUIDANCE =
-  'On optional non-heartbeat turns, call `message(action="none")` when no response is needed.';
+  'When no response is needed on a non-heartbeat turn, call `message(action="none")` instead of writing a reply or explaining your silence.';
 
 /**
  * True when the visible source reply must flow through the message tool, either
