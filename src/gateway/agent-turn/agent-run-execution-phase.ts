@@ -17,6 +17,7 @@ import {
 import { withPreparedModelRuntimePluginGenerationScope } from "../../agents/prepared-model-runtime-generation-scope.js";
 import { resolveScheduledToolPolicyContext } from "../../agents/scheduled-tool-policy.js";
 import { resolveIngressWorkspaceOverrideForSessionRun } from "../../agents/spawned-context.js";
+import { runWithAgentWorkspaceReadiness } from "../../agents/workspace-readiness.js";
 import { isExecutionIdentityCollectionEnabled } from "../../audit/audit-config.js";
 import {
   resolveReplySourceTurnId,
@@ -69,9 +70,10 @@ import {
 } from "./agent-run-user-turn.js";
 
 export async function startAgentRunExecution(params: StartAgentRunExecutionParams): Promise<void> {
+  // Autonomous turns prepare their own workspace and cannot borrow a previous chat run's gate.
   return await runWithChatAbortExecution(
     params.prepared.activeRunAbort.entry,
-    () => executeAgentRun(params),
+    () => runWithAgentWorkspaceReadiness(undefined, () => executeAgentRun(params)),
     params.prepared.activeRunAbort.cleanup,
   );
 }
@@ -311,6 +313,7 @@ async function executeAgentRun(params: StartAgentRunExecutionParams): Promise<vo
             task: message,
             gatewayContextResolver: params.context.resolveGatewayContext,
             assertCurrent: assertDispatchCurrent,
+            acpSession: params,
           });
         }
         if (

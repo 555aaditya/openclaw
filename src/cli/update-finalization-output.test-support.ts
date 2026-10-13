@@ -204,6 +204,7 @@ export const createUpdateConfigSnapshot = async () => {
     sourceUrl("./update-cli/update-command-config.ts"),
     `
 import { readConfigFileSnapshot } from ${JSON.stringify(sourceUrl("../config/config.ts"))};
+export const readUpdateConfigFileSnapshot = readConfigFileSnapshot;
 export const capturePreUpdateSourceConfig = ({sourceConfig, parsed}) => ({ sourceConfig, authoredConfig: parsed });
 export const readPostCorePreUpdateSourceConfig = async () => {
   ${scenario === "phase-hang" ? "await new Promise(resolve => setTimeout(resolve, 1_200));" : ""}
@@ -396,11 +397,15 @@ const run = () =>
             stdio: ["pipe", "ignore", "ignore"],
           },
         );
+        // The fixture owns this child, not the completed update operation. Release
+        // it only after the parent has observed the real stall diagnostic.
+        process.stdin.once("end", () => child.stdin.end());
+        process.stdin.resume();
         await runCliDisposer(
           "fixture-stdin-child",
           () =>
             new Promise<void>((resolve) => {
-              child.once("exit", () => resolve());
+              child.once("close", () => resolve());
             }),
         );
       }

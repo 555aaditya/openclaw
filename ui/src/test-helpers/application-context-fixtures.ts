@@ -78,11 +78,38 @@ export function createApplicationGateway(
         listener(event);
       }
     },
-    publish(next: ApplicationGatewaySnapshot) {
+    publish(this: void, next: ApplicationGatewaySnapshot) {
       snapshot = next;
       for (const listener of listeners) {
         listener(snapshot);
       }
+    },
+  };
+}
+
+export function createNavigationPreferencesFixture(): ApplicationContext["navigation"] {
+  let snapshot: ApplicationContext["navigation"]["snapshot"] = {
+    navCollapsed: false,
+    navWidth: 258,
+    sidebarEntries: [],
+    pinnedAgentIds: [],
+  };
+  const listeners = new Set<(next: typeof snapshot) => void>();
+  return {
+    get snapshot() {
+      return snapshot;
+    },
+    update(patch) {
+      snapshot = { ...snapshot, ...patch };
+      for (const listener of listeners) {
+        listener(snapshot);
+      }
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
     },
   };
 }
