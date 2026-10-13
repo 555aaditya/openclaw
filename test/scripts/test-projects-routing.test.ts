@@ -371,7 +371,7 @@ describe("test-projects args", () => {
         "src/auto-reply/reply/dispatch-from-config.tts-stream.test.ts",
         "test/vitest/vitest.infra.config.ts",
       ],
-    ]) {
+    ] as const) {
       expect(buildVitestRunPlans([target])).toEqual([
         {
           config,
