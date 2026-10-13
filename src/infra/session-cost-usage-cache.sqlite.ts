@@ -6,7 +6,10 @@ import { getAsyncWorkSignal } from "../shared/async-work-scope.js";
 import type { OpenClawAgentDatabaseOptions } from "../state/openclaw-agent-db-contract.js";
 import { resolveOpenClawAgentSqlitePath } from "../state/openclaw-agent-db.js";
 import type { AgentDatabaseRequestExecutionSource } from "../state/openclaw-agent-execution-admission-contract.js";
-import type { AgentDatabaseOperations } from "../state/openclaw-agent-execution-contract.js";
+import type {
+  AgentDatabaseExecutionFileIdentity,
+  AgentDatabaseOperations,
+} from "../state/openclaw-agent-execution-contract.js";
 import { captureOpenClawAgentDatabaseExecution } from "../state/openclaw-agent-execution.js";
 import { runOpenClawAgentWorkerWrite } from "../state/openclaw-agent-write-admission.js";
 import type { SessionCostUsageRollupSnapshot } from "./session-cost-usage-cache.kernel.js";
@@ -54,21 +57,34 @@ function createCacheWriteSource(
 
 function createCacheWriter(options: ReturnType<typeof captureCacheDatabaseOptions>) {
   const observed = readDatabasePathIdentitySync(options.path);
-  // Retain the selected file before asynchronous refresh work starts.
-  const execution = captureOpenClawAgentDatabaseExecution(
-    options,
-    observed.key.startsWith("path:") ? { expectedCreationIdentity: observed } : undefined,
-  );
+  const expectedIdentity: AgentDatabaseExecutionFileIdentity | undefined = observed.key.startsWith(
+    "file:",
+  )
+    ? {
+        kind: "file",
+        physicalIdentity: observed.key.slice("file:".length),
+        birthtime: observed.birthtime,
+        nativeLocation: observed.canonicalPath,
+      }
+    : undefined;
+  // Missing stores retain their creation witness; existing stores borrow at writer admission.
+  let execution = observed.key.startsWith("path:")
+    ? captureOpenClawAgentDatabaseExecution(options, { expectedCreationIdentity: observed })
+    : undefined;
   let prepared = false;
   return {
     async prepareExisting(authority: CacheWriteAuthority, signal?: AbortSignal) {
-      if (!execution || !observed?.key.startsWith("file:")) {
+      if (!observed.key.startsWith("file:")) {
         return;
       }
       const source = createCacheWriteSource(authority, signal);
       await runOpenClawAgentWorkerWrite(
         options,
         async () => {
+          source.assertCurrent();
+          execution ??= captureOpenClawAgentDatabaseExecution(options, {
+            expectedIdentity,
+          });
           if (!prepared) {
             await execution.prepare(source, signal);
             prepared = true;
@@ -90,6 +106,10 @@ function createCacheWriter(options: ReturnType<typeof captureCacheDatabaseOption
       return runOpenClawAgentWorkerWrite(
         options,
         async () => {
+          source.assertCurrent();
+          execution ??= captureOpenClawAgentDatabaseExecution(options, {
+            expectedIdentity,
+          });
           if (!prepared) {
             await execution.prepare(source, signal);
             prepared = true;
@@ -109,7 +129,7 @@ function createCacheWriter(options: ReturnType<typeof captureCacheDatabaseOption
       );
     },
     async close() {
-      await execution.release();
+      await execution?.release();
     },
   };
 }
