@@ -179,10 +179,13 @@ export function guardSessionManager(
     let changed = false;
     // Accepted source bytes already passed the plugin hook before ACK. Only
     // transcript normalization and visibility still run when the native turn consumes them.
+    const admittedUserMessage = queuedUserTurnTranscriptRecorder?.getPersistedMessage?.();
     const skipUserWriteHook =
       skipBeforeMessageWriteHooks ||
       (message.role === "user" &&
-        queuedUserTurnTranscriptRecorder?.getPendingInputMessage?.() !== undefined);
+        (queuedUserTurnTranscriptRecorder?.getPendingInputMessage?.() !== undefined ||
+          (admittedUserMessage !== undefined &&
+            admittedUserMessage.idempotencyKey === Reflect.get(message, "idempotencyKey"))));
     if (
       (!skipUserWriteHook && hookRunner?.hasHooks("before_message_write")) ||
       prepareAssistantTranscriptMessage
@@ -306,10 +309,16 @@ export function guardSessionManager(
       if (message.role === "user") {
         opts?.onUserMessagePreparingForPersistence?.(message, recorder, prepared);
       }
-      const merged = mergePreparedUserTurnMessageForRuntime({
-        runtimeMessage: withProvenance,
-        ...(prepared ? { preparedMessage: prepared } : {}),
-      });
+      const admitted = recorder?.getPersistedMessage?.();
+      // Channel ingress can commit before this runtime view catches up. Its keyed
+      // replay must retain the accepted envelope, not resized images or their indexes.
+      const merged =
+        admitted && prepared && admitted.idempotencyKey === prepared.idempotencyKey
+          ? { ...admitted }
+          : mergePreparedUserTurnMessageForRuntime({
+              runtimeMessage: withProvenance,
+              ...(prepared ? { preparedMessage: prepared } : {}),
+            });
       if (merged !== withProvenance) {
         queuedUserTurnTranscriptRecorder = recorder;
         if (!runtimeContext) {

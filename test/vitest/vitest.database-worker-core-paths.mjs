@@ -727,6 +727,7 @@ export const databaseWorkerCoreTestFiles = [
   "src/agents/sessions/session-manager.test.ts",
   "src/agents/sessions/agent-session-models.admission.test.ts",
   "src/agents/session-tool-result-guard.transcript-events.test.ts",
+  "src/agents/session-tool-result-guard.media-admission.test.ts",
   "src/agents/embedded-agent-runner/compact.delegate.test.ts",
   "src/agents/embedded-agent-runner/compact.auth-preparation.test.ts",
   "src/agents/embedded-agent-runner/compact.delegate-resources.test.ts",
