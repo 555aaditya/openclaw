@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import path from "node:path";
 import { json } from "node:stream/consumers";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   writeOpenAiResponsesSse,
   writeOpenAiResponsesText,
@@ -14,6 +14,8 @@ import { resetSubagentRegistryForTests } from "../agents/subagents/registry/suba
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { resetHeartbeatEventsForTest } from "../infra/heartbeat-events.js";
 import { requestHeartbeatAndWait, setHeartbeatsEnabled } from "../infra/heartbeat-wake.js";
+import { peekSystemEventEntries } from "../infra/system-events.js";
+import * as sessionStateEvents from "../sessions/session-state-events.js";
 import { createDeferredCore } from "../shared/deferred.js";
 import { setTestEnvValue } from "../test-utils/env.js";
 import { GATEWAY_CLIENT_MODES, GATEWAY_CLIENT_NAMES } from "../utils/message-channel.js";
@@ -280,9 +282,39 @@ describe("session notification store ownership through the Gateway", () => {
             gateway = undefined;
             const replacementRequestOffset = provider.requests.length;
             const replacementNotice = provider.armNoticeObservation();
-            gateway = await start();
-            await gateway.server.startupSettled;
-            // Await the actual delayed notification; replacement must not need another wake.
+            const restored = createDeferredCore();
+            const sweep = sessionStateEvents.sweepSessionStateWatchNotices;
+            const restoration = vi
+              .spyOn(sessionStateEvents, "sweepSessionStateWatchNotices")
+              .mockImplementation(async (...args) => {
+                await sweep(...args);
+                restored.resolve();
+              });
+            try {
+              gateway = await start();
+              await gateway.server.startupSettled;
+              await withinTest(restored.promise, signal);
+            } finally {
+              restoration.mockRestore();
+            }
+            // Startup restores passive context; only an ordinary parent turn consumes it.
+            expect(provider.requests).toHaveLength(replacementRequestOffset);
+            expect(
+              peekSystemEventEntries(parentKey).some((event) =>
+                event.text.includes(child.childSessionKey),
+              ),
+            ).toBe(true);
+            const resumed = await gateway.client.request<{ runId: string }>(
+              "chat.send",
+              {
+                sessionKey: parentKey,
+                message: "Reconcile the retained worker notice.",
+                deliver: false,
+                idempotencyKey: randomUUID(),
+              },
+              { expectFinal: false },
+            );
+            expect((await wait(resumed.runId)).status).toBe("ok");
             const notice = await withinTest(replacementNotice, signal);
             expect(provider.requests.indexOf(notice)).toBeGreaterThanOrEqual(
               replacementRequestOffset,
