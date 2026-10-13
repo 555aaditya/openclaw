@@ -1101,7 +1101,7 @@ async function buildResponsesPayload(
     return buildAssistantEvents(`The requested file could not be read: ENOENT. ${marker}`);
   }
   const heartbeatReply = resolveHeartbeatPromptReply(prompt);
-  if (heartbeatReply !== undefined) {
+  if (heartbeatReply) {
     return buildAssistantEvents(heartbeatReply);
   }
   if (/fanout worker alpha/i.test(prompt)) {

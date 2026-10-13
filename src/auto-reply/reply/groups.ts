@@ -101,6 +101,7 @@ export function buildGroupChatContext(params: {
   sessionCtx: TemplateContext;
   sourceReplyDeliveryMode?: SourceReplyDeliveryMode;
   silentReplyPolicy?: SilentReplyPolicy;
+  silentToken?: string;
 }): string {
   const providerLabel = resolveProviderLabel(params.sessionCtx.Provider);
   const provider = normalizeOptionalLowercaseString(params.sessionCtx.Provider);
@@ -122,7 +123,7 @@ export function buildGroupChatContext(params: {
     );
   }
   lines.push(
-    "Be a good group participant: follow current-turn reply requirements. For optional turns, mostly lurk and reply only when you can add clear value. Emoji reactions are welcome when available.",
+    "Be a good group participant: mostly lurk and follow the conversation; reply only when directly addressed or you can add clear value. Emoji reactions are welcome when available.",
   );
   const channelId = normalizeChatChannelId(provider) ?? provider ?? "";
   const tableMode = getLoadedChannelPluginForRead(channelId)?.messaging?.defaultMarkdownTableMode;
@@ -131,23 +132,25 @@ export function buildGroupChatContext(params: {
   lines.push(
     `Write like a human.${tableGuidance} Minimize empty lines and use normal chat conventions, not document-style spacing. Don't type literal \\n sequences; use real line breaks sparingly.`,
   );
-  lines.push(
-    "For optional turns addressed to someone else, stay silent unless invited or correcting key facts.",
-  );
+  lines.push("If addressed to someone else, stay silent unless invited or correcting key facts.");
   if (provider === "discord") {
     lines.push("Discord: wrap bare URLs like <https://example.com> to suppress embeds.");
   }
   lines.push(
     "When subagent or session-spawn tools are available and a directly requested group-chat task will require several tool calls, prefer delegating bounded side investigations early so the channel gets a responsive path forward. Keep the critical path local, avoid subagents for simple one-step work, and only surface concise group-visible updates when they add value.",
   );
-  if (params.silentReplyPolicy === "allow") {
+  const canUseSilentReply =
+    !messageToolOnly && params.silentToken && params.silentReplyPolicy !== "disallow";
+  if (messageToolOnly) {
     lines.push(
-      "When the current turn permits silence and nothing needs saying, end your turn without any text.",
+      `If no visible ${sharedChatNoun === "channel" ? "channel" : "group"} response is needed, do not call message(action=send).`,
     );
   }
-  lines.push(
-    "Required turns, including mentions and commands, need a visible reply or a final reaction to the current source message.",
-  );
+  if (canUseSilentReply) {
+    lines.push(
+      `If no text reply is needed, reply with exactly "${params.silentToken}" as the entire final answer, without commentary, punctuation, or formatting.`,
+    );
+  }
   return lines.join(" ");
 }
 
@@ -162,7 +165,7 @@ function buildDirectChatContext(params: {
     ...(params.sourceReplyDeliveryMode === "message_tool_only"
       ? [
           "Normal final replies are private and are not automatically sent to this conversation. To post visible output here, use the message tool with action=send; the target defaults to this conversation.",
-          "Required direct turns need a visible message or a final reaction to the current source message. Your normal final answer stays private and will not be posted to the conversation.",
+          "If no visible direct response is needed, do not call message(action=send). Your normal final answer stays private and will not be posted to the conversation.",
         ]
       : [
           "Your replies are automatically sent to this conversation unless the current-turn context says final replies stay private.",
@@ -189,7 +192,7 @@ export function buildGroupIntro(params: {
 }): string {
   const activation = normalizeGroupActivation(params.activation) ?? params.defaultActivation;
   if (activation === "always") {
-    return "Activation: always-on (you receive every group message). Follow current-turn reply requirements; address the specific sender noted in the message context.";
+    return "Activation: always-on (you receive every group message). You see every message; most need no response. When you do reply, address the specific sender noted in the message context.";
   }
   return "Activation: trigger-only (you are invoked only when explicitly mentioned; recent context may be included). Address the specific sender noted in the message context.";
 }

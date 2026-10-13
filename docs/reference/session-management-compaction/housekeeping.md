@@ -1,21 +1,19 @@
 ---
-summary: "Optional silent turns and the pre-compaction memory flush configuration"
+summary: "The NO_REPLY silent-turn contract and the pre-compaction memory flush configuration"
 read_when:
   - "You want to implement memory flushes or silent system turns"
   - "Tuning agents.defaults.compaction.memoryFlush"
 title: "Silent turns and the memory flush"
 ---
 
-<a id="silent-housekeeping-no_reply" />
-<a id="silent-housekeeping-(no_reply)" />
-
-## Silent housekeeping
+## Silent housekeeping (`NO_REPLY`)
 
 OpenClaw supports "silent" turns for background tasks where the user should not see intermediate output.
 
-- Optional background turns can end without any text when nothing needs saying.
-- Required user requests still need visible output or a confirmed final action on the current source. The input owner decides whether a turn is optional.
-- Legacy `NO_REPLY` / `no_reply` output remains case-insensitively stripped, including draft/typing suppression, because existing models and user-authored instructions still emit it. Generated prompts no longer request this token.
+- The assistant starts its output with the exact silent token `NO_REPLY` / `no_reply` to mean "do not deliver a reply to the user." OpenClaw strips/suppresses this in the delivery layer.
+- Exact silent-token suppression is case-insensitive: `NO_REPLY` and `no_reply` both count when the whole payload is just the silent token.
+- As of `2026.1.10`, OpenClaw also suppresses draft/typing streaming when a partial chunk begins with `NO_REPLY`, so silent operations do not leak partial output mid-turn.
+- This is for true background/no-delivery turns only - it is not a shortcut for ordinary actionable user requests.
 
 ## Pre-compaction memory flush
 
@@ -24,8 +22,8 @@ persists durable state through the selected memory provider so compaction cannot
 erase critical context. Memory Core writes `memory/YYYY-MM-DD.md` in the agent
 workspace; other providers can expose their own persistence tools. OpenClaw
 monitors session context usage, and once it crosses a soft threshold below the
-compaction threshold, it sends an internal "write memory now" directive. This
-optional maintenance turn can finish without text.
+compaction threshold, it sends a silent "write memory now" directive using the
+exact silent token `NO_REPLY` / `no_reply` so the user sees nothing.
 
 Memory flushing runs against a private, detached view of the conversation. Its
 internal prompts and replies never enter the original transcript, including when
@@ -65,7 +63,7 @@ The following compaction check therefore accounts for that later transcript grow
 
 Notes:
 
-- The built-in prompt and system prompt tell the agent to end without text when nothing needs storing.
+- The built-in prompt and system prompt include a `NO_REPLY` hint to suppress delivery.
 - When `model` is set, the flush turn uses that model without inheriting the active session's fallback chain, so local-only housekeeping does not silently fall back to a paid conversation model on failure.
 - The flush runs once per compaction cycle (tracked in the session row).
 - The flush runs only for embedded OpenClaw sessions; CLI backends and heartbeat turns skip it.

@@ -34,7 +34,7 @@ describe("heartbeat event prompts", () => {
       name: "builds user-relay cron prompt by default",
       events: ["Cron: rotate logs"],
       expected: ["Cron: rotate logs", "Please relay this reminder to the user"],
-      unexpected: ["Handle this reminder internally", "End your turn without any text."],
+      unexpected: ["Handle this reminder internally", "Reply NO_REPLY."],
     },
     {
       name: "builds internal-only cron prompt when delivery is disabled",
@@ -46,17 +46,14 @@ describe("heartbeat event prompts", () => {
     {
       name: "falls back to bare heartbeat reply when cron content is empty",
       events: ["", "   "],
-      expected: ["End your turn without any text."],
+      expected: ["Reply NO_REPLY."],
       unexpected: ["Handle this reminder internally"],
     },
     {
       name: "uses internal empty-content fallback when delivery is disabled",
       events: ["", "   "],
       opts: { deliverToUser: false },
-      expected: [
-        "Handle this internally",
-        "end your turn without any text when nothing needs user-facing follow-up",
-      ],
+      expected: ["Handle this internally", "NO_REPLY when nothing needs user-facing follow-up"],
       unexpected: ["Please relay this reminder to the user"],
     },
   ])("$name", ({ events, opts, expected, unexpected }) => {
@@ -81,7 +78,7 @@ describe("heartbeat event prompts", () => {
         "continue any outstanding authorized work",
         "routine output, duplicate or superseded results",
         "failures already recovered from",
-        "end your turn without any text",
+        "reply NO_REPLY only",
       ],
       unexpected: ["system messages above", "Please relay the command output", "[truncated]"],
     },
@@ -89,11 +86,7 @@ describe("heartbeat event prompts", () => {
       name: "builds internal-only exec prompt when delivery is disabled",
       events: ["Exec failed (node=abc id=123, code 1)\nUpload failed"],
       opts: { deliverToUser: false },
-      expected: [
-        "user delivery is disabled",
-        "Handle the result internally",
-        "end your turn without any text",
-      ],
+      expected: ["user delivery is disabled", "Handle the result internally", "NO_REPLY only"],
       unexpected: [
         "Upload failed",
         "system messages above",
@@ -108,7 +101,7 @@ describe("heartbeat event prompts", () => {
         "Exec completed (abc12345, code 0) without captured stdout/stderr.",
         "continue any outstanding authorized work",
         "Do not ask the user to provide missing logs",
-        "end your turn without any text",
+        "reply NO_REPLY only",
       ],
       unexpected: ["Please relay the command output to the user"],
     },
@@ -122,7 +115,7 @@ describe("heartbeat event prompts", () => {
         "Do not ask the user to provide missing logs",
         "Notify the user only",
         "failures already recovered from",
-        "end your turn without any text",
+        "reply NO_REPLY only",
       ],
       unexpected: ["Please relay the command output to the user"],
     },
@@ -171,7 +164,7 @@ describe("heartbeat event prompts", () => {
     expect(prompt).toContain("heartbeat_respond");
     expect(prompt).toContain("notify=false");
     expect(prompt).toContain("notify=true with notificationText");
-    expect(prompt).not.toContain("end your turn without any text");
+    expect(prompt).not.toContain("reply NO_REPLY only");
     expect(prompt).not.toContain("Please relay the command output");
   });
 

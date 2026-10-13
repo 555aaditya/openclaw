@@ -418,6 +418,7 @@ describe("Codex terminal dynamic-tool release", () => {
         for (const name of [first, first === "reply" ? "sibling" : "reply"] as const) {
           harness.pendingOpenClawDynamicToolCompletionIds.delete(name);
           harness.controller.recordDynamicToolResult(results[name]);
+          harness.controller.scheduleTerminalDynamicToolReleaseCheck();
           await yieldImmediate();
           expect(harness.state.completed).toBe(
             harness.pendingOpenClawDynamicToolCompletionIds.size === 0,

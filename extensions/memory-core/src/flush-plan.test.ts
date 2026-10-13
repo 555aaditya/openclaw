@@ -15,9 +15,6 @@ describe("buildMemoryFlushPlan", () => {
     });
 
     expect(plan?.relativePath).toBe("memory/2026-05-30.md");
-    expect(plan?.prompt).toContain("If nothing to store, end your turn without any text.");
-    expect(plan?.systemPrompt).toContain("internal maintenance turn");
-    expect(`${plan?.prompt} ${plan?.systemPrompt}`).not.toContain("NO_REPLY");
   });
 
   it.each([

@@ -174,7 +174,7 @@ describe("subscribeEmbeddedAgentSession", () => {
     expect(onBlockReply).not.toHaveBeenCalled();
   });
 
-  it("preserves a distinct automatic final after confirmed current-source thread delivery", async () => {
+  it("suppresses a distinct automatic final after confirmed current-source thread delivery", async () => {
     const { emit, onBlockReply, subscription } = createBlockReplyHarness("message_end", {
       sourceReplyDeliveryMode: "automatic",
     });
@@ -199,9 +199,7 @@ describe("subscribeEmbeddedAgentSession", () => {
     await subscription.waitForPendingEvents();
 
     expect(subscription.getSourceReplyDeliveryState()).toBe("delivered");
-    expect(onBlockReply.mock.calls.map(([payload]) => payload.text)).toEqual([
-      "QA-THREAD-RECEIPT-FINAL-OK",
-    ]);
+    expect(onBlockReply).not.toHaveBeenCalled();
   });
 
   it("suppresses later text_end block replies after message-tool-only delivery", async () => {
@@ -399,6 +397,7 @@ describe("subscribeEmbeddedAgentSession", () => {
     { action: "reply", final: true, mode: "message_tool_only" },
     { action: "poll", final: true, mode: "message_tool_only" },
     { action: "send", final: false, mode: "message_tool_only" },
+    { action: "send", final: false, mode: "automatic" },
     { action: "send", final: true, mode: "automatic" },
     { action: "react", final: true, mode: "automatic" },
   ])(
@@ -447,10 +446,17 @@ describe("subscribeEmbeddedAgentSession", () => {
 
       expect(subscription.getSourceReplyDelivered()).toBe(true);
       expect(subscription.getSourceReplyDeliveryState()).toBe(final ? "delivered" : "missing");
-      emitAssistantMessageEnd(emit, "A later assistant response must stay suppressed.");
-      await Promise.resolve();
-      expect(onBlockReply).not.toHaveBeenCalled();
+      emitAssistantMessageEnd(emit, "A later assistant response.");
+      await subscription.waitForPendingEvents();
+      if (mode === "automatic" && !final) {
+        expect(onBlockReply.mock.calls.map(([payload]) => payload.text)).toEqual([
+          "A later assistant response.",
+        ]);
+      } else {
+        expect(onBlockReply).not.toHaveBeenCalled();
+      }
       expect(onDeliveredMessageToolOnlySourceReply).toHaveBeenCalledOnce();
+      onBlockReply.mockClear();
 
       emit({
         type: "message_end",

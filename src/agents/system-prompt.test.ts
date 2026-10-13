@@ -52,14 +52,6 @@ function expectPromptCase(
 }
 
 describe("buildAgentSystemPrompt", () => {
-  it("describes optional silence without advertising a reply token", () => {
-    const prompt = renderPrompt({ runtimeInfo: { channel: "telegram" }, toolNames: ["message"] });
-    expect(prompt).toContain("Only when the current turn allows silence");
-    expect(prompt).toContain("Required replies need visible text");
-    expect(prompt).toContain("confirmed final message or added final reaction");
-    expect(prompt).not.toContain(SILENT_REPLY_TOKEN);
-  });
-
   it("resolves helper session keys to scoped prompt surfaces", () => {
     expect(resolveAgentPromptSurfaceForSessionKey("agent:main:subagent:child")).toBe("subagent");
     expect(resolveAgentPromptSurfaceForSessionKey("agent:codex:acp:child")).toBe("acp_backend");

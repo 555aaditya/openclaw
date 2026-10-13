@@ -940,13 +940,13 @@ function buildDriveCommentSurfacePrompt(
     "Do not describe tool use.",
     'Do not start with phrases like "I will", "I’ll first", "I need to", "The user wants", or "I have updated".',
     "Output only the final user-facing reply.",
-    "If you already sent the user-visible reply with a Feishu drive comment action, end your turn without any text.",
-    "If the current turn allows silence and no user-visible reply is needed, end your turn without any text.",
+    "If you already sent the user-visible reply with a Feishu drive comment action, output exactly NO_REPLY.",
+    "If no user-visible reply is needed, output exactly NO_REPLY.",
     "Be concise.",
     "Do not omit requested content.",
   );
   lines.push(
-    "Required turns need a visible reply: output the final plain-text reply, or edit the document and then post a user-visible follow-up in the comment thread.",
+    "Choose one outcome: output the final plain-text reply, edit the document and then post a user-visible follow-up in the comment thread, or output exactly NO_REPLY.",
   );
   return lines.join("\n");
 }

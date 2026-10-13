@@ -26,6 +26,7 @@ import {
 } from "../command-turn-context.js";
 import { resolveEnvelopeFormatOptions } from "../envelope.js";
 import { normalizeThinkLevel } from "../thinking.js";
+import { SILENT_REPLY_TOKEN } from "../tokens.js";
 import { applySessionHints } from "./body.js";
 import { resolveTurnModelOverride } from "./dispatch-from-config.harness-defaults.js";
 import { resolveReplyPolicyConversationType } from "./get-reply-conversation-type.js";
@@ -200,6 +201,7 @@ export async function prepareReplyRunContext(params: RunPreparedReplyParams) {
       sourceReplyDeliveryMode: mode,
       sessionCtx: promptSessionCtx,
       silentReplyPolicy: silentReplySettings.policy,
+      silentToken: SILENT_REPLY_TOKEN,
     });
   const sourceConversationContextByMode = {
     automatic: sourceConversationContext("automatic"),

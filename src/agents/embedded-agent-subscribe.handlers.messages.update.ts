@@ -137,7 +137,7 @@ export function handleMessageUpdate(
       nativeThinking ? thinkingContent || thinkingDelta : undefined,
     );
     if (evtType === "thinking_end" && !suppressSourceReplyOutput) {
-      // Mirror the open gate above: when message-tool-only delivery has made the
+      // Mirror the open gate above: when confirmed source delivery has made the
       // reasoning lane private, do not force-open it just to close it — that
       // would fire the lane's end hook (onReasoningEnd) for a lane that never
       // rendered, leaking the boundary signal.

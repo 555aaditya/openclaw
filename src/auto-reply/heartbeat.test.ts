@@ -8,7 +8,7 @@ import {
   resolveHeartbeatPromptForResponseTool,
   stripHeartbeatToken,
 } from "./heartbeat.js";
-import { HEARTBEAT_TOKEN } from "./tokens.js";
+import { HEARTBEAT_TOKEN, SILENT_REPLY_TOKEN } from "./tokens.js";
 
 function createSkippedHeartbeatOutcome() {
   return {
@@ -208,9 +208,7 @@ describe("resolveHeartbeatPromptForResponseTool", () => {
     expect(prompt).toBe(HEARTBEAT_RESPONSE_TOOL_PROMPT);
     expect(prompt).toContain("heartbeat_respond");
     expect(prompt).toContain("notify=false");
-    expect(prompt).toContain(
-      "end your turn without any text when nothing needs the user's attention",
-    );
+    expect(prompt).toContain(`${SILENT_REPLY_TOKEN} when nothing needs the user's attention`);
     expect(prompt).toContain("only the alert text");
     expect(prompt).not.toContain(HEARTBEAT_TOKEN);
   });
@@ -223,9 +221,7 @@ describe("resolveHeartbeatPromptForResponseTool", () => {
     expect(prompt).toContain("Check the deployment queue");
     expect(prompt).toContain("heartbeat_respond");
     expect(prompt).toContain("notify=false");
-    expect(prompt).toContain(
-      "end your turn without any text when nothing needs the user's attention",
-    );
+    expect(prompt).toContain(`${SILENT_REPLY_TOKEN} when nothing needs the user's attention`);
     expect(prompt).toContain("only the alert text");
   });
 });

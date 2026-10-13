@@ -8,6 +8,7 @@ import {
   escapeInternalRuntimeContextDelimiters,
   type RuntimeContextFragment,
 } from "../agents/internal-runtime-context.js";
+import { SILENT_REPLY_TOKEN } from "../auto-reply/tokens.js";
 import type { CliDeps } from "../cli/deps.types.js";
 import { agentCommandFromSystem } from "../commands/agent.js";
 import {
@@ -52,8 +53,8 @@ function buildBootPrompt(content: string) {
       text: [
         "If BOOT.md asks you to send a message, use the message tool (action=send with channel + target).",
         "Use the `target` field (not `to`) for message tool destinations.",
-        "After sending with the message tool, end your turn without any text.",
-        "If nothing needs attention, end your turn without any text.",
+        `After sending with the message tool, reply with ONLY: ${SILENT_REPLY_TOKEN}.`,
+        `If nothing needs attention, reply with ONLY: ${SILENT_REPLY_TOKEN}.`,
       ].join("\n"),
     },
   ];

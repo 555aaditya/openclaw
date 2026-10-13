@@ -20,7 +20,7 @@ reader job. Open the page that matches your task and stay there.
 | [Store maintenance and retention](/reference/session-management-compaction/maintenance)      | `session.maintenance` keys, disk-budget cleanup, cron retention, and the SQLite downgrade path.  |
 | [Session keys, ids, and transcript events](/reference/session-management-compaction/schema)  | `sessionKey` patterns, `sessionId` lifecycle, `SessionEntry` fields, and transcript entry types. |
 | [Compaction behavior and settings](/reference/session-management-compaction/compaction)      | What compaction does, when it runs, its settings and providers, and where it surfaces.           |
-| [Silent turns and the memory flush](/reference/session-management-compaction/housekeeping)   | Optional silent turns and `agents.defaults.compaction.memoryFlush`.                              |
+| [Silent turns and the memory flush](/reference/session-management-compaction/housekeeping)   | The `NO_REPLY` contract and `agents.defaults.compaction.memoryFlush`.                            |
 | [Session transcript working sets](/reference/session-management-compaction/resident-history) | Proposed worker-owned acquisition, resident budgets, and history-reader migrations.              |
 
 ## Where each section moved
@@ -46,7 +46,7 @@ page that now holds the content.
 - <a id="compaction-settings" />[Compaction settings](/reference/session-management-compaction/compaction#compaction-settings)
 - <a id="pluggable-compaction-providers" />[Pluggable compaction providers](/reference/session-management-compaction/compaction#pluggable-compaction-providers)
 - <a id="user-visible-surfaces" />[User-visible surfaces](/reference/session-management-compaction/compaction#user-visible-surfaces)
-- <a id="silent-housekeeping-(no_reply)" /><a id="silent-housekeeping-no_reply" />[Silent housekeeping](/reference/session-management-compaction/housekeeping#silent-housekeeping-no_reply)
+- <a id="silent-housekeeping-(no_reply)" /><a id="silent-housekeeping-no_reply" />[Silent housekeeping (`NO_REPLY`)](/reference/session-management-compaction/housekeeping#silent-housekeeping-no_reply)
 - <a id="pre-compaction-memory-flush" />[Pre-compaction memory flush](/reference/session-management-compaction/housekeeping#pre-compaction-memory-flush)
 
 ## Troubleshooting checklist
@@ -55,7 +55,7 @@ page that now holds the content.
 - **Store vs transcript mismatch?** Confirm the Gateway host and the store path from `openclaw status`.
 - **Compaction spam?** Check the model's context window (too small forces frequent compaction) and tool-result bloat (tune session pruning).
 - **Every prompt seems to overflow on a small local model?** Confirm the provider reports the correct model context window. OpenClaw can cap the effective reserve only when that window is known.
-- **Silent turns leaking?** Confirm the turn is optional and the agent ends without text. Legacy silent tokens are still stripped; they cannot waive a required reply.
+- **Silent turns leaking?** Confirm the reply starts with the exact silent token `NO_REPLY` (case-insensitive) and you are on a build that includes the streaming-suppression fix (`2026.1.10`+).
 
 ## Related
 

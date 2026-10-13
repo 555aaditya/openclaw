@@ -1,6 +1,7 @@
 /** Messaging and child-completion guidance shared by full and minimal prompts. */
 import type { SourceReplyDeliveryMode } from "../auto-reply/get-reply-options.types.js";
 import { buildMessageToolTargetGuidance } from "../auto-reply/source-reply-delivery-mode.js";
+import { SILENT_REPLY_TOKEN } from "../auto-reply/tokens.js";
 import type { ChatType } from "../channels/chat-type.js";
 import type { AgentPromptSurfaceKind } from "../plugins/types.js";
 import { isDeliverableMessageChannel, normalizeMessageChannel } from "../utils/message-channel.js";
@@ -30,6 +31,7 @@ export function buildMessagingSection(params: {
   messageToolHints?: string[];
   sourceReplyDeliveryMode?: SourceReplyDeliveryMode;
   requireExplicitMessageTarget?: boolean;
+  silentReplyPromptMode?: SilentReplyPromptMode;
   delegationSectionRenders: boolean;
 }) {
   const messageToolOnly = params.sourceReplyDeliveryMode === "message_tool_only";
@@ -71,8 +73,10 @@ export function buildMessagingSection(params: {
   const hasSessionsSpawn = params.availableTools.has("sessions_spawn");
   const hasSubagents = params.availableTools.has("subagents");
   const hasSessionsYield = params.availableTools.has("sessions_yield");
-  const completionEventGuidance =
-    "- Completion event requesting update: rewrite in normal voice; send. Never forward raw metadata or silent placeholder.";
+  const suppressSilentTokenGuidance = messageToolOnly || params.silentReplyPromptMode === "none";
+  const completionEventGuidance = suppressSilentTokenGuidance
+    ? "- Completion event requesting update: rewrite in normal voice; send. Never forward raw metadata or silent placeholder."
+    : `- Completion event requesting update: rewrite in normal voice; send. Never forward raw metadata or default to ${SILENT_REPLY_TOKEN}.`;
   const subagentOrchestrationGuidance = params.delegationSectionRenders
     ? ""
     : hasSessionsSpawn
@@ -101,7 +105,7 @@ export function buildMessagingSection(params: {
           "### message tool",
           "- Proactive send/channel action (poll, reaction, etc.): `message`.",
           groupMessageToolOnly
-            ? "- Group/channel: required turns need a visible reply or final reaction. Optional low-value chatter may end without text. Final text is private."
+            ? "- Group/channel: stale/joke/light ack/low-value chatter => reaction or silence. Needed text reply => `message(action=send)`; final text private."
             : "",
           messageToolOnly ? messageToolTargetInstruction : "- `send`: `target` + `message`.",
           params.messageChannelOptions

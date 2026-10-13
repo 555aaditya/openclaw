@@ -178,6 +178,7 @@ it.each([
         ? buildGroupChatContext({
             sessionCtx: ctx,
             silentReplyPolicy: "disallow",
+            silentToken: "NO_REPLY",
           })
         : buildSourceConversationContext({ sessionCtx: ctx }),
       shared && buildGroupIntro({ activation: "always", defaultActivation: "mention" }),
