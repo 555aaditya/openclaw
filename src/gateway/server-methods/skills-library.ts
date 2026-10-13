@@ -190,7 +190,15 @@ export async function activateLibrarySelection(
   }
 }
 
-async function selectedSession(options: SkillLibraryRequestOwner, sessionKey: string) {
+async function selectedSession(
+  options: SkillLibraryRequestOwner,
+  sessionKey: string,
+): Promise<{
+  target: SessionSharingTarget;
+  source: SessionSourceAssertion | undefined;
+  assertCurrent(): void;
+  release(): void | Promise<void>;
+}> {
   const sourceCfg = options.context.getRuntimeConfig();
   if (!isIncognitoSessionKey(sessionKey)) {
     const profiles = await prepareSessionSharingProfiles(options.client);

@@ -20,10 +20,7 @@ function ownerKey(options: MemoryOwnerOptions) {
   return JSON.stringify([options.agentId, options.path]);
 }
 
-/**
- * The memory backend's process-held owner and lifecycle. Native incognito callers
- * move here together at cutover; this registry never imports or mirrors their state.
- */
+/** The memory backend's process-held owner and lifecycle. */
 export const memorySessionActorOwners = {
   list(): readonly MemoryOwner[] {
     return [...owners.values()];

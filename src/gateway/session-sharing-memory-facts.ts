@@ -42,7 +42,7 @@ export function prepareMemorySessionMutationFacts(
     },
     readCurrent(cfg: OpenClawConfig) {
       assertRoutingCurrent(cfg);
-      return { ...memory.readCurrent(), readSource: memory.source };
+      return memory.readCurrent();
     },
     release() {
       memoryActive = false;
