@@ -1815,10 +1815,13 @@ stopped, replaced, archived, or deleted targets. A dispatched continuation is no
 rearmed just because it produced no visible reply: it may already have performed
 effects or transferred custody to another execution. Terminal settlement strips
 the payload and operator-source snapshot using the queue's existing tombstone
-policy. Older binaries scan only the `session` namespace, so downgrade leaves
-these entries inert rather than executing them with synthetic authority. Reopen
-on a supporting version reconciles the recorded outcome. This adds a durable
-payload contract without changing table DDL or the schema version.
+policy. Older queue readers scan only the `session` namespace, so these entries
+remain inert rather than executing with synthetic authority. This is row-format
+compatibility, not permission to open a newer database schema with an older
+binary: normal schema admission still applies, and a downgrade across schema
+versions requires a matching pre-upgrade backup. Reopen on a supporting version
+reconciles the recorded outcome. This adds a durable payload contract without
+changing table DDL or the schema version.
 
 Outbound ACK settlement also runs in that worker. It captures the selected state
 root and options before admission, preserves exact attempt ownership checks,

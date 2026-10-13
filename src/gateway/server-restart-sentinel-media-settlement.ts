@@ -1,3 +1,4 @@
+import { asOptionalObjectRecord } from "@openclaw/normalization-core/record-coerce";
 import {
   collectAmbiguousAutomaticMediaUrls,
   collectAutomaticDeliveredMediaUrls,
@@ -80,10 +81,10 @@ function hasAutomaticVisibleSendEvidence(result: AgentDeliveryEvidence): boolean
     ? result.deliveryStatus.payloadOutcomes
     : [];
   return outcomes.some((outcome) => {
-    if (!outcome || typeof outcome !== "object" || Array.isArray(outcome)) {
+    const record = asOptionalObjectRecord(outcome);
+    if (!record) {
       return false;
     }
-    const record = outcome as Record<string, unknown>;
     if (
       record.status !== "sent" &&
       record.status !== "suppressed" &&

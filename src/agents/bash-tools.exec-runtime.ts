@@ -23,11 +23,7 @@ import type { SpawnInitiation } from "../process/spawn-initiation.js";
 import type { ManagedRun } from "../process/supervisor/index.js";
 import { getProcessSupervisor } from "../process/supervisor/index.js";
 import type { RunExit, SpawnInput, TerminationReason } from "../process/supervisor/types.js";
-import type {
-  SecretEgressProcessGrant,
-  SecretEgressSentinelBinding,
-} from "../secrets/egress-proxy/proxy-server.js";
-import { registerSecretEgressProxyProcess } from "../secrets/egress-proxy/registry.js";
+import type { SecretEgressSentinelBinding } from "../secrets/egress-proxy/proxy-server.js";
 /**
  * Bash exec runtime.
  * Spawns host/sandbox processes, manages session updates/backgrounding,
@@ -60,6 +56,7 @@ import {
   renderExecOutputText,
   renderExecUpdateText,
 } from "./bash-tools.exec-output.js";
+import { createExecProcessGrants } from "./bash-tools.exec-process-grants.js";
 import { settleExecProcessExit } from "./bash-tools.exec-settlement.js";
 import { isRequestedExecTargetAllowed } from "./bash-tools.exec-target.js";
 import type {
@@ -69,8 +66,6 @@ import type {
 } from "./bash-tools.exec-types.js";
 import type { BashSandboxConfig } from "./bash-tools.shared.js";
 import { chunkString, clampWithDefault, readEnvInt } from "./bash-tools.shared.js";
-import { PLUGIN_RELOAD_ORIGIN_ENV } from "./plugin-reload-origin-env.js";
-import { registerPluginReloadOrigin } from "./plugin-reload-origin.js";
 import { recordAgentCleanupFailure } from "./run-cleanup-timeout.js";
 import type { AgentToolResult } from "./runtime/index.js";
 import { createSessionSlug } from "./session-slug.js";
@@ -575,8 +570,10 @@ export async function runExecProcess({
   let sandboxFinalized = false;
   let terminateSandboxProcess: (() => Promise<void>) | undefined;
   let sandboxTermination: Promise<{ error: unknown } | undefined> | undefined;
-  let secretEgressGrant: SecretEgressProcessGrant | undefined;
-  let reloadOrigin: ReturnType<typeof registerPluginReloadOrigin>;
+  const processGrants = createExecProcessGrants({
+    secretEgressBindings: opts.secretEgressBindings,
+    bindReloadOrigin: !opts.sandbox && Boolean(opts.requestOwners?.length),
+  });
   const beginSandboxTermination = () => {
     const terminate = terminateSandboxProcess;
     if (!terminate || sandboxTermination || session.exited) {
@@ -614,8 +611,7 @@ export async function runExecProcess({
   const finalizeAndSettleSession = async (
     outcome: ExecProcessOutcome,
   ): Promise<ExecProcessOutcome> => {
-    secretEgressGrant?.revoke();
-    reloadOrigin?.revoke();
+    processGrants.revoke();
     let finalOutcome = outcome;
     session.finalizing = true;
     try {
@@ -724,7 +720,7 @@ export async function runExecProcess({
   const launchLifecycle = createExecLaunchLifecycle(initialInitiateSpawn, initialReleaseSpawn);
   const onOperatorRevoked = () => managedRun?.cancel("manual-cancel");
   const releaseExecutionContext = () => {
-    reloadOrigin?.revoke();
+    processGrants.revoke();
     onSettledBeforeNotify = undefined;
     operatorSignal?.removeEventListener("abort", onOperatorRevoked);
     releaseOperatorAuthority?.();
@@ -755,32 +751,15 @@ export async function runExecProcess({
       // Source authority covers construction; approval policy ends at native launch.
       assertCurrent();
       assertHostPolicyCurrent?.();
-      const grant = opts.secretEgressBindings
-        ? await registerSecretEgressProxyProcess(opts.secretEgressBindings)
-        : undefined;
-      secretEgressGrant = grant;
       try {
-        const env = { ...input.env, ...grant?.env };
-        // A host launch replaces inherited/model-provided hints with its own live origin.
-        delete env[PLUGIN_RELOAD_ORIGIN_ENV];
-        reloadOrigin?.revoke();
-        reloadOrigin =
-          !opts.sandbox && opts.requestOwners?.length
-            ? registerPluginReloadOrigin(assertCurrent)
-            : undefined;
-        if (reloadOrigin) {
-          env[PLUGIN_RELOAD_ORIGIN_ENV] = reloadOrigin.token;
-        } else if (getGatewayToolCallerIdentity()) {
-          env[PLUGIN_RELOAD_ORIGIN_ENV] = "unsupported-runtime";
-        }
+        const env = await processGrants.prepare(input.env, assertCurrent);
         return await withoutGatewayToolCallerIdentity(() =>
           supervisor.spawn({
             ...input,
             env,
             onCancel: () => {
               beginSandboxTermination();
-              grant?.revoke();
-              reloadOrigin?.revoke();
+              processGrants.revoke();
             },
             assertCurrent,
             beforeSpawn: assertHostPolicyCurrent,
@@ -788,8 +767,7 @@ export async function runExecProcess({
           }),
         );
       } catch (error) {
-        grant?.revoke();
-        reloadOrigin?.revoke();
+        processGrants.revoke();
         throw error;
       }
     });
