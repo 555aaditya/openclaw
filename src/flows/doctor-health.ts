@@ -15,7 +15,6 @@ import { ConfigWritePostCommitError } from "../config/io.write-errors.js";
 import { resolveConfigPath, resolveStateDir } from "../config/paths.js";
 import { isTruthyEnvValue } from "../infra/env.js";
 import type { AgentDatabaseMigrationTarget } from "../infra/state-migrations.media-persistence-targets.js";
-import { formatUpdateDoctorConfigChange } from "../infra/update-doctor-config.js";
 import { retainUpdateDoctorProcesses } from "../infra/update-doctor-process-custody.js";
 import {
   captureUpdateDoctorConfigWrites,
@@ -23,7 +22,6 @@ import {
   normalizeUpdatePostInstallDoctorWarnings,
   UPDATE_POST_INSTALL_DOCTOR_ADVISORY_EXIT_CODE,
   UPDATE_POST_INSTALL_DOCTOR_RESULT_PATH_ENV,
-  writeUpdatePostInstallDoctorResult,
   UpdateDoctorError,
   type UpdateDoctorWriteAuthority,
   type DoctorConfigCapture,
@@ -32,7 +30,6 @@ import {
 import { formatUpdateFailureFact } from "../infra/update-failure-facts-format.js";
 import { createUpdateFailureFact } from "../infra/update-failure-facts.js";
 import { resolveUpdateRehearsalRoot } from "../infra/update-rehearsal-paths.js";
-import { createSubsystemLogger } from "../logging/subsystem.js";
 import { withPluginLoadDiagnostics } from "../plugins/load-diagnostics.js";
 import type { PluginDiagnostic } from "../plugins/manifest-types.js";
 import { withCommandProcessScope } from "../process/exec-spawn.js";
@@ -40,7 +37,6 @@ import { withDeferredDebugProxyCapture } from "../proxy-capture/runtime-deferral
 import type { RuntimeEnv } from "../runtime.js";
 import { UpdateSchemaRefusalError } from "../state/openclaw-update-schema-refusal.js";
 import {
-  collectDoctorHealthResultWarnings,
   createDoctorHealthFindingBuffer,
   recordDoctorHealthWarnings,
   renderStructuredHealthFindings,
@@ -54,6 +50,7 @@ import {
   showDoctorOutro,
   showDoctorConfigWriteRefusal,
 } from "./doctor-health-startup.js";
+import { publishDoctorUpdateResult } from "./doctor-health-update-result.js";
 
 /** Runs the full interactive doctor flow against the provided or default runtime. */
 export async function runDoctorHealthFlow(
@@ -672,36 +669,12 @@ async function runDoctorHealthFlowWithResult(
       );
     } finally {
       if (updateResult) {
-        for (const change of updateResult.capture.configChanges) {
-          createSubsystemLogger("update").warn(formatUpdateDoctorConfigChange(change));
-        }
-        const warnings = collectDoctorHealthResultWarnings({
+        await publishDoctorUpdateResult({
+          updateResult,
+          doctorResult,
           healthContext,
+          maintenance,
           startupWarnings: startupFindings.updateWarnings,
-          resultWarnings: doctorResult.warnings,
-          maintenanceWarnings: maintenance?.warnings,
-        });
-        await writeUpdatePostInstallDoctorResult({
-          resultPath: updateResult.resultPath,
-          result: {
-            ...doctorResult,
-            deferredInspectionCheckIds: updateResult.capture.deferredInspectionCheckIds,
-            ...(maintenance?.databaseWrites ? { databaseWrites: maintenance.databaseWrites } : {}),
-            ...(updateResult.capture.fileWrites
-              ? { configFileWrites: updateResult.capture.fileWrites }
-              : {}),
-            ...(warnings.length ? { warnings } : {}),
-            ...(updateResult.capture.configChanges.length
-              ? { configChanges: updateResult.capture.configChanges }
-              : {}),
-            ...(updateResult.capture.configWriteRefusal
-              ? { configWriteRefusal: updateResult.capture.configWriteRefusal }
-              : {}),
-            configHash: updateResult.capture.hash,
-            ...(updateResult.capture.inputHash === undefined
-              ? {}
-              : { configInputHash: updateResult.capture.inputHash }),
-          },
         });
       }
     }

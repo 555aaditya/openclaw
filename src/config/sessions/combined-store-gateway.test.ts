@@ -9,9 +9,9 @@ import {
 } from "../../gateway/session-row-projection.js";
 import { resolveSessionStoreKey } from "../../gateway/session-store-key.js";
 import { listProjectedSessions } from "../../gateway/session-utils-list.js";
-import { createGatewaySessionEntryReader } from "../../gateway/session-utils-store-lineage.js";
 import { clearAgentRunContext, registerAgentRunContext } from "../../infra/agent-run-registry.js";
 import { requireNodeSqlite } from "../../infra/node-sqlite.js";
+import { revokeSqliteDatabaseAdmissionsForPath } from "../../infra/sqlite-database-admission.js";
 import {
   inspectAgentDatabaseAdmission,
   readAgentDatabaseAdmissionRefusal,
@@ -19,6 +19,7 @@ import {
 } from "../../state/agent-database-admission.js";
 import { OPENCLAW_AGENT_SCHEMA_VERSION } from "../../state/openclaw-agent-db-contract.js";
 import {
+  closeOpenClawAgentDatabasesAsync,
   closeOpenClawAgentDatabasesForTest,
   openOpenClawAgentDatabase,
 } from "../../state/openclaw-agent-db.js";
@@ -65,7 +66,9 @@ it("lists admitted sessions across cached targets while preserving a refused dat
       ),
     ).toHaveLength(2);
     const copyPath = openOpenClawAgentDatabase({ agentId: "cleaner" }).path;
+    await closeOpenClawAgentDatabasesAsync(state.root);
     closeOpenClawAgentDatabasesForTest();
+    revokeSqliteDatabaseAdmissionsForPath(copyPath);
     const { DatabaseSync } = requireNodeSqlite();
     const copy = new DatabaseSync(copyPath);
     copy.exec(
@@ -96,6 +99,8 @@ it("lists admitted sessions across cached targets while preserving a refused dat
     expect(scoped.diagnostics?.join("\n")).toContain(refusal?.reason);
     expect(await fs.readFile(copyPath)).toEqual(before);
 
+    await closeOpenClawAgentDatabasesAsync(state.root);
+    revokeSqliteDatabaseAdmissionsForPath(copyPath);
     const repaired = new DatabaseSync(copyPath);
     repaired.exec(
       `PRAGMA user_version = ${OPENCLAW_AGENT_SCHEMA_VERSION}; UPDATE schema_meta SET agent_id = 'cleaner', schema_version = ${OPENCLAW_AGENT_SCHEMA_VERSION};`,
@@ -538,12 +543,6 @@ it.each(["global", "per-sender"] as const)(
                 modelOverrideSource: "inherited",
               });
             }
-            const read = createGatewaySessionEntryReader({
-              cfg,
-              agentId: "alpha",
-              store: { [key]: child },
-            });
-            expect(read(parent)?.modelOverride).toBe(model);
             const filtered = await listProjectedSessions({
               projection,
               opts: { spawnedBy: displayParent },

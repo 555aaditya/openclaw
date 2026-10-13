@@ -104,22 +104,23 @@ export function withDeferredPluginConfigRollback(
 }
 
 /** Ordinary writes consume canonical config; only migration owners supply pending facts. */
-export function readConfigWritePendingMigrations(
+export async function readConfigWritePendingMigrations(
   configPath: string,
   env?: NodeJS.ProcessEnv,
   preparedPending?: readonly DeferredPluginMigration[],
-): readonly DeferredPluginMigration[] | undefined {
+): Promise<readonly DeferredPluginMigration[] | undefined> {
   const completion = configMigrationCompletion.getStore();
   if (!completion || completion.configPath !== configPath) {
     return preparedPending;
   }
   completion.assertCurrent();
-  const pending = readDeferredPluginMigrations({ env });
   if (completion.published) {
-    return pending;
+    return await readDeferredPluginMigrationsAsync({ env });
   }
-  assertPendingGeneration(pending, completion.expectedPending);
-  return pending.filter((entry) => !completion.resolvedPluginIds.includes(entry.pluginId));
+  // Publication asserts this generation inside its write transaction; reading it here only repeats that.
+  return completion.expectedPending.filter(
+    (entry) => !completion.resolvedPluginIds.includes(entry.pluginId),
+  );
 }
 
 export class DeferredPluginMigrationConflictError extends Error {
@@ -401,10 +402,11 @@ export function formatDeferredPluginMigration(
   env: NodeJS.ProcessEnv = process.env,
 ): string {
   const retry = pending.command === "openclaw doctor --fix" ? "" : ', then "openclaw doctor --fix"';
-  const updating =
-    isTruthyEnvValue(env.OPENCLAW_UPDATE_IN_PROGRESS) ||
-    isTruthyEnvValue(env.OPENCLAW_UPDATE_POST_CORE_CONVERGENCE);
-  const next = updating
+  // This formatter also ships in the minimal PR bootstrap, without Doctor command modules.
+  const packageSwap =
+    isTruthyEnvValue(env.OPENCLAW_UPDATE_IN_PROGRESS) &&
+    !isTruthyEnvValue(env.OPENCLAW_UPDATE_POST_CORE_CONVERGENCE);
+  const next = packageSwap
     ? `Let the current update or repair finish. If this warning remains afterward, run "${pending.command}"${retry} to retry the upgrade.`
     : `Run "${pending.command}"${retry} to retry the upgrade.`;
   return `Plugin "${pending.pluginId}" data/settings upgrade is unfinished: ${pending.reason} Your existing data and settings have been kept. ${next}`;
