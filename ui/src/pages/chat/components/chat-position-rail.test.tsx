@@ -908,6 +908,8 @@ describe("conversation position rail", () => {
       )!;
       const root = container.querySelector<HTMLElement>(".chat-thread")!;
       const marks = container.querySelector<HTMLElement>(".chat-position-rail__marks")!;
+      // Reveal needs a measurable transcript viewport as well as the rail.
+      Object.defineProperty(root, "clientHeight", { configurable: true, value: 600 });
       Object.defineProperty(marks, "clientHeight", { configurable: true, value: 600 });
       for (const observer of resizeObservers) {
         observer.emitTarget(marks, 44, 600);
@@ -943,7 +945,6 @@ describe("conversation position rail", () => {
       wrapper.remove();
       await settleFrames();
       provisional.click();
-      // Reveal settles the committed target's geometry on the render lifecycle's layout phase.
       await settleFrames();
       expect(streamBubble.classList.contains("chat-bubble--reply-target")).toBe(true);
       props.messages = [
