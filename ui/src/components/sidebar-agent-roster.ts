@@ -66,7 +66,6 @@ class SidebarAgentRoster extends AgentRosterElement {
   @property({ attribute: false }) sections: SidebarVisibleSections["sections"] = [];
   @property({ attribute: false }) involvingMe = false;
   @property({ attribute: false }) empty = false;
-  @state() private collapsed = new Set<string>();
   @state() private openedMenus = new Set<string>();
   private settingsScope: string | null = null;
 
@@ -74,41 +73,23 @@ class SidebarAgentRoster extends AgentRosterElement {
     const gatewayUrl = this.context.gateway.connection.gatewayUrl;
     if (this.settingsScope !== gatewayUrl) {
       this.settingsScope = gatewayUrl;
-      this.collapsed = new Set(
+      this.host.rosterCollapsedAgentIds = new Set(
         this.host.sidebarSnapshot?.collapsedAgentIds ??
           loadSettings(gatewayUrl).sidebarCollapsedAgentIds ??
           [],
       );
     }
-    const store = rosterActivityStore(this.context);
-    store.setInvolvingMe(this.involvingMe);
-    const snapshot = store.snapshot;
-    const source = this.host.rosterSessionSource;
-    const agentIds = snapshot.cards.map((card) => card.id);
-    if (
-      !source ||
-      source.result !== snapshot.result ||
-      source.collapsedAgentIds !== this.collapsed ||
-      source.agentIds.length !== agentIds.length ||
-      source.agentIds.some((id, index) => id !== agentIds[index])
-    ) {
-      this.host.rosterSessionSource = {
-        result: snapshot.result,
-        agentIds,
-        collapsedAgentIds: this.collapsed,
-      };
-    }
+    rosterActivityStore(this.context).setInvolvingMe(this.involvingMe);
   }
 
   override disconnectedCallback() {
-    this.host.rosterSessionSource = null;
     // Agents home keeps the shared window alive after the grouped filter leaves.
     rosterActivityStore(this.context).setInvolvingMe(false);
     super.disconnectedCallback();
   }
 
   private toggleAgent(id: string) {
-    const collapsed = new Set(this.collapsed);
+    const collapsed = new Set(this.host.rosterCollapsedAgentIds);
     if (!collapsed.delete(id)) {
       collapsed.add(id);
     }
@@ -123,7 +104,7 @@ class SidebarAgentRoster extends AgentRosterElement {
       },
       { selectGateway: false },
     );
-    this.collapsed = collapsed;
+    this.host.rosterCollapsedAgentIds = collapsed;
   }
 
   override render() {
@@ -140,7 +121,7 @@ class SidebarAgentRoster extends AgentRosterElement {
             cards,
             (card) => card.id,
             (card) => {
-              const collapsed = this.collapsed.has(card.id);
+              const collapsed = this.host.rosterCollapsedAgentIds.has(card.id);
               const sections = this.sections.filter((section) =>
                 section.id.startsWith(`agent:${card.id}:`),
               );

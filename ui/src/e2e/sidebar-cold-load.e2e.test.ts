@@ -467,6 +467,9 @@ suite.define(() => {
           await capture(page, sidebar, "sidebar-after-before-hello.png");
 
           await gateway.deferNext("sessions.list", { includeOwnerSessionCounts: true });
+          if (view === "sessions") {
+            await gateway.deferNext("sessions.list", { source: "agent-roster", involvingMe: true });
+          }
           await gateway.deferNext("plugins.controlUi.list");
           await gateway.resolveDeferred("connect");
           await gateway.waitForRequest("sessions.list", {
@@ -474,8 +477,19 @@ suite.define(() => {
           });
           await gateway.waitForRequest("plugins.controlUi.list");
           expect(await restored.evaluate((observer) => observer.current())).toEqual(settled);
-          await gateway.resolveDeferred("sessions.list");
+          await gateway.resolveDeferred("sessions.list", undefined, {
+            match: { includeOwnerSessionCounts: true },
+          });
           await gateway.resolveDeferred("plugins.controlUi.list");
+          if (view === "sessions") {
+            await gateway.waitForRequest("sessions.list", {
+              match: { source: "agent-roster", involvingMe: true },
+            });
+            expect(await restored.evaluate((observer) => observer.current())).toEqual(settled);
+            await gateway.resolveDeferred("sessions.list", undefined, {
+              match: { source: "agent-roster", involvingMe: true },
+            });
+          }
           await waitForSavedSidebar(page, view);
           expect(await restored.evaluate((observer) => observer.current())).toEqual(settled);
           const restoredSamples = await restored.evaluate((observer) => observer.stop());

@@ -6,6 +6,7 @@ import type { GatewaySessionRow, SessionsListResult } from "../api/types.ts";
 import { serializeSidebarEntry } from "../app-navigation.ts";
 import { isSessionRouteId } from "../app-route-paths.ts";
 import { t } from "../i18n/index.ts";
+import { rosterActivityStore } from "../lib/agents/roster-activity-store.ts";
 import { shouldHandleNavigationClick } from "../lib/navigation-click.ts";
 import {
   collectKnownSessionGroups,
@@ -100,15 +101,32 @@ import {
   sidebarNavigationInputs,
   sidebarRowsInputs,
   SidebarProjectionMemo,
+  type SidebarProjectionHost,
 } from "./sidebar-projection-memo.ts";
 import { restoreSnapshotSections, restoreSnapshotSession } from "./sidebar-snapshot-model.ts";
 
 export class AppSidebarSessionNavigationElement extends AppSidebarBase {
-  @state() rosterSessionSource: {
-    result: SessionsListResult | null;
-    agentIds: readonly string[];
-    collapsedAgentIds: ReadonlySet<string>;
-  } | null = null;
+  @state() rosterCollapsedAgentIds: ReadonlySet<string> = new Set();
+  private readonly rosterSourceMemo = new SidebarProjectionMemo<
+    SidebarProjectionHost["rosterSessionSource"]
+  >();
+
+  get rosterSessionSource(): SidebarProjectionHost["rosterSessionSource"] {
+    if (
+      !this.context ||
+      this.sidebarAgentsMode !== "roster" ||
+      this.navigationView !== "sessions"
+    ) {
+      return null;
+    }
+    // Snapshot readiness and live rows consume the same store, before child rendering.
+    const { result, cards } = rosterActivityStore(this.context).snapshot;
+    const agentIds = cards.map((card) => card.id);
+    return this.rosterSourceMemo.read(
+      () => [result, this.rosterCollapsedAgentIds, ...agentIds],
+      () => ({ result, agentIds, collapsedAgentIds: this.rosterCollapsedAgentIds }),
+    );
+  }
 
   protected rosterVisibleSessionLimits = new Map<string, number>();
 
