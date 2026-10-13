@@ -15,6 +15,11 @@ token-delta streaming** to channel messages:
 - **Preview streaming (Telegram/Discord/Slack/Matrix/Mattermost/MS Teams):**
   update a temporary **preview message** while generating (send + edits/appends).
 
+Optional turns buffer assistant text until the host resolves the turn, so channel
+drafts, edited previews, and WebChat cannot expose narration before a
+`message(action="none")` completion discards it. Required turns retain the
+streaming behavior described below.
+
 ## Control UI startup status
 
 After `chat.send` acknowledges an active run, the Gateway can send a typed,

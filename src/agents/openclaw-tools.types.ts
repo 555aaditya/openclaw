@@ -25,6 +25,8 @@ import type { SkillWorkshopRunOptions } from "./tools/skill-workshop-tool-factor
 
 /** Options shared by the coding-tool factory and its OpenClaw tool surface. */
 export type OpenClawSharedToolsOptions = {
+  /** Host-resolved policy; the message tool cannot waive a required reply. */
+  terminalReplyExpectation?: import("./reply-completion.js").ReplyExpectation;
   /** Complete model-discoverable catalog, prepared by the current host. */
   installedSkills?: readonly InstalledSkill[];
   /**

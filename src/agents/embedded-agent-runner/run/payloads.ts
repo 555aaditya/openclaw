@@ -100,7 +100,11 @@ export function buildEmbeddedRunPayloads(params: {
   deferAssistantTimeoutError?: boolean;
   didSendDeterministicApprovalPrompt?: boolean;
   heartbeatToolResponse?: HeartbeatToolResponse;
+  intentionalSilence?: boolean;
 }): ReplyPayload[] {
+  if (params.intentionalSilence) {
+    return [];
+  }
   const heartbeatTerminalToolFailure =
     params.isHeartbeatTrigger === true &&
     params.lastToolError &&

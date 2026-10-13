@@ -84,6 +84,9 @@ export function createMessageToolExplicitTargetGuard(params: {
       const action = readToolStringParam(actionParams, "action", {
         required: true,
       }) as ChannelMessageActionName; // SAFETY: the message tool schema owns this closed vocabulary.
+      if (actionParams.action === "none") {
+        return rawParams;
+      }
       if (!actionId) {
         requireTarget(actionParams, action);
         return rawParams;

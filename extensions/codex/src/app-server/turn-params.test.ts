@@ -255,6 +255,8 @@ describe("buildTurnStartParams source-delivery context", () => {
     expect(values[1]).toContain("current source is default target");
     expect(values[1]).toContain("`message(action=send, final=false)`");
     expect(values[2]).toBe(values[0]);
+    expect(values[0]).toContain('message(action="none")');
+    expect(values[1]).toContain('message(action="none")');
     for (const turn of turns) {
       expect(turn.input).toEqual([{ type: "text", text: params.prompt, text_elements: [] }]);
       expect(turn.additionalContext?.openclaw_temporal_context).toBeDefined();
@@ -301,6 +303,22 @@ describe("buildTurnStartParams source-delivery context", () => {
     expect(finalOnly.additionalContext?.openclaw_source_delivery?.value).not.toContain(
       "message(action=send",
     );
+  });
+
+  it("retains silence tokens only for optional turns without the message tool", async () => {
+    const params = createParams("/tmp/session.jsonl", "/repo");
+    const options = {
+      threadId: "thread-1",
+      cwd: "/repo",
+      appServer: createAppServerOptions(),
+      messageToolAvailable: false,
+    };
+    for (const terminalReplyExpectation of ["required", "optional"] as const) {
+      const turn = await buildTurnStartParams({ ...params, terminalReplyExpectation }, options);
+      const guidance = turn.additionalContext?.openclaw_source_delivery?.value;
+      expect(guidance?.includes("NO_REPLY")).toBe(terminalReplyExpectation === "optional");
+      expect(guidance).not.toContain('message(action="none")');
+    }
   });
 });
 

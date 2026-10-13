@@ -43,6 +43,7 @@ export function createResult(
     currentAttemptCompletedAssistant?: AssistantMessage;
     downgradedFromResume?: boolean;
     externalAbort?: boolean;
+    intentionalSilence?: boolean;
     itemLifecycle?: { activeCount: number; completedCount: number; startedCount: number };
     lastAssistant?: AssistantMessage;
     journalValidated?: boolean;
@@ -117,6 +118,7 @@ export function createResult(
     ...(state.journalValidated !== undefined ? { journalValidated: state.journalValidated } : {}),
     ...(state.codeModeEngaged !== undefined ? { codeModeEngaged: state.codeModeEngaged } : {}),
     assistantTexts: state.assistantTexts ?? [],
+    ...(state.intentionalSilence ? { intentionalSilence: true } : {}),
     attemptUsage: state.usage,
     cloudCodeAssistFormatError: false,
     currentAttemptAssistant: state.currentAttemptAssistant,

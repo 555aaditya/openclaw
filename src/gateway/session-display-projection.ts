@@ -3,6 +3,7 @@ import { asOptionalRecord as readRecord } from "@openclaw/normalization-core/rec
 import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import { stripEnvelope } from "../shared/chat-envelope.js";
 import { extractAssistantPhaseText } from "../shared/chat-message-content.js";
+import { projectIntentionalSilenceHistory } from "./chat-silence-projection.js";
 import { isSuppressedControlReplyText } from "./control-reply-text.js";
 import type { SessionPreviewItem } from "./session-utils.types.js";
 
@@ -87,6 +88,9 @@ export function buildSessionPreviewItems(
   maxChars: number,
   view: "display" | "model-context" = "display",
 ): SessionPreviewItem[] {
+  if (view === "display") {
+    messages = projectIntentionalSilenceHistory([...messages]);
+  }
   const items: SessionPreviewItem[] = [];
   // Rejected rows do not consume the limit; older text cannot affect a full preview.
   for (let index = messages.length - 1; index >= 0 && items.length < maxItems; index -= 1) {

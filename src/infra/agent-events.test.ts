@@ -67,6 +67,14 @@ afterEach(() => {
   resetAgentEventsForTest();
 });
 
+test("keeps message silence reasons out of public tool events", () => {
+  const events = captureEvents();
+  const args = { action: "none", reason: "Internal decision" };
+  emit("run", "tool", { name: "message", args });
+  expect(events[0]?.data.args).toEqual({ action: "none" });
+  expect(args.reason).toBe("Internal decision");
+});
+
 test("emits typed run startup status with run context", () => {
   registerAgentRunContext("run", { sessionKey: "session", agentId: "main" });
   const events = captureEvents();

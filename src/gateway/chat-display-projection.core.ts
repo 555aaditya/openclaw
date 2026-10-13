@@ -51,6 +51,10 @@ import {
   shouldDropAssistantHistoryMessage,
 } from "./chat-display-projection.sanitize.js";
 import { stripEnvelopeFromMessages } from "./chat-sanitize.js";
+import {
+  filterPendingOptionalHistory,
+  projectIntentionalSilenceHistory,
+} from "./chat-silence-projection.js";
 import { isSuppressedControlReplyText } from "./control-reply-text.js";
 import type {
   CurrentUserProfileDisplay,
@@ -490,6 +494,7 @@ export function projectChatDisplayMessagesWithState(
   options?: ChatDisplayProjectionOptions,
 ): ChatDisplayProjectionResult {
   options?.subagentCoordination?.assertCurrent?.();
+  messages = filterPendingOptionalHistory(projectIntentionalSilenceHistory(messages));
   const recovery = createChatHistoryRecoveryProjection(options);
   recovery.append(messages);
   const recoveredErrors = recovery.result();

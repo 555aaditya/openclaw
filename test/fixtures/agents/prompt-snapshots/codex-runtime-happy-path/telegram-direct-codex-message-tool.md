@@ -5,7 +5,7 @@
 ## Scope
 
 - Default happy path: OpenAI model through the Codex harness/runtime, Telegram direct conversation, and message-tool-only visible replies.
-- A quiet turn is represented by not calling `message(action=send)`; the normal final assistant text is private to OpenClaw/Codex.
+- An optional quiet turn is represented by `message(action="none")`; the host discards accompanying assistant text.
 - This captures the OpenClaw-owned Codex app-server inputs and reconstructs the stable Codex model/permission layers from committed Codex prompt fixtures.
 - This also simulates Codex workspace bootstrap routing: `AGENTS.md` through native project-doc discovery, `SOUL.md`, `IDENTITY.md`, and `USER.md` as parent-local request instructions, and `MEMORY.md` in turn input.
 
@@ -152,7 +152,7 @@
     },
     "openclaw_source_delivery": {
       "kind": "application",
-      "value": "Current source-delivery policy for this turn (replaces earlier source-delivery guidance):\nVisible source replies are not automatically delivered for this run. Use `message(action=send)` for source output. For progress, set `final=false`. Set `final=true`, or omit it, for a completed reply to the current source. An added reaction to the current source message with `final=true` can also complete the reply. Do not repeat delivered content.\n\n`send`: `message`; current source is default target. Set `target` only elsewhere.\n\nCommentary is optional progress and may be hidden. Answer user questions or status requests received during ongoing work with `message(action=send, final=false)`, then continue the task. Before finishing, deliver every still-pending answer through this turn's visible-reply route. Do not repeat answers already delivered."
+      "value": "Current source-delivery policy for this turn (replaces earlier source-delivery guidance):\nVisible source replies are not automatically delivered for this run. Use `message(action=send)` for source output. For progress, set `final=false`. Set `final=true`, or omit it, for a completed reply to the current source. An added reaction to the current source message with `final=true` can also complete the reply. Do not repeat delivered content.\n\nOn optional non-heartbeat turns, call `message(action=\"none\")` when no response is needed.\n\n`send`: `message`; current source is default target. Set `target` only elsewhere.\n\nCommentary is optional progress and may be hidden. Answer user questions or status requests received during ongoing work with `message(action=send, final=false)`, then continue the task. Before finishing, deliver every still-pending answer through this turn's visible-reply route. Do not repeat answers already delivered."
     },
     "openclaw_temporal_context": {
       "kind": "application",
@@ -236,8 +236,8 @@ This is the deterministic model-bound layer stack OpenClaw can snapshot for the 
 ```json
 {
   "additionalContext": {
-    "chars": 1338,
-    "roughTokens": 335
+    "chars": 1430,
+    "roughTokens": 358
   },
   "codexCollaborationModeDeveloperInstructions": {
     "chars": 0,
@@ -256,24 +256,24 @@ This is the deterministic model-bound layer stack OpenClaw can snapshot for the 
     "roughTokens": 0
   },
   "dynamicToolsJson": {
-    "chars": 71606,
-    "roughTokens": 17902
+    "chars": 71807,
+    "roughTokens": 17952
   },
   "openClawDeveloperInstructions": {
-    "chars": 3194,
-    "roughTokens": 799
+    "chars": 3036,
+    "roughTokens": 759
   },
   "openClawParentLocalInstructions": {
     "chars": 507,
     "roughTokens": 127
   },
   "totalTextOnly": {
-    "chars": 27570,
-    "roughTokens": 6893
+    "chars": 27504,
+    "roughTokens": 6876
   },
   "totalWithDynamicToolsJson": {
-    "chars": 99178,
-    "roughTokens": 24795
+    "chars": 99313,
+    "roughTokens": 24829
   },
   "userInputText": {
     "chars": 879,
@@ -512,7 +512,7 @@ When explicitly_mentioned_bot is true, the incoming message mentions your channe
 ```
 
 
-You are in a Telegram direct conversation. Normal final replies are private and are not automatically sent to this conversation. To post visible output here, use the message tool with action=send; the target defaults to this conversation. If no visible direct response is needed, do not call message(action=send). Your normal final answer stays private and will not be posted to the conversation.
+You are in a Telegram direct conversation. Normal final replies are private and are not automatically sent to this conversation. To post visible output here, use the message tool with action=send; the target defaults to this conversation.
 ````
 
 ### Developer: Codex Collaboration Mode Instructions
@@ -536,6 +536,8 @@ This turn asks Codex app-server to resolve its built-in Default collaboration-mo
 ```text
 <openclaw_source_delivery>Current source-delivery policy for this turn (replaces earlier source-delivery guidance):
 Visible source replies are not automatically delivered for this run. Use `message(action=send)` for source output. For progress, set `final=false`. Set `final=true`, or omit it, for a completed reply to the current source. An added reaction to the current source message with `final=true` can also complete the reply. Do not repeat delivered content.
+
+On optional non-heartbeat turns, call `message(action="none")` when no response is needed.
 
 `send`: `message`; current source is default target. Set `target` only elsewhere.
 
@@ -611,15 +613,15 @@ Full JSON: `codex-dynamic-tools.telegram-direct.json`
 ```json
 [
   {
-    "description": "Send/manage channel messages. Supports actions: send.",
+    "description": "Send/manage channel messages. Supports actions: none, send.",
     "inputSchema": {
       "properties": {
         "accountId": {
           "type": "string"
         },
         "action": {
-          "description": "Select one action. For action=\"send\", provide message or another send payload; fields for other actions do not count as send content.",
-          "enum": ["send"],
+          "description": "Select one action. For action=\"send\", provide message or another send payload. Use \"none\" only on optional turns to finish silently.",
+          "enum": ["send", "none"],
           "type": "string"
         },
         "asDocument": {
@@ -709,6 +711,10 @@ Full JSON: `codex-dynamic-tools.telegram-direct.json`
         },
         "quoteText": {
           "description": "Telegram reply quote text.",
+          "type": "string"
+        },
+        "reason": {
+          "description": "For action=\"none\", an internal reason (at most 200 characters), never delivered; otherwise the action reason.",
           "type": "string"
         },
         "replyTo": {

@@ -32,6 +32,7 @@ import {
 import { createOpenClawTestState } from "openclaw/plugin-sdk/test-state";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { registerCopilotCleanupTests } from "./attempt-cleanup.test-support.js";
+import { registerCopilotSilenceTests } from "./attempt-silence.test-support.js";
 import { runCopilotAttempt } from "./attempt.js";
 import {
   makeAssistantMessageEvent,
@@ -395,6 +396,11 @@ afterEach(() => {
 });
 
 describe("runCopilotAttempt", () => {
+  registerCopilotSilenceTests({
+    makeParams,
+    createStubToolBridge,
+    transcriptBatch: transcriptRuntimeMock.appendBatch,
+  });
   it.each(["provider headers", "prepared header auth"] as const)(
     "forwards BYOK %s on both session creation and the model request",
     async (mode) => {
@@ -1228,50 +1234,6 @@ describe("runCopilotAttempt", () => {
       (requireCreateSessionConfig(sdk) as { systemMessage?: { content?: string } }).systemMessage
         ?.content,
     ).toContain("Visible source replies are not automatically delivered");
-  });
-
-  it("F7: preserves an accepted session spawn when the tool bridge yields the attempt", async () => {
-    const sdk = makeFakeSdk();
-    const pool = makeFakePool(sdk);
-    const createToolBridge = vi.fn(async (input: CopilotToolBridgeInput) => {
-      await input.onToolCompleted?.({
-        args: { task: "review" },
-        isError: false,
-        result: {
-          details: {
-            status: "accepted",
-            runId: "run-copilot-child",
-            childSessionKey: "agent:main:subagent:copilot-child",
-            expectsCompletionMessage: true,
-          },
-        },
-        startedAt: Date.now(),
-        toolCallId: "spawn-1",
-        toolName: "sessions_spawn",
-      });
-      // Simulate a wrapped tool invoking sessions_yield before the
-      // attempt settles. The bridge is responsible for notifying the
-      // caller via onYieldDetected so the final result can carry the
-      // flag (parent runner uses it to mark liveness paused /
-      // stop_reason end_turn). Mirrors PI/codex parity.
-      input.onYieldDetected?.("private continuation", "Research started; results will follow.");
-      return createStubToolBridge();
-    });
-
-    const result = await runCopilotAttempt(makeParams(), {
-      createToolBridge,
-      pool,
-    });
-
-    expect(result.yieldDetected).toBe(true);
-    expect(result.yieldAcknowledgment).toBe("Research started; results will follow.");
-    expect(result.acceptedSessionSpawns).toEqual([
-      {
-        runId: "run-copilot-child",
-        childSessionKey: "agent:main:subagent:copilot-child",
-        expectsCompletionMessage: true,
-      },
-    ]);
   });
 
   it("tool bridge failures become prompt errors", async () => {

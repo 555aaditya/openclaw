@@ -125,6 +125,40 @@ async function withSession(
 }
 
 describe("session row transcript backfill", () => {
+  it("derives sidebar previews from silence receipts without rewriting raw transcript rows", async () => {
+    const assistant = {
+      role: "assistant",
+      content: [
+        { type: "text", text: "I am staying silent." },
+        { type: "toolCall", id: "quiet", name: "message", arguments: { action: "none" } },
+      ],
+      __openclaw: { runId: "quiet-run" },
+    };
+    const original = structuredClone(assistant);
+    await withSession(
+      async (params) => {
+        expect(readSessionRowTranscriptFields(params)).toEqual({
+          lastMessagePreview: "Group chatter",
+        });
+        expect(assistant).toEqual(original);
+      },
+      [
+        { role: "user", content: "Group chatter" },
+        assistant,
+        {
+          role: "toolResult",
+          toolName: "message",
+          toolCallId: "quiet",
+          isError: false,
+          details: {
+            messageDelivery: { status: "silent", partialDelivery: false, createdThreadIds: [] },
+          },
+          __openclaw: { runId: "quiet-run" },
+        },
+      ],
+    );
+  });
+
   it("reads a cold preview without admitting a writer or changing legacy metadata", async () => {
     await withSession(
       async (params) => {

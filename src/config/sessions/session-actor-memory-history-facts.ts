@@ -1,6 +1,7 @@
 import { resolveIntegerOption } from "@openclaw/normalization-core/number-coercion";
 import { asOptionalRecord, isRecord } from "@openclaw/normalization-core/record-coerce";
 import { selectResetKeptEntries } from "../../../packages/agent-core/src/harness/session/tool-result-pairing.js";
+import { projectIntentionalSilenceHistory } from "../../gateway/chat-silence-projection.js";
 import {
   buildSessionPreviewItems,
   projectSessionDisplayMessage,
@@ -300,10 +301,12 @@ export function readSessionActorMemoryHistoryFacts(
         );
       });
       let lastMessagePreview: string | null = null;
-      const tail = navigation.visibleMessages.slice(-100);
+      const tail = projectIntentionalSilenceHistory(
+        navigation.visibleMessages.slice(-100).map(({ event }) => asOptionalRecord(event)?.message),
+      );
       for (let index = tail.length - 1; index >= 0 && lastMessagePreview === null; index -= 1) {
         lastMessagePreview =
-          projectSessionDisplayMessage(asOptionalRecord(tail[index]!.event)?.message, {
+          projectSessionDisplayMessage(tail[index], {
             flattenMarkdown: true,
           })?.text ?? null;
       }

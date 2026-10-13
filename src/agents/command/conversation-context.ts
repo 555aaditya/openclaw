@@ -7,7 +7,6 @@ import {
 import { buildInboundMetaSystemPrompt } from "../../auto-reply/reply/inbound-meta.js";
 import { prepareReplyConversation } from "../../auto-reply/reply/prompt-session-context.js";
 import { resolveSessionStableReplyMode } from "../../auto-reply/reply/session-stable-reply-mode.js";
-import { SILENT_REPLY_TOKEN } from "../../auto-reply/tokens.js";
 import type { SessionEntry } from "../../config/sessions/types.js";
 import { resolveSilentReplySettings } from "../../config/silent-reply.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
@@ -36,6 +35,7 @@ export async function prepareCommandConversationContext(params: {
       allowBootstrap: true,
     });
   let conversationPrompt: string | undefined;
+  let silentReplyPromptMode: "generic" | "none" = "none";
   if (
     sessionEntry &&
     !isSubagentSessionKey(sessionKey) &&
@@ -57,6 +57,17 @@ export async function prepareCommandConversationContext(params: {
     });
     const ctx = { ...conversation.fields, CommandAuthorized: false };
     const shared = ctx.ChatType === "group" || ctx.ChatType === "channel";
+    if (
+      shared &&
+      resolveSilentReplySettings({
+        cfg,
+        sessionKey,
+        surface: ctx.Surface ?? ctx.Provider,
+        conversationType: "group",
+      }).policy === "allow"
+    ) {
+      silentReplyPromptMode = "generic";
+    }
     const sourceContext = buildSourceConversationContext({
       sessionCtx: ctx,
       sourceReplyDeliveryMode: await resolveSessionStableReplyMode({
@@ -66,13 +77,6 @@ export async function prepareCommandConversationContext(params: {
         sessionAgentId,
         sessionKey,
       }),
-      silentReplyPolicy: resolveSilentReplySettings({
-        cfg,
-        sessionKey,
-        surface: ctx.Surface ?? ctx.Provider,
-        conversationType: shared ? "group" : "direct",
-      }).policy,
-      silentToken: SILENT_REPLY_TOKEN,
     });
     if (sourceContext) {
       // Metadata describes the conversation; delivery preflight owns formatting.
@@ -102,7 +106,7 @@ export async function prepareCommandConversationContext(params: {
         ]
           .filter(Boolean)
           .join("\n\n"),
-        ...(conversationPrompt ? { silentReplyPromptMode: "none" as const } : {}),
+        ...(conversationPrompt ? { silentReplyPromptMode } : {}),
       }
     : opts;
 }

@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { resolveGlobalSingleton } from "../shared/global-singleton.js";
+import { getAgentRunRegistryState } from "./agent-run-registry-state.js";
 import type { AgentRunContext } from "./agent-run-registry.types.js";
 
 type Routing = Pick<
@@ -32,6 +33,16 @@ export function getAgentEventExecutionContext() {
   return resolveGlobalSingleton(
     Symbol.for("openclaw.agentEvents.executionContext"),
     () => new AsyncLocalStorage<ExecutionContext>(),
+  );
+}
+
+/** Captures immutable lifecycle ownership for one admitted execution. */
+export function captureAgentRunLifecycleGeneration(runId: string): string {
+  const state = getAgentRunRegistryState();
+  return (
+    getAgentEventExecutionContext().getStore()?.lifecycleGeneration ??
+    state.contexts.get(runId)?.lifecycleGeneration ??
+    state.lifecycleGeneration
   );
 }
 

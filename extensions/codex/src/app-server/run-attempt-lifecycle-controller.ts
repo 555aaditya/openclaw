@@ -34,6 +34,9 @@ export function createCodexAttemptLifecycleController(
   } = connection;
   const { state, activeTurnItemIds, pendingOpenClawDynamicToolCompletionIds } = turnRuntime;
   type TerminalToolRelease = NonNullable<typeof state.pendingTerminalDynamicToolRelease>;
+  const isCommittedTerminal = (value: TerminalToolRelease | undefined) =>
+    value?.response.finalSourceReplyDelivered === true ||
+    value?.response.intentionalSilence === true;
   type ModelResponse = {
     closed: boolean;
     calls: Map<string, { direct: boolean; result?: TerminalToolRelease }>;
@@ -81,13 +84,12 @@ export function createCodexAttemptLifecycleController(
       ) {
         return;
       }
-      const deliveredFinal =
-        state.pendingTerminalDynamicToolRelease?.response.finalSourceReplyDelivered === true;
-      const authored = deliveredFinal ? undefined : resolveAuthoredResponse();
+      const committedTerminal = isCommittedTerminal(state.pendingTerminalDynamicToolRelease);
+      const authored = committedTerminal ? undefined : resolveAuthoredResponse();
       if (
         !authored &&
-        (deliveredFinal || state.pendingTerminalDynamicToolRelease?.response.success === true) &&
-        (deliveredFinal || !state.currentTurnHadNonTerminalDynamicToolResult) &&
+        (committedTerminal || state.pendingTerminalDynamicToolRelease?.response.success === true) &&
+        (committedTerminal || !state.currentTurnHadNonTerminalDynamicToolResult) &&
         state.activeAppServerTurnRequests === 0 &&
         pendingOpenClawDynamicToolCompletionIds.size === 0
       ) {
@@ -102,7 +104,7 @@ export function createCodexAttemptLifecycleController(
       ) {
         return;
       }
-      if (!authored && !deliveredFinal && state.currentTurnHadNonTerminalDynamicToolResult) {
+      if (!authored && !committedTerminal && state.currentTurnHadNonTerminalDynamicToolResult) {
         state.pendingTerminalDynamicToolRelease = undefined;
         state.currentTurnHadNonTerminalDynamicToolResult = false;
         return;
@@ -112,7 +114,7 @@ export function createCodexAttemptLifecycleController(
         !value ||
         state.completed ||
         runAbortController.signal.aborted ||
-        (!value.response.success && !deliveredFinal)
+        (!value.response.success && !committedTerminal)
       ) {
         return;
       }
@@ -153,10 +155,7 @@ export function createCodexAttemptLifecycleController(
     if (value.response.toolAuthoredSourceReply) {
       // Once this raw batch has an authored candidate, only whole-batch admission
       // can finish it. An ordinary sibling cannot leave a fallback that drops it.
-      if (
-        modelCall &&
-        !state.pendingTerminalDynamicToolRelease?.response.finalSourceReplyDelivered
-      ) {
+      if (modelCall && !isCommittedTerminal(state.pendingTerminalDynamicToolRelease)) {
         state.pendingTerminalDynamicToolRelease = undefined;
       }
       // A nested or unobserved call cannot borrow the outer model call's authority.
@@ -165,11 +164,11 @@ export function createCodexAttemptLifecycleController(
     }
     if (
       value.response.terminate === true &&
-      (value.response.success || value.response.finalSourceReplyDelivered)
+      (value.response.success || isCommittedTerminal(value))
     ) {
       if (
-        value.response.finalSourceReplyDelivered ||
-        (!state.pendingTerminalDynamicToolRelease?.response.finalSourceReplyDelivered &&
+        isCommittedTerminal(value) ||
+        (!isCommittedTerminal(state.pendingTerminalDynamicToolRelease) &&
           ![...(modelResponse?.calls.values() ?? [])].some(
             (call) => call.result?.response.toolAuthoredSourceReply,
           ))
@@ -181,7 +180,7 @@ export function createCodexAttemptLifecycleController(
       scheduleTerminalDynamicToolReleaseCheck();
     } else {
       state.currentTurnHadNonTerminalDynamicToolResult = true;
-      if (!state.pendingTerminalDynamicToolRelease?.response.finalSourceReplyDelivered) {
+      if (!isCommittedTerminal(state.pendingTerminalDynamicToolRelease)) {
         state.pendingTerminalDynamicToolRelease = undefined;
       }
     }

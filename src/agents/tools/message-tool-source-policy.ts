@@ -14,8 +14,10 @@ import { sourceDeliveryTargetsMatch } from "../../infra/outbound/source-delivery
 import { normalizeOptionalAccountId } from "../../routing/account-id.js";
 import { stripUnsupportedCitationControlMarkers } from "../../shared/text/citation-control-markers.js";
 import { INTERNAL_MESSAGE_CHANNEL, normalizeMessageChannel } from "../../utils/message-channel.js";
+import { attachEmbeddedMessageDeliveryFact } from "../embedded-agent-message-delivery.js";
+import type { ReplyExpectation } from "../reply-completion.js";
 import { channelTargetSchema, stringEnum } from "../schema/typebox.js";
-import { readToolStringParam } from "./common.js";
+import { jsonResult, readToolStringParam, ToolInputError } from "./common.js";
 import { normalizeEscapedLineBreaksForVisibleText } from "./message-tool-visible-content.js";
 
 export function resolveSourceReplySinkDeliveryMode(
@@ -36,9 +38,13 @@ function sourceReplyPolicyError(message: string): MessageActionDeniedError {
   );
 }
 export const SOURCE_REPLY_ONLY_MESSAGE_SCHEMA = Type.Object({
-  action: stringEnum(["send"], {
-    description: "Send a text reply to the current source conversation.",
+  action: stringEnum(["send", "none"], {
+    description:
+      "Send a text reply to the current source conversation, or finish an optional turn silently.",
   }),
+  reason: Type.Optional(
+    Type.String({ maxLength: 200, description: "Internal silence reason, never delivered." }),
+  ),
   channel: Type.Optional(Type.String()),
   target: Type.Optional(channelTargetSchema()),
   accountId: Type.Optional(Type.String()),
@@ -58,6 +64,23 @@ const SOURCE_REPLY_FINAL_PROPERTY = Type.Optional(
 
 export function addSourceReplyFinalControl(schema: TObject): TObject {
   return Type.Object({ ...schema.properties, final: SOURCE_REPLY_FINAL_PROPERTY });
+}
+
+export function completeMessageToolSilence(
+  args: Record<string, unknown>,
+  expectation: ReplyExpectation | undefined,
+) {
+  if (expectation !== "optional") {
+    throw new ToolInputError("A reply is required on this turn; answer the user.");
+  }
+  if (args.reason !== undefined && (typeof args.reason !== "string" || args.reason.length > 200)) {
+    throw new ToolInputError("Silence reason must be a string of at most 200 characters.");
+  }
+  return attachEmbeddedMessageDeliveryFact(jsonResult({ status: "silent" }), {
+    status: "silent",
+    partialDelivery: false,
+    createdThreadIds: [],
+  });
 }
 
 export function enforceSourceReplyOnlyTextDirectives(args: Record<string, unknown>): void {

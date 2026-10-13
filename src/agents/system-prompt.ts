@@ -847,6 +847,7 @@ export function buildAgentSystemPrompt(params: {
         "",
       ],
     !isMinimal &&
+      !messageToolAvailable &&
       silentReplyPromptMode !== "none" && [
         "## Silent Replies",
         `Nothing to say: entire reply exactly ${SILENT_REPLY_TOKEN}`,
@@ -909,7 +910,6 @@ export function buildAgentSystemPrompt(params: {
       messageToolHints: params.messageToolHints,
       sourceReplyDeliveryMode: params.sourceReplyDeliveryMode,
       requireExplicitMessageTarget: params.requireExplicitMessageTarget,
-      silentReplyPromptMode,
       delegationSectionRenders: subagentDelegationPreferenceSection.length > 0,
     }),
     // Capability-gated reply guidance stays below the cache boundary so channel changes

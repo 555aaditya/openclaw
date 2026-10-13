@@ -1,6 +1,7 @@
 import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import { resolveAgentAssistantTurnId } from "../../../../packages/agent-core/src/tool-execution-context.js";
 import type { SourceReplyDeliveryMode } from "../../../auto-reply/get-reply-options.types.js";
+import { readEmbeddedMessageDeliveryFact } from "../../embedded-agent-message-delivery.js";
 import {
   isDeliveredMessageToolOnlySourceReplyResult,
   resolveMessageToolSourceReplyFinal,
@@ -12,6 +13,7 @@ import {
 } from "../../embedded-agent-messaging-extraction.js";
 import type { MessagingToolSourceReplyPayload } from "../../embedded-agent-messaging.types.js";
 import { captureToolAuthoredSourceReply } from "../../embedded-agent-tool-authored-source-reply.js";
+import type { ReplyExpectation } from "../../reply-completion.js";
 import type { AfterToolCallContext, AfterToolCallResult, Agent } from "../../runtime/index.js";
 import {
   getInternalToolTurnCompletion,
@@ -99,20 +101,30 @@ export function installMessageToolTerminalHook(
   params: MessageToolTerminalRoute & {
     agent: Agent;
     onDeliveredSourceReply?: () => void;
+    terminalReplyExpectation?: ReplyExpectation;
+    onIntentionalSilence?: () => void;
   },
 ): void {
-  let finalSourceReplyDelivered = false;
+  let turnCompleted = false;
   const previousCompletion = getInternalToolTurnCompletion(params.agent);
   // Let sibling tools settle, then finish without another model request.
   setInternalToolTurnCompletion(params.agent, (context) => {
-    const completed = finalSourceReplyDelivered;
-    finalSourceReplyDelivered = false;
+    const completed = turnCompleted;
+    turnCompleted = false;
     return previousCompletion?.(context) === true || completed;
   });
   const previousAfterToolCall = params.agent.afterToolCall?.bind(params.agent);
   params.agent.afterToolCall = async (context, signal) => {
     const toolName = context.toolCall.name;
     const toolArgs = argsRecordForToolCall(context);
+    const silent =
+      toolName === "message" &&
+      toolArgs.action === "none" &&
+      params.terminalReplyExpectation === "optional" &&
+      !context.isError &&
+      !isToolResultError(context.result) &&
+      readEmbeddedMessageDeliveryFact(readToolResultDetails(context.result)?.messageDelivery)
+        ?.status === "silent";
     const final = resolveMessageToolSourceReplyFinal(toolArgs);
     const extractionArgs =
       toolName === "message" &&
@@ -145,12 +157,16 @@ export function installMessageToolTerminalHook(
     try {
       hookResult = await previousAfterToolCall?.(context, signal);
     } finally {
+      if (silent) {
+        turnCompleted = true;
+        params.onIntentionalSilence?.();
+      }
       delivered ||= isDelivered(hookResult);
       if (delivered) {
-        finalSourceReplyDelivered ||= final;
+        turnCompleted ||= final;
         params.onDeliveredSourceReply?.();
       }
     }
-    return delivered && final ? { ...hookResult, terminate: true } : hookResult;
+    return silent || (delivered && final) ? { ...hookResult, terminate: true } : hookResult;
   };
 }

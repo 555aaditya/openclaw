@@ -30,6 +30,7 @@ export async function completeCopilotAttempt(params: {
     contextWindowSource?: NonNullable<AttemptParamsLike["contextWindowInfo"]>["source"];
   };
   input: AttemptParamsLike;
+  intentionalSilence: boolean;
   lastToolError: AgentHarnessAttemptResult["lastToolError"];
   messages: AgentMessage[];
   nativeSessionHistoryUnvalidated: boolean;
@@ -59,6 +60,7 @@ export async function completeCopilotAttempt(params: {
     hookContext,
     hookContextWindowFields,
     input,
+    intentionalSilence,
     lastToolError,
     messages,
     nativeSessionHistoryUnvalidated,
@@ -78,8 +80,10 @@ export async function completeCopilotAttempt(params: {
     yieldAcknowledgment,
   } = params;
   const snap = bridge?.snapshot();
-  const assistantTexts = bridge?.finalizeAssistantTexts() ?? [];
-  const lastAssistant = bridge?.buildAssistantMessage({ modelRef, now });
+  const assistantTexts = intentionalSilence ? [] : (bridge?.finalizeAssistantTexts() ?? []);
+  const lastAssistant = intentionalSilence
+    ? undefined
+    : bridge?.buildAssistantMessage({ modelRef, now });
   const transcript = transcriptJournal?.snapshot();
   // Pre-journal failures keep the prepared input snapshot. Reconstructing a
   // user/assistant mirror here would restore the deleted dual-write owner.
@@ -113,6 +117,7 @@ export async function completeCopilotAttempt(params: {
     },
     lastAssistant,
     lastToolError,
+    intentionalSilence,
     journalValidated:
       transcript !== undefined &&
       !aborted &&

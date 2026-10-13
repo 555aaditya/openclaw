@@ -27,7 +27,40 @@ describe("system prompt messaging routing", () => {
       );
       expect(prompt).not.toContain("Provider messaging: never exec/curl");
       expect(prompt).not.toContain("NO_REPLY");
+      expect(prompt).toContain(
+        'On optional non-heartbeat turns, call `message(action="none")` when no response is needed.',
+      );
       expect(prompt).not.toContain("user explicitly requests only a reaction");
     },
   );
+
+  it.each([true, false])(
+    "selects silence guidance from the callable message tool (available=%s)",
+    (messageToolAvailable) => {
+      const prompt = buildAgentSystemPrompt({
+        workspaceDir: "/tmp/openclaw",
+        toolNames: messageToolAvailable ? ["message"] : [],
+        runtimeInfo: { channel: "discord" },
+      });
+
+      if (messageToolAvailable) {
+        expect(prompt).toContain('message(action="none")');
+        expect(prompt).not.toContain("NO_REPLY");
+      } else {
+        expect(prompt).toContain("Nothing to say: entire reply exactly NO_REPLY");
+        expect(prompt).not.toContain('message(action="none")');
+      }
+    },
+  );
+
+  it("keeps legacy silence guidance for an optional internal run without message", () => {
+    const prompt = buildAgentSystemPrompt({
+      workspaceDir: "/tmp/openclaw",
+      toolNames: [],
+      silentReplyPromptMode: "generic",
+      runtimeInfo: { channel: "webchat" },
+    });
+    expect(prompt).toContain("Nothing to say: entire reply exactly NO_REPLY");
+    expect(prompt).not.toContain('message(action="none")');
+  });
 });

@@ -20,6 +20,10 @@ import {
   prepareForwardedMessageCronJobNameResolver,
   projectForwardedMessages,
 } from "./chat-display-projection.history.js";
+import {
+  filterPendingOptionalHistory,
+  isIntentionalSilenceToolResult,
+} from "./chat-silence-projection.js";
 import { resolveCurrentUserProfileDisplay } from "./current-user-profile-display.js";
 import {
   createPreparedSessionHistorySubagentProjection,
@@ -61,7 +65,9 @@ export async function readSessionHistorySnapshotAsync(
       const resolveCronJobName = await prepareForwardedMessageCronJobNameResolver(
         snapshot.history.messages,
       );
-      const messages = projectForwardedMessages(snapshot.history.messages, resolveCronJobName);
+      const messages = filterPendingOptionalHistory(
+        projectForwardedMessages(snapshot.history.messages, resolveCronJobName),
+      );
       return { ...snapshot, history: { ...snapshot.history, items: messages, messages } };
     });
   }
@@ -79,7 +85,9 @@ export async function readSessionHistorySnapshotAsync(
     const resolveCronJobName = await prepareForwardedMessageCronJobNameResolver(
       snapshot.history.messages,
     );
-    const messages = projectForwardedMessages(snapshot.history.messages, resolveCronJobName);
+    const messages = filterPendingOptionalHistory(
+      projectForwardedMessages(snapshot.history.messages, resolveCronJobName),
+    );
     return { ...snapshot, history: { ...snapshot.history, items: messages, messages } };
   }
   const { readSessionHistoryPageInWorker } =
@@ -105,8 +113,8 @@ export async function readSessionHistorySnapshotAsync(
     snapshot.history.messages,
   );
   const project = createCurrentUserProfileMessageProjector(resolveCurrentUserProfileDisplay);
-  const messages = projectForwardedMessages(snapshot.history.messages, resolveCronJobName).map(
-    project,
+  const messages = filterPendingOptionalHistory(
+    projectForwardedMessages(snapshot.history.messages, resolveCronJobName).map(project),
   );
   return { ...snapshot, history: { ...snapshot.history, items: messages, messages } };
 }
@@ -252,6 +260,9 @@ export class SessionHistorySseState {
     resolveCronJobName: (jobId: string) => string | undefined,
   ): InlineSessionHistoryAppend | null {
     subagentCoordination?.assertCurrent?.();
+    if (isIntentionalSilenceToolResult(message)) {
+      return { shouldRefresh: true };
+    }
     const hadPendingTurnBoundary = this.turnBoundaryPending;
     const nextMessage = createSubagentCoordinationHistoryProjection(subagentCoordination)([
       message,

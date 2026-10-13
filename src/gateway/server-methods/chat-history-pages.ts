@@ -7,13 +7,20 @@ import type {
   ChatHistoryPageParams,
   ChatHistoryMessageParams,
 } from "../../config/sessions/session-history-types.js";
+import { isAgentRunPresentationPending } from "../../infra/agent-run-presentation.js";
 import { isIncognitoSessionKey } from "../../shared/incognito-session-key.js";
 import {
   prepareForwardedMessageCronJobNameResolver,
   projectForwardedMessages,
 } from "../chat-display-projection.history.js";
+import {
+  filterPendingOptionalHistory,
+  assistantResponseToolCount,
+} from "../chat-silence-projection.js";
 import { resolveCurrentUserProfileDisplay } from "../current-user-profile-display.js";
 import type { IncognitoSessionHistoryReader } from "../session-history-snapshot.js";
+import { readChatHistoryMessageId } from "../session-history-tail.js";
+import type { ReadSessionMessageByIdResult } from "../session-transcript-read.types.js";
 import * as sessionTranscriptReaders from "../session-transcript-readers.js";
 import { readChatHistoryPageKernel } from "./chat-history-page-kernel.js";
 import { projectChatHistoryWithReplies } from "./chat-history-reply-messages.js";
@@ -39,6 +46,25 @@ function chatHistoryScope(params: ChatHistoryPageParams) {
 }
 
 export async function readChatHistoryMessageById(
+  input: ChatHistoryMessageParams,
+  suppliedIncognito?: IncognitoSessionHistoryReader,
+): Promise<ReadSessionMessageByIdResult> {
+  const result = await readRawChatHistoryMessageById(input, suppliedIncognito);
+  const noneCalls = assistantResponseToolCount(result.message);
+  if (!result.found || !noneCalls) {
+    return result;
+  }
+  const page = await readChatHistoryPage(
+    { ...input, max: noneCalls * 2 + 3, encodeResponse: false },
+    undefined,
+    suppliedIncognito,
+  );
+  return page.messages.some((message) => readChatHistoryMessageId(message) === input.messageId)
+    ? result
+    : { found: false, oversized: false };
+}
+
+async function readRawChatHistoryMessageById(
   input: ChatHistoryMessageParams,
   suppliedIncognito?: IncognitoSessionHistoryReader,
 ) {
@@ -85,6 +111,32 @@ export async function readChatHistoryMessageById(
 }
 
 export async function readChatHistoryPage(
+  input: ChatHistoryPageParams,
+  signal?: AbortSignal,
+  suppliedIncognito?: IncognitoSessionHistoryReader,
+): Promise<ChatHistoryPage> {
+  const page = await readUnfilteredChatHistoryPage(input, signal, suppliedIncognito);
+  if (!isAgentRunPresentationPending()) {
+    return page;
+  }
+  const source: unknown = page.encodedResponse
+    ? JSON.parse(new TextDecoder().decode(page.encodedResponse.messages))
+    : page.messages;
+  if (!Array.isArray(source)) {
+    return page;
+  }
+  const messages = filterPendingOptionalHistory(source);
+  return messages === source
+    ? page
+    : {
+        ...page,
+        messages,
+        activity: page.encodedResponse?.activity ?? page.activity,
+        encodedResponse: undefined,
+      };
+}
+
+async function readUnfilteredChatHistoryPage(
   input: ChatHistoryPageParams,
   signal?: AbortSignal,
   suppliedIncognito?: IncognitoSessionHistoryReader,

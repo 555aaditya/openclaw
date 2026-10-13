@@ -149,6 +149,7 @@ export function createFixture(mocks: {
       activeSession,
       clientToolCallSlots: [],
       hasDeliveredSourceReply: vi.fn(() => true),
+      hasIntentionalSilence: () => false,
       hookRunner,
       setActiveSessionSystemPrompt: vi.fn(),
       settingsManager: {

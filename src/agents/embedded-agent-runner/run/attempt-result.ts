@@ -145,7 +145,12 @@ export function completeEmbeddedAttemptResult(
   const { attempt } = input;
   const { sessionRuntime, bootstrap, systemPrompt } = input.prepared;
   const {
-    agentSession: { clientToolCallSlots, hasDeliveredSourceReply, hookRunner },
+    agentSession: {
+      clientToolCallSlots,
+      hasDeliveredSourceReply,
+      hasIntentionalSilence,
+      hookRunner,
+    },
     trajectoryRecorder,
   } = sessionRuntime;
   const { subscription, deferredLifecycleOwner } = input.preparedStreamRuntime.stream;
@@ -176,6 +181,7 @@ export function completeEmbeddedAttemptResult(
     yieldAcknowledgment: input.lifecycle.readYieldState().yieldAcknowledgment,
     yieldMessageWaitRegistered: input.lifecycle.readYieldState().yieldMessageWaitRegistered,
     didDeliverSourceReplyViaMessageTool: hasDeliveredSourceReply(),
+    intentionalSilence: hasIntentionalSilence() || undefined,
   };
   const terminal = projectAgentRunAttemptTerminal(state.terminal);
   const { assistantTexts, setTerminalLifecycleMeta } = subscription;

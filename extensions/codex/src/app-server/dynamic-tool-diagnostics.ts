@@ -1,8 +1,10 @@
+import { embeddedAgentLog } from "openclaw/plugin-sdk/agent-harness-runtime";
 import {
   emitTrustedDiagnosticEvent,
   hasPendingInternalDiagnosticEvent,
   type DiagnosticEventPayload,
 } from "openclaw/plugin-sdk/diagnostic-runtime";
+import type { CodexDynamicToolSchemaQuarantine } from "./dynamic-tool-catalog.js";
 import type { CodexDynamicToolRuntimeResponse } from "./dynamic-tool-response-state.js";
 import type { CodexDynamicToolCallParams } from "./protocol.js";
 
@@ -91,4 +93,35 @@ export function createCodexDynamicToolDiagnostics(params: DynamicToolDiagnosticC
       }
     },
   };
+}
+
+export function reportQuarantinedCodexDynamicTools(params: {
+  tools: readonly CodexDynamicToolSchemaQuarantine[];
+  availableToolCount: number;
+  registeredToolCount: number;
+  hookContext?: Omit<DynamicToolDiagnosticContext, "call">;
+}): void {
+  if (params.tools.length === 0) {
+    return;
+  }
+  embeddedAgentLog.warn(
+    `codex app-server quarantined ${params.tools.length} unsupported dynamic tool ${params.tools.length === 1 ? "definition" : "definitions"}: ${params.tools.map((tool) => tool.tool).join(", ")}; retained ${params.availableToolCount} available and ${params.registeredToolCount} registered tools`,
+    {
+      tools: params.tools.map(({ tool, violations }) => ({ tool, violations })),
+      availableToolCount: params.availableToolCount,
+      registeredToolCount: params.registeredToolCount,
+    },
+  );
+  for (const tool of params.tools) {
+    emitTrustedDiagnosticEvent({
+      type: "tool.execution.blocked",
+      agentId: params.hookContext?.agentId,
+      runId: params.hookContext?.runId,
+      sessionId: params.hookContext?.sessionId,
+      sessionKey: params.hookContext?.sessionKey,
+      toolName: tool.tool,
+      deniedReason: "unsupported_tool_schema",
+      reason: tool.violations.join(", "),
+    });
+  }
 }

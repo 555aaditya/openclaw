@@ -399,9 +399,14 @@ describe("Codex terminal dynamic-tool release", () => {
     },
   );
 
-  it.each(["reply", "sibling"] as const)(
-    "completes a delivered final reply after a failed sibling when %s settles first",
-    async (first) => {
+  it.each([
+    { first: "reply", completion: "finalSourceReplyDelivered" },
+    { first: "sibling", completion: "finalSourceReplyDelivered" },
+    { first: "reply", completion: "intentionalSilence" },
+    { first: "sibling", completion: "intentionalSilence" },
+  ] as const)(
+    "completes $completion after a failed sibling when $first settles first",
+    async ({ first, completion }) => {
       const harness = createTerminalReleaseHarness();
       await harness.observeResponse(["reply", "sibling"]);
       harness.pendingOpenClawDynamicToolCompletionIds.add("reply");
@@ -410,7 +415,7 @@ describe("Codex terminal dynamic-tool release", () => {
         reply: dynamicToolResult("reply", {
           success: false,
           terminate: true,
-          finalSourceReplyDelivered: true,
+          [completion]: true,
         }),
         sibling: dynamicToolResult("sibling", { success: false }),
       };
@@ -463,6 +468,7 @@ function dynamicToolResult(
     | "toolAuthoredSourceReply"
     | "asyncStarted"
     | "finalSourceReplyDelivered"
+    | "intentionalSilence"
   >,
 ) {
   return {

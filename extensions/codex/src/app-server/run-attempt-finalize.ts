@@ -289,10 +289,10 @@ export async function finalizeCodexAttempt(
         toolBridge.telemetry.messagingToolSentTargets.some(
           (target) => target.sourceReplyFinal === true,
         );
-      if (completedSourceReply) {
+      if (completedSourceReply || toolBridge.telemetry.intentionalSilence) {
         // Harness classification only sees assistant/reasoning/plan projections.
         // A reply delivered entirely through the source message tool is visible
-        // output, so an empty/reasoning-only classification is stale at this point.
+        // output; host-authorized silence is also a successful terminal outcome.
         result.agentHarnessResultClassification = undefined;
       }
       const attemptSucceeded =

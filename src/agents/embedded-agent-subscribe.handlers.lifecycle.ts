@@ -103,6 +103,7 @@ export function handleAgentEnd(
     continueCurrentTurn?: boolean;
   };
   const lastAssistant = ctx.state.lastAssistant;
+  const intentionalSilence = ctx.params.hasIntentionalSilence?.() === true;
   const isError = isAssistantMessage(lastAssistant) && lastAssistant.stopReason === "error";
   let lifecycleErrorText: string | undefined;
   let errorObservation: ReturnType<typeof projectChatErrorDetail>;
@@ -124,8 +125,9 @@ export function handleAgentEnd(
       ? resolveFinalAssistantVisibleText(lastAssistant)
       : undefined;
   const hasAssistantVisibleText =
-    hasStreamedAssistantVisibleText ||
-    hasAssistantVisibleReply({ text: completedAssistantFallbackText ?? "" });
+    !intentionalSilence &&
+    (hasStreamedAssistantVisibleText ||
+      hasAssistantVisibleReply({ text: completedAssistantFallbackText ?? "" }));
   const hadLivenessPreservingSideEffect =
     ctx.state.hadDeterministicSideEffect === true ||
     hasCommittedMessagingToolDeliveryEvidence(ctx.state) ||
@@ -157,11 +159,13 @@ export function handleAgentEnd(
   });
   const hadBeforeFinalizeSideEffect =
     hadLivenessPreservingSideEffect || ctx.state.replayState.hadPotentialSideEffects;
-  const incompleteTerminalAssistant = isIncompleteTerminalAssistantTurn({
-    hasAssistantVisibleText,
-    hasTerminalOutput,
-    lastAssistant: isAssistantMessage(lastAssistant) ? lastAssistant : null,
-  });
+  const incompleteTerminalAssistant =
+    !intentionalSilence &&
+    isIncompleteTerminalAssistantTurn({
+      hasAssistantVisibleText,
+      hasTerminalOutput,
+      lastAssistant: isAssistantMessage(lastAssistant) ? lastAssistant : null,
+    });
   const replayInvalid =
     ctx.state.replayState.replayInvalid || incompleteTerminalAssistant ? true : undefined;
   // Tool-use terminal guard: when the last assistant message ended with a
@@ -170,7 +174,8 @@ export function handleAgentEnd(
   // end state for an interrupted tool chain. (#76477)
   const derivedWorkingTerminalState = isError
     ? "blocked"
-    : replayInvalid &&
+    : !intentionalSilence &&
+        replayInvalid &&
         !hadLivenessPreservingSideEffect &&
         (!hasAssistantVisibleText || incompleteTerminalAssistant)
       ? "abandoned"
@@ -321,6 +326,15 @@ export function handleAgentEnd(
   };
 
   const applyBeforeTerminalDecision = (decision: BeforeTerminalDeliveryDecision) => {
+    if (intentionalSilence) {
+      ctx.clearAssistantStream();
+      ctx.clearDeferredBlockReplies();
+      ctx.state.assistantTexts.length = 0;
+      ctx.state.answerSegments.length = 0;
+      ctx.state.keptAnswer = undefined;
+      finalizeAgentEnd();
+      return emitLifecycleTerminalOnce();
+    }
     if (decision?.suppressTerminalDelivery === true) {
       ctx.clearAssistantStream();
       ctx.clearDeferredBlockReplies();

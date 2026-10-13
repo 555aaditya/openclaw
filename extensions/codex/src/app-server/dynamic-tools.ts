@@ -40,7 +40,6 @@ import {
   type AcceptedSessionSpawn,
   type AgentHarnessToolExecutionSnapshot,
 } from "openclaw/plugin-sdk/agent-harness-tool-runtime";
-import { emitTrustedDiagnosticEvent } from "openclaw/plugin-sdk/diagnostic-runtime";
 import type { RemoteWorkspaceFileReader } from "openclaw/plugin-sdk/file-access-runtime";
 import {
   type JsonSchemaObject,
@@ -70,6 +69,7 @@ import {
   type CodexToolDescriptor,
 } from "./dynamic-tool-catalog.js";
 import { convertToolContents, enforceWholeSkillResult } from "./dynamic-tool-content.js";
+import { reportQuarantinedCodexDynamicTools } from "./dynamic-tool-diagnostics.js";
 import {
   type CodexDynamicToolHookContextBase,
   projectCodexExecutableDynamicToolSurface,
@@ -171,6 +171,7 @@ export type CodexDynamicToolBridge = {
     didDeliverSourceReplyViaMessageTool: boolean;
     sourceReplyDelivered?: true;
     finalSourceReplyDelivered?: true;
+    intentionalSilence?: true;
     acceptedSessionSpawns: AcceptedSessionSpawn[];
     quarantinedTools: CodexDynamicToolSchemaQuarantine[];
   };
@@ -258,7 +259,7 @@ export function createCodexDynamicToolBridge(params: {
     ...registeredFallbackProjection.quarantinedTools,
     ...registeredProjection.quarantinedTools,
   ]);
-  reportQuarantinedDynamicTools({
+  reportQuarantinedCodexDynamicTools({
     tools: quarantinedTools,
     availableToolCount: availableTools.length,
     registeredToolCount: registeredSpecTools.length,
@@ -381,6 +382,7 @@ export function createCodexDynamicToolBridge(params: {
       let executedArgsForPresentation = args;
       let rawIsErrorForPresentation = false;
       let finalSourceReplyDelivered = false;
+      let intentionalSilence = false;
       let telemetryRawResultForPresentation: unknown;
       let presentationIsError = false;
       return runAgentHarnessToolInvocation({
@@ -442,6 +444,9 @@ export function createCodexDynamicToolBridge(params: {
           const messageDelivery = readEmbeddedMessageDeliveryFact(
             asOptionalRecord(asOptionalRecord(rawResult)?.details)?.messageDelivery,
           );
+          intentionalSilence =
+            toolName === "message" && messageDelivery?.status === "silent" && !rawIsError;
+          telemetry.intentionalSilence ||= intentionalSilence || undefined;
           const messagingDelivered =
             isMessagingTool(toolName) &&
             (messageDelivery
@@ -635,7 +640,11 @@ export function createCodexDynamicToolBridge(params: {
             sourceReplyFinal: sourceReply.final,
             trustedLocalMediaToolNames: pluginLocalMediaTrustByToolName.get(toolName),
           });
-          if (deliveredSourceReply || sourceReply.toolConfirmed) {
+          if (intentionalSilence) {
+            response.terminate = true;
+            response.intentionalSilence = true;
+          }
+          if (!intentionalSilence && (deliveredSourceReply || sourceReply.toolConfirmed)) {
             telemetry.didDeliverSourceReplyViaMessageTool = true;
           }
           const asyncStarted =
@@ -707,7 +716,8 @@ export function createCodexDynamicToolBridge(params: {
             executionStarted: executionBoundary.executionStarted,
             replaySafe,
             sideEffectEvidence: (executionBoundary.didStartExecution && !replaySafe) || undefined,
-            terminate: finalSourceReplyDelivered || undefined,
+            terminate: finalSourceReplyDelivered || intentionalSilence || undefined,
+            intentionalSilence: intentionalSilence || undefined,
             finalSourceReplyDelivered: finalSourceReplyDelivered || undefined,
           };
         },
@@ -747,37 +757,6 @@ function notifyAgentToolResult(
   } catch (error) {
     const message = formatToolExecutionErrorMessage(error, "Unknown error");
     embeddedAgentLog.warn(`onAgentToolResult handler failed: tool=${toolName} error=${message}`);
-  }
-}
-
-function reportQuarantinedDynamicTools(params: {
-  tools: readonly CodexDynamicToolSchemaQuarantine[];
-  availableToolCount: number;
-  registeredToolCount: number;
-  hookContext?: CodexDynamicToolHookContext;
-}): void {
-  if (params.tools.length === 0) {
-    return;
-  }
-  embeddedAgentLog.warn(
-    `codex app-server quarantined ${params.tools.length} unsupported dynamic tool ${params.tools.length === 1 ? "definition" : "definitions"}: ${params.tools.map((tool) => tool.tool).join(", ")}; retained ${params.availableToolCount} available and ${params.registeredToolCount} registered tools`,
-    {
-      tools: params.tools.map(({ tool, violations }) => ({ tool, violations })),
-      availableToolCount: params.availableToolCount,
-      registeredToolCount: params.registeredToolCount,
-    },
-  );
-  for (const tool of params.tools) {
-    emitTrustedDiagnosticEvent({
-      type: "tool.execution.blocked",
-      agentId: params.hookContext?.agentId,
-      runId: params.hookContext?.runId,
-      sessionId: params.hookContext?.sessionId,
-      sessionKey: params.hookContext?.sessionKey,
-      toolName: tool.tool,
-      deniedReason: "unsupported_tool_schema",
-      reason: tool.violations.join(", "),
-    });
   }
 }
 

@@ -112,6 +112,7 @@ export async function createFixture(
       builtinToolNames: new Set(["read"]),
       clientToolCallSlots: [],
       hasDeliveredSourceReply: vi.fn(() => false),
+      hasIntentionalSilence: () => false,
       hookRunner: {},
       markSourceReplyDelivered: vi.fn(),
       replaySafeToolNames: new Set(["read"]),

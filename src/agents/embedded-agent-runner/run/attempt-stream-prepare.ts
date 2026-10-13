@@ -87,6 +87,7 @@ type PrepareEmbeddedAttemptStreamInput = {
     | "hookRunner"
     | "clientToolCallSlots"
     | "hasDeliveredSourceReply"
+    | "hasIntentionalSilence"
     | "markSourceReplyDelivered"
     | "builtinToolNames"
     | "coreBuiltinToolNames"
@@ -343,6 +344,7 @@ function prepareStream(
     reasoningMode: attempt.reasoningLevel ?? "off",
     thinkingLevel: attempt.thinkLevel,
     hasDeliveredMessageToolOnlySourceReply: agentSession.hasDeliveredSourceReply,
+    hasIntentionalSilence: agentSession.hasIntentionalSilence,
     onDeliveredMessageToolOnlySourceReply: agentSession.markSourceReplyDelivered,
     trajectoryRecorder: input.trajectoryRecorder,
     onBlockReply: input.onBlockReply,

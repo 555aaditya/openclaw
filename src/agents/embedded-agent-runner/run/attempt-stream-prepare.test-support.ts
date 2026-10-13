@@ -80,6 +80,7 @@ export function prepareCatalogExecutor(options?: {
       hookRunner: options?.hookRunner ?? null,
       clientToolCallSlots: [],
       hasDeliveredSourceReply: () => false,
+      hasIntentionalSilence: () => false,
       markSourceReplyDelivered: vi.fn(),
       builtinToolNames: new Set(),
       sourceReplyCapableToolNames: new Set(),

@@ -21,6 +21,8 @@ export type CodexDynamicToolRuntimeResponse = CodexDynamicToolCallResponse & {
   terminate?: boolean;
   /** Committed source delivery survives failed result presentation or siblings. */
   finalSourceReplyDelivered?: true;
+  /** Host-authorized optional silence survives result presentation and sibling work. */
+  intentionalSilence?: true;
   /** Candidate reply, committed only when the entire tool batch can complete. */
   toolAuthoredSourceReply?: ReturnType<typeof captureToolAuthoredSourceReply>;
   transcriptDetails?: unknown;

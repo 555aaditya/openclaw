@@ -114,7 +114,9 @@ Use scheduled automations for recurring checks, reminders, and background work. 
 
 **Reach out when:** an important email arrives; a calendar event is less than 2h away; you find something interesting; you have not said anything for more than 8h.
 
-**Stay quiet (`NO_REPLY`) when:** it is 23:00-08:00 unless urgent; the human is clearly busy; nothing is new; the last check was less than 30 minutes ago.
+**Stay quiet when:** it is 23:00-08:00 unless urgent; the human is clearly busy; nothing is new; the last check was less than 30 minutes ago.
+
+On optional non-heartbeat turns, use `message(action="none")` when available; only without the `message` tool, reply `NO_REPLY`.
 
 When reach-out and quiet conditions both apply, stay quiet. Only an urgent item overrides quiet hours.
 

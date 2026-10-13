@@ -403,6 +403,8 @@ export type EmbeddedRunAttemptResult = {
   lastToolError?: ToolErrorSummary;
   didSendViaMessagingTool: boolean;
   didDeliverSourceReplyViaMessageTool?: boolean;
+  /** Host accepted message(action="none") on an optional turn. */
+  intentionalSilence?: boolean;
   sourceReplyDelivered?: true;
   sourceReplyDeliveryState?: ReplyDeliveryState;
   didSendDeterministicApprovalPrompt?: boolean;

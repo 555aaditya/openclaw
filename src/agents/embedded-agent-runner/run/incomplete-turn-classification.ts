@@ -19,6 +19,7 @@ import type { EmbeddedRunAttemptResult } from "./types.js";
 export type IncompleteTurnAttempt = Pick<
   EmbeddedRunAttemptResult,
   | "assistantTexts"
+  | "intentionalSilence"
   | "clientToolCalls"
   | "currentAttemptAssistant"
   | "currentAttemptCompletedAssistant"
@@ -229,7 +230,10 @@ export function classifyAssistantTurn(params: {
   payloadCount: number;
   attempt: Pick<
     IncompleteTurnAttempt,
-    "assistantTexts" | "currentAttemptAssistant" | "currentAttemptCompletedAssistant"
+    | "assistantTexts"
+    | "intentionalSilence"
+    | "currentAttemptAssistant"
+    | "currentAttemptCompletedAssistant"
   >;
 }) {
   const assistant = resolveCurrentAttemptAssistant(params.attempt);
@@ -238,7 +242,7 @@ export function classifyAssistantTurn(params: {
       ? resolveRawAssistantAnswerText(assistant)
       : joinAssistantTexts(params.attempt.assistantTexts),
   );
-  const visibleText = output.text.trim();
+  const visibleText = params.attempt.intentionalSilence ? "" : output.text.trim();
   const reasoningOnly = Boolean(
     assistant && assessLastAssistantMessage(assistant) === "incomplete-text",
   );
@@ -247,14 +251,15 @@ export function classifyAssistantTurn(params: {
     visibleText.length === 0 &&
     assistant?.stopReason !== "error" &&
     assistant?.stopReason !== "aborted" &&
-    !isIncompleteTerminalAssistantTurn({
-      hasAssistantVisibleText: false,
-      lastAssistant: assistant,
-    });
+    (params.attempt.intentionalSilence === true ||
+      !isIncompleteTerminalAssistantTurn({
+        hasAssistantVisibleText: false,
+        lastAssistant: assistant,
+      }));
   return {
     assistant,
     visibleText,
-    silent: output.isSilent,
+    silent: params.attempt.intentionalSilence === true || output.isSilent,
     reasoningOnly,
     emptyResponse: nonVisibleEligibleForSilentReply && !reasoningOnly,
     nonVisibleEligibleForSilentReply,

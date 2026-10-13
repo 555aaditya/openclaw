@@ -107,9 +107,10 @@ export class CodexAppServerEventProjector extends CodexTurnProjection {
   closeProjection(): Promise<void> {
     this.closeCompactionProgress();
     this.projectionController.abort();
-    return this.settlement.project("transcript/checkpoint", () =>
-      this.transcriptCheckpoint.flush(true),
-    );
+    return this.settlement.project("transcript/checkpoint", async () => {
+      await this.asyncDeliveryProjection.settleOptionalTurn();
+      await this.transcriptCheckpoint.flush(true);
+    });
   }
 
   /** Resolves the shared model-order position for a native tool item. */

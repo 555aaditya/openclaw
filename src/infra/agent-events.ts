@@ -5,9 +5,15 @@ import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import { resolveGlobalSingleton } from "../shared/global-singleton.js";
 import { notifyListeners, registerListener } from "../shared/listeners.js";
 import {
+  captureAgentRunLifecycleGeneration,
   getAgentEventExecutionContext,
   recordAgentEventRouting,
 } from "./agent-event-execution-context.js";
+import {
+  captureAgentRunPresentation,
+  clearAgentRunPresentationBuffers,
+} from "./agent-run-presentation.js";
+export { captureAgentRunLifecycleGeneration } from "./agent-event-execution-context.js";
 import { hasInvalidLifecycleStartTimestamp } from "./agent-event-lifecycle.js";
 import type {
   AgentAssistantProjection,
@@ -203,19 +209,11 @@ export function assertAgentRunLifecycleGenerationCurrent(lifecycleGeneration: st
   throw createAgentRunStaleLifecycleError();
 }
 
-/** Captures immutable lifecycle ownership for one admitted execution. */
-export function captureAgentRunLifecycleGeneration(runId: string): string {
-  return (
-    getAgentEventExecutionContext().getStore()?.lifecycleGeneration ??
-    getAgentRunContext(runId)?.lifecycleGeneration ??
-    getAgentRunLifecycleGeneration()
-  );
-}
-
 /** Starts a new ownership generation before an in-process gateway restart. */
 export function rotateAgentEventLifecycleGeneration(): string {
   const state = getAgentEventState();
   const lifecycleGeneration = rotateAgentRunRegistryLifecycleGeneration();
+  clearAgentRunPresentationBuffers();
   // Rotation is the liveness choke point: after it returns, no prior-generation
   // owner is operationally reachable. Recovery and runtime consumers therefore
   // agree that only current-generation owners can drive or receive work.
@@ -431,6 +429,11 @@ function enrichAgentEvent(
   }
   const runState = routing?.eventState ?? state.runs.get(event.runId) ?? { seq: 0 };
   let data = event.data;
+  if (data.name === "message" && isRecord(data.args) && data.args.action === "none") {
+    // The optional explanation belongs to host bookkeeping, never public tool traffic.
+    const { reason: _reason, ...args } = data.args;
+    data = { ...data, args };
+  }
   if (routing && event.stream === "lifecycle") {
     if (routing.completionSource) {
       data = { ...data, completionSource: routing.completionSource };
@@ -569,6 +572,32 @@ function dispatchAgentEvent(
   if (!enriched) {
     return false;
   }
+  const publish = () => {
+    const capturedContext = getAgentRunContext(event.runId);
+    const generation = captureAgentRunLifecycleGeneration(event.runId);
+    return () => {
+      const released = enrichAgentEvent(
+        state,
+        { ...event, data: enriched.data, lifecycleGeneration: generation },
+        claimId,
+        expectedContext ?? capturedContext,
+        reservedPublication,
+        assistantSource,
+        assistantProjection,
+      );
+      if (released) {
+        publishAgentEvent(state, released);
+      }
+    };
+  };
+  if (captureAgentRunPresentation(event.runId, enriched, publish())) {
+    return true;
+  }
+  publishAgentEvent(state, enriched);
+  return true;
+}
+
+function publishAgentEvent(state: AgentEventState, enriched: AgentEventRuntimePayload): void {
   // New subscriptions start with the next event, even when a listener emits recursively.
   const runListeners = state.runListeners.get(enriched.runId);
   const registrations = [...state.listeners.values(), ...(runListeners?.values() ?? [])].toSorted(
@@ -602,7 +631,6 @@ function dispatchAgentEvent(
     }),
     enriched,
   );
-  return true;
 }
 
 /** Emits an event only when its run ownership is still current. */
@@ -736,6 +764,7 @@ export function onAgentAuditEvent(listener: (evt: AgentEventPayload) => void) {
 export function resetAgentEventsForTest(options?: { preserveListeners?: boolean }) {
   const state = getAgentEventState();
   state.runs.clear();
+  clearAgentRunPresentationBuffers();
   resetAgentRunRegistryForTest();
   if (!options?.preserveListeners) {
     state.listeners.clear();

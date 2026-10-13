@@ -34,6 +34,28 @@ export function createSandboxBridgeReadFile(params: {
   );
 }
 
+export function createSandboxWorkspaceMediaAccess(options?: {
+  sandboxRoot?: string;
+  sandboxFsBridge?: SandboxFsBridge;
+  sandboxWorkspaceMediaReadAllowed?: boolean;
+  sandboxContainerWorkdir?: string;
+  sandboxReadOnlyResourceMounts?: readonly { hostPath: string; containerPath: string }[];
+}) {
+  const root = options?.sandboxRoot?.trim();
+  if (!root || !options?.sandboxFsBridge || options.sandboxWorkspaceMediaReadAllowed !== true) {
+    return undefined;
+  }
+  return {
+    localRoots: [
+      root,
+      ...(options.sandboxContainerWorkdir ? [options.sandboxContainerWorkdir] : []),
+      ...(options.sandboxReadOnlyResourceMounts?.map((mount) => mount.containerPath) ?? []),
+    ],
+    readFile: createSandboxBridgeReadFile({ sandbox: { root, bridge: options.sandboxFsBridge } }),
+    workspaceDir: root,
+  };
+}
+
 export async function resolveSandboxedBridgeMediaPath(params: {
   sandbox: SandboxedBridgeMediaPathConfig;
   mediaPath: string;

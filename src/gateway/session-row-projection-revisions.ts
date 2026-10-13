@@ -1,4 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
+import { captureAgentSessionPresentation } from "../infra/agent-run-presentation.js";
 import { isIncognitoSessionKey } from "../routing/session-key.js";
 import type { SessionRowChange } from "../sessions/session-row-changes.js";
 import { notifyListeners } from "../shared/listeners.js";
@@ -84,10 +85,26 @@ export function createSessionRowProjectionRevisions(
       cfg: Parameters<typeof publishTranscriptFields>[2],
       context: Parameters<typeof publishTranscriptFields>[3],
     ) {
-      const current = rows.get(identity(row));
-      // Preview publication changes this live row without replacing selection inputs.
-      if (ready(current) && publishTranscriptFields(current, fields, cfg, context)) {
-        publishFacts(current);
+      const publish = () => {
+        const current = rows.get(identity(row));
+        // Preview publication changes this live row without replacing selection inputs.
+        if (
+          current?.generation === row.generation &&
+          ready(current) &&
+          publishTranscriptFields(current, fields, cfg, context)
+        ) {
+          publishFacts(current);
+        }
+      };
+      if (
+        !row.entry ||
+        !captureAgentSessionPresentation(
+          { sessionKey: row.key, sessionId: row.entry.sessionId },
+          `session-row:${identity(row)}`,
+          publish,
+        )
+      ) {
+        publish();
       }
     },
     dispose() {

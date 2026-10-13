@@ -157,6 +157,7 @@ function createResultFixture(params?: {
         agentSession: {
           clientToolCallSlots: params?.clientToolCallSlots ?? [],
           hasDeliveredSourceReply: () => false,
+          hasIntentionalSilence: () => false,
           hookRunner,
         },
         state: { promptCache: undefined },

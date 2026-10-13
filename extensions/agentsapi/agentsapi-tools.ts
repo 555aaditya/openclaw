@@ -60,7 +60,10 @@ type ToolDelivery = AgentHarnessMessagingDeliveryFacts &
   AgentHarnessToolMediaFacts &
   Pick<
     AgentHarnessAttemptResult,
-    "didDeliverSourceReplyViaMessageTool" | "sourceReplyDelivered" | "toolTrustedLocalMedia"
+    | "didDeliverSourceReplyViaMessageTool"
+    | "sourceReplyDelivered"
+    | "toolTrustedLocalMedia"
+    | "intentionalSilence"
   >;
 
 export type AgentsApiToolExecutionResult = AgentsApiFunctionResult & {
@@ -462,7 +465,16 @@ export async function buildAgentsApiToolSurface(
                 result: raw,
                 isError: rawIsError,
               });
+              if (
+                call.name === "message" &&
+                !rawIsError &&
+                asOptionalRecord(asOptionalRecord(raw.details)?.messageDelivery)?.status ===
+                  "silent"
+              ) {
+                delivery.intentionalSilence = true;
+              }
               terminate =
+                delivery.intentionalSilence === true ||
                 sourceReplyDelivered ||
                 (raw.terminate === true && !(sourceRouteDelivered && executedArgs.final === false));
               if (sourceReplyDelivered) {

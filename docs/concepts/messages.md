@@ -195,13 +195,17 @@ still apply, and the current-prompt capability expires with its admitted turn.
 
 ## Silent replies
 
-The silent token `NO_REPLY` (case-insensitive, so `no_reply` also matches) is reserved for sessions connected to external message channels and is never delivered as user-visible text. Subagents, the Control UI, and other internal sessions must return a result or continue unfinished work; a silent token cannot complete their task. When a turn also has pending tool media, such as generated TTS audio, OpenClaw strips the silent text but still delivers the media attachment.
+On an optional turn, an agent with the `message` tool can call `message(action="none")` to finish silently. An optional `reason` of up to 200 characters stays internal. OpenClaw ends the run without another model call and discards assistant text from the same response. The host decides whether a turn is optional; on a required turn the action returns an error and the agent must answer the user.
+
+Optional turns buffer assistant previews until their outcome is known, including channel drafts, edited previews, and WebChat updates. A silent completion discards that buffer. Required turns keep normal streaming.
+
+The legacy silent token `NO_REPLY` (case-insensitive, so `no_reply` also matches) is still parsed and stripped for persisted or custom prompts and models that emit it. Surfaces without the `message` tool keep token guidance; heartbeat runs use `heartbeat_respond` when available. When a legacy token accompanies pending tool media, such as generated TTS audio, OpenClaw strips the text but still delivers the attachment. Remove the parser only after no-message surfaces have a structured completion path and persisted/custom prompt compatibility is retired.
 
 Silence policy resolves by conversation type:
 
-- Direct conversations never receive `NO_REPLY` prompt guidance. An undelivered required answer still needs recovery; the token cannot waive that obligation.
+- Direct user conversations require an answer. Neither `message(action="none")` nor a legacy token can waive that obligation.
 - Accepted group/channel requests require a reply by default, including unmentioned messages admitted with `requireMention: false`. Mention and access gates still decide which messages reach the agent. To allow unaddressed requests to finish silently, explicitly set `silentReply.group: "allow"` at one of the configuration scopes below; mentions and authorized commands still require a response.
-- [Ambient room events](/channels/ambient-room-events) can remain silent. In `message_tool` visible-reply mode, an optional turn stays silent by not calling `message(action=send)`. Private subagent completions record the parent's reviewed outcome internally; they do not need a silent token to keep that result private.
+- [Ambient room events](/channels/ambient-room-events) can remain silent using `message(action="none")`. Private subagent completions record the parent's reviewed outcome internally; they do not need a silent token to keep that result private.
 
 Defaults live under `agents.defaults.silentReply.group`; `surfaces.<id>.silentReply.group` can override group policy per surface. Doctor removes the retired `internal` setting during config migration.
 

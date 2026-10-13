@@ -105,6 +105,7 @@ import { loadManifestModelCatalog, overlayConfiguredModelCatalog } from "../mode
 import { resolveModelContextWindowProfile } from "../model-context-window.js";
 import { recordAdmittedModelRoutingDecision } from "../model-routing-decision.js";
 import { applyPluginTextReplacements } from "../plugin-text-transforms.js";
+import { resolveReplyExpectation } from "../reply-completion.js";
 import { resolveRuntimeChannelPromptContext } from "../runtime-capabilities.js";
 import { buildSystemPromptReport } from "../system-prompt-report.js";
 import { appendModelIdentitySystemPrompt, buildModelIdentityPromptLine } from "../system-prompt.js";
@@ -1339,7 +1340,6 @@ async function prepareCliRunContextWithinReadFence(
         sessionId: params.sessionId,
         sessionKey: params.sessionKey,
       });
-    const hasManagedClaudeLiveSession = Boolean(managedClaudeLiveSessionGeneration);
     const claudeCliTranscriptOrphanedToolUse =
       hasClaudeCliCandidate &&
       !claudeCliTranscriptMissing &&
@@ -1348,7 +1348,7 @@ async function prepareCliRunContextWithinReadFence(
         workspaceDir: cwd,
       }));
     const claudeCliInvalidatedReason: "missing-transcript" | "orphaned-tool-use" | undefined =
-      claudeCliTranscriptMissing && !hasManagedClaudeLiveSession
+      claudeCliTranscriptMissing && !managedClaudeLiveSessionGeneration
         ? "missing-transcript"
         : claudeCliTranscriptOrphanedToolUse
           ? "orphaned-tool-use"
@@ -1439,7 +1439,7 @@ async function prepareCliRunContextWithinReadFence(
             sessionKey: params.sessionKey,
             sessionId: params.sessionId,
           });
-    const transformedSystemPrompt = !skipsTurnPreparation
+    let systemPrompt = !skipsTurnPreparation
       ? (backendResolved.transformSystemPrompt?.({
           config: params.config,
           workspaceDir,
@@ -1455,7 +1455,6 @@ async function prepareCliRunContextWithinReadFence(
               : [],
         }) ?? builtSystemPrompt)
       : builtSystemPrompt;
-    let systemPrompt = transformedSystemPrompt;
     const allowRawTranscriptReseed =
       backendResolved.config.reseedFromRawTranscriptWhenUncompacted === true;
     const historyParams = (params = await admitCliRunParams(params, workspaceResolution.agentId));
@@ -1486,6 +1485,7 @@ async function prepareCliRunContextWithinReadFence(
         : buildHarnessVisibleReplyGuidance({
             sourceReplyDeliveryMode: params.sourceReplyDeliveryMode,
             messageToolAvailable,
+            terminalReplyExpectation: resolveReplyExpectation(params),
             requireExplicitMessageTarget,
           });
     const finalizedTranscriptPrompt =
@@ -1564,23 +1564,23 @@ async function prepareCliRunContextWithinReadFence(
           maxHistoryChars: autoReseedHistoryChars,
         })
       : undefined;
-    const systemPromptWithReplacements = skipsTurnPreparation
-      ? systemPrompt
-      : applyPluginTextReplacements(systemPrompt, backendResolved.textTransforms?.input);
     // Ensure the cache boundary before appending the model identity so the identity lands in the
     // dynamic suffix, not the cached prefix, for marker-free hook overrides — otherwise an idle
     // turn's prefix (O + identity) diverges from an active media turn's prefix (O) and breaks
     // prompt caching. Skip empty prompts and turns with no identity line, which need no boundary.
-    systemPrompt = skipsTurnPreparation
-      ? systemPromptWithReplacements
-      : appendModelIdentitySystemPrompt({
-          systemPrompt:
-            buildModelIdentityPromptLine(modelDisplay) &&
-            systemPromptWithReplacements.trim().length > 0
-              ? ensureSystemPromptCacheBoundary(systemPromptWithReplacements)
-              : systemPromptWithReplacements,
-          model: modelDisplay,
-        });
+    if (!skipsTurnPreparation) {
+      systemPrompt = applyPluginTextReplacements(
+        systemPrompt,
+        backendResolved.textTransforms?.input,
+      );
+      systemPrompt = appendModelIdentitySystemPrompt({
+        systemPrompt:
+          buildModelIdentityPromptLine(modelDisplay) && systemPrompt.trim().length > 0
+            ? ensureSystemPromptCacheBoundary(systemPrompt)
+            : systemPrompt,
+        model: modelDisplay,
+      });
+    }
     const systemPromptReport = buildSystemPromptReport({
       source: "run",
       generatedAt: Date.now(),

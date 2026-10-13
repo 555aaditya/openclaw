@@ -516,12 +516,18 @@ export function buildMessageToolSchemaFromActions(
     }
   }
   return Type.Object({
-    action: stringEnum(actions, {
+    action: stringEnum([...new Set([...actions, "none"])], {
       description:
-        'Select one action. For action="send", provide message or another send payload; fields for other actions do not count as send content.',
+        'Select one action. For action="send", provide message or another send payload. Use "none" only on optional turns to finish silently.',
     }),
     ...properties,
     ...schemaOptions.extraProperties,
+    reason: Type.Optional(
+      Type.String({
+        description:
+          'For action="none", an internal reason (at most 200 characters), never delivered; otherwise the action reason.',
+      }),
+    ),
   });
 }
 

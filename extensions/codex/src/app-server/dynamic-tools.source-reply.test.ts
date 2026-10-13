@@ -103,6 +103,41 @@ afterEach(() => {
 });
 
 describe("Codex dynamic-tool source replies", () => {
+  it.each(["unchanged", "redacted", "error"] as const)(
+    "settles host-authorized silence without a delivered reply when presentation is %s",
+    async (presentation) => {
+      if (presentation !== "unchanged") {
+        installResultMiddleware(() => ({
+          result: textToolResult("Processed.", presentation === "error" ? { error: "failed" } : {}),
+        }));
+      }
+      const bridge = createBridgeWithToolResult(
+        "message",
+        textToolResult("Silent completion recorded.", {
+          messageDelivery: { status: "silent", partialDelivery: false, createdThreadIds: [] },
+        }),
+      );
+      const result = await handleMessageToolCall(bridge, { action: "none" });
+      expect(result).toMatchObject({ terminate: true, intentionalSilence: true });
+      expect(bridge.telemetry.intentionalSilence).toBe(true);
+      expect(bridge.telemetry.sourceReplyDelivered).toBeUndefined();
+      expect(bridge.telemetry.didDeliverSourceReplyViaMessageTool).toBe(false);
+      expect(bridge.telemetry.didSendViaMessagingTool).toBe(false);
+      expect(toCodexDynamicToolProtocolResponse(result)).not.toHaveProperty("intentionalSilence");
+    },
+  );
+
+  it("continues after a required-turn silence rejection", async () => {
+    const bridge = createBridgeWithToolResult(
+      "message",
+      textToolResult("a reply is required on this turn; answer the user", { error: "required" }),
+    );
+    const result = await handleMessageToolCall(bridge, { action: "none" });
+    expect(result.success).toBe(false);
+    expect(result.terminate).toBeUndefined();
+    expect(bridge.telemetry.intentionalSilence).toBeUndefined();
+  });
+
   it.each(["automatic", "message_tool_only", undefined] as const)(
     "preserves confirmed source delivery when middleware redacts details in %s mode",
     async (sourceReplyDeliveryMode) => {

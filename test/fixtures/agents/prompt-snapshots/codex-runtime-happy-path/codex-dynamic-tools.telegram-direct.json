@@ -11,15 +11,15 @@
     "type": "function"
   },
   {
-    "description": "Send/manage channel messages. Supports actions: send.",
+    "description": "Send/manage channel messages. Supports actions: none, send.",
     "inputSchema": {
       "properties": {
         "accountId": {
           "type": "string"
         },
         "action": {
-          "description": "Select one action. For action=\"send\", provide message or another send payload; fields for other actions do not count as send content.",
-          "enum": ["send"],
+          "description": "Select one action. For action=\"send\", provide message or another send payload. Use \"none\" only on optional turns to finish silently.",
+          "enum": ["send", "none"],
           "type": "string"
         },
         "asDocument": {
@@ -111,6 +111,10 @@
           "description": "Telegram reply quote text.",
           "type": "string"
         },
+        "reason": {
+          "description": "For action=\"none\", an internal reason (at most 200 characters), never delivered; otherwise the action reason.",
+          "type": "string"
+        },
         "replyTo": {
           "type": "string"
         },
@@ -200,7 +204,7 @@
           "type": "string"
         },
         "completionTarget": {
-          "description": "parent: return results in a private requester turn; no automatic channel delivery. After sessions_yield, answer under the conversation's normal reply rules (NO_REPLY stays silent). Native hidden run only; unavailable with ACP, collect, visible, thread, session mode, or expectsCompletionMessage=false.",
+          "description": "parent: return results in a private requester turn; no automatic channel delivery. After sessions_yield, answer under the conversation's normal reply rules. Native hidden run only; unavailable with ACP, collect, visible, thread, session mode, or expectsCompletionMessage=false.",
           "enum": ["parent"],
           "type": "string"
         },

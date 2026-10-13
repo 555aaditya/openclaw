@@ -31,7 +31,7 @@ import { withChannelReadAuthority } from "../../shared/channel-read-authority.js
 import { resolveSessionAgentId } from "../agent-scope.js";
 import { runWithAgentToolSourceExecutionScope } from "../agent-tool-source-execution-guard.js";
 import * as embeddedMessageDelivery from "../embedded-agent-message-delivery.js";
-import { createSandboxBridgeReadFile } from "../sandbox-media-paths.js";
+import { createSandboxWorkspaceMediaAccess } from "../sandbox-media-paths.js";
 import { captureAgentWorkspaceReadiness } from "../workspace-readiness.js";
 import { type AnyAgentTool, jsonResult, readToolStringParam } from "./common.js";
 import { captureGatewayToolCallerAssertion } from "./gateway-caller-context.js";
@@ -65,6 +65,7 @@ import {
 import { MessageToolSchema } from "./message-tool-schema.js";
 import {
   addSourceReplyFinalControl,
+  completeMessageToolSilence,
   enforceSourceReplyOnlyMessageAction,
   enforceSourceReplyOnlyTextDirectives,
   enforceTrustedTurnExplicitAccount,
@@ -196,26 +197,12 @@ function* createMessageToolSteps(
     ? SOURCE_REPLY_ONLY_MESSAGE_SCHEMA
     : (discovered?.schema ?? MessageToolSchema);
   const description = options?.sourceReplyOnly
-    ? "Send a message to the current source conversation. Supports actions: send."
+    ? "Send a message to the current source conversation. Supports actions: send, none."
     : buildMessageToolDescription(actions) +
       (supportsPromptReactions && (!actions || actions.includes("react"))
         ? " When the current WebChat prompt permits reactions, react with emoji (and optional remove:true) as the agent. Omit channel, target, and messageId. This stays local; use an explicit external channel and messageId for external reactions."
         : "");
-  const sandboxRoot = options?.sandboxRoot?.trim();
-  const sandboxWorkspaceMediaAccess =
-    sandboxRoot && options?.sandboxFsBridge && options.sandboxWorkspaceMediaReadAllowed === true
-      ? {
-          localRoots: [
-            sandboxRoot,
-            ...(options?.sandboxContainerWorkdir ? [options.sandboxContainerWorkdir] : []),
-            ...(options?.sandboxReadOnlyResourceMounts?.map((mount) => mount.containerPath) ?? []),
-          ],
-          readFile: createSandboxBridgeReadFile({
-            sandbox: { root: sandboxRoot, bridge: options.sandboxFsBridge },
-          }),
-          workspaceDir: sandboxRoot,
-        }
-      : undefined;
+  const sandboxWorkspaceMediaAccess = createSandboxWorkspaceMediaAccess(options);
 
   return {
     label: "Message",
@@ -231,7 +218,11 @@ function* createMessageToolSteps(
       const params = { ...(args as Record<string, unknown>) };
       const action = readToolStringParam(params, "action", {
         required: true,
-      }) as ChannelMessageActionName;
+      }) as ChannelMessageActionName | "none";
+      if (action === "none") {
+        turnAuthority.assertCurrent();
+        return completeMessageToolSilence(params, options?.terminalReplyExpectation);
+      }
       const {
         authorization: trustedTurnContext,
         currentPromptReaction,

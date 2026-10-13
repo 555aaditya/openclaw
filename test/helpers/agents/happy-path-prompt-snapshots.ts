@@ -14,7 +14,6 @@ import {
 } from "../../../src/auto-reply/reply/inbound-meta.js";
 import { buildReplyPromptEnvelope } from "../../../src/auto-reply/reply/prompt-prelude.js";
 import type { TemplateContext } from "../../../src/auto-reply/templating.js";
-import { SILENT_REPLY_TOKEN } from "../../../src/auto-reply/tokens.js";
 import { normalizeChatType } from "../../../src/channels/chat-type.js";
 import type { OpenClawConfig } from "../../../src/config/types.openclaw.js";
 import type {
@@ -615,7 +614,7 @@ async function createScenarios(codexApi: CodexPromptSnapshotApi): Promise<Prompt
       title: "Telegram Direct Codex Message Tool Turn",
       notes: [
         "Default happy path: OpenAI model through the Codex harness/runtime, Telegram direct conversation, and message-tool-only visible replies.",
-        "A quiet turn is represented by not calling `message(action=send)`; the normal final assistant text is private to OpenClaw/Codex.",
+        'An optional quiet turn is represented by `message(action="none")`; the host discards accompanying assistant text.',
       ],
       trigger: "user",
       ctx: telegramDirectCtx,
@@ -651,8 +650,6 @@ async function createScenarios(codexApi: CodexPromptSnapshotApi): Promise<Prompt
         chatContext: buildGroupChatContext({
           sessionCtx: discordGroupCtx,
           sourceReplyDeliveryMode: "message_tool_only",
-          silentReplyPolicy: "allow",
-          silentToken: SILENT_REPLY_TOKEN,
         }),
         intro: buildGroupIntro({
           defaultActivation: "mention",

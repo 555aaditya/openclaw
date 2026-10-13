@@ -135,6 +135,7 @@ export async function buildTurnStartParams(
         buildHarnessVisibleReplyGuidance({
           sourceReplyDeliveryMode: params.sourceReplyDeliveryMode,
           messageToolAvailable: options.messageToolAvailable === true,
+          terminalReplyExpectation: params.terminalReplyExpectation,
           requireExplicitMessageTarget: options.requireExplicitMessageTarget,
         }),
       ].join("\n"),

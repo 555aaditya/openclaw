@@ -331,7 +331,7 @@ describe("message tool discovery cache stability", () => {
     expect(tools[0].description).toBe(tools[1].description);
     expect(JSON.stringify(tools[0].parameters)).toBe(JSON.stringify(tools[1].parameters));
     for (const tool of tools) {
-      expect(tool.parameters.properties.action).toMatchObject({ enum: expected });
+      expect(tool.parameters.properties.action).toMatchObject({ enum: [...expected, "none"] });
       if (allow) {
         expect(tool.description).not.toContain("poll-vote");
       }

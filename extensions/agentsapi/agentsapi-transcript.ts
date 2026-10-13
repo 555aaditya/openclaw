@@ -232,13 +232,16 @@ export async function appendAgentsApiTranscriptMessage<TMessage extends AgentMes
     await assertTranscriptCurrent(assertCurrent);
     if (facts.existingIdempotencyKeys.has(idempotencyKey)) {
       const stored = asOptionalRecord(facts.messagesByIdempotencyKey.get(idempotencyKey));
+      if (stored?.display === false) {
+        attributedMessage = { ...attributedMessage, display: false };
+      }
       const storedRunId = asOptionalRecord(stored?.["__openclaw"])?.runId;
       runId = typeof storedRunId === "string" ? storedRunId : undefined;
       const metadata = asOptionalRecord(asOptionalRecord(message)?.["__openclaw"]);
       if (metadata) {
         const { runId: _currentRunId, ...retained } = metadata;
         attributedMessage = {
-          ...message,
+          ...attributedMessage,
           __openclaw: { ...retained, ...(runId ? { runId } : {}) },
         };
       }

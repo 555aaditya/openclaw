@@ -125,6 +125,7 @@ function createFixture(overrides: FixtureOverrides = {}) {
           activeSession,
           clientToolCallSlots: [],
           hasDeliveredSourceReply: vi.fn(() => false),
+          hasIntentionalSilence: () => false,
           hookRunner: {},
           setActiveSessionSystemPrompt: vi.fn(),
           settingsManager: { getCompactionReserveTokens: vi.fn(() => 1_000) },

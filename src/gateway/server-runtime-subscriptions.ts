@@ -37,7 +37,10 @@ import {
   onSessionIdentityMutation,
   onSessionLifecycleEvent,
 } from "../sessions/session-lifecycle-events.js";
-import { onInternalSessionTranscriptUpdate } from "../sessions/transcript-events.js";
+import {
+  onInternalSessionTranscriptUpdate,
+  type InternalSessionTranscriptUpdate,
+} from "../sessions/transcript-events.js";
 import { runOutsideAsyncWorkScope } from "../shared/async-work-scope.js";
 import { createDeferredCore } from "../shared/deferred.js";
 import {
@@ -71,6 +74,7 @@ import {
   resolveSessionEventAgentScope,
 } from "./session-request-agent.js";
 import type { SessionRowProjection } from "./session-row-projection.js";
+import { deferSessionTranscriptPresentation } from "./session-transcript-presentation.js";
 
 /** Register gateway runtime event subscriptions and return unsubscribe handles. */
 export function startGatewayEventSubscriptions(params: GatewayEventSubscriptionParams) {
@@ -628,8 +632,7 @@ export function startGatewayEventSubscriptions(params: GatewayEventSubscriptionP
     params.broadcast("heartbeat", evt, { dropIfSlow: true });
   });
 
-  const transcriptUnsub = onInternalSessionTranscriptUpdate((evt) => {
-    sessionActivitySummaries.handleTranscript(evt);
+  const publishTranscriptUpdate = (evt: InternalSessionTranscriptUpdate) => {
     // Retire synchronously before later cumulative updates, but retain the wire
     // projection until this committed row has crossed its async publication path.
     const agentHandler = agentEventHandlerLoader.peek();
@@ -656,6 +659,12 @@ export function startGatewayEventSubscriptions(params: GatewayEventSubscriptionP
       publication.resolve();
       agentEventDispatches.delete(dispatch);
     });
+  };
+  const transcriptUnsub = onInternalSessionTranscriptUpdate((evt) => {
+    sessionActivitySummaries.handleTranscript(evt);
+    if (!deferSessionTranscriptPresentation(evt, () => publishTranscriptUpdate(evt))) {
+      publishTranscriptUpdate(evt);
+    }
   });
 
   // Committed resets/rotations can change access after the originating run is gone.

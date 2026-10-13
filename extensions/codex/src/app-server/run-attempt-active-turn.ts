@@ -172,6 +172,7 @@ export function activateCodexAttemptTurn(
     {
       agentHookContext: hookContext,
       hasDeliveredFinalSourceReply: () => toolBridge.telemetry.finalSourceReplyDelivered === true,
+      hasIntentionalSilence: () => toolBridge.telemetry.intentionalSilence === true,
       initialContextTokens: connection.mutable.startupContextTokens,
       nativePostToolUseRelayEnabled:
         resourceState.nativeHookRelay?.allowedEvents.includes("post_tool_use") === true &&
@@ -192,7 +193,10 @@ export function activateCodexAttemptTurn(
                   if (prepared.kind !== "payload") {
                     throw new Error("Reply media preparation returned the wrong result kind");
                   }
-                  if (!toolBridge.telemetry.finalSourceReplyDelivered) {
+                  if (
+                    !toolBridge.telemetry.finalSourceReplyDelivered &&
+                    !toolBridge.telemetry.intentionalSilence
+                  ) {
                     await projectionParams.onBlockReply?.(prepared.payload, options);
                   }
                 },

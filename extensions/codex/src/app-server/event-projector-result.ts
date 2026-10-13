@@ -43,6 +43,7 @@ export type CodexAppServerToolTelemetry = Partial<
     didDeliverSourceReplyViaMessageTool?: boolean;
     sourceReplyDelivered?: true;
     finalSourceReplyDelivered?: true;
+    intentionalSilence?: true;
     confirmedMediaDeliveries?: Readonly<
       AgentHarnessToolResultTelemetry["confirmedMediaDeliveries"]
     >;
@@ -166,14 +167,20 @@ export abstract class CodexTurnProjection {
     this.assistantProjection = new CodexAssistantProjection(
       this.settlement.params,
       (event) => {
-        if (!options.hasDeliveredFinalSourceReply?.()) {
+        if (!options.hasDeliveredFinalSourceReply?.() && !options.hasIntentionalSilence?.()) {
           this.emitAgentEvent(event);
         }
       },
       (text) => this.toolProgressProjection.matchesEcho(text),
       this.transcriptCheckpoint.nextTimestamp,
-      this.transcriptCheckpoint.enqueueCommentary,
-      options.hasDeliveredFinalSourceReply,
+      (itemId, entry) =>
+        this.transcriptCheckpoint.enqueueCommentary(itemId, {
+          ...entry,
+          // Optional commentary cannot become visible history before silence resolves.
+          ready: () => params.terminalReplyExpectation !== "optional" && entry.ready?.() !== false,
+          read: () => (options.hasIntentionalSilence?.() ? undefined : entry.read()),
+        }),
+      () => options.hasDeliveredFinalSourceReply?.() || options.hasIntentionalSilence?.() || false,
     );
     this.reasoningProjection = new CodexReasoningProjection(
       this.settlement.params,
@@ -234,13 +241,17 @@ export abstract class CodexTurnProjection {
     // Close this turn's audit scope without inventing process completion. The
     // existing unknown-outcome diagnostic remains distinct from execution failure.
     this.nativeToolLifecycleProjector.finalizeActive(undefined, retainedCommands);
-    const assistantTexts = toolTelemetry.finalSourceReplyDelivered
+    const intentionalSilence = toolTelemetry.intentionalSilence === true;
+    const assistantTexts =
+      toolTelemetry.finalSourceReplyDelivered || intentionalSilence
+        ? []
+        : this.assistantProjection.collectAssistantTexts();
+    const asyncMessages = intentionalSilence ? [] : this.assistantProjection.collectAsyncMessages();
+    const commentaryMessages = intentionalSilence
       ? []
-      : this.assistantProjection.collectAssistantTexts();
-    const asyncMessages = this.assistantProjection.collectAsyncMessages();
-    const commentaryMessages = this.assistantProjection.collectCommentaryMessages();
-    const reasoningText = this.reasoningProjection.reasoningText();
-    const planText = this.reasoningProjection.planText();
+      : this.assistantProjection.collectCommentaryMessages();
+    const reasoningText = intentionalSilence ? "" : this.reasoningProjection.reasoningText();
+    const planText = intentionalSilence ? "" : this.reasoningProjection.planText();
     // Timeout recovery may still adopt a completed answer. Mask context freshness
     // until then, retaining all observed response counts for billing.
     const usage = this.usageProjection.usage;
@@ -285,11 +296,12 @@ export abstract class CodexTurnProjection {
             assistantMessageOptions,
           )
         : undefined;
-    let currentAttemptAssistant = toolTelemetry.finalSourceReplyDelivered
-      ? undefined
-      : providerRefusal
-        ? lastAssistant
-        : this.assistantProjection.createCurrentAttemptAssistantMessage(assistantMessageOptions);
+    let currentAttemptAssistant =
+      toolTelemetry.finalSourceReplyDelivered || intentionalSilence
+        ? undefined
+        : providerRefusal
+          ? lastAssistant
+          : this.assistantProjection.createCurrentAttemptAssistantMessage(assistantMessageOptions);
     // Tool-authored completion belongs to this native turn, not another input's
     // projected answer. Preserve the same identity even for a tool-only turn.
     if (
@@ -332,15 +344,16 @@ export abstract class CodexTurnProjection {
       : (initialPromptError ??
         storedMissingToolResultError ??
         (turnFailed ? (completedTurn?.error?.message ?? "codex app-server turn failed") : null));
-    const agentHarnessResultClassification = providerRefusal
-      ? undefined
-      : classifyAgentHarnessTerminalOutcome({
-          assistantTexts,
-          reasoningText,
-          planText,
-          promptError,
-          turnCompleted: Boolean(completedTurn),
-        });
+    const agentHarnessResultClassification =
+      providerRefusal || intentionalSilence
+        ? undefined
+        : classifyAgentHarnessTerminalOutcome({
+            assistantTexts,
+            reasoningText,
+            planText,
+            promptError,
+            turnCompleted: Boolean(completedTurn),
+          });
     const toolMetas = this.toolProgressProjection.toolMetas;
     const hadPotentialSideEffects =
       toolTelemetry.didSendViaMessagingTool ||
@@ -380,6 +393,7 @@ export abstract class CodexTurnProjection {
       didDeliverSourceReplyViaMessageTool:
         toolTelemetry.didDeliverSourceReplyViaMessageTool === true,
       sourceReplyDelivered: toolTelemetry.sourceReplyDelivered,
+      intentionalSilence: intentionalSilence || undefined,
       messagingToolSentTexts: toolTelemetry.messagingToolSentTexts,
       ...mediaDelivery,
       messagingToolSourceReplyPayloads: toolTelemetry.messagingToolSourceReplyPayloads ?? [],

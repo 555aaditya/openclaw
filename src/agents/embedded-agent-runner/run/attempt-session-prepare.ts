@@ -27,6 +27,7 @@ import { sanitizeCompactionReplayMessages } from "../../compaction-replay.js";
 import { resolveUserTimezone } from "../../date-time.js";
 import { bootstrapHarnessContextEngine } from "../../harness/context-engine-lifecycle.js";
 import { relocateCurrentRuntimeContextCarrierToTail } from "../../internal-runtime-context.js";
+import { resolveReplyExpectation } from "../../reply-completion.js";
 import type { AgentMessage } from "../../runtime/index.js";
 import { guardSessionManager } from "../../session-tool-result-guard-wrapper.js";
 import {
@@ -240,6 +241,7 @@ export async function prepareEmbeddedAttemptAgentSession(input: {
   });
   setActiveSessionSystemPrompt(input.initialSystemPrompt);
   let didDeliverSourceReplyViaMessageTool = false;
+  let intentionalSilence = false;
   const markSourceReplyDelivered = () => {
     didDeliverSourceReplyViaMessageTool = true;
   };
@@ -247,6 +249,10 @@ export async function prepareEmbeddedAttemptAgentSession(input: {
     agent: activeSession.agent,
     sourceReplyDeliveryMode: attempt.sourceReplyDeliveryMode,
     onDeliveredSourceReply: markSourceReplyDelivered,
+    terminalReplyExpectation: resolveReplyExpectation(attempt),
+    onIntentionalSilence: () => {
+      intentionalSilence = true;
+    },
     config: attempt.config,
     currentProvider: attempt.messageChannel ?? attempt.messageProvider,
     currentAccountId: attempt.agentAccountId,
@@ -266,6 +272,7 @@ export async function prepareEmbeddedAttemptAgentSession(input: {
     allCustomTools,
     ...clientToolRuntime,
     hasDeliveredSourceReply: () => didDeliverSourceReplyViaMessageTool,
+    hasIntentionalSilence: () => intentionalSilence,
     hookRunner,
     markSourceReplyDelivered,
     setActiveSessionSystemPrompt,

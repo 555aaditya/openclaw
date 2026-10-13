@@ -17,6 +17,7 @@ import {
   withIncognitoSessionBinding,
 } from "../config/sessions/session-incognito-binding.js";
 import { listSessionMembers } from "../config/sessions/session-sharing-store.js";
+import { isAgentSessionPresentationPending } from "../infra/agent-run-presentation.js";
 import { isIncognitoSessionKey } from "../routing/session-key.js";
 import { readOpenClawAgentDatabaseIdentity } from "../state/openclaw-agent-db-identity.js";
 import { withOpenClawAgentDatabaseReadOnly } from "../state/openclaw-agent-db-readonly.js";
@@ -350,6 +351,9 @@ export function readResidentSessionRow(
       inputs.displayName,
     );
     inputs.lastMessagePreview = prepared?.titleFields?.lastMessagePreview ?? row.lastMessagePreview;
+  }
+  if (isAgentSessionPresentationPending({ sessionKey: row.key, sessionId: row.entry.sessionId })) {
+    inputs.lastMessagePreview = row.lastMessagePreview;
   }
   inputs.subagentRunInputs = params.subagentInputs;
   const materialized = materializeSessionRow(inputs);

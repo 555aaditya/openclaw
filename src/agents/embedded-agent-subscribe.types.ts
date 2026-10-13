@@ -61,6 +61,8 @@ export type SubscribeEmbeddedAgentSessionParams = Pick<
   thinkingLevel?: ThinkLevel;
   /** Attempt-owned delivery proof for message-tool-only source replies. */
   hasDeliveredMessageToolOnlySourceReply?: () => boolean;
+  /** Host-accepted optional silence; never source delivery evidence. */
+  hasIntentionalSilence?: () => boolean;
   /** Reports source delivery observed through bridged tool lifecycle events. */
   onDeliveredMessageToolOnlySourceReply?: () => void;
   /** Assistant fragment usage before queued delivery; fragments may be intermediate. */

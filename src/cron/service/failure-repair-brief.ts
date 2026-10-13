@@ -1,7 +1,6 @@
 /** The repair request the scheduler posts into a failing automation's owner conversation. */
 import type { FailoverReason } from "../../agents/failover/signal.js";
 import { wrapUntrustedPromptDataBlock } from "../../agents/sanitize-for-prompt.js";
-import { SILENT_REPLY_TOKEN } from "../../auto-reply/tokens.js";
 import type { CronJob } from "../types.js";
 
 const REPAIR_PAYLOAD_MAX_CHARS = 4_000;
@@ -52,11 +51,11 @@ export function buildCronFailureRepairBrief(params: {
     ...(params.terminal
       ? [
           `1. If its work is still needed, do that work now or add a new automation; the failed one stays disabled, so do not update it. To resume this conversation later, use automations add with an at schedule, payload {kind:"agentTurn",message:"instructions for your next turn"}, and sessionTarget ${JSON.stringify(`session:${job.owner?.sessionKey?.trim()}`)}.`,
-          `2. If the work is no longer needed, reply exactly ${SILENT_REPLY_TOKEN}.`,
+          "2. If the work is no longer needed, finish silently.",
           "3. Otherwise, ask the user for what you need to continue.",
         ]
       : [
-          `1. Transient (provider outage, network, rate limit, or temporary upstream error): change nothing and reply exactly ${SILENT_REPLY_TOKEN}.`,
+          "1. Transient (provider outage, network, rate limit, or temporary upstream error): change nothing and finish silently.",
           "2. Fixable in the workspace (for example the helper script or instructions file the payload follows): change it, then reply with one line saying what you changed. Do not claim the automation is fixed; a later run must verify it.",
           "3. Otherwise: ask the user for exactly what you need to fix it.",
           "If the automation keeps failing, the user gets the normal failure alert.",

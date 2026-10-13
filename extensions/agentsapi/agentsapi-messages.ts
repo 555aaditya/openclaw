@@ -62,6 +62,7 @@ export class AgentsApiMessageProjection {
   private classification: AgentHarnessAttemptResult["agentHarnessResultClassification"];
   private timestamp = Date.now();
   private presentationEnabled = true;
+  private intentionalSilence = false;
   private transcriptOrderingGapReported = false;
   private readonly recordedGatewayCallIds = new Set<string>();
 
@@ -79,6 +80,11 @@ export class AgentsApiMessageProjection {
       () => this.nextTimestamp(),
       () => this.presentationEnabled,
     );
+  }
+
+  markIntentionalSilence(): void {
+    this.intentionalSilence = true;
+    this.presentationEnabled = false;
   }
 
   get toolMetas(): AgentHarnessAttemptResult["toolMetas"] {
@@ -678,7 +684,9 @@ export class AgentsApiMessageProjection {
   ): Promise<TMessage> {
     return appendAgentsApiTranscriptMessage(
       this.params,
-      message,
+      this.intentionalSilence && message.role === "assistant"
+        ? { ...message, display: false }
+        : message,
       this.assertCurrent,
       assistantItemIds,
     );

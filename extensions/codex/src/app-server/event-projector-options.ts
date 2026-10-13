@@ -13,6 +13,7 @@ export type CodexAppServerEventProjectorOptions = {
   nativePostToolUseRelayEnabled?: boolean;
   asyncUserMessageAllowed?: boolean;
   hasDeliveredFinalSourceReply?: () => boolean;
+  hasIntentionalSilence?: () => boolean;
   onAsyncDelivery?: (delivery: {
     itemId: string;
     message: AssistantMessage;

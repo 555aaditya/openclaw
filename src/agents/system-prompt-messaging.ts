@@ -1,7 +1,9 @@
 /** Messaging and child-completion guidance shared by full and minimal prompts. */
 import type { SourceReplyDeliveryMode } from "../auto-reply/get-reply-options.types.js";
-import { buildMessageToolTargetGuidance } from "../auto-reply/source-reply-delivery-mode.js";
-import { SILENT_REPLY_TOKEN } from "../auto-reply/tokens.js";
+import {
+  buildMessageToolTargetGuidance,
+  MESSAGE_TOOL_SILENCE_GUIDANCE,
+} from "../auto-reply/source-reply-delivery-mode.js";
 import type { ChatType } from "../channels/chat-type.js";
 import type { AgentPromptSurfaceKind } from "../plugins/types.js";
 import { isDeliverableMessageChannel, normalizeMessageChannel } from "../utils/message-channel.js";
@@ -13,11 +15,14 @@ export function resolveSilentReplyPromptMode(params: {
   runtimeInfo?: SystemPromptRuntimeInfo;
   silentReplyPromptMode?: SilentReplyPromptMode;
 }): SilentReplyPromptMode {
-  return params.sourceReplyDeliveryMode === "message_tool_only" ||
+  return (
+    params.silentReplyPromptMode ??
+    (params.sourceReplyDeliveryMode === "message_tool_only" ||
     params.promptSurface === "subagent" ||
     !isDeliverableMessageChannel(normalizeMessageChannel(params.runtimeInfo?.channel) ?? "")
-    ? "none"
-    : (params.silentReplyPromptMode ?? "generic");
+      ? "none"
+      : "generic")
+  );
 }
 
 export function buildMessagingSection(params: {
@@ -31,7 +36,6 @@ export function buildMessagingSection(params: {
   messageToolHints?: string[];
   sourceReplyDeliveryMode?: SourceReplyDeliveryMode;
   requireExplicitMessageTarget?: boolean;
-  silentReplyPromptMode?: SilentReplyPromptMode;
   delegationSectionRenders: boolean;
 }) {
   const messageToolOnly = params.sourceReplyDeliveryMode === "message_tool_only";
@@ -63,6 +67,7 @@ export function buildMessagingSection(params: {
       ...(messageToolOnly
         ? [visibleReplyInstruction, ...(messageToolAvailable ? [messageToolTargetInstruction] : [])]
         : []),
+      ...(messageToolAvailable ? [MESSAGE_TOOL_SILENCE_GUIDANCE] : []),
       ...routingGuidance,
       "",
     ];
@@ -73,10 +78,8 @@ export function buildMessagingSection(params: {
   const hasSessionsSpawn = params.availableTools.has("sessions_spawn");
   const hasSubagents = params.availableTools.has("subagents");
   const hasSessionsYield = params.availableTools.has("sessions_yield");
-  const suppressSilentTokenGuidance = messageToolOnly || params.silentReplyPromptMode === "none";
-  const completionEventGuidance = suppressSilentTokenGuidance
-    ? "- Completion event requesting update: rewrite in normal voice; send. Never forward raw metadata or silent placeholder."
-    : `- Completion event requesting update: rewrite in normal voice; send. Never forward raw metadata or default to ${SILENT_REPLY_TOKEN}.`;
+  const completionEventGuidance =
+    "- Completion event requesting update: rewrite in normal voice; send. Never forward raw metadata or silent placeholder.";
   const subagentOrchestrationGuidance = params.delegationSectionRenders
     ? ""
     : hasSessionsSpawn
@@ -93,6 +96,7 @@ export function buildMessagingSection(params: {
   return [
     "## Messaging",
     visibleReplyInstruction,
+    ...(messageToolAvailable ? [MESSAGE_TOOL_SILENCE_GUIDANCE] : []),
     ...(params.availableTools.has("sessions_send")
       ? ["- Cross-session: `sessions_send(sessionKey, message)`."]
       : []),

@@ -62,6 +62,7 @@ export function createSubscribedCodeModeHarness(params: {
       hookRunner: undefined as never,
       clientToolCallSlots: [],
       hasDeliveredSourceReply: () => false,
+      hasIntentionalSilence: () => false,
       markSourceReplyDelivered: () => undefined,
       builtinToolNames: new Set(),
       sourceReplyCapableToolNames: new Set(),

@@ -56,6 +56,7 @@ export function buildCopilotPromptGuidance(params: {
     buildHarnessVisibleReplyGuidance({
       sourceReplyDeliveryMode: params.attempt.sourceReplyDeliveryMode,
       messageToolAvailable: callableTools.has("message"),
+      terminalReplyExpectation: params.attempt.terminalReplyExpectation,
       requireExplicitMessageTarget: params.requireExplicitMessageTarget,
     }),
     buildCredentialSafetyPrompt({

@@ -71,7 +71,7 @@ export class CodexAssistantProjection {
       itemId: string,
       entry: CodexTranscriptCheckpointEntry,
     ) => void,
-    private readonly hasDeliveredFinalSourceReply?: () => boolean,
+    private readonly hasTerminalMessageOutcome?: () => boolean,
   ) {}
 
   handleNotification(method: string, params: JsonObject): void {
@@ -83,7 +83,7 @@ export class CodexAssistantProjection {
   async handleAssistantDelta(params: JsonObject): Promise<void> {
     const itemId = readString(params, "itemId") ?? "assistant";
     const delta = readString(params, "delta") ?? "";
-    if (!delta || this.hasDeliveredFinalSourceReply?.()) {
+    if (!delta || this.hasTerminalMessageOutcome?.()) {
       return;
     }
     if (itemId !== this.pendingRawTerminalAssistantEchoItemId) {
@@ -99,7 +99,7 @@ export class CodexAssistantProjection {
       this.assistantStarted = true;
       await this.params.onAssistantMessageStart?.();
     }
-    if (this.hasDeliveredFinalSourceReply?.()) {
+    if (this.hasTerminalMessageOutcome?.()) {
       return;
     }
     this.rememberAssistantItem(itemId);
@@ -145,7 +145,7 @@ export class CodexAssistantProjection {
     item: CodexThreadItem | undefined,
     itemId: string | undefined,
   ): Promise<void> {
-    if (item?.type === "agentMessage" && this.hasDeliveredFinalSourceReply?.()) {
+    if (item?.type === "agentMessage" && this.hasTerminalMessageOutcome?.()) {
       return;
     }
     this.noteNativeWorkBarrier(item);
@@ -188,7 +188,7 @@ export class CodexAssistantProjection {
     item: CodexThreadItem | undefined,
     notification?: { itemId: string | undefined; activeItemIds: ReadonlySet<string> },
   ): { itemId: string; message: AssistantMessage; text: string } | undefined {
-    if (item?.type === "agentMessage" && this.hasDeliveredFinalSourceReply?.()) {
+    if (item?.type === "agentMessage" && this.hasTerminalMessageOutcome?.()) {
       return undefined;
     }
     this.adoptSteeringPrefixForCompletion(item);
@@ -258,7 +258,7 @@ export class CodexAssistantProjection {
     if (!isPendingTerminalAssistantEcho) {
       this.markTerminalAssistantCandidateSupersededBy(rawItemId);
     }
-    if (role !== "assistant" || this.hasDeliveredFinalSourceReply?.()) {
+    if (role !== "assistant" || this.hasTerminalMessageOutcome?.()) {
       return;
     }
     if (phase === "commentary" && this.pendingRawCommentaryEchoes > 0) {
@@ -410,7 +410,7 @@ export class CodexAssistantProjection {
   }
 
   finalizeAnswerCandidate(turn: { status?: string; items?: CodexThreadItem[] }): void {
-    if (turn.status !== "completed" || this.hasDeliveredFinalSourceReply?.()) {
+    if (turn.status !== "completed" || this.hasTerminalMessageOutcome?.()) {
       this.supersedeVisibleAnswerCandidate();
       return;
     }

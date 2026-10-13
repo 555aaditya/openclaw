@@ -463,6 +463,9 @@ export async function runAgentsApiAttempt(
         assertCurrent();
         const result = await surface.execute(call);
         assertCurrent();
+        if (surface.delivery.intentionalSilence) {
+          projection!.markIntentionalSilence();
+        }
         projection!.recordGatewayTranscriptReceipt(call.turn_id, call.call_id);
         return result;
       },
@@ -648,13 +651,18 @@ export async function runAgentsApiAttempt(
     messagesSnapshot: (
       await SessionManager.openAsync(target, params.workspaceDir)
     ).buildSessionContext().messages,
-    assistantTexts:
-      reply?.lastAssistant?.content
-        .filter((part) => part.type === "text")
-        .map((part) => part.text) ?? [],
-    lastAssistant: reply?.lastAssistant,
-    currentAttemptAssistant: reply?.lastAssistant,
-    currentAttemptCompletedAssistant: reply?.lastAssistant,
+    assistantTexts: toolSurface?.delivery.intentionalSilence
+      ? []
+      : (reply?.lastAssistant?.content
+          .filter((part) => part.type === "text")
+          .map((part) => part.text) ?? []),
+    lastAssistant: toolSurface?.delivery.intentionalSilence ? undefined : reply?.lastAssistant,
+    currentAttemptAssistant: toolSurface?.delivery.intentionalSilence
+      ? undefined
+      : reply?.lastAssistant,
+    currentAttemptCompletedAssistant: toolSurface?.delivery.intentionalSilence
+      ? undefined
+      : reply?.lastAssistant,
     assistantTranscriptOwned: Boolean(reply?.lastAssistant),
     assistantTranscriptIdempotencyKey:
       reply?.lastAssistant && terminalTurnId

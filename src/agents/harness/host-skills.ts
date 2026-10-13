@@ -9,11 +9,30 @@ import { assertDatabasePathIdentity } from "../../infra/sqlite-worker-identity.j
 import { prepareSkillLibrarySelection } from "../../skills/library/selection.js";
 import type { SkillSnapshot } from "../../skills/types.js";
 import { captureOpenClawStateReadWorkerContext } from "../../state/openclaw-state-worker-context.js";
+import type { OpenClawCodingToolsOptions } from "../agent-tools.options.js";
 import { resolveSandboxSkillRuntimeInputs } from "../embedded-agent-runner/sandbox-skills.js";
 import { MAX_SKILL_INSTRUCTION_BYTES, type InstalledSkill } from "../installed-skill-catalog.js";
 import { prepareInstalledSkillCatalog } from "../installed-skill-runtime.js";
 import type { SandboxContext } from "../sandbox/types.js";
 import { cloneHostSnapshot } from "./host-snapshot.js";
+
+/** Sandboxes use their materialized snapshot paths, never host library pins. */
+export function bindHostSkillResourceSnapshot(params: {
+  snapshot: SkillSnapshot | undefined;
+  sandboxed: boolean;
+}) {
+  return (
+    options:
+      | Pick<OpenClawCodingToolsOptions, "sandbox" | "includeCoreTools" | "toolConstructionPlan">
+      | undefined,
+  ): SkillSnapshot | undefined =>
+    !params.sandboxed &&
+    !options?.sandbox?.enabled &&
+    options?.includeCoreTools !== false &&
+    options?.toolConstructionPlan?.includeBaseCodingTools !== false
+      ? params.snapshot
+      : undefined;
+}
 
 /** Keep pinned resources and their physical source through awaited tool construction. */
 export async function prepareHostSkillLibraryResources(

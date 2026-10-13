@@ -24,6 +24,7 @@ import type { EmbeddedRunAttemptResult } from "../embedded-agent-runner/run/type
 import { copyCoreTtsAttemptResultProvenance } from "../tools/tts-tool-result-provenance.js";
 import { subscribeAgentCommentaryDiagnostics } from "./commentary-diagnostics.js";
 import { recordAgentHarnessPreflightOwner } from "./errors.js";
+import { createOptionalTurnPresentation } from "./optional-presentation.js";
 import { applyAgentHarnessResultClassification } from "./result-classification.js";
 import { EmptySettledTurnFinalizationError } from "./settled-turn-finalization-outcome.js";
 import { assertSettledTurnFinalizationResult } from "./settled-turn-finalization-result.js";
@@ -317,12 +318,13 @@ export async function runAgentHarnessLifecycleAttempt(
 ): Promise<EmbeddedRunAttemptResult> {
   let result: EmbeddedRunAttemptResult;
   const diagnostics = createAgentHarnessLifecycleDiagnostics(harness, params);
+  const presentation = createOptionalTurnPresentation(params);
   try {
     assertAgentHarnessContextEngineSupport(harness, params);
     diagnostics.startAgentRun();
     const runAndClassify = async () => {
       diagnostics.setPhase("send");
-      const rawResult = await execute(params);
+      const rawResult = await execute(presentation?.params ?? params);
       diagnostics.setPhase("resolve");
       // Classification happens inside the diagnostic phase so failures identify
       // whether they came from send or result resolution.
@@ -335,7 +337,9 @@ export async function runAgentHarnessLifecycleAttempt(
     };
     result = await diagnostics.run(runAndClassify);
     result = withFallbackDiagnosticTrace(result, diagnostics.trace);
+    await presentation?.settle(result.intentionalSilence === true || result.terminal.kind !== "ok");
   } catch (error) {
+    await presentation?.settle(true);
     diagnostics.fail(error);
     throw error;
   } finally {

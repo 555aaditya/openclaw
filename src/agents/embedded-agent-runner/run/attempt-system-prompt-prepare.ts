@@ -25,6 +25,7 @@ import {
   prepareProjectMemoryBootstrap,
 } from "../../project-memory-bootstrap.js";
 import { resolveAgentPromptSurfaceForSessionKey } from "../../prompt-surface.js";
+import { resolveReplyExpectation } from "../../reply-completion.js";
 import { resolveAgentRuntimePrompt } from "../../runtime-prompt.js";
 import type { buildConfiguredAgentSystemPrompt } from "../../system-prompt-config.js";
 import { buildSystemPromptReport } from "../../system-prompt-report.js";
@@ -330,7 +331,9 @@ export async function prepareEmbeddedAttemptSystemPrompt(params: {
       promptMode: effectivePromptMode,
       sourceReplyDeliveryMode: attempt.sourceReplyDeliveryMode,
       requireExplicitMessageTarget: params.requireExplicitMessageTarget,
-      silentReplyPromptMode: attempt.silentReplyPromptMode,
+      silentReplyPromptMode:
+        attempt.silentReplyPromptMode ??
+        (resolveReplyExpectation(attempt) === "optional" ? "generic" : "none"),
       proactiveSubagentOrchestration: params.setup.proactiveSubagentOrchestration,
       acpEnabled: isAcpRuntimeSpawnAvailable({
         config: attempt.config,

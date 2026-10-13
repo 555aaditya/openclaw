@@ -568,6 +568,7 @@ async function completeEmbeddedRun(
   // A subagent's blank success is delivery evidence; nonblank classified silence stays silent.
   // The lifecycle owner needs that distinction to close only intentional non-delivery.
   const keepEmptyReplySilent =
+    input.attempt.intentionalSilence === true ||
     input.runParams.lane !== AGENT_LANE_SUBAGENT ||
     Boolean(input.prepared.finalAssistantRawText?.trim());
   // Label only partial assistant prose: terminal tool output already completes

@@ -7,9 +7,11 @@ import type { resolveCommandSecretRefsViaGateway } from "../../cli/command-secre
 import type { getScopedChannelsCommandSecretTargets } from "../../cli/command-secret-targets.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import type { runMessageAction } from "../../infra/outbound/message-action-runner.js";
+import type { ReplyExpectation } from "../reply-completion.js";
 import type { SandboxFsBridge } from "../sandbox/fs-bridge.js";
 
 export type MessageToolOptions = {
+  terminalReplyExpectation?: ReplyExpectation;
   agentAccountId?: string;
   agentSessionKey?: string;
   runSessionKey?: string;

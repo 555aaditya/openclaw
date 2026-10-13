@@ -16,6 +16,7 @@ import {
   createCurrentUserProfileMessageProjector,
   isAssistantTtsSupplementMessage,
 } from "../chat-display-projection.js";
+import { isIntentionalSilenceToolResult } from "../chat-silence-projection.js";
 import { resolveCurrentUserProfileDisplay } from "../current-user-profile-display.js";
 import {
   createPreparedSessionHistorySubagentProjection,
@@ -178,6 +179,10 @@ async function projectChatHistoryDelta(
     );
     if (!entryMessage) {
       continue;
+    }
+    if (isIntentionalSilenceToolResult(entryMessage)) {
+      // A receipt can hide an earlier assistant row outside this append-only cursor.
+      return { kind: "reset" };
     }
     if (
       isOpenClawDeliveryMirrorAssistantMessage(entryMessage) &&

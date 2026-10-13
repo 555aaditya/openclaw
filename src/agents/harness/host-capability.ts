@@ -35,6 +35,7 @@ import { log } from "../embedded-agent-runner/logger.js";
 import type { EmbeddedRunAttemptParams } from "../embedded-agent-runner/run/types.js";
 import { runBestEffortCallback } from "../embedded-agent-subscribe.callback.js";
 import { createCronScheduledToolProjection } from "../exec-tool-target-pinning.js";
+import { resolveReplyExpectation } from "../reply-completion.js";
 import { throwAgentRunRestartAbortReason } from "../run-termination.js";
 import { resolveToolLoopDetectionConfig } from "../tool-loop-detection-config.js";
 import { isToolExecutionAllowed } from "../tool-policy-shared.js";
@@ -65,7 +66,11 @@ import {
   resolveAgentQuestionAnswerAuthority,
   withAgentQuestionAnswerAuthority,
 } from "./host-private-capabilities.js";
-import { bindHostSkillCatalog, prepareHostSkillLibraryResources } from "./host-skills.js";
+import {
+  bindHostSkillCatalog,
+  bindHostSkillResourceSnapshot,
+  prepareHostSkillLibraryResources,
+} from "./host-skills.js";
 import { cloneHostSnapshot as cloneSnapshot } from "./host-snapshot.js";
 import {
   bindHarnessHostSourceAuthority,
@@ -390,21 +395,14 @@ export function createAgentHarnessHostCapabilities(params: {
       abortSignal: bindAbortSignal(attempt.abortSignal),
       workspaceReadiness: workspaceReadiness.readiness,
     });
-  const bindToolSurface: AgentHarnessHostCapabilities["bindToolSurface"] = (tools, options) =>
-    bindTools(tools, options, () => {});
   const bindModelExecution: AgentHarnessHostCapabilities["bindModelExecution"] =
     nativeModelPolicySupported
       ? (model) => bindHarnessModelExecution(attempt.admittedRunContext, model, assertActive)
       : undefined;
-  // Sandboxes use their materialized snapshot paths, never host library pins.
-  const skillResourceSnapshot = (options: HostToolSurfaceOptions) =>
-    !requiredWorkspace &&
-    !hostSandboxEnabled &&
-    !options?.sandbox?.enabled &&
-    options?.includeCoreTools !== false &&
-    options?.toolConstructionPlan?.includeBaseCodingTools !== false
-      ? skillsSnapshot
-      : undefined;
+  const skillResourceSnapshot = bindHostSkillResourceSnapshot({
+    snapshot: skillsSnapshot,
+    sandboxed: Boolean(requiredWorkspace) || hostSandboxEnabled,
+  });
   const toolConstructionInputs = (
     options: HostToolSurfaceOptions,
     libraryEntries: readonly SkillEntry[],
@@ -415,6 +413,7 @@ export function createAgentHarnessHostCapabilities(params: {
     return {
       options: {
         ...effectiveOptions,
+        terminalReplyExpectation: resolveReplyExpectation(attempt),
         // Availability belongs to this prepared host, not mutable plugin inputs.
         githubPublicationAvailable,
         runtimePluginToolGrant,
@@ -499,7 +498,7 @@ export function createAgentHarnessHostCapabilities(params: {
       assertActive();
       return buildActiveNodeContextText(requesterProfileId);
     },
-    bindToolSurface,
+    bindToolSurface: (tools, options) => bindTools(tools, options, () => {}),
     /** @deprecated Await createToolSurfaceAsync for worker-backed tool construction. */
     createToolSurface: (options, bindingOptions) => {
       warnPluginSdkDeprecation({

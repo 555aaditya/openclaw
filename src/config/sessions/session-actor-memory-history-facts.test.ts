@@ -84,6 +84,28 @@ async function fixture(events: unknown[], entry: Partial<InternalSessionEntry> =
 }
 
 describe("memory actor history facts", () => {
+  it("omits a silent assistant response from title and preview facts", async () => {
+    const { storage } = await fixture([
+      message("user", null, "user", "Group chatter"),
+      message("quiet", "user", "assistant", [
+        { type: "text", text: "I am staying silent." },
+        { type: "toolCall", id: "quiet-tool", name: "message", arguments: { action: "none" } },
+      ]),
+      message("receipt", "quiet", "toolResult", [], {
+        toolName: "message",
+        toolCallId: "quiet-tool",
+        isError: false,
+        details: {
+          messageDelivery: { status: "silent", partialDelivery: false, createdThreadIds: [] },
+        },
+      }),
+    ]);
+    expect(await storage.read({ type: "session.history.title", input: {} }, authority)).toEqual({
+      kind: "session-title-fields",
+      fields: { firstUserMessage: "Group chatter", lastMessagePreview: "Group chatter" },
+    });
+  });
+
   it("publishes branch, title, preview and match facts after an in-process write", async () => {
     const { storage, append } = await fixture([
       message("user", null, "user", "Question"),

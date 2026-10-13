@@ -69,3 +69,50 @@ it("keeps post-final assistant text out of streaming, async delivery, and final 
   expect(JSON.stringify(result.messagesSnapshot)).not.toContain("Extra");
   expect(JSON.stringify(result.messagesSnapshot)).toContain("Before final.");
 });
+
+it("discards same-response assistant and reasoning text after intentional silence", async () => {
+  let intentionalSilence = false;
+  const projector = await createProjector(
+    { ...(await createParams()), terminalReplyExpectation: "optional" },
+    { hasIntentionalSilence: () => intentionalSilence },
+  );
+  const items = [
+    { type: "agentMessage", id: "preamble", phase: "commentary", text: "I will stay quiet." },
+    { type: "agentMessage", id: "answer", phase: "final_answer", text: "No reply needed." },
+    { type: "agentMessage", id: "async", delivery: "async", text: "A quiet update." },
+    { type: "reasoning", id: "thought", summary: ["Considering a reply."], content: [] },
+  ];
+  for (const item of items) {
+    await projector.handleNotification(forCurrentTurn("item/completed", { item }));
+  }
+  intentionalSilence = true;
+  await projector.handleNotification(turnCompleted(items));
+  const result = projector.buildResult({ ...buildEmptyToolTelemetry(), intentionalSilence: true });
+  expect(result.intentionalSilence).toBe(true);
+  expect(result.sourceReplyDelivered).toBeUndefined();
+  expect(result.agentHarnessResultClassification).toBeUndefined();
+  expect(result.assistantTexts).toEqual([]);
+  expect(result.lastAssistant).toBeUndefined();
+  expect(result.currentAttemptAssistant).toBeUndefined();
+  expect(JSON.stringify(result.messagesSnapshot)).not.toMatch(/quiet|reply|Considering/);
+});
+
+it.each([false, true])(
+  "resolves optional async persistence only after silence=%s settles",
+  async (silent) => {
+    let intentionalSilence = false;
+    const onAsyncDelivery = vi.fn(() => "settled" as const);
+    const projector = await createProjector(
+      { ...(await createParams()), terminalReplyExpectation: "optional" },
+      { hasIntentionalSilence: () => intentionalSilence, onAsyncDelivery },
+    );
+    const item = { type: "agentMessage", id: "async", delivery: "async", text: "Visible update." };
+    await projector.handleNotification(forCurrentTurn("item/completed", { item }));
+    expect(onAsyncDelivery).not.toHaveBeenCalled();
+    intentionalSilence = silent;
+    await projector.handleNotification(turnCompleted([item]));
+    expect(onAsyncDelivery).not.toHaveBeenCalled();
+    await projector.closeProjection();
+    expect(onAsyncDelivery).toHaveBeenCalledTimes(silent ? 0 : 1);
+  },
+);

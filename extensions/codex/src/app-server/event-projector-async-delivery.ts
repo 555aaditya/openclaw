@@ -12,6 +12,7 @@ type CodexAsyncDelivery = Parameters<
 /** Owns authorization, exactly-once settlement, and terminal retry for async user messages. */
 export class CodexAsyncDeliveryProjection {
   private readonly settledItemIds = new Set<string>();
+  private optionalTurnResolved = false;
   private readonly pendingDeliveries = new Map<string, CodexAsyncDelivery>();
 
   constructor(
@@ -44,8 +45,28 @@ export class CodexAsyncDeliveryProjection {
     return [...this.pendingDeliveries.values()];
   }
 
+  async settleOptionalTurn(): Promise<void> {
+    if (this.params.terminalReplyExpectation !== "optional" || this.optionalTurnResolved) {
+      return;
+    }
+    this.optionalTurnResolved = true;
+    for (const delivery of this.pending()) {
+      await this.deliver(delivery);
+    }
+    this.pendingDeliveries.clear();
+  }
+
   async deliver(delivery: CodexAsyncDelivery): Promise<void> {
-    if (this.options.hasDeliveredFinalSourceReply?.() || this.settledItemIds.has(delivery.itemId)) {
+    if (
+      this.options.hasDeliveredFinalSourceReply?.() ||
+      this.options.hasIntentionalSilence?.() ||
+      this.settledItemIds.has(delivery.itemId)
+    ) {
+      return;
+    }
+    // Async messages also write visible history; optional turns must resolve first.
+    if (this.params.terminalReplyExpectation === "optional" && !this.optionalTurnResolved) {
+      this.pendingDeliveries.set(delivery.itemId, delivery);
       return;
     }
     const settlement = await this.options.onAsyncDelivery?.(delivery);

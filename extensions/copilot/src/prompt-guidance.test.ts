@@ -33,6 +33,13 @@ describe("buildCopilotPromptGuidance", () => {
 
     expect(guidance).not.toContain("## Delegation");
     expect(guidance).toContain("is your complete reply.");
+    expect(guidance).toContain('message(action="none")');
+    expect(guidance).not.toContain("NO_REPLY");
+  });
+
+  it("keeps the silent-token fallback only on optional turns without message", () => {
+    expect(buildGuidance({ terminalReplyExpectation: "optional" }, [])).toContain("NO_REPLY");
+    expect(buildGuidance({ terminalReplyExpectation: "required" }, [])).not.toContain("NO_REPLY");
   });
 
   it("omits the appended developer instructions for prompt mode none", () => {

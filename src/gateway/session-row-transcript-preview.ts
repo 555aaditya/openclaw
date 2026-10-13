@@ -1,4 +1,5 @@
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
+import { hasMessageSilenceAction } from "./chat-silence-projection.js";
 import { projectSessionDisplayMessage } from "./session-display-projection.js";
 
 export const SESSION_ROW_TRANSCRIPT_PREVIEW_MAX_BYTES = 64 * 1024;
@@ -8,7 +9,12 @@ export function projectSessionRowTranscriptPreview(
   event: unknown,
   serializedBytes: number,
 ): string | null | undefined {
-  if (!isRecord(event) || event.type === "session" || !event.message) {
+  if (
+    !isRecord(event) ||
+    event.type === "session" ||
+    !event.message ||
+    hasMessageSilenceAction(event.message)
+  ) {
     return undefined;
   }
   if (serializedBytes > SESSION_ROW_TRANSCRIPT_PREVIEW_MAX_BYTES) {

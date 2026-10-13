@@ -57,6 +57,7 @@ import {
   resolveTranscriptPathForComparison,
   resolveTranscriptUpdatePathForComparison,
 } from "./session-transcript-path.js";
+import { deferSessionTranscriptPresentation } from "./session-transcript-presentation.js";
 import type { GatewaySessionStoreTargetWithStore } from "./session-utils-store.types.js";
 import {
   resolveCanonicalSessionEntryFromStoreKeys,
@@ -638,7 +639,9 @@ async function serveAuthorizedSessionHistory(
     queueStreamWork(() => publishStream(() => res.write(": keepalive\n\n")));
   }, 15_000);
 
-  streamResources.unsubscribe = onInternalSessionTranscriptUpdate((update) => {
+  const presentTranscriptUpdate = (
+    update: Parameters<Parameters<typeof onInternalSessionTranscriptUpdate>[0]>[0],
+  ) => {
     // Filter the global fan-out before retaining messages or scheduling async work.
     const updateTarget = update.target;
     const updateMatchesIdentity =
@@ -715,6 +718,11 @@ async function serveAuthorizedSessionHistory(
         await publishStream((presentation) => writeStreamHistory(snapshot, presentation));
       }
     });
+  };
+  streamResources.unsubscribe = onInternalSessionTranscriptUpdate((update) => {
+    if (!deferSessionTranscriptPresentation(update, () => presentTranscriptUpdate(update))) {
+      presentTranscriptUpdate(update);
+    }
   });
   sharingLifetime.transferred = true;
   if (source) {

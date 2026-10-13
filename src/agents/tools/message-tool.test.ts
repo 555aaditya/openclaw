@@ -2104,7 +2104,7 @@ describe("message tool schema scoping", () => {
       currentChannelProvider: "telegram",
     });
     const properties = getToolProperties(tool);
-    expect(getActionEnum(properties)).toEqual(["poll", "poll-vote", "react", "send"]);
+    expect(getActionEnum(properties)).toEqual(["poll", "poll-vote", "react", "send", "none"]);
     expect(properties).toHaveProperty("presentation");
     expect(
       Value.Check(tool.parameters, {
@@ -2170,7 +2170,7 @@ describe("message tool schema scoping", () => {
           currentChannelProvider,
         });
         const properties = getToolProperties(tool);
-        expect(getActionEnum(properties)).toEqual([action]);
+        expect(getActionEnum(properties)).toEqual([action, "none"]);
         if (!hasTeamId) {
           expect(properties).not.toHaveProperty("teamId");
           continue;
@@ -2246,7 +2246,7 @@ describe("message tool schema scoping", () => {
       agentId: "mover",
     });
     const channelMoveProps = getToolProperties(channelMoveTool);
-    expect(getActionEnum(channelMoveProps)).toEqual(["channel-move"]);
+    expect(getActionEnum(channelMoveProps)).toEqual(["channel-move", "none"]);
     expect(channelMoveProps).toHaveProperty("position");
     expect(channelMoveProps).toHaveProperty("parentId");
 
@@ -2260,7 +2260,7 @@ describe("message tool schema scoping", () => {
       agentId: "purger",
     });
     const categoryDeleteProps = getToolProperties(categoryDeleteTool);
-    expect(getActionEnum(categoryDeleteProps)).toEqual(["category-delete"]);
+    expect(getActionEnum(categoryDeleteProps)).toEqual(["category-delete", "none"]);
     expect(categoryDeleteProps).toHaveProperty("categoryId");
   });
 });

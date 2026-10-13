@@ -422,6 +422,16 @@ export function createAttemptTranscriptJournal(params: {
     markReplayIncomplete() {
       replayInvalid = true;
     },
+    markIntentionalSilence() {
+      schedule(() => {
+        if (pendingTools) {
+          pendingTools.assistant.message = projectAgentHarnessTranscriptMessageForDisplay({
+            hidden: true,
+            message: pendingTools.assistant.message,
+          });
+        }
+      });
+    },
     recordAssistantProjectionGap() {
       replayInvalid = true;
       latestAssistantKey = undefined;

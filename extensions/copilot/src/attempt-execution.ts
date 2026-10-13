@@ -115,6 +115,7 @@ export async function runCopilotExecution(context: {
   let releaseError: Error | undefined;
   let downgradedFromResume = false;
   let resumeFailureRecovered = false;
+  let intentionalSilence = false;
   let yieldDetected = false;
   let yieldAcknowledgment: string | undefined;
   const acceptedSessionSpawns: NonNullable<AgentHarnessAttemptResult["acceptedSessionSpawns"]> = [];
@@ -261,6 +262,10 @@ export async function runCopilotExecution(context: {
           attemptParams: observeToolTerminal ? { ...input, observeToolTerminal } : input,
           computerContextEpoch,
           sessionRef,
+          onIntentionalSilence: () => {
+            intentionalSilence = true;
+            transcriptJournal?.markIntentionalSilence();
+          },
           onYieldDetected: (_message, acknowledgment) => {
             yieldDetected = true;
             yieldAcknowledgment = acknowledgment;
@@ -443,7 +448,7 @@ export async function runCopilotExecution(context: {
         });
       },
       getSdkSessionId: () => sdkSessionId,
-      isAborted: () => aborted || transcriptJournal?.hasFailed() === true,
+      isAborted: () => aborted || intentionalSilence || transcriptJournal?.hasFailed() === true,
       transcriptProjection: {
         journal: transcriptJournal,
         modelRef,
@@ -496,17 +501,17 @@ export async function runCopilotExecution(context: {
       const assistantCompleted = bridge.recordSendResult(result);
       await transcriptJournal.barrier("sendAndWait");
       settledFinalizationAssistantCompleted = settledToolFinalization && assistantCompleted;
-      if (!assistantCompleted && !aborted) {
+      if (!assistantCompleted && !aborted && !intentionalSilence) {
         timedOut = true;
         timedOutDuringCompaction = bridge.isCompacting();
       }
       const snap = bridge.snapshot();
-      if (!promptError && !timedOut && !aborted && snap.streamError) {
+      if (!promptError && !timedOut && !aborted && !intentionalSilence && snap.streamError) {
         promptError = snap.streamError;
       }
     }
   } catch (error: unknown) {
-    if (!aborted) {
+    if (!aborted && !intentionalSilence) {
       if (isSdkSendAndWaitTimeoutError(error)) {
         timedOut = true;
         timedOutDuringCompaction = bridge?.isCompacting() === true;
@@ -638,6 +643,7 @@ export async function runCopilotExecution(context: {
     hookContextWindowFields,
     input,
     lastToolError,
+    intentionalSilence,
     messages,
     nativeSessionHistoryUnvalidated: !nativeSessionHistoryValidated,
     transcriptJournal,

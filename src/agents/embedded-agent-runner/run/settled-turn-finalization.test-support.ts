@@ -223,6 +223,7 @@ export function projectSettledProviderFailureAttempt(
         agentSession: {
           clientToolCallSlots: [],
           hasDeliveredSourceReply: () => false,
+          hasIntentionalSilence: () => false,
           hookRunner: null,
         },
         state: { promptCache: undefined },

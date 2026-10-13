@@ -50,8 +50,6 @@ export function registerGroupIntroPromptCases(): void {
       "Be a good group participant: mostly lurk and follow the conversation; reply only when directly addressed or you can add clear value. Emoji reactions are welcome when available. Write like a human. Avoid Markdown tables. Minimize empty lines and use normal chat conventions, not document-style spacing. Don't type literal \\n sequences; use real line breaks sparingly.";
     const telegramGroupParticipationNote =
       "Be a good group participant: mostly lurk and follow the conversation; reply only when directly addressed or you can add clear value. Emoji reactions are welcome when available. Write like a human. Minimize empty lines and use normal chat conventions, not document-style spacing. Don't type literal \\n sequences; use real line breaks sparingly.";
-    const groupSilentNote =
-      'If no text reply is needed, reply with exactly "NO_REPLY" as the entire final answer, without commentary, punctuation, or formatting.';
     const automaticGroupDeliveryGuidance = [
       "Your text replies are automatically sent to this group chat unless the current-turn context says final replies stay private.",
       "For ordinary text, do not use the message tool to send to this same destination unless the current-turn context asks for visible output via message(action=send).",
@@ -77,7 +75,6 @@ export function registerGroupIntroPromptCases(): void {
         expected: [
           "You are in a Discord group chat.",
           groupParticipationNote,
-          groupSilentNote,
           "Activation: trigger-only (you are invoked only when explicitly mentioned; recent context may be included). Address the specific sender noted in the message context.",
         ],
       },
@@ -95,7 +92,6 @@ export function registerGroupIntroPromptCases(): void {
           "You are in a WhatsApp group chat.",
           ...automaticGroupDeliveryGuidance,
           groupParticipationNote,
-          groupSilentNote,
           "Activation: trigger-only (you are invoked only when explicitly mentioned; recent context may be included). Address the specific sender noted in the message context.",
         ],
       },
@@ -112,7 +108,6 @@ export function registerGroupIntroPromptCases(): void {
         expected: [
           "You are in a Telegram group chat.",
           telegramGroupParticipationNote,
-          groupSilentNote,
           "Activation: trigger-only (you are invoked only when explicitly mentioned; recent context may be included). Address the specific sender noted in the message context.",
         ],
         forbidden: ["Avoid Markdown tables"],
@@ -131,7 +126,6 @@ export function registerGroupIntroPromptCases(): void {
           "You are in a Mattermost channel.",
           ...automaticChannelDeliveryGuidance,
           groupParticipationNote,
-          groupSilentNote,
           "Activation: trigger-only (you are invoked only when explicitly mentioned; recent context may be included). Address the specific sender noted in the message context.",
         ],
         forbidden: ["Mattermost group chat"],
@@ -163,7 +157,6 @@ export function registerGroupIntroPromptCases(): void {
         expected: [
           "You are in a WhatsApp group chat.",
           "Activation: always-on (you receive every group message). You see every message; most need no response. When you do reply, address the specific sender noted in the message context.",
-          groupSilentNote,
         ],
         defaultActivation: "always",
       },
@@ -176,8 +169,6 @@ export function registerGroupIntroPromptCases(): void {
         const extraSystemPrompt = [
           buildGroupChatContext({
             sessionCtx: testCase.message,
-            silentReplyPolicy: "allow",
-            silentToken: "NO_REPLY",
           }),
           buildGroupIntro({
             defaultActivation: testCase.defaultActivation ?? "mention",
@@ -186,6 +177,7 @@ export function registerGroupIntroPromptCases(): void {
           .filter(Boolean)
           .join("\n\n");
 
+        expect(extraSystemPrompt).not.toContain("NO_REPLY");
         for (const expectedFragment of testCase.expected) {
           expect(extraSystemPrompt, `${testCase.name}:${expectedFragment}`).toContain(
             expectedFragment,

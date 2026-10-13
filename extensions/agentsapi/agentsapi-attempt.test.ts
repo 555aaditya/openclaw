@@ -94,6 +94,73 @@ afterEach(() => {
 });
 
 describe("Agents API completed reply settlement", () => {
+  it("returns intentional silence and discards native text when message none terminates the turn", async () => {
+    const { createOpenClawCodingTools } = await import("openclaw/plugin-sdk/agent-harness");
+    const fixture = await createAttempt();
+    fixture.params.disableTools = false;
+    fixture.params.forceMessageTool = true;
+    fixture.params.terminalReplyExpectation = "optional";
+    fixture.params.hostCapabilities = {
+      ...fixture.params.hostCapabilities,
+      createToolSurfaceAsync: async (options) =>
+        createOpenClawCodingTools({ ...options, terminalReplyExpectation: "optional" }),
+    };
+    createSession.mockImplementationOnce((options) => ({
+      ...completedSession(options),
+      run: async () => {
+        const result = await options.executeFunction({
+          type: "function_call",
+          turn_id: completedTurn.id,
+          call_id: "silent-1",
+          name: "message",
+          arguments: { action: "none" },
+        });
+        expect(result).toMatchObject({ success: true, terminate: true });
+        await options.onFunctionResult?.(
+          {
+            type: "function_call",
+            turn_id: completedTurn.id,
+            call_id: "silent-1",
+            name: "message",
+            arguments: { action: "none" },
+          },
+          result,
+        );
+        options.onSettled?.();
+        await options.onReconcile?.(completedTurn, [{ ...completedItem, phase: "commentary" }]);
+        return { turn: completedTurn, cancelled: false, terminatedByTool: true };
+      },
+      reconcileAfterClose: async () => completedTurn,
+    }));
+    const result = await fixture.run();
+    expect(result.terminal).toEqual({ kind: "ok" });
+    expect(result.intentionalSilence).toBe(true);
+    expect(result.assistantTexts).toEqual([]);
+    expect(result.lastAssistant).toBeUndefined();
+    expect(fixture.onPartialReply).not.toHaveBeenCalled();
+    expect(readItems).not.toHaveBeenCalled();
+    await new AgentsApiMessageProjection(
+      fixture.params,
+      "session-fixture",
+      () => {},
+      fixture.params.hostCapabilities.assertActive,
+    ).reconcile(completedTurn, [{ ...completedItem, phase: "commentary" }], {
+      presentation: false,
+    });
+    const stored = (
+      await SessionManager.openAsync(fixture.target, fixture.params.workspaceDir)
+    ).buildSessionContext().messages;
+    expect(stored).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: "assistant",
+          display: false,
+          content: [{ type: "text", text: "The completed answer." }],
+        }),
+      ]),
+    );
+  });
+
   it("preserves native tool ownership when another run reconciles prior turns", async () => {
     const fixture = await createAttempt();
     vi.spyOn(AgentsApiClient.prototype, "setReasoningEffort").mockResolvedValue();

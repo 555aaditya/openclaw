@@ -12,7 +12,7 @@ import { normalizeMessageDeliveryStatus } from "./embedded-agent-messaging-statu
 import type { AgentToolResult } from "./runtime/index.js";
 
 type EmbeddedMessageDeliveryFact = {
-  status: "settled" | "suppressed" | "dryRun" | "failed";
+  status: "settled" | "suppressed" | "dryRun" | "failed" | "silent";
   sourceReplyDelivered?: true;
   primaryPlatformMessageId?: string;
   deliveredTargets?: string[];
@@ -22,7 +22,7 @@ type EmbeddedMessageDeliveryFact = {
 
 const NON_DELIVERY_IDS = new Set(["skipped", "suppressed"]);
 const NON_DELIVERY_STATUSES = new Set(["failed", ...NON_DELIVERY_IDS]);
-const STATUSES = new Set(["settled", "suppressed", "dryRun", "failed"]);
+const STATUSES = new Set(["settled", "suppressed", "dryRun", "failed", "silent"]);
 const PLUGIN_ENVELOPE_KEYS = [
   "details",
   "payload",

@@ -1,5 +1,10 @@
+import type { ReplyExpectation } from "../agents/reply-completion.js";
 /** Visible-reply ownership and presentation guidance shared with agent harnesses. */
 import { buildUiPresentationPrompt } from "../agents/ui-presentation-prompt.js";
+import { SILENT_REPLY_TOKEN } from "./tokens.js";
+
+export const MESSAGE_TOOL_SILENCE_GUIDANCE =
+  'On optional non-heartbeat turns, call `message(action="none")` when no response is needed.';
 
 /**
  * True when the visible source reply must flow through the message tool, either
@@ -24,6 +29,7 @@ export function buildMessageToolTargetGuidance(requireExplicitMessageTarget: boo
 export function buildHarnessVisibleReplyGuidance(params: {
   sourceReplyDeliveryMode?: string;
   messageToolAvailable: boolean;
+  terminalReplyExpectation?: ReplyExpectation;
   requireExplicitMessageTarget?: boolean;
   uiPresentation?: Parameters<typeof buildUiPresentationPrompt>[0];
 }): string {
@@ -45,6 +51,11 @@ export function buildHarnessVisibleReplyGuidance(params: {
       : undefined;
   return [
     deliveryGuidance,
+    params.messageToolAvailable
+      ? MESSAGE_TOOL_SILENCE_GUIDANCE
+      : params.terminalReplyExpectation === "optional"
+        ? `When no response is needed, reply with only ${SILENT_REPLY_TOKEN}.`
+        : undefined,
     targetGuidance,
     pendingReplyGuidance,
     params.uiPresentation ? buildUiPresentationPrompt(params.uiPresentation) : undefined,

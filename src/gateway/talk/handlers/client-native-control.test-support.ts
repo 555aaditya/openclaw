@@ -503,6 +503,7 @@ export async function withParkedNativeTask(
                   hookRunner: null,
                   clientToolCallSlots: [],
                   hasDeliveredSourceReply: () => false,
+                  hasIntentionalSilence: () => false,
                   markSourceReplyDelivered: () => {},
                   builtinToolNames: new Set(),
                   sourceReplyCapableToolNames: new Set(),

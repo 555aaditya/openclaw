@@ -96,7 +96,9 @@ export function prepareEmbeddedRunTerminal(input: {
   const answerAssistant = attempt.keptAnswer?.assistant ?? terminalAssistant;
   const finalAssistantStopReason = (answerAssistant?.stopReason ?? "").trim().toLowerCase();
   const terminalAssistantCanOwnFinalText =
-    finalAssistantStopReason !== "error" && finalAssistantStopReason !== "aborted";
+    !attempt.intentionalSilence &&
+    finalAssistantStopReason !== "error" &&
+    finalAssistantStopReason !== "aborted";
   const costUsd = estimateAggregateUsageCost({
     usage: usageMeta.usage,
     provider: reportedModelRef.provider,

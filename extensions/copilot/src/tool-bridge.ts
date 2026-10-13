@@ -42,9 +42,10 @@ type ScheduleToolExecution = (
   execute: () => Promise<ToolResultObject>,
 ) => Promise<ToolResultObject>;
 
-/** Populated after SDK session creation so tools built earlier can abort it on yield. */
+/** Populated after SDK session creation so tools built earlier can end it on yield or silence. */
 interface CopilotSessionHolder {
   current: { abort?: () => unknown } | undefined;
+  intentionalSilence?: boolean;
 }
 
 type CopilotToolAttemptParams = Partial<Omit<EmbeddedRunAttemptParamsV2, "hostCapabilities">> &
@@ -87,6 +88,7 @@ interface CopilotToolBridgeInput {
   sessionRef?: CopilotSessionHolder;
   /** Records yield before the bridge aborts the SDK session. */
   onYieldDetected?: (message?: string, acknowledgment?: string) => void;
+  onIntentionalSilence?: () => void;
   onToolCompleted?: (completion: CopilotToolCompletion) => void | Promise<void>;
 }
 
@@ -117,6 +119,7 @@ export async function createCopilotToolBridge(
     return { codeModeEngaged: false, promptToolPolicy: EMPTY_PROMPT_TOOL_POLICY, sourceTools: [] };
   }
 
+  input = { ...input, sessionRef: input.sessionRef ?? { current: undefined } };
   const attemptParams = input.attemptParams;
   const toolPlan = resolveEmbeddedAttemptToolConstructionPlan({
     disableTools: attemptParams.disableTools,
@@ -225,7 +228,11 @@ export async function createCopilotToolBridge(
     // SDK handlers arrive independently. An exclusive call waits for earlier
     // work across the attempt and blocks later calls, regardless of tool name.
     const ready = executionMode === "sequential" ? Promise.all(pendingCalls) : sequentialBarrier;
-    const run = ready.then(() => runInAttemptContext(execute));
+    const run = ready.then(() =>
+      input.sessionRef?.intentionalSilence
+        ? createFailureResult("The turn has completed silently.", new Error("Turn completed"))
+        : runInAttemptContext(execute),
+    );
     const settled = run.then(
       () => undefined,
       () => undefined,
@@ -493,6 +500,7 @@ function convertOpenClawToolToSdkTool(
     }
 
     const sanitizedResult = sanitizeToolResult(result);
+    completeIntentionalSilence(input, sourceTool.name, result);
     const resultIsError = isToolResultError(sanitizedResult);
     // The SDK only marks fulfilled tool results as failures when isError is forwarded.
     const sdkResult = convertMcpCallToolResult({
@@ -543,6 +551,9 @@ async function executeCatalogTool(
   input: CopilotToolBridgeInput,
   params: CatalogExecuteParams,
 ): Promise<Awaited<ReturnType<AnyAgentTool["execute"]>>> {
+  if (input.sessionRef?.intentionalSilence) {
+    throw new Error("The turn has completed silently.");
+  }
   const sourceTool = params.tool as AnyAgentTool;
   const ownerKey = getPluginToolSideEffectOwnerKey(sourceTool);
   const ownerMutation = ownerKey ? { ownerKey } : undefined;
@@ -561,6 +572,7 @@ async function executeCatalogTool(
       params.signal ?? input.attemptParams.abortSignal,
       params.onUpdate,
     );
+    completeIntentionalSilence(input, params.toolName, result);
     const sanitizedResult = sanitizeToolResult(result);
     const isError = isToolResultError(sanitizedResult);
     const error = isError
@@ -627,6 +639,26 @@ async function executeCatalogTool(
     });
     throw error;
   }
+}
+
+function completeIntentionalSilence(
+  input: CopilotToolBridgeInput,
+  toolName: string,
+  result: Awaited<ReturnType<AnyAgentTool["execute"]>>,
+): void {
+  if (
+    toolName !== "message" ||
+    isToolResultError(result) ||
+    asOptionalRecord(asOptionalRecord(result.details)?.messageDelivery)?.status !== "silent" ||
+    !input.sessionRef ||
+    input.sessionRef.intentionalSilence
+  ) {
+    return;
+  }
+  input.sessionRef.intentionalSilence = true;
+  input.onIntentionalSilence?.();
+  // The SDK has no successful stop operation; abort prevents another model call.
+  void Promise.resolve(input.sessionRef.current?.abort?.()).catch(() => undefined);
 }
 
 function toToolStartArgs(args: unknown): Record<string, unknown> {

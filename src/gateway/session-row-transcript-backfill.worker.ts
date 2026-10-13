@@ -5,6 +5,7 @@ import {
   SessionTranscriptStorageUnavailableError,
 } from "../config/sessions/session-transcript-projection-error.js";
 import { readSessionTerminalFallbackModel } from "../status/session-fallback-model.js";
+import { projectIntentionalSilenceHistory } from "./chat-silence-projection.js";
 import { projectSessionDisplayMessage } from "./session-display-projection.js";
 import type {
   SessionRowTranscriptFields,
@@ -36,8 +37,9 @@ export function readSessionRowTranscriptFields(
     const events = tail.newestContiguousEventCount
       ? tail.events.slice(-tail.newestContiguousEventCount)
       : [];
-    for (const event of events.toReversed()) {
-      const projected = projectSessionDisplayMessage(sqliteMessageEventWithSeq(event), {
+    const messages = projectIntentionalSilenceHistory(events.map(sqliteMessageEventWithSeq));
+    for (const message of messages.toReversed()) {
+      const projected = projectSessionDisplayMessage(message, {
         flattenMarkdown: true,
       });
       if (projected) {

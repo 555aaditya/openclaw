@@ -9,6 +9,7 @@ export const MESSAGE_TOOL_DISPLAY_SPEC = {
   icon: "mail",
   title: "Message",
   actions: {
+    none: displayAction("finish silently", []),
     send: displayAction("send", ["provider", "to", "media", "replyTo", "threadId"]),
     poll: displayAction("poll", ["provider", "to", "pollQuestion"]),
     react: displayAction("react", ["provider", "to", "messageId", "emoji", "remove"]),

@@ -145,7 +145,7 @@ OpenClaw renders smaller system prompts for sub-agents. The runtime sets a `prom
 
 Under `promptMode=minimal`, extra injected prompts are labeled **Subagent Context** instead of **Group Chat Context**.
 
-The **Silent Replies** section applies only to sessions connected to external message channels. Subagents, the Control UI, and other internal sessions never receive silent-token guidance: they must return a result or continue unfinished work. For channel auto-reply runs, OpenClaw omits the generic section when direct, group, or message-tool-only context already owns the visible-reply contract. Automatic group/channel contexts show `NO_REPLY` guidance only when the operator explicitly [allows group silence](/concepts/messages#silent-replies); direct chats and message-tool-only replies skip silent-token guidance.
+When `message` is available, the messaging section contains one stable instruction to use `message(action="none")` on optional turns that need no response. The host owns requiredness; the tool rejects silence on a required turn. Group context describes participation and delivery without choosing a silence mechanism before the callable tools are known. Surfaces without `message` retain the **Silent Replies** token guidance when silence is allowed. Heartbeat runs keep their `heartbeat_respond` contract. See [silent replies](/concepts/messages#silent-replies) for legacy parser compatibility and its removal path.
 
 ## Prompt snapshots
 

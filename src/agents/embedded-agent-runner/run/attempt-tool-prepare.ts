@@ -34,6 +34,7 @@ import {
 import { resolveModelAuthModeAsync } from "../../model-auth.js";
 import { supportsModelTools } from "../../model-tool-support.js";
 import { resolveNativeWebSearchRoute } from "../../native-web-search.js";
+import { resolveReplyExpectation } from "../../reply-completion.js";
 import { recordAgentCleanupFailure, runOwnedAgentCleanup } from "../../run-cleanup-timeout.js";
 import { resolveSessionPlacementComputer } from "../../session-placement-computer.js";
 import {
@@ -307,6 +308,7 @@ export async function prepareEmbeddedAttemptToolBase(params: {
         awaitSessionDiffBaseline,
         agentId: params.setup.sessionAgentId,
         ...buildConversationContext(),
+        terminalReplyExpectation: resolveReplyExpectation(attempt),
         exec: {
           ...attempt.execOverrides,
           ...(sessionPermissionPolicy

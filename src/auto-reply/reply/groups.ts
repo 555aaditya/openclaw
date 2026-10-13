@@ -5,7 +5,6 @@ import { findChatChannelMeta, normalizeChatChannelId } from "../../channels/regi
 import { resolveChannelGroupRequireMention } from "../../config/group-policy.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { createLazyImportLoader } from "../../shared/lazy-promise.js";
-import type { SilentReplyPolicy } from "../../shared/silent-reply-policy.js";
 import { isInternalMessageChannel } from "../../utils/message-channel.js";
 import type { SourceReplyDeliveryMode } from "../get-reply-options.types.js";
 import { normalizeGroupActivation } from "../group-activation.js";
@@ -100,8 +99,6 @@ function resolveProviderLabel(rawProvider: string | undefined): string {
 export function buildGroupChatContext(params: {
   sessionCtx: TemplateContext;
   sourceReplyDeliveryMode?: SourceReplyDeliveryMode;
-  silentReplyPolicy?: SilentReplyPolicy;
-  silentToken?: string;
 }): string {
   const providerLabel = resolveProviderLabel(params.sessionCtx.Provider);
   const provider = normalizeOptionalLowercaseString(params.sessionCtx.Provider);
@@ -139,18 +136,6 @@ export function buildGroupChatContext(params: {
   lines.push(
     "When subagent or session-spawn tools are available and a directly requested group-chat task will require several tool calls, prefer delegating bounded side investigations early so the channel gets a responsive path forward. Keep the critical path local, avoid subagents for simple one-step work, and only surface concise group-visible updates when they add value.",
   );
-  const canUseSilentReply =
-    !messageToolOnly && params.silentToken && params.silentReplyPolicy !== "disallow";
-  if (messageToolOnly) {
-    lines.push(
-      `If no visible ${sharedChatNoun === "channel" ? "channel" : "group"} response is needed, do not call message(action=send).`,
-    );
-  }
-  if (canUseSilentReply) {
-    lines.push(
-      `If no text reply is needed, reply with exactly "${params.silentToken}" as the entire final answer, without commentary, punctuation, or formatting.`,
-    );
-  }
   return lines.join(" ");
 }
 
@@ -165,7 +150,6 @@ function buildDirectChatContext(params: {
     ...(params.sourceReplyDeliveryMode === "message_tool_only"
       ? [
           "Normal final replies are private and are not automatically sent to this conversation. To post visible output here, use the message tool with action=send; the target defaults to this conversation.",
-          "If no visible direct response is needed, do not call message(action=send). Your normal final answer stays private and will not be posted to the conversation.",
         ]
       : [
           "Your replies are automatically sent to this conversation unless the current-turn context says final replies stay private.",
