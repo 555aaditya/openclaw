@@ -147,6 +147,44 @@ async function readFullScanTitleFields(scope: SessionTranscriptReadScope) {
 }
 
 describe("session transcript title hydration", () => {
+  test("omits accepted silence from cached and worker last-message previews", async () => {
+    const scope = await writeSqliteMessages("reader-title-silence", [
+      { role: "user", content: "Group chatter" },
+    ]);
+    const expected = { firstUserMessage: "Group chatter", lastMessagePreview: "Group chatter" };
+    expect(readSessionTitleFieldsFromTranscript(scope)).toEqual(expected);
+    await persistSessionTranscriptTurn(scope, {
+      messages: [
+        {
+          message: {
+            role: "assistant",
+            content: [
+              { type: "text", text: "I am staying silent." },
+              { type: "toolCall", name: "message", id: "quiet", arguments: { action: "none" } },
+            ],
+            __openclaw: { runId: "quiet-title-run" },
+          },
+        },
+        {
+          message: {
+            role: "toolResult",
+            toolName: "message",
+            toolCallId: "quiet",
+            isError: false,
+            content: [],
+            details: {
+              messageDelivery: { status: "silent", partialDelivery: false, createdThreadIds: [] },
+            },
+            __openclaw: { runId: "quiet-title-run" },
+          },
+        },
+      ],
+      touchSessionEntry: false,
+    });
+    expect(readSessionTitleFieldsFromTranscript(scope)).toEqual(expected);
+    await expect(readSessionTitleFieldsFromTranscriptAsync(scope)).resolves.toEqual(expected);
+  });
+
   test("reads fresh title fields in the worker after in-process appends and rewrites", async () => {
     const scope = await writeSqliteMessages("reader-title-worker", [
       { role: "user", content: "Original question" },

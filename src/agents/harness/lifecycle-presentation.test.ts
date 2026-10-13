@@ -79,6 +79,7 @@ describe("optional turn presentation", () => {
       const cfg = { agents: { entries: { main: {} } } };
       const sidebar = createSessionRowProjectionFixture({
         cfg,
+        storePath: "/synthetic/silence-sidebar.sqlite",
         store: { "session-key": { sessionId: params.sessionId, updatedAt: 1 } },
       });
       const sidebarRow = sidebar.describe({ agentId: "main", key: "session-key" })!;

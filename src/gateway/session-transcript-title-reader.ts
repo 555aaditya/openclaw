@@ -28,6 +28,7 @@ import {
   isIncognitoOpenClawAgentSqlitePath,
   resolveOpenClawAgentSqlitePath,
 } from "../state/openclaw-agent-db.paths.js";
+import { projectIntentionalSilenceHistory } from "./chat-silence-projection.js";
 import { projectSessionDisplayMessage } from "./session-display-projection.js";
 import { sqliteMessageEventWithSeq } from "./session-transcript-entry-message.js";
 import { toTranscriptReadScope } from "./session-transcript-read-target.js";
@@ -103,8 +104,8 @@ function findLastMessageText(
   entries: readonly Parameters<typeof sqliteMessageEventWithSeq>[0][],
 ): string | null {
   let text: string | null = null;
-  entries.findLast((entry) => {
-    const message = sqliteMessageEventWithSeq(entry);
+  const messages = projectIntentionalSilenceHistory(entries.map(sqliteMessageEventWithSeq));
+  messages.findLast((message) => {
     text = projectSessionDisplayMessage(message, { flattenMarkdown: true })?.text ?? null;
     return text !== null;
   });
