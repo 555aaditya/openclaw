@@ -20,6 +20,7 @@ import { replaceTranscriptEvents } from "../../config/sessions/session-accessor.
 import * as historyWorker from "../../config/sessions/session-history-worker-runtime.js";
 import { clearSessionStoreCacheForTest } from "../../config/sessions/store-writer-state.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import { registerAgentRunPresentationBuffer } from "../../infra/agent-run-presentation.js";
 import {
   closeOpenClawAgentDatabaseByPathAsync,
   resolveOpenClawAgentSqlitePath,
@@ -31,6 +32,64 @@ import { chatHistoryHandlers } from "./chat-history-handler.js";
 import { createHistoryReadContext } from "./chat-history.test-helpers.js";
 import { chatMessageGetHandlers } from "./chat-message-get-handler.js";
 import type { GatewayRequestHandlers, RespondFn } from "./types.js";
+
+it("withholds a tool-free optional message at host egress until settlement", async () => {
+  await withOpenClawTestState({ scenario: "minimal" }, async () => {
+    await captureRuntimeConfigAsyncReader()();
+    const scope = {
+      agentId: "main",
+      sessionKey: "agent:main:pending-message-get",
+      sessionId: "pending-message-get",
+    };
+    await upsertSessionEntryCore(scope, { sessionId: scope.sessionId, updatedAt: 1 });
+    const { messageId } = await appendTranscriptMessage(scope, {
+      message: {
+        role: "assistant",
+        content: "Visible after optional settlement",
+        __openclaw: { runId: "pending-message-get-run" },
+      },
+    });
+    const context = await createHistoryReadContext();
+    let pending = true;
+    const release = registerAgentRunPresentationBuffer(
+      "pending-message-get-run",
+      () => false,
+      () => pending,
+      scope,
+    );
+    const lookup = async () => {
+      const respond = vi.fn<RespondFn>();
+      await expectDefined(
+        chatMessageGetHandlers["chat.message.get"],
+        "message handler",
+      )({
+        params: { sessionKey: scope.sessionKey, messageId },
+        context,
+        client: null,
+        req: { type: "req", id: "pending-message-get", method: "chat.message.get" },
+        isWebchatConnect: () => false,
+        respond,
+      });
+      return respond;
+    };
+    try {
+      expect(await lookup()).toHaveBeenCalledExactlyOnceWith(true, {
+        ok: false,
+        unavailableReason: "not_visible",
+      });
+      pending = false;
+      expect(await lookup()).toHaveBeenCalledExactlyOnceWith(
+        true,
+        expect.objectContaining({
+          ok: true,
+          message: expect.objectContaining({ content: "Visible after optional settlement" }),
+        }),
+      );
+    } finally {
+      release();
+    }
+  });
+});
 
 describe("chat.message.get recovery visibility", () => {
   it("hides recovered failures across hidden announce chunks while retaining unresolved and partial replies", async () => {

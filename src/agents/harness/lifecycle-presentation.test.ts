@@ -276,6 +276,114 @@ describe("optional turn presentation", () => {
     },
   );
 
+  it.each(
+    [
+      "onAssistantMessageStart",
+      "onPartialReply",
+      "onReasoningStream",
+      "onReasoningEnd",
+      "onAgentEvent",
+    ].flatMap((callback) => [
+      { callback, failureMode: "throw" },
+      { callback, failureMode: "reject" },
+    ]),
+  )(
+    "retains best-effort $callback handling after a deferred $failureMode",
+    async ({ callback, failureMode }) => {
+      const params = createAttemptParams();
+      params.terminalReplyExpectation = "optional";
+      const shown: string[] = [];
+      const preview = (name: string) => {
+        shown.push(name);
+        if (name !== callback) {
+          return undefined;
+        }
+        const failure = new Error("Preview failed");
+        if (failureMode === "throw") {
+          throw failure;
+        }
+        return Promise.reject(failure);
+      };
+      params.onAssistantMessageStart = () => preview("onAssistantMessageStart");
+      params.onPartialReply = () => preview("onPartialReply");
+      params.onReasoningStream = () => preview("onReasoningStream");
+      params.onReasoningEnd = () => preview("onReasoningEnd");
+      params.onAgentEvent = () => preview("onAgentEvent");
+      params.onBlockReply = () => {
+        shown.push("answer");
+      };
+      const harness: AgentHarness = {
+        id: "fixture",
+        label: "Fixture",
+        supports: () => ({ supported: true }),
+        runAttempt: async (input) => {
+          await input.onAssistantMessageStart?.();
+          await input.onPartialReply?.({ text: "Preview" });
+          await input.onReasoningStream?.({ text: "Reasoning" });
+          await input.onReasoningEnd?.();
+          await input.onAgentEvent?.({ stream: "lifecycle", data: { phase: "end" } });
+          await input.onBlockReply?.({ text: "Answer" });
+          expect(shown).toEqual([]);
+          return createAttemptResult();
+        },
+      };
+
+      await expect(runAgentHarnessLifecycleAttempt(harness, params)).resolves.toMatchObject({
+        terminal: { kind: "ok" },
+      });
+      expect(shown).toEqual([
+        "onAssistantMessageStart",
+        "onPartialReply",
+        "onReasoningStream",
+        "onReasoningEnd",
+        "onAgentEvent",
+        "answer",
+      ]);
+    },
+  );
+
+  it.each(
+    (["required", "optional"] as const).flatMap((expectation) =>
+      ["onBlockReply", "onBlockReplyFlush", "onToolResult"].flatMap((callback) => [
+        { expectation, callback, failureMode: "throw" },
+        { expectation, callback, failureMode: "reject" },
+      ]),
+    ),
+  )(
+    "propagates $expectation $callback delivery failure after a $failureMode",
+    async ({ expectation, callback, failureMode }) => {
+      const params = createAttemptParams();
+      params.terminalReplyExpectation = expectation;
+      const failure = new Error("Delivery failed");
+      const fail = () => {
+        if (failureMode === "throw") {
+          throw failure;
+        }
+        return Promise.reject(failure);
+      };
+      params.onBlockReply = fail;
+      params.onBlockReplyFlush = fail;
+      params.onToolResult = fail;
+      const harness: AgentHarness = {
+        id: "fixture",
+        label: "Fixture",
+        supports: () => ({ supported: true }),
+        runAttempt: async (input) => {
+          if (callback === "onBlockReply") {
+            await input.onBlockReply?.({ text: "Answer" });
+          } else if (callback === "onBlockReplyFlush") {
+            await input.onBlockReplyFlush?.({ reason: "terminal" });
+          } else {
+            await input.onToolResult?.({ text: "Tool result" });
+          }
+          return createAttemptResult();
+        },
+      };
+
+      await expect(runAgentHarnessLifecycleAttempt(harness, params)).rejects.toBe(failure);
+    },
+  );
+
   it("never exposes internal none reasons, including rejected required calls", () => {
     const reason = "Internal decision detail";
     const assistant = {

@@ -2,8 +2,12 @@ import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import { getReplyPayloadMetadata, readAskUserQuestionId } from "../../auto-reply/reply-payload.js";
 import type { AgentEventPayload } from "../../infra/agent-events.types.js";
 import { registerAgentRunPresentationBuffer } from "../../infra/agent-run-presentation.js";
+import { createSubsystemLogger } from "../../logging/subsystem.js";
+import { runBestEffortCallback } from "../embedded-agent-subscribe.callback.js";
 import { resolveReplyExpectation } from "../reply-completion.js";
 import type { AgentHarnessAttemptParamsV2 } from "./types.js";
+
+const log = createSubsystemLogger("agents/harness");
 
 function presentationKey(prefix: string, event: Pick<AgentEventPayload, "stream" | "data">) {
   const itemId = typeof event.data.itemId === "string" ? event.data.itemId : "";
@@ -72,6 +76,17 @@ export function createOptionalTurnPresentation(params: AgentHarnessAttemptParams
     }
     return undefined;
   };
+  const enqueuePreview = (callback: () => unknown, label: string, key?: string, terminal = false) =>
+    enqueue(
+      () => {
+        // Deferred previews retain their original best-effort failure boundary.
+        const previewTasks = new Set<Promise<void>>();
+        runBestEffortCallback({ callback, label, log, pending: previewTasks });
+        return Promise.all(previewTasks);
+      },
+      key,
+      terminal,
+    );
   const unregister = registerAgentRunPresentationBuffer(
     params.runId,
     (event, publish) => {
@@ -101,25 +116,33 @@ export function createOptionalTurnPresentation(params: AgentHarnessAttemptParams
       ? () => {
           snapshots.delete("partial");
           snapshots.delete("reasoning");
-          enqueue(() => params.onAssistantMessageStart?.());
+          enqueuePreview(() => params.onAssistantMessageStart?.(), "assistant message start");
         }
       : undefined,
     onPartialReply: params.onPartialReply
       ? (payload) => {
           const snapshot = { ...payload };
-          enqueue(() => params.onPartialReply?.(snapshot), "partial");
+          enqueuePreview(
+            () => params.onPartialReply?.(snapshot),
+            "assistant partial reply",
+            "partial",
+          );
         }
       : undefined,
     onReasoningStream: params.onReasoningStream
       ? (payload) => {
           const snapshot = { ...payload };
-          enqueue(() => params.onReasoningStream?.(snapshot), "reasoning");
+          enqueuePreview(
+            () => params.onReasoningStream?.(snapshot),
+            "reasoning stream",
+            "reasoning",
+          );
         }
       : undefined,
     onReasoningEnd: params.onReasoningEnd
       ? () => {
           snapshots.delete("reasoning");
-          enqueue(() => params.onReasoningEnd?.());
+          enqueuePreview(() => params.onReasoningEnd?.(), "reasoning end");
         }
       : undefined,
     onBlockReply: params.onBlockReply
@@ -156,8 +179,9 @@ export function createOptionalTurnPresentation(params: AgentHarnessAttemptParams
           if (!kind) {
             return params.onAgentEvent?.(event);
           }
-          enqueue(
+          enqueuePreview(
             () => params.onAgentEvent?.(event),
+            "agent event",
             kind === "text" ? presentationKey("callback", event) : undefined,
             kind === "terminal",
           );
