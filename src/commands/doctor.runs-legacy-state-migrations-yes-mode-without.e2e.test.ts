@@ -8,6 +8,7 @@ import {
   createDoctorRuntime,
   ensureAuthProfileStore,
   mockDoctorConfigSnapshot,
+  resolveOpenClawPackageRoot,
   serviceIsLoaded,
   serviceRestart,
   transformConfigFile,
@@ -104,6 +105,7 @@ describe("doctor command", () => {
         runtime,
         runLegacyStateMigrations,
       } = await arrangeLegacyStateMigrationTest();
+      resolveOpenClawPackageRoot.mockResolvedValue(process.cwd());
       migrationCalls = () => runLegacyStateMigrations.mock.calls.length;
       try {
         await (
@@ -208,6 +210,7 @@ describe("doctor command", () => {
       },
     ]);
 
+    resolveOpenClawPackageRoot.mockResolvedValue(process.cwd());
     const previousConfigWriteSupport =
       process.env.OPENCLAW_UPDATE_PARENT_SUPPORTS_DOCTOR_CONFIG_WRITE;
     process.env.OPENCLAW_UPDATE_PARENT_SUPPORTS_DOCTOR_CONFIG_WRITE = "1";

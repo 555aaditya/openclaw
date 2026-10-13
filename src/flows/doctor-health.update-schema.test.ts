@@ -243,6 +243,7 @@ describe("Doctor schema bumps under an updating parent", () => {
     async ({ driver, deferred }) => {
       await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
         const captureSessionId = `doctor-readiness-${driver}`;
+        mocks.packageRoot.mockReturnValue(process.cwd());
         vi.stubEnv("OPENCLAW_DEBUG_PROXY_ENABLED", "1");
         vi.stubEnv("OPENCLAW_DEBUG_PROXY_SESSION_ID", captureSessionId);
         vi.stubEnv("OPENCLAW_DEBUG_PROXY_URL", undefined);
