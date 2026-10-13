@@ -24,23 +24,27 @@ it("reuses a clean seal across builds but validates again after a version change
   fs.writeFileSync(pathname, "unchanged synthetic database");
   const file = fs.statSync(pathname, { bigint: true });
   const proof = { verifiedAt: Date.now(), facts: "validated facts" };
-  const first = (await import("./openclaw-database-seal-schema.js")).sqliteDatabaseSealSchemaFor();
-  expect(writeSqliteCleanCloseSeal(pathname, first, file, proof)).toBe(true);
-  expect(readSqliteCleanCloseSeal(pathname, first, file)).toEqual(proof);
+  const first = await import("./openclaw-database-seal-schema.js");
+  expect(
+    writeSqliteCleanCloseSeal(pathname, first.sqliteDatabaseSealSchemaFor(), file, proof),
+  ).toBe(true);
+  expect(readSqliteCleanCloseSeal(pathname, first.sqliteDatabaseSealSchemaFor(), file)).toEqual(
+    proof,
+  );
 
   inputs.commit = "second";
   inputs.build = "second";
   vi.resetModules();
-  const rebuilt = (
-    await import("./openclaw-database-seal-schema.js")
-  ).sqliteDatabaseSealSchemaFor();
-  expect(rebuilt).toBe(first);
-  expect(readSqliteCleanCloseSeal(pathname, rebuilt, file)).toEqual(proof);
+  const rebuilt = await import("./openclaw-database-seal-schema.js");
+  expect(rebuilt.sqliteDatabaseSealSchemaFor()).toBe(first.sqliteDatabaseSealSchemaFor());
+  expect(readSqliteCleanCloseSeal(pathname, rebuilt.sqliteDatabaseSealSchemaFor(), file)).toEqual(
+    proof,
+  );
 
   inputs.version = "2026.10.2";
   vi.resetModules();
-  const upgraded = (
-    await import("./openclaw-database-seal-schema.js")
-  ).sqliteDatabaseSealSchemaFor();
-  expect(readSqliteCleanCloseSeal(pathname, upgraded, file)).toBeUndefined();
+  const upgraded = await import("./openclaw-database-seal-schema.js");
+  expect(
+    readSqliteCleanCloseSeal(pathname, upgraded.sqliteDatabaseSealSchemaFor(), file),
+  ).toBeUndefined();
 });
