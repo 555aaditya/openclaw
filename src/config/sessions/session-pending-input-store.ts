@@ -1,12 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
-import {
-  hasSqliteWorkerOutcomeUnknown,
-  SqliteWorkerError,
-} from "../../infra/sqlite-worker-contract.js";
-import { assertExistingDatabaseIdentity } from "../../infra/sqlite-worker-identity.js";
-import type { SqliteWorkerOperationAdmission } from "../../infra/sqlite-worker-operation-admission.js";
-import type { RetainedWorkerTransactionAdmission } from "../../infra/sqlite-worker-operation-settlement.js";
+import { hasSqliteWorkerOutcomeUnknown } from "../../infra/sqlite-worker-contract.js";
 import { registerOpenClawAgentDatabaseAsyncResource } from "../../state/openclaw-agent-db-resources.js";
 import { runOpenClawAgentWriteTransaction } from "../../state/openclaw-agent-db.js";
 import { resolveOpenClawAgentSqlitePath } from "../../state/openclaw-agent-db.paths.js";
@@ -31,12 +25,12 @@ import {
   type PendingInputMutation,
   type PendingInputRead,
 } from "./session-pending-input-operations.types.js";
-import {
-  assertSessionStoreReadCandidate,
-  captureSessionStoreCandidateIdentities,
-} from "./session-store-read-candidates.js";
-import { captureSessionStoreReadCandidates } from "./session-store-target-inventory.js";
+import { captureSessionStoreReadTarget } from "./session-store-read-target.js";
 import { buildRestartRecoveryExpectedState } from "./session-transcript-turn-state.js";
+import {
+  settleSessionWorkerReceipt,
+  type SessionWorkerReceiptAdmission,
+} from "./session-worker-receipt.js";
 import { captureSessionTranscriptStorageEnvironment } from "./transcript-target-binding.js";
 
 export type PendingInputScope = SessionAccessScope & {
@@ -65,12 +59,10 @@ export async function preparePendingInputStore(
   };
   const inputActor = await getSessionInputActor(scope);
   const logical = resolveSqliteScope({ ...captured, storePath: undefined });
-  const storePath =
-    logical.path ??
-    captured.storePath ??
-    resolveOpenClawAgentSqlitePath(toDatabaseOptions(logical));
-  const candidates = captureSessionStoreReadCandidates(storePath);
-  const identities = captureSessionStoreCandidateIdentities(candidates);
+  const target = captureSessionStoreReadTarget(
+    captured,
+    "Pending input changed its captured database owner",
+  );
   const inputSource = inputActor?.target.readSource;
   const resolved = inputSource
     ? resolveSqliteScope(captured, undefined, {
@@ -91,16 +83,12 @@ export async function preparePendingInputStore(
   ) {
     throw new Error("Input actor changed the pending input's physical target");
   }
-  const identity = identities.get(assertSessionStoreReadCandidate(options.path, candidates));
-  if (!identity || !identity.key.startsWith("file:")) {
+  const readTarget = target.resolve(resolved);
+  const identity = readTarget.identity;
+  if (!identity.key.startsWith("file:")) {
     throw new Error("Pending input changed its captured database owner");
   }
-  const assertSource = () => {
-    if (identity) {
-      assertSessionStoreReadCandidate(options.path, candidates);
-      assertExistingDatabaseIdentity(options.path, identity.key, identity.birthtime);
-    }
-  };
+  const assertSource = readTarget.assertCurrent;
   const { mutatePendingInput } = await import("./session-pending-input-operations.kernel.js");
   assertSource();
   let revoked = false;
@@ -341,12 +329,7 @@ export async function preparePendingInputStore(
             }
             return receipt;
           }
-          let admitted:
-            | {
-                admission: SqliteWorkerOperationAdmission;
-                retained: RetainedWorkerTransactionAdmission;
-              }
-            | undefined;
+          let admitted: SessionWorkerReceiptAdmission | undefined;
           const readReceipt = (facts: unknown) => readPendingInputMutationReceipt(facts, input);
           let committedFacts: PendingInputCustodyGrant | undefined;
           const checkGrant = (stage: "transaction" | "commit", facts: unknown) => {
@@ -367,36 +350,18 @@ export async function preparePendingInputStore(
             assertOpen,
             async (execution, source) => {
               const result = await execution.runExisting(source, async (worker) => {
-                const outcome = await worker
-                  .execute({ type: "session.pendingInputs.mutate", input })
-                  .then(
-                    (value) => ({ ok: true as const, value }),
-                    (error: unknown) => ({ ok: false as const, error }),
-                  );
-                if (admitted) {
-                  await admitted.retained.settled;
-                  const receipt = readReceipt(admitted.admission.committed?.facts);
-                  if (admitted.admission.settlement?.kind === "completed" && receipt) {
-                    if (publish) {
-                      assertOpen();
-                      publish(committedFacts, assertOpen);
-                    }
-                    return receipt;
-                  }
-                  if (admitted.admission.settlement?.kind !== "completed") {
-                    throw new SqliteWorkerError(
-                      "Pending input native commitment is unknown; do not replay",
-                      "outcome-unknown",
-                    );
-                  }
-                }
-                if (!outcome.ok) {
-                  throw outcome.error;
-                }
-                throw new SqliteWorkerError(
+                const receipt = await settleSessionWorkerReceipt(
+                  () => worker.execute({ type: "session.pendingInputs.mutate", input }),
+                  () => admitted,
+                  readReceipt,
                   "Pending input has no confirmed native completion and commit receipt",
-                  "outcome-unknown",
+                  "Pending input native commitment is unknown; do not replay",
                 );
+                if (publish) {
+                  assertOpen();
+                  publish(committedFacts, assertOpen);
+                }
+                return receipt;
               });
               if (!result) {
                 throw new Error("Pending input lost its existing database");

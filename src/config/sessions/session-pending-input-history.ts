@@ -1,25 +1,12 @@
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
-import { SqliteWorkerError } from "../../infra/sqlite-worker-contract.js";
-import { assertExistingDatabaseIdentity } from "../../infra/sqlite-worker-identity.js";
-import {
-  createSqliteWorkerOperationAdmission,
-  type SqliteWorkerOperationAdmission,
-} from "../../infra/sqlite-worker-operation-admission.js";
-import type { RetainedWorkerTransactionAdmission } from "../../infra/sqlite-worker-operation-settlement.js";
-import { resolveOpenClawAgentSqlitePath } from "../../state/openclaw-agent-db.paths.js";
-import { captureOpenClawAgentDatabaseExecution } from "../../state/openclaw-agent-execution.js";
-import { runOpenClawAgentWorkerWrite } from "../../state/openclaw-agent-write-admission.js";
 import type { SessionAccessScope } from "./session-accessor.sqlite-contract.js";
 import {
   hasRegisteredSessionPendingInputOwner,
   type SessionPendingInputPage,
   type SessionPendingInput,
 } from "./session-accessor.sqlite-pending-inputs.js";
-import {
-  prepareSqliteScope,
-  resolveSqliteScope,
-  toDatabaseOptions,
-} from "./session-accessor.sqlite-scope.js";
+import { withSessionEntryWorker } from "./session-accessor.sqlite-replacement-worker.js";
+import { prepareSqliteScope } from "./session-accessor.sqlite-scope.js";
 import {
   captureSessionActorStorageOwner,
   withSessionActorStorage,
@@ -33,12 +20,12 @@ import type {
   PendingInputHistorySnapshot,
 } from "./session-pending-input-history.types.js";
 import { projectSessionPendingInput } from "./session-pending-input-value.js";
-import {
-  assertSessionStoreReadCandidate,
-  captureSessionStoreCandidateIdentities,
-} from "./session-store-read-candidates.js";
-import { captureSessionStoreReadCandidates } from "./session-store-target-inventory.js";
+import { captureSessionStoreReadTarget } from "./session-store-read-target.js";
 import { withSessionHistoryWorkerDatabase } from "./session-transcript-worker-runtime.js";
+import {
+  settleSessionWorkerReceipt,
+  type SessionWorkerReceiptAdmission,
+} from "./session-worker-receipt.js";
 import { captureSessionTranscriptStorageEnvironment } from "./transcript-target-binding.js";
 
 type Scope = SessionAccessScope & { agentId: string; sessionId: string };
@@ -137,39 +124,26 @@ async function readPendingInputRows(
     env: captureSessionTranscriptStorageEnvironment(scope.env ?? process.env),
   };
   const query = { ...options, sessionKey: scope.sessionKey, sessionId: scope.sessionId };
-  const logical = resolveSqliteScope({ ...captured, storePath: undefined });
-  const storePath =
-    logical.path ??
-    captured.storePath ??
-    resolveOpenClawAgentSqlitePath(toDatabaseOptions(logical));
-  const candidates = captureSessionStoreReadCandidates(storePath);
-  const identities = captureSessionStoreCandidateIdentities(candidates);
+  const target = captureSessionStoreReadTarget(
+    captured,
+    "Pending input history changed its captured database owner",
+  );
   const resolved = await prepareSqliteScope(captured);
-  const databaseOptions = toDatabaseOptions(resolved);
-  const path = resolveOpenClawAgentSqlitePath(databaseOptions);
-  const identity = identities.get(assertSessionStoreReadCandidate(path, candidates));
-  if (!identity) {
-    throw new Error("Pending input history changed its captured database owner");
-  }
+  const {
+    options: databaseOptions,
+    identity,
+    source: readSource,
+    assertCurrent,
+  } = target.resolve(resolved);
   if (!identity.key.startsWith("file:")) {
     return { rows: [], total: 0 };
   }
-  const assertCurrent = () => {
-    assertSessionStoreReadCandidate(path, candidates);
-    assertExistingDatabaseIdentity(path, identity.key, identity.birthtime);
-  };
   assertCurrent();
-  const source = {
-    agentId: databaseOptions.agentId,
-    path,
-    databaseIdentity: identity.key.slice(5),
-    databaseBirthtime: identity.birthtime,
-  };
-  return withSessionHistoryWorkerDatabase({ ...databaseOptions, path }, async (owner) => {
+  return withSessionHistoryWorkerDatabase(databaseOptions, async (owner) => {
     const snapshot = await owner.readPendingInputHistory({
       query: { ...query, sessionKey: resolved.sessionKey },
       env: captured.env,
-      source,
+      source: readSource,
     });
     assertCurrent();
     const ids = snapshot.rows
@@ -181,99 +155,56 @@ async function readPendingInputRows(
     if (!ids.length) {
       return snapshot;
     }
-    return runOpenClawAgentWorkerWrite({ ...databaseOptions, path }, async () => {
-      assertCurrent();
-      owner.assertCurrent();
-      const execution = captureOpenClawAgentDatabaseExecution(
-        { ...databaseOptions, path },
-        {
-          expectedIdentity: {
-            kind: "file",
-            physicalIdentity: source.databaseIdentity,
-            birthtime: identity.birthtime,
-            nativeLocation: path,
-          },
-        },
-      );
-      let admitted:
-        | {
-            admission: SqliteWorkerOperationAdmission;
-            retained: RetainedWorkerTransactionAdmission;
-          }
-        | undefined;
-      try {
-        const result = await execution.runExisting(
-          {
-            assertCurrent,
-            createAdmission(binding) {
-              return (retained) => {
-                const admission = createSqliteWorkerOperationAdmission((request, grant) => {
-                  binding.authorize(request);
-                  assertCurrent();
-                  owner.assertCurrent();
-                  if (request.stage === "transaction" || request.stage === "commit") {
-                    const facts = isRecord(request.facts) ? request.facts.publication : undefined;
-                    if (!isRecord(facts) || facts.kind !== "pending-input-history-custody") {
-                      throw new Error("Pending input history omitted custody facts");
-                    }
-                    admitCustody(
-                      identity.canonicalPath,
-                      request.stage,
-                      // SAFETY: The paired bounded kernel owns this grant payload; it conveys facts, never authority.
-                      facts as PendingInputHistoryGrant,
-                    );
-                    if (request.stage === "commit") {
-                      admitted = { admission, retained };
-                    }
-                  }
-                  if (!grant()) {
-                    throw new Error("Pending input history authority expired");
-                  }
-                }, binding.attachment);
-                return { nativeLocations: binding.nativeLocations, admission };
-              };
-            },
-          },
-          async (worker) => {
-            const outcome = await worker
-              .execute({
+    let admitted: SessionWorkerReceiptAdmission | undefined;
+    const checkCustody = (stage: "transaction" | "commit", facts: unknown) => {
+      const publication = isRecord(facts) ? facts.publication : undefined;
+      if (!isRecord(publication) || publication.kind !== "pending-input-history-custody") {
+        throw new Error("Pending input history omitted custody facts");
+      }
+      // SAFETY: The paired bounded kernel owns these facts, never host authority.
+      admitCustody(identity.canonicalPath, stage, publication as PendingInputHistoryGrant);
+    };
+    return withSessionEntryWorker(
+      databaseOptions,
+      readSource.databaseIdentity,
+      () => {
+        assertCurrent();
+        owner.assertCurrent();
+      },
+      async (execution, source) => {
+        const result = await execution.runExisting(source, (worker) =>
+          settleSessionWorkerReceipt(
+            () =>
+              worker.execute({
                 type: "session.pendingInputs.interruptHistory",
                 input: { sessionKey: resolved.sessionKey, sessionId: captured.sessionId, ids },
-              })
-              .then(
-                () => ({ ok: true as const }),
-                (error: unknown) => ({ ok: false as const, error }),
-              );
-            if (admitted) {
-              await admitted.retained.settled;
-              const receipt = admitted.admission.committed?.facts;
-              if (
-                admitted.admission.settlement?.kind === "completed" &&
-                isRecord(receipt) &&
-                receipt.kind === "pending-input-history-interrupted"
-              ) {
+              }),
+            () => admitted,
+            (receipt) => {
+              if (isRecord(receipt) && receipt.kind === "pending-input-history-interrupted") {
                 // SAFETY: This admission retains only this exact kernel's committed receipt.
                 return applyReceipt(snapshot, receipt as PendingInputHistoryReceipt);
               }
-            }
-            if (!outcome.ok) {
-              throw outcome.error;
-            }
-            throw new SqliteWorkerError(
-              "Pending input history has no confirmed native completion and receipt",
-              "outcome-unknown",
-            );
-          },
+              return undefined;
+            },
+            "Pending input history has no confirmed native completion and receipt",
+          ),
         );
         assertCurrent();
         if (!result) {
           throw new Error("Pending input history lost its existing database");
         }
         return result;
-      } finally {
-        await execution.release();
-      }
-    });
+      },
+      (admission, retained, facts) => {
+        checkCustody("commit", facts);
+        admitted = { admission, retained };
+      },
+      undefined,
+      undefined,
+      undefined,
+      (facts) => checkCustody("transaction", facts),
+    );
   });
 }
 

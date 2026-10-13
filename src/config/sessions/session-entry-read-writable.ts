@@ -1,11 +1,9 @@
 import path from "node:path";
 import { readSqliteDatabaseWriteTokenForPath } from "../../infra/sqlite-database-admission.js";
 import { readDatabasePathIdentitySync } from "../../infra/sqlite-worker-identity.js";
-import { createSqliteWorkerOperationAdmission } from "../../infra/sqlite-worker-operation-admission.js";
 import { normalizeAgentId, parseAgentSessionKey } from "../../routing/session-key.js";
 import type { AgentDatabaseRegistryChange } from "../../state/openclaw-agent-db-contract.js";
 import { resolveOpenClawAgentSqlitePath } from "../../state/openclaw-agent-db.paths.js";
-import type { AgentDatabaseRequestExecutionSource } from "../../state/openclaw-agent-execution-admission-contract.js";
 import { captureOpenClawAgentDatabaseExecution } from "../../state/openclaw-agent-execution.js";
 import { runOpenClawAgentWorkerWrite } from "../../state/openclaw-agent-write-admission.js";
 import { captureMemoryExactSessionReader } from "./session-accessor.memory-exact-read.js";
@@ -20,6 +18,7 @@ import { captureSessionEntryReadScope } from "./session-entry-read-request.js";
 import type { SessionEntryCohortReader } from "./session-entry-read-runtime.types.js";
 import { captureSessionStoreReadCandidates } from "./session-store-target-inventory.js";
 import { withSessionStoreTarget } from "./session-store-target-runtime.js";
+import { createSessionWorkerExecutionSource } from "./session-worker-execution-source.js";
 import type { InternalSessionEntry as SessionEntry } from "./types.js";
 
 /** Preserve logical lookup and writable open semantics on the canonical file-backed actor. */
@@ -83,24 +82,12 @@ export async function readSessionEntryInWorker(
         owner.assertCurrent();
       };
       const source = {
-        assertCurrent,
-        onRegistryChange(change) {
+        ...createSessionWorkerExecutionSource(assertCurrent, "Session read authority expired"),
+        onRegistryChange(change: AgentDatabaseRegistryChange) {
           owner.onRegistryChange(change);
           onRegistryChange?.(change);
         },
-        createAdmission(binding) {
-          return () => ({
-            nativeLocations: binding.nativeLocations,
-            admission: createSqliteWorkerOperationAdmission((request, grant) => {
-              binding.authorize(request);
-              assertCurrent();
-              if (!grant()) {
-                throw new Error("Session read authority expired");
-              }
-            }, binding.attachment),
-          });
-        },
-      } satisfies AgentDatabaseRequestExecutionSource;
+      };
       let entry: SessionEntry | undefined;
       let readTarget: SessionEntryTargetPatchScope | undefined;
       try {
