@@ -82,6 +82,7 @@ function publishBackend(
       sessionKey: "agent:researcher:talk",
       operationalRunInstance,
       embeddedRunToolAuthorityBinding: () => ({
+        acceptsRequesterOrigin: () => false,
         source,
         project,
         projectAsync: async (overlay) => project(overlay),

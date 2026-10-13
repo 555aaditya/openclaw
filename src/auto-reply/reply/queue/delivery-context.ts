@@ -1,5 +1,6 @@
 import { expectDefined, stableStringify } from "@openclaw/normalization-core";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
+import { resolveRequesterPrincipalKey } from "../../../agents/requester-origin.js";
 import { withSandboxRuntimeStatusesInWorker } from "../../../agents/sandbox/runtime-status.js";
 import { withPreparedSessionCapabilityRead } from "../../../agents/subagents/spawn/subagent-session-store.js";
 import { readToolAllowlistIntersection } from "../../../agents/tool-policy.js";
@@ -83,6 +84,11 @@ function resolveTurnAdoptionLifecycleDeliveryKey(
 export function resolveFollowupAuthorizationKey(run: FollowupRun): string {
   const execution = run.run;
   return JSON.stringify([
+    resolveRequesterPrincipalKey({
+      ...execution,
+      messageChannel: run.originatingChannel,
+      operatorAuthority: run.operatorAuthority,
+    }),
     resolveReplyOperatorAuthorityKey(run.operatorAuthority),
     execution.senderId ?? "",
     JSON.stringify(execution.channelContext ?? null),
@@ -272,6 +278,7 @@ type FollowupRuntimeMetadata = Pick<
   FollowupRun,
   | "sourceTurnId"
   | "createChannelCronAuthority"
+  | "readAdmissionConfig"
   | "operatorAuthority"
   | "personalBootstrapEligible"
   | "currentInboundEventKind"
@@ -394,6 +401,7 @@ export function collectRuntimeMetadata(
   return {
     sourceTurnId: authoritySource?.sourceTurnId,
     createChannelCronAuthority: authoritySource?.createChannelCronAuthority,
+    readAdmissionConfig: authoritySource?.readAdmissionConfig,
     operatorAuthority: authoritySource?.operatorAuthority,
     ...(items.length > 0 && items.every((item) => item.personalBootstrapEligible === true)
       ? { personalBootstrapEligible: true }
@@ -468,6 +476,7 @@ export function createOverflowSummaryRetrySource(source: FollowupRun): FollowupR
     prompt: source.prompt,
     sourceTurnId: source.sourceTurnId,
     createChannelCronAuthority: source.createChannelCronAuthority,
+    readAdmissionConfig: source.readAdmissionConfig,
     admissionSessionId: source.admissionSessionId,
     operatorAuthority: source.operatorAuthority,
     personalBootstrapEligible: source.personalBootstrapEligible,
@@ -500,4 +509,21 @@ export function createOverflowSummaryRetrySource(source: FollowupRun): FollowupR
       : {}),
     run: source.run,
   };
+}
+
+export function resolveOriginRoutingMetadata(items: FollowupRun[]) {
+  const source =
+    items.find((item) => item.originatingChannel && item.originatingTo) ??
+    items.find(
+      (item) =>
+        item.originatingChannel ||
+        item.originatingTo ||
+        item.originatingAccountId ||
+        item.originatingThreadId != null ||
+        item.originatingChatId ||
+        item.originatingReplyToId ||
+        item.originatingReplyToMode ||
+        item.originatingChatType,
+    );
+  return source ? getFollowupOriginRouting(source) : {};
 }

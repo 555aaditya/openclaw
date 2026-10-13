@@ -30,7 +30,7 @@ import {
 } from "./agent-runner-steer-adoption.test-support.js";
 import { MessageInjectionTargetUnavailableError } from "./message-injection-authority.js";
 import { enqueueFollowupRun, type FollowupRun } from "./queue.js";
-import { createQueueTestRun, clearFollowupQueueForTest } from "./queue.test-helpers.js";
+import { clearFollowupQueueForTest } from "./queue.test-helpers.js";
 import { getExistingFollowupQueue } from "./queue/state.js";
 import {
   REPLY_OPERATION_RUN_STATE,
@@ -39,6 +39,7 @@ import {
 import { withQuestionCreator } from "./reply-run-question.test-support.js";
 import type { ReplyBackendQueueMessageResult } from "./reply-run-registry.contracts.js";
 import { replyRunRegistry } from "./reply-run-registry.js";
+import { createQueueTestRun } from "./reply-tool-authority.test-support.js";
 import { prepareSteeringDelivery } from "./steering-delivery-preparation.js";
 
 const text = "candidate committed answer";
@@ -379,7 +380,7 @@ it.each(questionSourceAuthorityChanges)(
           commandBody: text,
           followupRun: incoming,
           sessionKey: key,
-          sessionCtx: { Provider: "webchat" },
+          sessionCtx: { Provider: "webchat", SenderId: run.run.senderId },
           sessionEntry:
             change === "permission"
               ? { sessionId: run.run.sessionId, updatedAt: 0, permissionMode: "guarded" }
@@ -590,6 +591,11 @@ it.each([
                   resolvedQueue: { mode: "steer", debounceMs: 0 },
                   shouldSteer: true,
                   isActive: true,
+                  sessionCtx: {
+                    Provider: run.run.messageProvider,
+                    SenderId: run.run.senderId,
+                  },
+                  sessionKey: key,
                   defaultModel: "openai/gpt-test",
                   resolvedBlockStreamingBreak: "text_end",
                 }),
