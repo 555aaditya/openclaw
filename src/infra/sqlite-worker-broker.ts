@@ -241,7 +241,7 @@ export class SqliteWorkerBroker {
         slot,
         references: 1,
         opened: Promise.resolve(),
-        openDispatch: { dispatched: false },
+        openDispatch: { custody: slot.custody.createRequest() },
         initialized: false,
         backendClosed: false,
         databasePath,
@@ -323,7 +323,7 @@ export class SqliteWorkerBroker {
             await this.lifecycle.closeActor(actor, options.maintenanceScope);
           } else {
             const nativeOpenMayHaveEntered =
-              actor.openDispatch.dispatched &&
+              actor.openDispatch.custody.postAttempted &&
               !actor.openDispatch.openNotEntered &&
               !actor.openDispatch.openRefused;
             if (!nativeOpenMayHaveEntered && !actor.slot.failed) {
@@ -503,6 +503,7 @@ export class SqliteWorkerBroker {
     }
     const result = createDeferredCore<unknown>();
     const job: Job = {
+      custody: dispatchState?.custody ?? slot.custody.createRequest(),
       observation,
       signal,
       maintenanceScope,
@@ -516,6 +517,7 @@ export class SqliteWorkerBroker {
       detach: () => signal?.removeEventListener("abort", abort),
     };
     const abort = () => {
+      job.custody.cancel();
       const index = slot.queue.indexOf(job);
       if (index >= 0) {
         slot.queue.splice(index, 1);
@@ -607,6 +609,7 @@ export class SqliteWorkerBroker {
   }
 
   private dispatchJob(slot: Slot, job: Job): void {
+    job.custody.activate();
     slot.current = job;
     slot.worker.ref();
     job.observation.started();
@@ -619,6 +622,7 @@ export class SqliteWorkerBroker {
         // Retire uncertain transfers or failed prepared-custody cleanup before settlement.
         this.fail(slot, error, toErrorObject(error, "SQLite worker transfer failed"));
       } else {
+        job.custody.retire();
         slot.current = undefined;
         this.finish(slot, job, error);
         this.dispatch(slot);

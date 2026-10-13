@@ -1141,6 +1141,8 @@ src/infra/sqlite-worker-identity.ts
 src/infra/sqlite-worker-operation-admission.ts
 src/infra/sqlite-worker-operation-settlement.ts
 src/infra/sqlite-worker-request-class.ts
+src/infra/sqlite-worker-request-custody.ts
+src/infra/sqlite-writer-admission-client.ts
 src/infra/sqlite-worker-state-context.ts
 src/infra/sqlite-worker-store.ts
 src/infra/sqlite-worker-transfer.ts
@@ -1677,7 +1679,6 @@ src/skills/discovery/agent-filter.ts
 src/skills/discovery/filter.ts
 src/skills/skill-library-error.ts
 src/skills/lifecycle/upload-store-error.ts
-src/skills/runtime/refresh-watch-targets.types.ts
 src/state/agent-creation-claim.ts
 src/state/agent-database-admission-error.ts
 src/state/agent-database-admission.ts
