@@ -23,7 +23,7 @@ export function captureMemoryReplyToolAuthoritySession(
   }
   return {
     capabilities: createMemorySessionCapabilityStore(memory),
-    readEntry() {
+    readEntry: () => {
       memory.authority.assertCurrent();
       memory.owner?.assertCurrent();
       memory.binding?.actor.assertReadable();

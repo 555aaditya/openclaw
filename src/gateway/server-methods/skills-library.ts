@@ -196,8 +196,8 @@ async function selectedSession(
 ): Promise<{
   target: SessionSharingTarget;
   source: SessionSourceAssertion | undefined;
-  assertCurrent(): void;
-  release(): void | Promise<void>;
+  assertCurrent: () => void;
+  release: () => void | Promise<void>;
 }> {
   const sourceCfg = options.context.getRuntimeConfig();
   if (!isIncognitoSessionKey(sessionKey)) {

@@ -29,7 +29,7 @@ import {
   runOpenClawAgentWriteTransaction,
   withOpenClawAgentDatabaseAsync,
 } from "../state/openclaw-agent-db.js";
-import { runOpenClawAgentWorkerWrite } from "../state/openclaw-agent-write-admission.js";
+import * as writerAdmission from "../state/openclaw-agent-write-admission.js";
 import { clearOpenClawAgentIntegrityVerification } from "../state/openclaw-quarantine-store.js";
 import {
   closeOpenClawStateDatabaseAsync,
@@ -92,10 +92,13 @@ it.each(["rollup", "prune"] as const)(
       const before = readSnapshot();
       const entered = createDeferredCore();
       const release = createDeferredCore();
-      const reservation = runOpenClawAgentWorkerWrite({ agentId, path: databasePath }, async () => {
-        entered.resolve();
-        await release.promise;
-      });
+      const reservation = writerAdmission.runOpenClawAgentWorkerWrite(
+        { agentId, path: databasePath },
+        async () => {
+          entered.resolve();
+          await release.promise;
+        },
+      );
       await entered.promise;
       let settled = false;
       const writing = (async () => {
@@ -395,7 +398,7 @@ it.for(["rollup", "prune"] as const)(
       const before = readSessionCostUsageRollupRows(agentId, database.path);
       const entered = createDeferredCore();
       const release = createDeferredCore();
-      const held = runOpenClawAgentWorkerWrite(options, async () => {
+      const held = writerAdmission.runOpenClawAgentWorkerWrite(options, async () => {
         entered.resolve();
         await release.promise;
       });
@@ -441,7 +444,7 @@ it("rejects a queued rollup after its refresh authority is revoked", async () =>
     expect(await owner.acquire()).toBe(true);
     const entered = createDeferredCore();
     const release = createDeferredCore();
-    const reservation = runOpenClawAgentWorkerWrite(options, async () => {
+    const reservation = writerAdmission.runOpenClawAgentWorkerWrite(options, async () => {
       entered.resolve();
       await release.promise;
     });
@@ -529,7 +532,7 @@ it("keeps usage exclusion in its mixed-case Windows state root", async () => {
     );
     const entered = createDeferredCore();
     const release = createDeferredCore();
-    const reservation = runOpenClawAgentWorkerWrite(
+    const reservation = writerAdmission.runOpenClawAgentWorkerWrite(
       { ...options, path: database.path },
       async () => {
         entered.resolve();
@@ -619,7 +622,7 @@ it("finishes a foreground session write while pruning a cold existing usage stor
         admit(
           options,
           async () => {
-            if (!("target" in options) && options.path === storePath && priority !== "background") {
+            if (options.path === storePath && priority !== "background") {
               writerEntered.resolve();
             }
             return write();

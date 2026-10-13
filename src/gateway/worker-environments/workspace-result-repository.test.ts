@@ -71,7 +71,7 @@ describe("repository workspace result ownership", () => {
     const sql = observeMainThreadSql();
     sql.calibrate();
     try {
-      using access = await resolveRepositoryWorkspaceAccess(loaded, context);
+      using access = await resolveRepositoryWorkspaceAccess(loaded, context, () => {});
       if (access?.kind !== "active") {
         throw new Error("Expected live repository editor access");
       }
