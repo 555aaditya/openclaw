@@ -5665,7 +5665,6 @@
 ["src/commands/doctor.e2e-harness.ts","../infra/state-migrations.plugin-doctor.js","b7e343058f2ce689b129e72efee6054c39a7f0ac7a7de4ac104a72172eb13252",1]
 ["src/commands/doctor.e2e-harness.ts","../pairing/pairing-store.js","a39ce14d386e5e03fc612a403327c0c2e26530b172a7cf57c7e1cd544a4f341c",1]
 ["src/commands/doctor.e2e-harness.ts","../plugins/loader.js","ef1fa7a7169b8dce41b813a0d7275f2aec75357b56219255735fb9eff89acdf3",1]
-["src/commands/doctor.e2e-harness.ts","../process/exec.js","5fc1f3eb4f2c40243a56988a89f49ed580485b2517647f5bf09b6630b883d935",1]
 ["src/commands/doctor.e2e-harness.ts","../skills/discovery/status.js","73ece1aca83726a410633132730ca873d813063a3285dd41616e19a6ddf738b1",1]
 ["src/commands/doctor.e2e-harness.ts","./daemon-install-helpers.js","c7694d5b85067fde336fe9a76f012e157aa83dabbffbffe856bc97262867dbbe",1]
 ["src/commands/doctor.e2e-harness.ts","./doctor-gateway-auth-token.js","c8f97f9db77e695d5272c1ad836f3ce4bba91a8d27f6967147871c008c682771",1]

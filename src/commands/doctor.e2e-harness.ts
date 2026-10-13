@@ -351,7 +351,8 @@ vi.mock("../gateway/call.js", async () => {
   };
 });
 
-vi.mock("../process/exec.js", () => ({
+vi.mock("../process/exec.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../process/exec.js")>()),
   runExec,
   runCommandWithTimeout,
 }));
