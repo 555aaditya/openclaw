@@ -911,7 +911,11 @@ describe("Muse native MSP harness", () => {
       protectedWrite: false,
       rawArgs: '{"command":"pwd"}',
       sessionId: "session-1",
-      sourceRange: { start: 0, end: 1 },
+      sourceRange: {
+        first: { id: "event-1", sequence: 1 },
+        last: { id: "event-1", sequence: 1 },
+        stream: { id: "session-1", kind: "session" },
+      },
       subject: { kind: "command", command: "pwd" },
       taskId: "task-1",
       toolCallId: "call-1",
