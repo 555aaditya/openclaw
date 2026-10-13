@@ -205,6 +205,7 @@ describe("tsdown config", () => {
       unifiedGraph,
       expectDefined(workerGraph, "deploy worker graph"),
       requireStandaloneRuntimeGraph("worker/code-mode-node.worker"),
+      requireStandaloneRuntimeGraph("worker/gateway-state-owner-heartbeat.worker"),
       requireStandaloneRuntimeGraph("worker/file-tool-planning.worker"),
       requireStandaloneRuntimeGraph("worker/file-tool-read.worker"),
       requireStandaloneRuntimeGraph("worker/image-processor.worker"),

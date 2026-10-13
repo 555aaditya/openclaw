@@ -50,6 +50,11 @@ const workerBuildTargets = [
   ["worker", "worker/worker", "src/worker/worker-deploy-entry.ts"],
   ["code-mode-node", "worker/code-mode-node.worker", "src/agents/code-mode-node.worker.ts"],
   [
+    "gateway-state-owner-heartbeat",
+    "worker/gateway-state-owner-heartbeat.worker",
+    "src/infra/gateway-state-owner-heartbeat.worker.ts",
+  ],
+  [
     "file-tool-planning",
     "worker/file-tool-planning.worker",
     "src/worker/worker-deploy-file-tool-planning.ts",
