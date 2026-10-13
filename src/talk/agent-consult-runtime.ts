@@ -301,12 +301,11 @@ async function resolveRealtimeVoiceAgentConsultSessionEntry(params: {
       )
     : undefined;
   params.assertCurrent();
+  const fallbackActor = requesterSessionKey
+    ? { type: "agent" as const, id: requesterSessionKey }
+    : undefined;
   const legacyActor =
-    requesterEntry?.sandbox === "required"
-      ? requesterEntry.createdActor
-      : requesterSessionKey
-        ? { type: "agent" as const, id: requesterSessionKey }
-        : undefined;
+    requesterEntry?.sandbox === "required" ? requesterEntry.createdActor : fallbackActor;
   const creationStamp = buildSessionCreationStamp({
     via: "talk",
     sandboxProvenance: { actor: legacyActor },
@@ -315,7 +314,7 @@ async function resolveRealtimeVoiceAgentConsultSessionEntry(params: {
       resolveDelegatedSessionCreator({
         enabled: params.cfg.agents?.defaults?.experimental?.delegatedCreatorAttribution === true,
         source: requesterEntry,
-        fallback: legacyActor,
+        fallback: fallbackActor,
         legacyActor,
       }),
     ),

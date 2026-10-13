@@ -380,7 +380,7 @@ describe("voice consult concrete store ownership", () => {
       await expect(consult).resolves.toEqual({ text: "Checked" });
       expect(loadSessionEntry({ agentId: "main", sessionKey, storePath })).toMatchObject({
         sandbox: "required",
-        createdActor,
+        createdActor: enabled ? { type: "agent", id: spawnedBy } : createdActor,
         sandboxProvenance: {
           actor: { type: "human", source: "profile", id: "retained-isolation" },
         },
