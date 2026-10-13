@@ -136,7 +136,7 @@ it.skipIf(process.platform === "win32")(
     const startedAt = Date.now();
     const record = (boundary: string, detail: unknown) => {
       const entry = { ms: Date.now() - startedAt, boundary, detail };
-      console.info("required-native-boundary", JSON.stringify(entry));
+      process.stderr.write(`required-native-boundary ${JSON.stringify(entry)}\n`);
     };
     let onNativeRequest: ((marker: string) => void) | undefined;
     const provider = createServer((request, response) => {
@@ -428,8 +428,8 @@ it.skipIf(process.platform === "win32")(
             const atResume = createDeferred();
             const continueResume = createDeferred();
             const changedClear = createDeferred();
-            const bEntered = createDeferred();
             const bChangedClear = createDeferred();
+            const bEntered = createDeferred();
             barriers.push(continueQuiesce, continueResume);
             let aClaim: string | undefined;
             let aRun: string | undefined;
@@ -461,17 +461,17 @@ it.skipIf(process.platform === "win32")(
                   });
                 }
                 sawPending = true;
-              } else if (finishReleased && placement?.state === "active") {
+              } else if (finishReleased && !sawClear && placement?.state === "active") {
                 const settled = readSettlement(gateway, key);
-                if (!sawClear) {
-                  expect(settled.pending?.claim_id).not.toBe(aClaim);
-                  expect(settled.placement?.turn_claim_id).not.toBe(aClaim);
-                  sawClear = true;
-                  record("sessions.changed-clear", { creation, timing });
-                  changedClear.resolve();
-                }
-                if (bRun && !settled.pending && settled.placement?.turn_claim_id === null) {
-                  record("B-sessions.changed-clear", { creation, timing });
+                expect(settled.pending?.claim_id).not.toBe(aClaim);
+                expect(settled.placement?.turn_claim_id).not.toBe(aClaim);
+                sawClear = true;
+                record("sessions.changed-clear", { creation, timing });
+                changedClear.resolve();
+              }
+              if (bRun && placement?.state === "active" && !placement.workspaceResultReconciling) {
+                const settled = readSettlement(gateway, key);
+                if (settled.placement?.turn_claim_id === null && !settled.pending) {
                   bChangedClear.resolve();
                 }
               }
@@ -554,6 +554,8 @@ it.skipIf(process.platform === "win32")(
               atQuiesce.promise,
               "A never reached physical terminal receipt / quiescence",
             );
+            expect(await aWait).toMatchObject({ status: "ok" });
+            record("A-agent.wait-before-workspace-settlement", { creation, timing });
             const current = await describe(key);
             record("A-sessions.describe-pending", {
               creation,
@@ -620,9 +622,6 @@ it.skipIf(process.platform === "win32")(
             }
             continueQuiesce.resolve();
             await checkpoint(atResume.promise, "A never accepted its unchanged workspace result");
-            // The reply completes while workspace settlement still owns the turn claim.
-            expect(await aWait).toMatchObject({ status: "ok" });
-            record("A-agent.wait", { creation, timing });
             finishReleased = true;
             continueResume.resolve();
             await checkpoint(changedClear.promise, "settled placement never published clear");
@@ -641,7 +640,7 @@ it.skipIf(process.platform === "win32")(
             // id owns queue cancellation and returns "pending" until adoption settles.
             // Wait on the exact real claim observed at native HTTP admission.
             expect(await wait(bRun!)).toMatchObject({ status: "ok" });
-            await checkpoint(bChangedClear.promise, "B settled placement never published clear");
+            await checkpoint(bChangedClear.promise, "B settlement never published clear");
             const final = readSettlement(gateway, key);
             expect(final.pending).toBeUndefined();
             expect(final.placement).toMatchObject({
