@@ -328,6 +328,13 @@ describe("scoped vitest configs", () => {
     const imageAuthFile = "src/agents/tools/image-generate-tool.auth.test.ts";
     expect(testConfig.include).toContain(imageAuthFile);
     expect(agentVitestProjectOwners.tools.exclude).toContain(imageAuthFile);
+    for (const file of [
+      "src/commands/doctor/shared/xai-auto-retirement.test.ts",
+      "test/e2e/qa-lab/runtime/quota-reset-provider.test.ts",
+    ]) {
+      expect(testConfig.include).toContain(file);
+      expect(isUnitFastTestFile(file), file).toBe(false);
+    }
     const recoveryFile = "src/wizard/setup.inference-recovery.integration.test.ts";
     expect(testConfig.include?.filter((file) => file === recoveryFile)).toEqual([recoveryFile]);
     expect(requireTestConfig(defaultWizardConfig).exclude).toContain(
