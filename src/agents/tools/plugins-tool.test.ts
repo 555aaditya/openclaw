@@ -13,8 +13,8 @@ import { callAgentToolGatewayRequest } from "./in-process-gateway.js";
 import { createPluginsTool } from "./plugins-tool.js";
 
 vi.mock("./in-process-gateway.js", () => ({ callAgentToolGatewayRequest: vi.fn() }));
-// These are response/routing tests; real admitted caller custody is exercised by
-// the isolated Gateway handoff proof, not fabricated inside this mocked transport.
+// The isolated Gateway handoff proof exercises real admitted caller custody.
+// mock-isolation: routing tests must not register process-global origins or fabricate caller authority.
 vi.mock("../plugin-reload-origin.js", () => ({
   registerPluginReloadOrigin: () => ({ token: "routing-origin", revoke: () => {} }),
 }));
