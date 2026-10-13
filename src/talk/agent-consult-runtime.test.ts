@@ -341,10 +341,12 @@ describe("realtime voice agent consult runtime", () => {
     expect(Object.keys(voiceSession).toSorted()).toStrictEqual([
       "createdAt",
       "createdVia",
+      "sandboxProvenance",
       "sessionId",
       "updatedAt",
     ]);
     expect(voiceSession.createdVia).toBe("talk");
+    expect(voiceSession.sandboxProvenance).toEqual({});
     expectPositiveTimestamp(voiceSession.createdAt);
     expectNonEmptyString(voiceSession.sessionId);
     expectPositiveTimestamp(voiceSession.updatedAt);

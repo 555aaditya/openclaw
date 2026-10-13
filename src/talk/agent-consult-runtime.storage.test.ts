@@ -9,6 +9,7 @@ import { SessionManager } from "../agents/sessions/index.js";
 import { makeAgentAssistantMessage } from "../agents/test-helpers/agent-message-fixtures.js";
 import {
   appendTranscriptMessage,
+  assignSessionOwner,
   loadSessionEntry,
   replaceSessionEntry,
 } from "../config/sessions/session-accessor.js";
@@ -33,6 +34,108 @@ afterEach(async () => {
 });
 
 describe("voice consult concrete store ownership", () => {
+  it.each(
+    [false, true].flatMap((enabled) =>
+      (["isolated", "fork"] as const).map((contextMode) => ({ enabled, contextMode })),
+    ),
+  )(
+    "retains delegated causality through $contextMode consults with Lab $enabled",
+    async ({ enabled, contextMode }) => {
+      const cfg: OpenClawConfig = {
+        agents: {
+          entries: { main: { workspace: state.workspaceDir } },
+          defaults: { experimental: { delegatedCreatorAttribution: enabled } },
+        },
+      };
+      const agentRuntime = {
+        ...createRuntimeAgent(),
+        runEmbeddedAgent: vi.fn(async () => ({
+          payloads: [{ text: "Checked" }],
+          meta: { durationMs: 0 },
+        })),
+      };
+      const storePath = agentRuntime.session.resolveStorePath(cfg.session?.store, {
+        agentId: "main",
+      });
+      const creator = { type: "human", source: "profile", id: "task-creator" } as const;
+      const parentKey = "agent:main:delegated-task";
+      await replaceSessionEntry(
+        { agentId: "main", storePath, sessionKey: parentKey },
+        {
+          sessionId: "delegated-task",
+          updatedAt: 1,
+          createdVia: "spawn",
+          createdActor: creator,
+        },
+      );
+      const assignment = assignSessionOwner(
+        { agentId: "main", storePath, sessionKey: parentKey },
+        { owner: { type: "human", id: "different-assignee" }, assignedAt: 1 },
+      );
+      expect(assignment?.actor).toEqual({ type: "human", id: "different-assignee" });
+      expect(
+        loadSessionEntry({ agentId: "main", storePath, sessionKey: parentKey })?.owner,
+      ).toEqual(assignment);
+      let sourceKey = parentKey;
+      for (const suffix of ["first", "follow-on"]) {
+        const source = loadSessionEntry({ agentId: "main", storePath, sessionKey: sourceKey })!;
+        if (contextMode === "fork") {
+          await appendTranscriptMessage(
+            { agentId: "main", storePath, sessionKey: sourceKey, sessionId: source.sessionId },
+            {
+              eventId: `input-${suffix}`,
+              message: {
+                role: "user",
+                content: [{ type: "text", text: "Synthetic consult context" }],
+                timestamp: 2,
+              },
+              now: 2,
+            },
+          );
+        }
+        const sessionKey = `agent:main:consult-${suffix}`;
+        await expect(
+          consultRealtimeVoiceAgent({
+            cfg,
+            agentRuntime,
+            logger: { warn: vi.fn() },
+            agentId: "main",
+            storePath,
+            sessionKey,
+            spawnedBy: sourceKey,
+            contextMode,
+            messageProvider: "webchat",
+            lane: "talk",
+            runIdPrefix: "causal-consult",
+            args: { question: "Check" },
+            transcript: [],
+            surface: "test voice",
+            userLabel: "User",
+          }),
+        ).resolves.toEqual({ text: "Checked" });
+        const stored = loadSessionEntry({ agentId: "main", storePath, sessionKey });
+        expect(stored?.createdActor).toEqual(enabled ? creator : { type: "agent", id: sourceKey });
+        expect(stored?.sandboxProvenance).toEqual({ actor: { type: "agent", id: sourceKey } });
+        expect(stored?.sandbox).toBeUndefined();
+        expect(stored?.publicShare).toBeUndefined();
+        if (contextMode === "fork") {
+          expect(stored?.forkSource?.sessionKey).toBe(sourceKey);
+        }
+        expect(
+          await agentRuntime.session.getSessionEntryAsync({
+            agentId: "main",
+            storePath,
+            sessionKey,
+          }),
+        ).not.toHaveProperty("sandboxProvenance");
+        sourceKey = sessionKey;
+      }
+      expect(
+        loadSessionEntry({ agentId: "main", storePath, sessionKey: parentKey })?.owner,
+      ).toEqual(assignment);
+    },
+  );
+
   it("refreshes consult policy and delivery after an in-process write", async () => {
     const cfg: OpenClawConfig = {
       agents: { entries: { main: { workspace: state.workspaceDir } } },
@@ -153,17 +256,22 @@ describe("voice consult concrete store ownership", () => {
     expect(new Set(runIds).size).toBe(2);
   });
 
-  it.each([
-    { parentAgentId: "main", locked: false, contextMode: "isolated" },
-    { parentAgentId: "main", locked: false, contextMode: "fork" },
-    { parentAgentId: "other", locked: false, contextMode: "isolated" },
-    { parentAgentId: "main", locked: true, contextMode: "isolated" },
-  ] as const)(
-    "keeps parent $parentAgentId isolation and routing in its configured store ($contextMode, locked=$locked)",
-    async ({ parentAgentId, locked, contextMode }) => {
+  it.each(
+    [
+      { parentAgentId: "main", locked: false, contextMode: "isolated" as const },
+      { parentAgentId: "main", locked: false, contextMode: "fork" as const },
+      { parentAgentId: "other", locked: false, contextMode: "isolated" as const },
+      { parentAgentId: "main", locked: true, contextMode: "isolated" as const },
+    ].flatMap(({ parentAgentId, locked, contextMode }) =>
+      [false, true].map((enabled) => ({ parentAgentId, locked, contextMode, enabled })),
+    ),
+  )(
+    "keeps parent $parentAgentId isolation and routing in its configured store ($contextMode, locked=$locked, creator Lab=$enabled)",
+    async ({ parentAgentId, locked, contextMode, enabled }) => {
       const cfg: OpenClawConfig = {
         agents: {
           entries: { main: { workspace: state.workspaceDir }, other: {} },
+          defaults: { experimental: { delegatedCreatorAttribution: enabled } },
           ownership: "explicit",
         },
       };

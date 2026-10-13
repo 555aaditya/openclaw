@@ -256,11 +256,13 @@ export async function captureCronCreatorSession(
   // owner nor an operator-supplied delivery session identifies that requester.
   const requester = resolveOperatorSessionCreation(client).actor;
   const actor = callerScope
-    ? resolveDelegatedSessionCreator(
-        creatorSession,
-        { type: "agent", id: callerScope.agentId },
-        sessionCreatorProfileId(requester),
-      )
+    ? resolveDelegatedSessionCreator({
+        enabled: cfg.agents?.defaults?.experimental?.delegatedCreatorAttribution === true,
+        source: creatorSession,
+        fallback: { type: "agent", id: callerScope.agentId },
+        legacyActor: creatorSession?.createdActor,
+        requesterProfileId: sessionCreatorProfileId(requester),
+      })
     : requester;
   const snapshotActor = (value: typeof requester) => {
     const id = normalizeOptionalString(value?.id);

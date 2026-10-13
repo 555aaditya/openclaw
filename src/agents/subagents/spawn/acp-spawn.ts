@@ -429,11 +429,13 @@ export async function spawnAcpDirect(
       const creationStamp = buildSessionCreationStamp({
         via: "spawn",
         sandboxProvenance: { actor: { type: "agent", id: requesterAgentId } },
-        actor: resolveDelegatedSessionCreator(
-          parentEntry,
-          { type: "agent", id: requesterAgentId },
-          requester.operatorAuthority?.profileId,
-        ),
+        actor: resolveDelegatedSessionCreator({
+          enabled: cfg.agents?.defaults?.experimental?.delegatedCreatorAttribution === true,
+          source: parentEntry,
+          fallback: { type: "agent", id: requesterAgentId },
+          legacyActor: { type: "agent", id: requesterAgentId },
+          requesterProfileId: requester.operatorAuthority?.profileId,
+        }),
         inheritedGitContributorProfileIds: inheritSessionGitContributorProfileIds(parentEntry),
       });
       const storePath = resolveSessionStorePathCore(cfg.session?.store, { agentId: ownerAgentId });

@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import {
+  resolveDelegatedSessionCreator,
   inheritSpawnSessionOwner,
   inheritSessionCreationPolicy,
   sessionSandboxActor,
@@ -118,5 +119,30 @@ it("keeps required isolation separate from explicit and actorless creation attri
     expect(
       preserveCreationStamp({ sandboxProvenance: { actor: requester } }, source).sandboxProvenance,
     ).toEqual(sandboxProvenance);
+  }
+});
+
+it("gates only new delegated attribution, retaining each entry point's legacy creator", () => {
+  const fallback = { type: "agent", id: "main" } as const;
+  const other = { type: "human", source: "profile", id: "other" } as const;
+  for (const legacyActor of [undefined, fallback, creator]) {
+    for (const createdVia of ["operator", "spawn", "cron", "talk"] as const) {
+      const source = { createdVia, createdActor: creator };
+      for (const enabled of [false, true, false]) {
+        const select = (requesterProfileId?: string) =>
+          resolveDelegatedSessionCreator({
+            enabled,
+            source,
+            fallback,
+            legacyActor,
+            requesterProfileId,
+          });
+        expect(select(other.id)).toEqual(enabled ? other : legacyActor);
+        expect(select()).toEqual(
+          enabled ? (createdVia === "operator" ? fallback : creator) : legacyActor,
+        );
+        expect(source.createdActor).toEqual(creator);
+      }
+    }
   }
 });

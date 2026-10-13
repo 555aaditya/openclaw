@@ -129,6 +129,7 @@ async function writeTestConfig(maxChildrenPerAgent?: number) {
       defaults: {
         workspace: stateDir,
         systemAgent: { agentId: "main" },
+        experimental: { delegatedCreatorAttribution: true },
         model: { primary: "custom/test-model" },
         ...(maxChildrenPerAgent !== undefined ? { subagents: { maxChildrenPerAgent } } : {}),
       },

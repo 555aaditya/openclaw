@@ -18,6 +18,7 @@ import { projectPublicSessionEntry } from "../config/sessions/session-entry-proj
 import {
   buildSessionCreationStamp,
   inheritSessionCreationPolicy,
+  resolveDelegatedSessionCreator,
 } from "../config/sessions/session-entry-provenance.js";
 import type { InternalSessionEntry, SessionEntry } from "../config/sessions/types.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
@@ -300,13 +301,23 @@ async function resolveRealtimeVoiceAgentConsultSessionEntry(params: {
       )
     : undefined;
   params.assertCurrent();
+  const legacyActor =
+    requesterEntry?.sandbox === "required"
+      ? requesterEntry.createdActor
+      : requesterSessionKey
+        ? { type: "agent" as const, id: requesterSessionKey }
+        : undefined;
   const creationStamp = buildSessionCreationStamp({
     via: "talk",
+    sandboxProvenance: { actor: legacyActor },
     ...inheritSessionCreationPolicy(
       requesterEntry,
-      requesterEntry?.sandbox !== "required" && requesterSessionKey
-        ? { type: "agent", id: requesterSessionKey }
-        : undefined,
+      resolveDelegatedSessionCreator({
+        enabled: params.cfg.agents?.defaults?.experimental?.delegatedCreatorAttribution === true,
+        source: requesterEntry,
+        fallback: legacyActor,
+        legacyActor,
+      }),
     ),
   });
   // A consult child records the same lineage receipt as a native spawn: the requester's

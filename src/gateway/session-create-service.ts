@@ -556,10 +556,10 @@ async function createAdmittedGatewaySession(
 
     // The locked parent owns delegated isolation, including signed remote callers whose
     // transport context carries only agent identity and cannot carry creator authority.
-    const { creation, ownerAssignment: inheritedSpawnOwner } = resolveSessionCreateInheritance({
-      creation: params.creation,
-      parent: currentParentSessionEntry,
-    });
+    const { creation, ownerAssignment: inheritedSpawnOwner } = resolveSessionCreateInheritance(
+      params,
+      currentParentSessionEntry,
+    );
     const targetRead = await readSessionCreateTarget(
       { ...params, commitGuard },
       target,

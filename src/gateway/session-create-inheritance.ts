@@ -120,10 +120,10 @@ function resolveResidentProfileId(profileId: string): string | undefined {
 }
 
 /** Derives trusted child policy and ownership from the locked spawn parent. */
-export function resolveSessionCreateInheritance(params: {
-  creation: SessionCreation | undefined;
-  parent: SessionEntry | undefined;
-}): {
+export function resolveSessionCreateInheritance(
+  params: Pick<CreateGatewaySessionParams, "cfg" | "creation">,
+  parent: SessionEntry | undefined,
+): {
   creation: SessionCreation | undefined;
   ownerAssignment?: SessionOwnerAssignment;
 } {
@@ -131,7 +131,7 @@ export function resolveSessionCreateInheritance(params: {
     return { creation: params.creation };
   }
   const ownerAssignment = inheritSpawnSessionOwner(
-    params.parent,
+    parent,
     params.creation.actor,
     params.creation.requesterProfileId,
     Date.now(),
@@ -142,14 +142,16 @@ export function resolveSessionCreateInheritance(params: {
       ...params.creation,
       sandboxProvenance: { actor: params.creation.actor },
       ...inheritSessionCreationPolicy(
-        params.parent,
-        resolveDelegatedSessionCreator(
-          params.parent,
-          params.creation.actor,
-          params.creation.requesterProfileId,
-        ),
+        parent,
+        resolveDelegatedSessionCreator({
+          enabled: params.cfg.agents?.defaults?.experimental?.delegatedCreatorAttribution === true,
+          source: parent,
+          fallback: params.creation.actor,
+          legacyActor: parent?.sandbox === "required" ? parent.createdActor : params.creation.actor,
+          requesterProfileId: params.creation.requesterProfileId,
+        }),
       ),
-      inheritedGitContributorProfileIds: inheritSessionGitContributorProfileIds(params.parent),
+      inheritedGitContributorProfileIds: inheritSessionGitContributorProfileIds(parent),
     },
     ...(ownerAssignment ? { ownerAssignment } : {}),
   };

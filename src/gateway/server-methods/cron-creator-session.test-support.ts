@@ -2,6 +2,7 @@ import { expect, it, type Mock } from "vitest";
 import { createAdmittedRunOperatorAuthority } from "../../agents/admitted-run-context.js";
 import type { SessionCreatedActor } from "../../config/sessions/session-entry-provenance.js";
 import type { SessionEntry } from "../../config/sessions/types.js";
+import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import type { CronDeliveryPreview } from "../../cron/types.js";
 import {
   agentTurnCronParams,
@@ -27,11 +28,14 @@ export type CronCreatorSessionLookup = {
   };
 };
 
-export function registerCronCreatorSessionTests(fixture: {
-  invokeCron: ReturnType<typeof createCronTestInvoker>;
-  loadGatewaySessionEntry: Mock<(sessionKey: string) => CronCreatorSessionLookup>;
-  resolveCronDeliveryPreview: Mock<() => Promise<CronDeliveryPreview>>;
-}) {
+export function registerCronCreatorSessionTests(
+  getRuntimeConfig: Mock<() => OpenClawConfig>,
+  fixture: {
+    invokeCron: ReturnType<typeof createCronTestInvoker>;
+    loadGatewaySessionEntry: Mock<(sessionKey: string) => CronCreatorSessionLookup>;
+    resolveCronDeliveryPreview: Mock<() => Promise<CronDeliveryPreview>>;
+  },
+) {
   const { invokeCron, loadGatewaySessionEntry, resolveCronDeliveryPreview } = fixture;
   it("stamps the authenticated profile as private cron creator provenance", async () => {
     const client: GatewayClient = {
@@ -113,7 +117,11 @@ export function registerCronCreatorSessionTests(fixture: {
         expect(options.sandboxProvenance).toEqual({ actor: undefined });
       } else {
         expect(options.skillLibrarySelections).toEqual([]);
-        expect(options.createdActor).toEqual({ type: "agent", id: "ops" });
+        expect(options.createdActor).toEqual({
+          type: "human",
+          source: "profile",
+          id: "profile-ada",
+        });
         expect(options.sandboxProvenance).toEqual({
           actor: { type: "human", source: "profile", id: "profile-ada" },
         });
@@ -126,27 +134,37 @@ export function registerCronCreatorSessionTests(fixture: {
     },
   );
 
-  it("attributes an agent-created job to the admitted requester, not the session creator", async () => {
-    loadGatewaySessionEntry.mockReturnValue({
-      canonicalKey: "agent:ops:main",
-      entry: {
-        sessionId: "session-ops-main",
-        createdVia: "spawn",
-        createdActor: { type: "human", source: "profile", id: "another-profile" },
-      },
-    });
-    const client = callerClient("ops");
-    client.internal!.operatorRunAuthority = createAdmittedRunOperatorAuthority({
-      profileId: "profile-ada",
-      scopes: ["operator.write"],
-      assertCurrent: () => {},
-    });
-    const { context, respond } = await invokeCron("cron.add", agentTurnCronParams(), { client });
-    expect(
-      requireRecord(context.cron.add.mock.calls[0]?.[1], "cron.add options").createdActor,
-    ).toEqual({ type: "human", source: "profile", id: "profile-ada" });
-    expectCronSuccess(respond);
-  });
+  it.each([undefined, false, true])(
+    "selects the agent-created job creator with Lab=%s",
+    async (enabled) => {
+      getRuntimeConfig.mockReturnValue({
+        agents: { defaults: { experimental: { delegatedCreatorAttribution: enabled } } },
+      });
+      loadGatewaySessionEntry.mockReturnValue({
+        canonicalKey: "agent:ops:main",
+        entry: {
+          sessionId: "session-ops-main",
+          createdVia: "spawn",
+          createdActor: { type: "human", source: "profile", id: "another-profile" },
+        },
+      });
+      const client = callerClient("ops");
+      client.internal!.operatorRunAuthority = createAdmittedRunOperatorAuthority({
+        profileId: "profile-ada",
+        scopes: ["operator.write"],
+        assertCurrent: () => {},
+      });
+      const { context, respond } = await invokeCron("cron.add", agentTurnCronParams(), { client });
+      expect(
+        requireRecord(context.cron.add.mock.calls[0]?.[1], "cron.add options").createdActor,
+      ).toEqual({
+        type: "human",
+        source: "profile",
+        id: enabled ? "profile-ada" : "another-profile",
+      });
+      expectCronSuccess(respond);
+    },
+  );
 
   it.each([undefined, "missing-conversation"])(
     "leaves isolated jobs unbound without an existing creating session: %s",

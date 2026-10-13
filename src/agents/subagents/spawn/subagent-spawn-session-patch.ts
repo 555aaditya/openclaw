@@ -484,11 +484,18 @@ export async function createInitialSubagentSession(input: {
                   ...buildSessionCreationStamp({
                     via: "spawn",
                     ...params.creationPolicy,
-                    actor: resolveDelegatedSessionCreator(
-                      parentEntry,
-                      params.creationPolicy.actor,
-                      params.requesterProfileId,
-                    ),
+                    actor: resolveDelegatedSessionCreator({
+                      enabled:
+                        params.cfg.agents?.defaults?.experimental?.delegatedCreatorAttribution ===
+                        true,
+                      source: parentEntry,
+                      fallback: params.creationPolicy.actor,
+                      legacyActor:
+                        params.creationPolicy.sandbox === "required"
+                          ? parentEntry?.createdActor
+                          : params.creationPolicy.actor,
+                      requesterProfileId: params.requesterProfileId,
+                    }),
                     ...(!params.incognito
                       ? {
                           inheritedGitContributorProfileIds:

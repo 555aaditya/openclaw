@@ -132,19 +132,30 @@ export function inheritSpawnSessionOwner(
 export type SessionCreatedVia = NonNullable<SessionRow["createdVia"]>;
 
 /** Creation attribution is independent of the assignee and execution authority. */
-export function resolveDelegatedSessionCreator(
-  source: { createdVia?: SessionCreatedVia; createdActor?: SessionCreatedActor } | undefined,
-  fallback: SessionCreatedActor | undefined,
-  requesterProfileId?: string,
-): SessionCreatedActor | undefined {
-  if (requesterProfileId) {
-    return { type: "human", source: "profile", id: requesterProfileId };
+export function resolveDelegatedSessionCreator(params: {
+  enabled: boolean;
+  source: { createdVia?: SessionCreatedVia; createdActor?: SessionCreatedActor } | undefined;
+  fallback: SessionCreatedActor | undefined;
+  legacyActor: SessionCreatedActor | undefined;
+  requesterProfileId?: string;
+}): SessionCreatedActor | undefined {
+  // Each entry point supplies its pre-Lab creator, independently of isolation.
+  // The admitted config snapshot governs new rows, never existing attribution.
+  if (!params.enabled) {
+    return params.legacyActor;
+  }
+  if (params.requesterProfileId) {
+    return { type: "human", source: "profile", id: params.requesterProfileId };
   }
   // A delegated task or scheduled run retains its write-once causal creator.
   // An ordinary human-created conversation is not evidence for autonomous work.
-  return (source?.createdVia === "spawn" || source?.createdVia === "cron") && source.createdActor
+  const source = params.source;
+  return (source?.createdVia === "spawn" ||
+    source?.createdVia === "cron" ||
+    source?.createdVia === "talk") &&
+    source.createdActor
     ? source.createdActor
-    : fallback;
+    : params.fallback;
 }
 
 // Return shape mirrors the SessionEntry creation fields as a leaf contract;
