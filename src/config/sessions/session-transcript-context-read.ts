@@ -1,5 +1,4 @@
 import { isPromiseLike } from "@openclaw/normalization-core/promise-like";
-import { readSqliteDatabaseWriteTokenForPath } from "../../infra/sqlite-database-admission.js";
 import type { DatabaseFileIdentity } from "../../infra/sqlite-worker-identity.js";
 import type { UserTurnTranscriptAdmissionReceipt } from "../../sessions/user-turn-transcript.types.js";
 import { isSameOpenClawAgentDatabasePath } from "../../state/openclaw-agent-db.paths.js";
@@ -37,11 +36,6 @@ export type SessionTranscriptContextProjectionSource = {
   admission?: UserTurnTranscriptAdmissionReceipt;
   /** Presence pins a durable source; undefined identity means the captured file was absent. */
   physicalSource?: { expectedIdentity: DatabaseFileIdentity | undefined };
-};
-
-export type PreparedSessionTranscriptModelContext = {
-  context: SessionTranscriptModelContext;
-  writeToken: string;
 };
 
 function assertCurrentInputAnchor(
@@ -122,7 +116,6 @@ export function readSessionTranscriptModelContextAsync<T>(
   through?: TranscriptEntryAnchor,
   limits?: SessionModelContextLimits,
   consumeSynchronously = false,
-  preparedContext?: PreparedSessionTranscriptModelContext,
 ): Promise<T> {
   const capturedTarget = { ...target };
   const capturedAdmission = admission ? structuredClone(admission) : undefined;
@@ -241,20 +234,14 @@ export function readSessionTranscriptModelContextAsync<T>(
           async (_identity, assertOwner) => {
             assertCurrent();
             const assertNative = captureSessionEntryNativeMutationWitness([database]);
-            const context =
-              preparedContext &&
-              !capturedAdmission &&
-              !capturedThrough &&
-              preparedContext.writeToken === readSqliteDatabaseWriteTokenForPath(database.path)
-                ? preparedContext.context
-                : await readSessionTranscriptModelContextInWorker(
-                    captured,
-                    capturedAdmission,
-                    signal,
-                    capturedThrough,
-                    capturedLimits,
-                    expectedIdentity,
-                  );
+            const context = await readSessionTranscriptModelContextInWorker(
+              captured,
+              capturedAdmission,
+              signal,
+              capturedThrough,
+              capturedLimits,
+              expectedIdentity,
+            );
             signal?.throwIfAborted();
             assertOwner();
             assertCurrent();

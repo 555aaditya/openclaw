@@ -6,10 +6,7 @@ import type {
   SessionModelContextLimits,
   SessionTranscriptContextSnapshot,
 } from "../../config/sessions/session-history-read.types.js";
-import {
-  readSessionTranscriptModelContextAsync,
-  type PreparedSessionTranscriptModelContext,
-} from "../../config/sessions/session-transcript-context-read.js";
+import { readSessionTranscriptModelContextAsync } from "../../config/sessions/session-transcript-context-read.js";
 import { prepareSessionTranscriptHydration } from "../../config/sessions/session-transcript-hydration.js";
 import {
   resolveSessionTranscriptReadFence,
@@ -96,7 +93,6 @@ export async function readSessionManagerModelContextAsync<T>(
     signal?: AbortSignal;
     through?: TranscriptEntryAnchor;
     limits?: SessionModelContextLimits;
-    prepared?: PreparedSessionTranscriptModelContext;
   },
   consume: (context: ReturnType<typeof readSessionTranscriptModelContext>) => T,
   manager?: object,
@@ -130,7 +126,6 @@ export async function readSessionManagerModelContextAsync<T>(
       through,
       limits,
       true,
-      options.prepared,
     ),
   );
   options.signal?.throwIfAborted();

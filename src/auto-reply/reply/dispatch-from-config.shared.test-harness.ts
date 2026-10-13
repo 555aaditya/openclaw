@@ -418,11 +418,16 @@ vi.mock("../../config/sessions/session-accessor.sqlite-entry.js", async (importO
     await importOriginal<typeof import("../../config/sessions/session-accessor.sqlite-entry.js")>();
   const { projectSessionEntryPatch } =
     await import("../../config/sessions/session-entry-patch-operation.js");
+  const { getSessionActorStorageBinding } =
+    await import("../../config/sessions/session-actor-storage-binding.js");
   return {
     ...actual,
     applySessionEntryOperation: async (
       ...[scope, operation, options]: Parameters<typeof actual.applySessionEntryOperation>
     ) => {
+      if (getSessionActorStorageBinding(scope)) {
+        return actual.applySessionEntryOperation(scope, operation, options);
+      }
       let wrote = false;
       const result = await sessionStoreMocks.updateSessionEntry(scope, (entry) => {
         const currentEntry = { sessionId: "", updatedAt: 0, ...entry };
