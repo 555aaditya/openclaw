@@ -41,7 +41,7 @@ type PreparedWorkerTranscript = {
   target: BoundAgentRunSessionTarget;
   source: CapturedSessionEntryReadSource & { databaseIdentity: string };
   env: NodeJS.ProcessEnv;
-  readCurrent: () => WorkerTranscriptSourceIdentity | undefined;
+  readCurrent: (target: BoundAgentRunSessionTarget) => WorkerTranscriptSourceIdentity | undefined;
   assertCurrent: () => void;
   release: () => void | Promise<void>;
 };
@@ -55,6 +55,7 @@ async function prepareWorkerTranscript(
 ): Promise<PreparedWorkerTranscript> {
   let facts: ReturnType<typeof retainPreparedSessionSharingFacts> | undefined;
   let predicate: ReturnType<typeof retainPreparedSessionEntryPredicate> | undefined;
+  let settlementPredicate: typeof predicate;
   let source: PreparedWorkerTranscript["source"] | undefined;
   let prepared: PreparedWorkerTranscript | undefined;
   try {
@@ -73,19 +74,25 @@ async function prepareWorkerTranscript(
           membership: new Set(),
         });
         // Transfer the acquired identity before releasing its receipt subscription.
-        predicate = retainPreparedSessionEntryPredicate({
-          databaseIdentity: `file:${source.databaseIdentity}`,
-          sessionKey: target.sessionKey,
-          entry: snapshot.entry,
-          matches: (before, after) =>
-            before?.sessionId === after?.sessionId &&
-            before?.lifecycleRevision === after?.lifecycleRevision &&
-            (target.expectedWriterRunId === undefined ||
-              before?.activeWriterRunId === after?.activeWriterRunId) &&
-            before?.archivedAt === after?.archivedAt,
-        });
+        const databaseIdentity = `file:${source.databaseIdentity}`;
+        const retainPredicate = (writerBound: boolean) =>
+          retainPreparedSessionEntryPredicate({
+            databaseIdentity,
+            sessionKey: target.sessionKey,
+            entry: snapshot.entry,
+            matches: (before, after) =>
+              before?.sessionId === after?.sessionId &&
+              before?.lifecycleRevision === after?.lifecycleRevision &&
+              (!writerBound || before?.activeWriterRunId === after?.activeWriterRunId) &&
+              before?.archivedAt === after?.archivedAt,
+          });
+        predicate = retainPredicate(target.expectedWriterRunId !== undefined);
+        // Completed results retain the session while their caller releases its writer.
+        settlementPredicate =
+          target.expectedWriterRunId === undefined ? predicate : retainPredicate(false);
         facts.release();
         const currentFacts = predicate;
+        const settlementFacts = settlementPredicate;
         const env = owner.scope.env ?? process.env;
         const retained = retainSessionHistoryWorkerDatabase({
           agentId: source.agentId,
@@ -97,7 +104,11 @@ async function prepareWorkerTranscript(
           target: { ...target, storePath: source.path },
           source,
           env,
-          readCurrent: () => currentFacts.readCurrent()?.entry,
+          readCurrent: (requested) =>
+            (requested.expectedWriterRunId === undefined
+              ? settlementFacts
+              : currentFacts
+            ).readCurrent()?.entry,
           assertCurrent: () => {
             if (!active) {
               throw new Error("Cloud worker transcript authority has been released");
@@ -107,6 +118,7 @@ async function prepareWorkerTranscript(
           release: () => {
             active = false;
             currentFacts.release();
+            settlementFacts.release();
             return retained.release();
           },
         };
@@ -135,6 +147,7 @@ async function prepareWorkerTranscript(
     } else {
       facts?.release();
       predicate?.release();
+      settlementPredicate?.release();
     }
     throw error;
   }
@@ -201,7 +214,7 @@ export function resolveWorkerTurnTranscriptTarget(
   const memory = captureSessionActorStorageOwner(target, { assertCurrent() {}, authorize() {} });
   const currentEntry = memory
     ? readCapturedSessionActorEntry(memory, target.sessionKey)
-    : currentPreparedTranscript(target).readCurrent();
+    : currentPreparedTranscript(target).readCurrent(target);
   const mismatchedFields = [
     currentEntry?.sessionId !== target.sessionId ? "sessionId" : undefined,
     target.expectedLifecycleRevision !== undefined &&
@@ -359,7 +372,7 @@ export function captureWorkerTurnTranscriptSource(
   // RPC callbacks run in the connection context, outside the launching turn scope.
   const captured = findPreparedTranscript(target);
   const assertCurrent = () =>
-    assertEntry(currentPreparedTranscript(target, captured).readCurrent());
+    assertEntry(currentPreparedTranscript(target, captured).readCurrent(target));
   return Object.assign(assertCurrent, {
     async prepareSessionSource(): Promise<PreparedSessionSourceAuthority> {
       const current = captured ?? findPreparedTranscript(target);

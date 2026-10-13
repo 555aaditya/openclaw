@@ -233,18 +233,30 @@ describe("buildAgentSystemPrompt", () => {
 
   it.each<PromptCase>([
     [
-      "uses Slack typed presentation hints instead of generic inline button config guidance",
+      "keeps generic callback guidance without a plugin override",
       {
         toolNames: ["message"],
         runtimeInfo: {
-          channel: "slack",
+          channel: "custom",
+          capabilities: ["inlineButtons"],
         },
-        messageToolHints: [
-          "- Use `presentation` buttons/selects for discrete choices or parameter picks instead of asking the user to type one.",
-        ],
       },
-      ["`presentation` buttons/selects"],
-      ["Inline buttons not enabled for slack", 'presentation={"blocks":[{"type":"buttons"'],
+      ['"action":{"type":"callback"'],
+      [],
+    ],
+    [
+      "leaves custom button guidance to the plugin regardless of channel",
+      {
+        toolNames: ["message"],
+        runtimeInfo: {
+          channel: "custom",
+          capabilities: ["inlineButtons"],
+          customInlineButtonHint: true,
+        },
+        messageToolHints: ["- Custom button guidance."],
+      },
+      ["- Custom button guidance."],
+      ['"action":{"type":"callback"', "Inline buttons OFF"],
     ],
   ])("%s", expectPromptCase);
   it("advertises YouTube embeds only in full webchat prompts below the cache boundary", () => {
