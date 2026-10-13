@@ -11,6 +11,7 @@ import { createCodexDynamicToolBridge } from "./dynamic-tools.js";
 import type {
   CodexDynamicToolCallParams,
   CodexDynamicToolCallResponse,
+  JsonObject,
   JsonValue,
 } from "./protocol.js";
 
@@ -236,7 +237,7 @@ describe("Codex dynamic-tool source replies", () => {
     expect(bridge.telemetry.sourceReplyDelivered).toBe(true);
   });
 
-  it.each([
+  it.each<JsonObject>([
     { action: "react", remove: true, final: true },
     { action: "react", final: true },
     { action: "send", to: "other-chat", final: true },
