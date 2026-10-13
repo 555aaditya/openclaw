@@ -9,10 +9,10 @@ import { resolveIncognitoOpenClawAgentSqlitePath } from "../../state/openclaw-ag
 import { resumeMainSession } from "./main-session-restart-dispatch.js";
 import {
   announceRestartRecoveryResumption,
-  captureRestartRecoveryDeliveryCurrent,
+  prepareRestartRecoveryDeliveryCurrent,
 } from "./main-session-restart-recovery-delivery.js";
 import {
-  captureExpectedRestartRecoveryCurrent,
+  prepareExpectedRestartRecoveryCurrent,
   loadExpectedRestartRecoveryTarget,
 } from "./main-session-restart-recovery-exact-target.js";
 
@@ -61,21 +61,30 @@ describe("memory restart recovery adapters", () => {
         claim: { runId: "recovery-run", sourceRunId: "source-run" },
       },
     };
-    expect(captureExpectedRestartRecoveryCurrent(target)()).toBe(false);
-    expect(await loadExpectedRestartRecoveryTarget(target)).toBeUndefined();
-    expect(memorySessionActorOwners.read(location)).toBeUndefined();
+    const absent = await prepareExpectedRestartRecoveryCurrent(target);
+    try {
+      expect(absent.isCurrent()).toBe(false);
+      expect(await loadExpectedRestartRecoveryTarget(target)).toBeUndefined();
+      expect(memorySessionActorOwners.read(location)).toBeUndefined();
+    } finally {
+      absent.release();
+    }
     await upsertSessionEntryCore(scope, entry);
-    const current = captureExpectedRestartRecoveryCurrent(target);
-    expect(current()).toBe(true);
-    expect(await loadExpectedRestartRecoveryTarget(target)).toMatchObject({
-      ...entry,
-      updatedAt: expect.any(Number),
-    });
-    await upsertSessionEntryCore(scope, { ...entry, restartRecoveryDeliveryRunId: "new-run" });
-    expect(current()).toBe(false);
-    expect(await loadExpectedRestartRecoveryTarget(target)).toBeUndefined();
-    memorySessionActorOwners.closeSession(location, scope.sessionKey);
-    expect(current()).toBe(false);
+    const current = await prepareExpectedRestartRecoveryCurrent(target);
+    try {
+      expect(current.isCurrent()).toBe(true);
+      expect(await loadExpectedRestartRecoveryTarget(target)).toMatchObject({
+        ...entry,
+        updatedAt: expect.any(Number),
+      });
+      await upsertSessionEntryCore(scope, { ...entry, restartRecoveryDeliveryRunId: "new-run" });
+      expect(current.isCurrent()).toBe(false);
+      expect(await loadExpectedRestartRecoveryTarget(target)).toBeUndefined();
+      memorySessionActorOwners.closeSession(location, scope.sessionKey);
+      expect(current.isCurrent()).toBe(false);
+    } finally {
+      current.release();
+    }
   });
 
   it("passes current send policy to the recovery notice transport after awaited writes", async () => {
@@ -94,23 +103,27 @@ describe("memory restart recovery adapters", () => {
       lifecycleGeneration: getAgentEventLifecycleGeneration(),
       deliveryContext,
     };
-    const current = captureRestartRecoveryDeliveryCurrent(params);
-    expect(current()).toBe(true);
-    const sendRecoveryNotice = vi.fn<GatewayRecoveryRuntime["sendRecoveryNotice"]>(
-      async (input) => {
-        await upsertSessionEntryCore(scope, { ...ready, sendPolicy: "deny" });
-        expect(input.isCurrent?.({})).toBe(false);
-        return { suppressed: true };
-      },
-    );
-    await announceRestartRecoveryResumption({
-      ...params,
-      gatewayRuntime: createMockGatewayRecoveryRuntime({ sendRecoveryNotice }),
-    });
-    expect(sendRecoveryNotice).toHaveBeenCalledOnce();
-    expect(current()).toBe(false);
-    memorySessionActorOwners.closeSession(location, scope.sessionKey);
-    expect(current()).toBe(false);
+    const current = await prepareRestartRecoveryDeliveryCurrent(params);
+    try {
+      expect(current.isCurrent()).toBe(true);
+      const sendRecoveryNotice = vi.fn<GatewayRecoveryRuntime["sendRecoveryNotice"]>(
+        async (input) => {
+          await upsertSessionEntryCore(scope, { ...ready, sendPolicy: "deny" });
+          expect(input.isCurrent?.({})).toBe(false);
+          return { suppressed: true };
+        },
+      );
+      await announceRestartRecoveryResumption({
+        ...params,
+        gatewayRuntime: createMockGatewayRecoveryRuntime({ sendRecoveryNotice }),
+      });
+      expect(sendRecoveryNotice).toHaveBeenCalledOnce();
+      expect(current.isCurrent()).toBe(false);
+      memorySessionActorOwners.closeSession(location, scope.sessionKey);
+      expect(current.isCurrent()).toBe(false);
+    } finally {
+      current.release();
+    }
   });
 
   it("skips an absent session and a completion no longer owned by the live session", async () => {

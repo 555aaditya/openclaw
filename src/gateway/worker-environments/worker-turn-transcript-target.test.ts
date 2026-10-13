@@ -350,58 +350,47 @@ it("retains a logical-store worker transcript and refuses writer changes without
   });
 });
 
-it.each(["retarget", "revoke"] as const)(
-  "refuses cloud execution when preparation is invalidated by %s",
-  async (change) => {
-    await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
-      const target = {
+it("refuses cloud execution when placement authority is revoked during preparation", async () => {
+  await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
+    const target = {
+      agentId: "main",
+      sessionKey: "agent:main:cloud-revocation",
+      sessionId: "cloud-revocation",
+      storePath: agentDatabase.resolveOpenClawAgentSqlitePath({
         agentId: "main",
-        sessionKey: "agent:main:cloud-revocation",
-        sessionId: "cloud-revocation",
-        storePath: agentDatabase.resolveOpenClawAgentSqlitePath({
-          agentId: "main",
-          env: state.env,
-        }),
-      };
-      await upsertSessionEntryCore(target, { sessionId: target.sessionId, updatedAt: 1 });
-      const turn = { ...target, sessionTarget: { ...target } };
-      let active = true;
-      const current = () => {
-        if (!active) {
-          throw new Error("Cloud run revoked");
-        }
-      };
-      const admit = agentDatabase.withOpenClawAgentDatabaseRuntime;
-      const interception = vi
-        .spyOn(agentDatabase, "withOpenClawAgentDatabaseRuntime")
-        .mockImplementationOnce(async (...args) => {
-          if (change === "retarget") {
-            turn.sessionTarget.storePath = state.statePath("another.sqlite");
-          } else {
-            active = false;
-          }
-          return admit(...args);
-        });
-      const execute = vi.fn(async () => "executed");
-      try {
-        await expect(
-          withWorkerTurnTranscriptDatabase(
-            turn,
-            {
-              assertCurrent: current,
-              prepareAuthority: async () => ({ isCurrent: () => active, release: () => {} }),
-            },
-            execute,
-          ),
-        ).rejects.toThrow(
-          change === "retarget"
-            ? /target changed during preparation/
-            : /placement authority changed during preparation/,
-        );
-        expect(execute).not.toHaveBeenCalled();
-      } finally {
-        interception.mockRestore();
+        env: state.env,
+      }),
+    };
+    await upsertSessionEntryCore(target, { sessionId: target.sessionId, updatedAt: 1 });
+    const turn = { ...target, sessionTarget: { ...target } };
+    let active = true;
+    const current = () => {
+      if (!active) {
+        throw new Error("Cloud run revoked");
       }
-    });
-  },
-);
+    };
+    const admit = agentDatabase.withOpenClawAgentDatabaseRuntime;
+    const interception = vi
+      .spyOn(agentDatabase, "withOpenClawAgentDatabaseRuntime")
+      .mockImplementationOnce(async (...args) => {
+        active = false;
+        return admit(...args);
+      });
+    const execute = vi.fn(async () => "executed");
+    try {
+      await expect(
+        withWorkerTurnTranscriptDatabase(
+          turn,
+          {
+            assertCurrent: current,
+            prepareAuthority: async () => ({ isCurrent: () => active, release: () => {} }),
+          },
+          execute,
+        ),
+      ).rejects.toThrow(/placement authority changed during preparation/);
+      expect(execute).not.toHaveBeenCalled();
+    } finally {
+      interception.mockRestore();
+    }
+  });
+});

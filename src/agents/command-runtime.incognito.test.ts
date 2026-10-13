@@ -7,6 +7,7 @@ import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import { getReplyPayloadMetadata, setReplyPayloadMetadata } from "../auto-reply/reply-payload.js";
 import {
   assertSessionWriterDeliveryAuthorized,
+  createSessionWriterDeliveryPreparation,
   isDispatchFinalReplySessionWriterAuthorized,
 } from "../auto-reply/reply/session-writer-delivery-authority.js";
 import {
@@ -322,24 +323,36 @@ it.each([true, false])(
     });
 
     expect(result.pendingFinalDeliveryMarkerPersisted).toBe(true);
-    expect(
-      getReplyPayloadMetadata(payload)?.sessionWriterDeliveryAuthority?.readCurrentSession,
-    ).toBeTypeOf("function");
-    expect(isDispatchFinalReplySessionWriterAuthorized(payload)).toBe(true);
-    expect(() =>
-      assertSessionWriterDeliveryAuthorized(
-        getReplyPayloadMetadata(payload)?.sessionWriterDeliveryAuthority,
-      ),
-    ).not.toThrow();
-    await runWithSessionActorStorage(binding, () =>
-      patchSessionEntryCore(target, () => ({ activeWriterRunId: "replacement-writer" })),
-    );
-    expect(isDispatchFinalReplySessionWriterAuthorized(payload)).toBe(false);
-    expect(() =>
-      assertSessionWriterDeliveryAuthorized(
-        getReplyPayloadMetadata(payload)?.sessionWriterDeliveryAuthority,
-      ),
-    ).toThrow(/writer changed/i);
+    let release = () => {};
+    const prepareDelivery = createSessionWriterDeliveryPreparation({
+      storePath: target.storePath,
+      retain: (dispose) => {
+        release = dispose;
+      },
+    });
+    await prepareDelivery(payload);
+    try {
+      expect(
+        getReplyPayloadMetadata(payload)?.sessionWriterDeliveryAuthority?.readCurrentSession,
+      ).toBeTypeOf("function");
+      expect(isDispatchFinalReplySessionWriterAuthorized(payload)).toBe(true);
+      expect(() =>
+        assertSessionWriterDeliveryAuthorized(
+          getReplyPayloadMetadata(payload)?.sessionWriterDeliveryAuthority,
+        ),
+      ).not.toThrow();
+      await runWithSessionActorStorage(binding, () =>
+        patchSessionEntryCore(target, () => ({ activeWriterRunId: "replacement-writer" })),
+      );
+      expect(isDispatchFinalReplySessionWriterAuthorized(payload)).toBe(false);
+      expect(() =>
+        assertSessionWriterDeliveryAuthorized(
+          getReplyPayloadMetadata(payload)?.sessionWriterDeliveryAuthority,
+        ),
+      ).toThrow(/writer changed/i);
+    } finally {
+      release();
+    }
   },
 );
 
