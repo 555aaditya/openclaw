@@ -41,6 +41,7 @@ async function createRunController(overrides: Partial<RunEmbeddedAgentParams> = 
     ...overrides,
     admittedRunContext,
   };
+  setRuntimeConfigSnapshot(params.config ?? {});
   const controller = createEmbeddedRunLaneController({
     getLifecycleGeneration: () => lifecycleGeneration,
     getParams: () => params,

@@ -169,7 +169,6 @@ export async function createInitialSubagentSession(input: {
             parentEntry,
             expectedParentSessionId: params.expectedParentSessionId,
             senderIsOwner: params.senderIsOwner,
-            readParentEntry,
           });
           if (params.incognito) {
             const assertCurrent = () => {
@@ -266,9 +265,6 @@ export async function createInitialSubagentSession(input: {
             initialChildSessionPatch.pendingWorktree = preparedWorktree.pendingWorktree;
           }
           const commit = async (assertSourceCurrent?: SessionSourceAssertion) => {
-            if (!parentMemory) {
-              await parentLineage.assertParentUnchanged();
-            }
             const fields = ["sessionId", "lifecycleRevision", "skillLibrarySelections"] as const;
             const expected =
               parentEntry && (parentMemory || parentEntry.skillLibrarySelections)
@@ -340,7 +336,7 @@ export async function createInitialSubagentSession(input: {
                     : {}),
                   ...childSessionIdentity,
                   // Stamp after all request patches so model input cannot create a grant.
-                  ...parentLineage.receipt,
+                  ...parentLineage,
                   ...(parentEntry?.skillLibrarySelections
                     ? {
                         skillLibrarySelections: parentEntry.skillLibrarySelections.map(

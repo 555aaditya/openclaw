@@ -59,8 +59,8 @@ type AgentDeletionPathFenceSnapshot = {
   claimPath: string;
   fenceAgentId?: string;
   targetPaths: string[];
-  purpose: AgentDeletionJournalPurpose;
   env: NodeJS.ProcessEnv;
+  purpose: AgentDeletionJournalPurpose;
 };
 
 /** Deletion ownership refusal is distinct from an unhealthy native database. */
@@ -126,8 +126,8 @@ export function prepareAgentDeletionPathFence(
 ): AgentDeletionPathFenceSnapshot {
   const env = options.env ?? process.env;
   return {
-    purpose,
     env,
+    purpose,
     claimAgentId: normalizeAgentId(claim.agentId),
     claimPath: path.resolve(claim.path),
     ...(claim.fenceAgentId ? { fenceAgentId: normalizeAgentId(claim.fenceAgentId) } : {}),
@@ -195,8 +195,7 @@ export function assertAgentDeletionPathFence(
     if (row.cleanup_completed === 1) {
       continue;
     }
-    // Only the current identity and owned paths can exclude this claim. Unrelated journal
-    // changes are allowed; synchronous canonicalization stays with this effect's transaction.
+    // Check current ownership at the claim; unrelated deletion progress does not invalidate it.
     const fences = [
       ...[row.agent_dir, row.workspace_dir, row.sessions_dir, ...row.databasePaths].map(
         (pathname) => ({

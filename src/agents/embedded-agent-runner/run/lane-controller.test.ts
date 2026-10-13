@@ -36,6 +36,7 @@ function createLaneController(params: {
     ...params.runOverrides,
     ...(params.enqueue ? { enqueue: params.enqueue } : {}),
   };
+  setRuntimeConfigSnapshot(runParams.config ?? {});
   let lifecycleGeneration = getAgentEventLifecycleGeneration();
 
   return createEmbeddedRunLaneController({

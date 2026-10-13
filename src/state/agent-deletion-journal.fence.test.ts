@@ -7,10 +7,8 @@ import {
   removeAgentDeletionJournal,
 } from "../test-utils/agent-deletion-journal.js";
 import { retireAgentDeletionJournalInDatabase } from "./agent-deletion-journal-authority.worker.js";
-import {
-  completeAgentDeletionJournalInDatabase,
-  readAgentDeletionJournal,
-} from "./agent-deletion-journal.js";
+import { readAgentDeletionJournal } from "./agent-deletion-journal.js";
+import * as agentDeletionJournal from "./agent-deletion-journal.js";
 import {
   assertNoOpenClawAgentDatabaseLeases,
   claimOpenClawAgentDatabaseLease,
@@ -25,6 +23,47 @@ afterEach(() => {
   closeOpenClawStateDatabaseForTest();
 });
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
+
+it.each([
+  ["unrelated", undefined],
+  ["same identity", "while agent deleted is deleted"],
+  ["overlapping path", "deletion owns"],
+] as const)("checks current deletion ownership for %s registration", (relationship, error) => {
+  const stateDir = tempDirs.make("agent-deletion-current-fence-");
+  const env = { OPENCLAW_STATE_DIR: stateDir };
+  const claim = {
+    agentId: relationship === "same identity" ? "deleted" : "survivor",
+    path: path.join(stateDir, "survivor.sqlite"),
+    env,
+  };
+  const register = () =>
+    registerOpenClawAgentDatabase(claim, {
+      starting: () => {
+        // Start deletion after claim preparation but before its registration transaction.
+        beginAgentDeletionJournal(
+          {
+            agentId: "deleted",
+            operationId: "deletion",
+            agentDir: path.join(stateDir, "agents/deleted/agent"),
+            workspaceDir: path.join(stateDir, "workspace-deleted"),
+            sessionsDir: path.join(stateDir, "sessions-deleted"),
+            databasePaths: relationship === "overlapping path" ? [claim.path] : [],
+            deleteFiles: true,
+          },
+          { env },
+        );
+      },
+    });
+  if (error) {
+    expect(register).toThrow(error);
+  } else {
+    expect(register).not.toThrow();
+  }
+  using reader = new DatabaseSync(resolveOpenClawStateSqlitePath(env));
+  expect(reader.prepare("SELECT agent_id, path FROM agent_databases").all()).toEqual(
+    error ? [] : [{ agent_id: claim.agentId, path: "survivor.sqlite" }],
+  );
+});
 
 it("admits settlement leases while draining and fences them once retirement begins", () => {
   const stateDir = tempDirs.make("agent-deletion-draining-fence-");
@@ -51,7 +90,11 @@ it("admits settlement leases while draining and fences them once retirement begi
     runOpenClawStateWriteTransaction(
       (database) => {
         expect(
-          completeAgentDeletionJournalInDatabase(database, deletion.agentId, deletion.operationId),
+          agentDeletionJournal.completeAgentDeletionJournalInDatabase(
+            database,
+            deletion.agentId,
+            deletion.operationId,
+          ),
         ).toBe(false);
         expect(
           retireAgentDeletionJournalInDatabase(database, deletion.agentId, deletion.operationId),
@@ -95,12 +138,10 @@ it.each([
   const leases = writer.prepare("SELECT * FROM agent_database_leases ORDER BY lease_id");
   const beforeRegistrations = registrations.all();
   const beforeLeases = leases.all();
-  const mutate = () =>
+  try {
     writer
       .prepare(`UPDATE agent_deletion_journal SET ${column} = ? WHERE agent_id = ?`)
       .run(value, deletion.agentId);
-  try {
-    mutate();
     expect(readAgentDeletionJournal(claim.agentId, { env })).toBeUndefined();
     const operate = () => {
       if (caller === "registration") {
@@ -173,65 +214,5 @@ it.each(["registration", "lease claim"])(
     ).toThrow("while agent deleted is deleted");
     expect(writer.prepare("SELECT * FROM agent_databases").all()).toEqual([]);
     expect(writer.prepare("SELECT * FROM agent_database_leases").all()).toEqual([]);
-  },
-);
-
-it.each([
-  { change: "new", relation: "unrelated", refusal: undefined },
-  { change: "retire", relation: "unrelated", refusal: undefined },
-  { change: "new", relation: "identity", refusal: "while agent survivor is deleted" },
-  { change: "new", relation: "path", refusal: "deletion owns" },
-] as const)(
-  "registration checks current $relation deletion paths after a $change journal change",
-  ({ change, relation, refusal }) => {
-    const stateDir = tempDirs.make("agent-deletion-current-claim-");
-    const env = { OPENCLAW_STATE_DIR: stateDir };
-    const claim = {
-      agentId: "survivor",
-      path: path.join(stateDir, "claimed", "openclaw-agent.sqlite"),
-      env,
-    };
-    const deletion = {
-      agentId: relation === "identity" ? claim.agentId : "deleted",
-      operationId: "concurrent-deletion",
-      agentDir: path.join(stateDir, "agents", "deleted", "agent"),
-      workspaceDir:
-        relation === "path" ? path.dirname(claim.path) : path.join(stateDir, "workspace-deleted"),
-      sessionsDir: path.join(stateDir, "sessions-deleted"),
-      deleteFiles: true,
-    };
-    if (change === "retire") {
-      beginAgentDeletionJournal({ ...deletion, phase: "draining" }, { env });
-    }
-    const register = () =>
-      registerOpenClawAgentDatabase(claim, {
-        starting() {
-          if (change === "retire") {
-            runOpenClawStateWriteTransaction(
-              (database) => {
-                expect(
-                  retireAgentDeletionJournalInDatabase(
-                    database,
-                    deletion.agentId,
-                    deletion.operationId,
-                  ),
-                ).toBe(true);
-              },
-              { env },
-            );
-          } else {
-            beginAgentDeletionJournal(deletion, { env });
-          }
-        },
-      });
-    if (refusal) {
-      expect(register).toThrow(refusal);
-    } else {
-      expect(register).not.toThrow();
-    }
-    using database = new DatabaseSync(resolveOpenClawStateSqlitePath(env));
-    expect(database.prepare("SELECT agent_id FROM agent_databases").all()).toEqual(
-      refusal ? [] : [{ agent_id: claim.agentId }],
-    );
   },
 );

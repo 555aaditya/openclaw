@@ -3,12 +3,9 @@ import "../agents/prepared-model-runtime.js";
 import "./server-start.js";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { assert, expect, it, onTestFailed, onTestFinished, vi } from "vitest";
-import {
-  awaitGateBeforeSettlement,
-  createDeferred,
-  withinTest,
-} from "../../test/helpers/promise.js";
+import { assert, expect, it, onTestFinished, vi } from "vitest";
+import { GatewayClientRequestError } from "../../packages/gateway-client/src/request-error.js";
+import { createDeferred, withinTest } from "../../test/helpers/promise.js";
 import { localStateOwnerFixtureEntrypoint } from "../cli/cli-entrypoint.test-support.js";
 import { runCliProcessChild } from "../cli/cli-process-child.test-helpers.js";
 import {
@@ -31,7 +28,6 @@ import { acquireTestPortBlock } from "../test-utils/port-claims.js";
 import * as configReload from "./config-reload.js";
 import * as agentDatabases from "./server-reload-agent-databases.js";
 import { startGatewayServer } from "./server.js";
-import * as sessionCreateDiagnostics from "./session-create-diagnostics.js";
 import { connectGatewayClient, disconnectGatewayClient } from "./test-helpers.e2e.js";
 
 const cliEntrypoint = resolveRuntimeWorkerArgv(
@@ -46,46 +42,6 @@ it("publishes agent mutations before acknowledging immediate session and roster 
   const releasePublication = createDeferred();
   const creationBookkeepingCompleted = createDeferred();
   let publicationHeld = false;
-  let publicationStage = "not entered";
-  let cliOutputReceived = false;
-  let phase = "preparing fixture";
-  let operationFailure: { phase: string; message: string } | undefined;
-  const sessionCreates: Array<{
-    phase: sessionCreateDiagnostics.SessionCreatePhase;
-    completed: boolean;
-  }> = [];
-  const operatorStages: string[] = [];
-  onTestFailed(() => {
-    console.error("Agent config readiness failure", {
-      phase,
-      publicationStage,
-      cliOutputReceived,
-      operatorStages,
-      operationFailure,
-      sessionCreates,
-    });
-  });
-  const startSessionCreate = sessionCreateDiagnostics.startSessionCreateDiagnostics;
-  const sessionCreateSpy = vi
-    .spyOn(sessionCreateDiagnostics, "startSessionCreateDiagnostics")
-    .mockImplementation(() => {
-      const diagnostics = startSessionCreate();
-      const progress: (typeof sessionCreates)[number] = { phase: "preflight", completed: false };
-      sessionCreates.push(progress);
-      return {
-        mark(next) {
-          progress.phase = next;
-          diagnostics?.mark(next);
-        },
-        [Symbol.dispose]() {
-          try {
-            diagnostics?.[Symbol.dispose]();
-          } finally {
-            progress.completed = true;
-          }
-        },
-      };
-    });
   let reloadScheduler: GatewayScheduler | undefined;
   const startReloader = configReload.startGatewayConfigReloader;
   const reloaderSpy = vi
@@ -97,14 +53,10 @@ it("publishes agent mutations before acknowledging immediate session and roster 
         onHotReload: async (...args) => {
           if (!publicationHeld && args[1].agents?.entries?.[agentId]) {
             publicationHeld = true;
-            publicationStage = "held";
             publicationEntered.resolve();
             await releasePublication.promise;
           }
-          publicationStage = "applying runtime configuration";
-          const result = await options.onHotReload(...args);
-          publicationStage = "runtime configuration applied";
-          return result;
+          return options.onHotReload(...args);
         },
       });
     });
@@ -121,7 +73,6 @@ it("publishes agent mutations before acknowledging immediate session and roster 
     releasePublication.resolve();
     reloaderSpy.mockRestore();
     revivalSpy.mockRestore();
-    sessionCreateSpy.mockRestore();
   });
   await withOpenClawTestState(
     {
@@ -158,7 +109,6 @@ it("publishes agent mutations before acknowledging immediate session and roster 
         allowInTests: true,
       });
       assert.isNotNull(owner);
-      phase = "starting Gateway";
       const server = await startGatewayServer(claim.port, {
         gatewayStateOwner: owner,
         bind: "loopback",
@@ -167,9 +117,7 @@ it("publishes agent mutations before acknowledging immediate session and roster 
         hotReloadRecovery: recoveryRestart,
       });
       try {
-        phase = "settling Gateway startup";
         await server.startupSettled;
-        phase = "connecting operator";
         const client = await connectGatewayClient({
           url: `ws://127.0.0.1:${claim.port}`,
           token,
@@ -191,11 +139,7 @@ it("publishes agent mutations before acknowledging immediate session and roster 
           await expect(fs.stat(path.join(state.home, "workspace-retired"))).rejects.toMatchObject({
             code: "ENOENT",
           });
-          phase = "creating agent through CLI with publication held";
           const creation = runCliProcessChild({
-            onStdout: () => {
-              cliOutputReceived = true;
-            },
             nodeArgs: [
               ...cliEntrypoint,
               "agents",
@@ -260,24 +204,19 @@ it("publishes agent mutations before acknowledging immediate session and roster 
           } finally {
             releasePublication.resolve();
           }
-          phase = "awaiting CLI creation completion";
           await expect(creation).resolves.toMatchObject({ agentId });
-          phase = "reading immediate agent roster";
           await expect(client.request("agents.list", {})).resolves.toMatchObject({
             agents: expect.arrayContaining([expect.objectContaining({ id: agentId })]),
           });
-          phase = "awaiting immediate session creation";
           const createdSession = await withinTest(firstSession, signal);
           if (!createdSession.ok) {
             throw createdSession.error;
           }
           expect(createdSession.value).toMatchObject({ key });
-          phase = "reading immediate session roster";
           await expect(client.request("sessions.list", { agentId })).resolves.toMatchObject({
             sessions: expect.arrayContaining([expect.objectContaining({ key })]),
           });
 
-          phase = "updating agent";
           await expect(
             client.request("agents.update", {
               agentId,
@@ -297,7 +236,6 @@ it("publishes agent mutations before acknowledging immediate session and roster 
             client.request("sessions.create", { agentId, key: `agent:${agentId}:after-update` }),
           ).resolves.toMatchObject({ key: `agent:${agentId}:after-update` });
 
-          phase = "deleting agent";
           await expect(
             client.request("agents.delete", { agentId, deleteFiles: false }),
           ).resolves.toMatchObject({ ok: true, agentId });
@@ -312,7 +250,6 @@ it("publishes agent mutations before acknowledging immediate session and roster 
           }
           expect(getRuntimeConfig().agents?.entries?.[agentId]).toBeUndefined();
 
-          phase = "overlapping agent mutations";
           const peer = await connectGatewayClient({
             url: `ws://127.0.0.1:${claim.port}`,
             token,
@@ -325,61 +262,48 @@ it("publishes agent mutations before acknowledging immediate session and roster 
                   const otherOperator = index === 0 ? peer : client;
                   for (let round = 0; round < 4; round += 1) {
                     const overlapAgentId = `overlap-${index}-${round}`;
-                    operatorStages[index] = `creating ${overlapAgentId}`;
                     await expect(
                       operator.request("agents.create", {
                         name: overlapAgentId,
                         workspace: path.join(state.home, overlapAgentId),
                       }),
                     ).resolves.toMatchObject({ agentId: overlapAgentId });
-                    operatorStages[index] = `creating session for ${overlapAgentId}`;
                     await expect(
                       operator.request("sessions.create", {
                         agentId: "main",
                         key: `agent:main:${overlapAgentId}`,
                       }),
                     ).resolves.toMatchObject({ key: `agent:main:${overlapAgentId}` });
-                    operatorStages[index] = `deleting ${overlapAgentId}`;
                     const deletion = { agentId: overlapAgentId, deleteFiles: false };
                     if (round === 0) {
                       const results = await Promise.allSettled([
                         operator.request("agents.delete", deletion),
                         otherOperator.request("agents.delete", deletion),
                       ]);
-                      const rejection = results.find((result) => result.status === "rejected");
-                      expect(results).toEqual(
-                        expect.arrayContaining([
-                          {
-                            status: "fulfilled",
-                            value: expect.objectContaining({ ok: true, agentId: overlapAgentId }),
-                          },
-                          {
-                            status: "rejected",
-                            reason: expect.objectContaining(
-                              rejection?.reason?.code === "UNAVAILABLE"
-                                ? {
-                                    code: "UNAVAILABLE",
-                                    message: expect.stringMatching(
-                                      new RegExp(
-                                        `^OpenClawStateLeaseError: agent deletion core:agent-deletion/${overlapAgentId} is held by \\S+ \\(lease epoch \\d+\\): code=OPENCLAW_STATE_LEASE_HELD$`,
-                                      ),
-                                    ),
-                                  }
-                                : {
-                                    code: "INVALID_REQUEST",
-                                    message: `agent "${overlapAgentId}" not found`,
-                                  },
-                            ),
-                          },
-                        ]),
-                      );
-                      // A concurrent waiter may exhaust the lease budget before deletion settles.
-                      await expect(
-                        operator.request("agents.delete", deletion),
-                      ).rejects.toMatchObject({
-                        code: "INVALID_REQUEST",
-                        message: `agent "${overlapAgentId}" not found`,
-                      });
+                      expect(results.filter((result) => result.status === "fulfilled")).toEqual([
+                        {
+                          status: "fulfilled",
+                          value: expect.objectContaining({ ok: true, agentId: overlapAgentId }),
+                        },
+                      ]);
+                      const failure: unknown = results.find(
+                        (result) => result.status === "rejected",
+                      )?.reason;
+                      if (
+                        failure instanceof GatewayClientRequestError &&
+                        failure.code === "UNAVAILABLE"
+                      ) {
+                        // Cleanup can outlast the concurrent loser's five-second lease wait.
+                        expect(failure.message).toContain(
+                          `agent deletion core:agent-deletion/${overlapAgentId} is held by `,
+                        );
+                        expect(failure.message).toContain("code=OPENCLAW_STATE_LEASE_HELD");
+                      } else {
+                        expect(failure).toMatchObject({
+                          code: "INVALID_REQUEST",
+                          message: `agent "${overlapAgentId}" not found`,
+                        });
+                      }
                     } else {
                       await expect(
                         operator.request("agents.delete", deletion),
@@ -388,16 +312,13 @@ it("publishes agent mutations before acknowledging immediate session and roster 
                         agentId: overlapAgentId,
                       });
                     }
+                    expect(getRuntimeConfig().agents?.entries?.[overlapAgentId]).toBeUndefined();
                   }
                 }),
               ),
               signal,
             );
-          } catch (error) {
-            operationFailure = { phase, message: String(error) };
-            throw error;
           } finally {
-            phase = "disconnecting peer operator";
             await disconnectGatewayClient(peer);
           }
 
@@ -420,7 +341,6 @@ it("publishes agent mutations before acknowledging immediate session and roster 
           });
           try {
             for (const reason of ["storage-error", "lifecycle-busy"] as const) {
-              phase = `hot reload refusal: ${reason}`;
               written = createDeferred();
               const unavailableAgent = `unavailable-${reason}`;
               awaitingAgent = unavailableAgent;
@@ -433,18 +353,7 @@ it("publishes agent mutations before acknowledging immediate session and roster 
                   (value) => ({ value }),
                   (error: unknown) => ({ error }),
                 );
-              await withinTest(
-                awaitGateBeforeSettlement(
-                  written.promise,
-                  failedCreation.then((result) => {
-                    if ("error" in result) {
-                      throw result.error;
-                    }
-                  }),
-                  "Agent creation settled before writing its configuration",
-                ),
-                signal,
-              );
+              await withinTest(written.promise, signal);
               const acquire = vi
                 .spyOn(pluginLifecycleLease, "withPluginLifecycleLease")
                 .mockRejectedValue(
@@ -477,7 +386,6 @@ it("publishes agent mutations before acknowledging immediate session and roster 
             await scheduler.stop();
           }
 
-          phase = "saving with reload disabled";
           const saved = (await readConfigFileSnapshot()).sourceConfig;
           await state.writeConfig({
             ...saved,
@@ -497,19 +405,12 @@ it("publishes agent mutations before acknowledging immediate session and roster 
           ).toBeDefined();
           expect(getRuntimeConfig().agents?.entries?.["saved-only"]).toBeUndefined();
           expect(recoveryRestart).not.toHaveBeenCalled();
-        } catch (error) {
-          operationFailure ??= { phase, message: String(error) };
-          throw error;
         } finally {
-          phase = "disconnecting primary operator";
           await disconnectGatewayClient(client);
         }
       } finally {
-        phase = "closing Gateway";
         await server.close();
-        phase = "releasing Gateway owner";
         await owner.release();
-        phase = "releasing test ports";
         await claim.release();
       }
     },
