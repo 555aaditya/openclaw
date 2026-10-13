@@ -6,6 +6,7 @@ type Refresh = {
   holds: number;
   consumer?: () => boolean;
   requested: boolean;
+  handoff?: boolean;
 };
 
 const refreshScope = resolveGlobalSingleton(
@@ -29,6 +30,26 @@ export function captureAgentPluginRuntimeRefresh() {
       owner.requested = true;
       return true;
     },
+    assertHandoffAvailable: () => {
+      if (!owner?.active || owner.consumer?.() !== true || owner.requested) {
+        throw new Error(
+          "This runtime cannot hand off a plugin reload. Finish this turn and reload from a terminal or the Control UI.",
+        );
+      }
+      if (owner.holds > 0) {
+        throw new Error(
+          "Plugin reload handoff must be a top-level tool call, outside a running Code Mode program. Finish the program first; do not park or replay it.",
+        );
+      }
+    },
+    requestHandoff: () => {
+      if (!owner?.active || owner.consumer?.() !== true || owner.holds > 0 || owner.requested) {
+        throw new Error("Plugin reload handoff lost its active turn.");
+      }
+      owner.handoff = true;
+      owner.requested = true;
+    },
+    isHandoff: () => owner?.active === true && owner.handoff === true,
     isRequested: () => owner?.active === true && owner.requested,
     isPending: () => owner?.active === true && owner.requested && owner.holds === 0,
     hold: () => {

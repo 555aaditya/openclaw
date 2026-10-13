@@ -42,6 +42,7 @@ export function createSyntheticPluginRuntimeClient(
       | "pluginSubagentRequester"
       | "runtimePluginToolGrant"
       | "pluginSubagentToolsAllow"
+      | "continuationToolsAllow"
       | "delegatedToolPolicyHandoffId"
       | "sessionCreation"
     > & { scopes?: string[] },
@@ -102,6 +103,9 @@ export function createSyntheticPluginRuntimeClient(
         : {}),
       ...(params?.pluginSubagentToolsAllow
         ? { pluginSubagentToolsAllow: [...params.pluginSubagentToolsAllow] }
+        : {}),
+      ...(params?.continuationToolsAllow
+        ? { continuationToolsAllow: params.continuationToolsAllow }
         : {}),
       ...(params?.delegatedToolPolicyHandoffId
         ? { delegatedToolPolicyHandoffId: params.delegatedToolPolicyHandoffId }

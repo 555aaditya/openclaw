@@ -13,6 +13,11 @@ import { callAgentToolGatewayRequest } from "./in-process-gateway.js";
 import { createPluginsTool } from "./plugins-tool.js";
 
 vi.mock("./in-process-gateway.js", () => ({ callAgentToolGatewayRequest: vi.fn() }));
+// These are response/routing tests; real admitted caller custody is exercised by
+// the isolated Gateway handoff proof, not fabricated inside this mocked transport.
+vi.mock("../plugin-reload-origin.js", () => ({
+  registerPluginReloadOrigin: () => ({ token: "routing-origin", revoke: () => {} }),
+}));
 
 const callGateway = vi.mocked(callAgentToolGatewayRequest);
 const runtime = { operationId: "reload-1", generation: 2, pluginIds: ["local-tool"] };
@@ -180,6 +185,7 @@ describe("plugins tool", () => {
           params: {
             plugins: [{ pluginId: "local-tool" }],
             acknowledgeCapabilities: { reviewToken: "review-1" },
+            originToken: "routing-origin",
           },
         }),
       );
@@ -318,6 +324,29 @@ describe("plugins tool", () => {
       expect(result.terminate).toBe(true);
       expect(owner.isPending()).toBe(true);
     });
+  });
+
+  it("distinguishes accepted maintenance from a published generation", async () => {
+    const receipt = {
+      ok: true,
+      status: "accepted",
+      operationId: "handoff",
+      pluginIds: ["local-tool"],
+    };
+    callGateway.mockResolvedValue(receipt);
+    const result = await createPluginsTool().execute("handoff", {
+      action: "reload",
+      pluginId: "local-tool",
+    });
+    expect(callGateway).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "plugins.reload",
+        params: { plugins: [{ pluginId: "local-tool" }], originToken: "routing-origin" },
+      }),
+    );
+    expect(result.details).toMatchObject(receipt);
+    expect(result.details).not.toHaveProperty("runtime");
+    expect(result.terminate).toBe(true);
   });
 
   it("bounds inventory and narrows it without hiding the omitted count", async () => {

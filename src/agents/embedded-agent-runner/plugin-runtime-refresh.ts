@@ -15,7 +15,7 @@ import {
 } from "./run/run-attempt-result.js";
 import { createPendingToolMediaCarry } from "./run/tool-media-payloads.js";
 import type { EmbeddedAgentRunResult } from "./types.js";
-import { toNormalizedUsage } from "./usage-accumulator.js";
+import { toNormalizedUsage, type createUsageAccumulator } from "./usage-accumulator.js";
 
 export type EmbeddedPluginRuntimeRefresh = ReturnType<
   typeof createEmbeddedAgentPluginRuntimeRefresh
@@ -57,6 +57,47 @@ export function createEmbeddedAgentPluginRuntimeRefresh(
     pendingToolMedia.capture(attempt);
     const { runInput, sessionPromptState: session, usageAccumulator: usage } = input;
     const params = runInput.runParams;
+    const agentMeta = {
+      sessionId: session.sessionId,
+      provider: input.provider,
+      model: input.modelId,
+      usage: toNormalizedUsage(usage),
+      assistantTurns: usage.assistantTurns,
+      ...(usage.bridgeCalls ? { bridgeCalls: usage.bridgeCalls } : {}),
+    };
+    if (captureAgentPluginRuntimeRefresh().isHandoff()) {
+      attempt.setTerminalLifecycleMeta?.({
+        yielded: true,
+        livenessState: "paused",
+        stopReason: "end_turn",
+        replayInvalid: true,
+      });
+      // The physical turn still owns its completed effects. Only the subsequent
+      // model step belongs to the fresh runtime, after every dispatch borrow closes.
+      return {
+        ...delivered,
+        payloads: pendingToolMedia.merge(
+          {
+            toolMediaUrls: [],
+            sourceReplyDeliveryMode: params.sourceReplyDeliveryMode,
+          },
+          params.admittedRunContext?.operationalRunInstance,
+        ),
+        meta: {
+          durationMs: Date.now() - runInput.startedAtMs,
+          agentMeta,
+          yielded: true,
+          livenessState: "paused",
+          stopReason: "end_turn",
+          // Acceptance has transferred custody to durable maintenance. Model
+          // fallback must not replay this effect merely because this turn is silent.
+          replayInvalid: true,
+          pluginReloadHandoff: true,
+          continuationPending: true,
+          yieldAcknowledgment: "Reload requested. Continuing after the plugin runtime is ready.",
+        },
+      };
+    }
     continuation = {
       ...params,
       sessionId: session.sessionId,
@@ -86,14 +127,7 @@ export function createEmbeddedAgentPluginRuntimeRefresh(
     return {
       meta: {
         durationMs: Date.now() - runInput.startedAtMs,
-        agentMeta: {
-          sessionId: session.sessionId,
-          provider: input.provider,
-          model: input.modelId,
-          usage: toNormalizedUsage(usage),
-          assistantTurns: usage.assistantTurns,
-          ...(usage.bridgeCalls ? { bridgeCalls: usage.bridgeCalls } : {}),
-        },
+        agentMeta,
       },
     };
   }
@@ -136,6 +170,31 @@ export function createEmbeddedAgentPluginRuntimeRefresh(
       delivered = undefined;
       pendingToolMedia.clear();
       successfulToolNames.clear();
+    },
+  };
+}
+
+/** Merge logical-run usage without carrying an old generation's runtime objects. */
+export function mergeRefreshedRunUsage(
+  result: EmbeddedAgentRunResult,
+  usage: ReturnType<typeof createUsageAccumulator>,
+  started: number,
+): EmbeddedAgentRunResult {
+  if (!result.meta.agentMeta) {
+    return result;
+  }
+  return {
+    ...result,
+    meta: {
+      ...result.meta,
+      durationMs: Date.now() - started,
+      agentMeta: {
+        ...result.meta.agentMeta,
+        usage: toNormalizedUsage(usage),
+        costUsd: usage.cost && usage.cost !== "unavailable" ? usage.cost.total : undefined,
+        assistantTurns: usage.assistantTurns,
+        ...(usage.bridgeCalls ? { bridgeCalls: usage.bridgeCalls } : {}),
+      },
     },
   };
 }

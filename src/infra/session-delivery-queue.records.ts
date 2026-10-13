@@ -10,6 +10,15 @@ import { generateSecureUuid } from "./secure-random.js";
 // Session delivery queue persists session-scoped messages until channel
 // delivery acknowledges them or recovery exhausts retry policy.
 export const SESSION_DELIVERY_QUEUE_NAME = "session";
+export const PLUGIN_RELOAD_DELIVERY_QUEUE_NAME = "plugin-reload";
+const PLUGIN_RELOAD_DELIVERY_ID_PREFIX = "plugin-reload:";
+
+/** Producer-assigned key namespace; old binaries must not replay a new authority contract. */
+export function sessionDeliveryQueueName(id: string): string {
+  return id.startsWith(PLUGIN_RELOAD_DELIVERY_ID_PREFIX)
+    ? PLUGIN_RELOAD_DELIVERY_QUEUE_NAME
+    : SESSION_DELIVERY_QUEUE_NAME;
+}
 
 type SessionDeliveryOwnerReference = {
   kind: "subagent_completion";
@@ -60,6 +69,8 @@ export type QueuedSessionDeliveryPayload =
     } & SessionDeliveryRetryPolicy)
   | ({
       kind: "agentTurn";
+      /** A plugin lifecycle request owns preparation; this row owns its durable outcome/wake. */
+      pluginReload?: import("../plugins/reload-continuation.types.js").PluginReloadContinuation;
       sessionKey: string;
       message: string;
       messageId: string;
@@ -100,7 +111,7 @@ export function prepareClaimedSessionDelivery(
   return {
     ...params,
     retainOnFailure: true,
-    id: buildEntryId(params.idempotencyKey),
+    id: buildEntryId(params),
     enqueuedAt: now,
     retryCount: 0,
     availableAt: now + Math.max(0, initialAttemptLeaseMs),
@@ -131,11 +142,11 @@ export class SessionDeliveryDeadLetteredError extends Error {
   override name = "SessionDeliveryDeadLetteredError";
 }
 
-function buildEntryId(idempotencyKey?: string): string {
-  if (!idempotencyKey) {
-    return generateSecureUuid();
-  }
-  return sha256Hex(idempotencyKey);
+function buildEntryId(params: QueuedSessionDeliveryPayload): string {
+  const id = params.idempotencyKey ? sha256Hex(params.idempotencyKey) : generateSecureUuid();
+  return params.kind === "agentTurn" && params.pluginReload
+    ? PLUGIN_RELOAD_DELIVERY_ID_PREFIX + id
+    : id;
 }
 
 export function prepareSessionDelivery(
@@ -144,7 +155,7 @@ export function prepareSessionDelivery(
   return {
     ...params,
     ...(params.completionRetention === "permanent" ? { retainOnFailure: true as const } : {}),
-    id: buildEntryId(params.idempotencyKey),
+    id: buildEntryId(params),
     enqueuedAt: Date.now(),
     retryCount: 0,
   };

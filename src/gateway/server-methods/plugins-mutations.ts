@@ -81,6 +81,25 @@ function lifecycleHandler<T>(
         signal?.throwIfAborted();
         sessionMutationCommitGuard?.();
       };
+      if (
+        method === "plugins.reload" &&
+        validatePluginsReloadParams(params) &&
+        params.originToken
+      ) {
+        const { acceptPluginReloadHandoff } = await import("../plugin-reload-handoff.js");
+        beforePersistentApply();
+        const originToken = params.originToken;
+        const accepted = await withPluginLifecycleLease({ signal, waitMs: 0 }, () => {
+          entered = true;
+          return acceptPluginReloadHandoff(
+            { ...params, originToken },
+            { context, client, hasCurrentClientAuthority, signal },
+            beforePersistentApply,
+          );
+        });
+        respond(true, accepted, undefined);
+        return;
+      }
       const connId = client?.connId;
       const logger: PluginLifecycleOptions["logger"] =
         method === "plugins.install" && connId

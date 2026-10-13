@@ -487,9 +487,16 @@ export async function setManagedPluginEnabled(params: ManagedPluginEnableRequest
 /** Reload the selected installed package through the running Gateway's lifecycle owner. */
 export async function reloadManagedPlugin(
   params: ManagedPluginMutationOptions &
-    PluginsReloadParams & {
-      applyRuntime: PluginLifecycleRuntimeApply;
-    },
+    PluginsReloadParams & { applyRuntime: PluginLifecycleRuntimeApply },
+) {
+  return withPreparedManagedPluginReload(params, params.applyRuntime);
+}
+
+/** Consent and source selection stay under the same lifecycle lease, including deferred admission. */
+export async function withPreparedManagedPluginReload<T>(
+  params: ManagedPluginMutationOptions & PluginsReloadParams,
+  consume: (change: Parameters<PluginLifecycleRuntimeApply>[0]) => Promise<T>,
+  captureSources = false,
 ) {
   const env = params.env ?? process.env;
   return await withManagedPluginMutation(params, async (beforePersistentApply) => {
@@ -565,9 +572,32 @@ export async function reloadManagedPlugin(
         expected.set(id, digest);
       }
     }
+    if (captureSources) {
+      const { inspectPluginGenerationSources } =
+        await import("./plugin-generation-source-inspection.js");
+      const captured = inspectPluginGenerationSources(
+        metadata.manifestRegistry.plugins
+          .filter((record) => pluginIds.includes(record.id) && !isBundledManifestOwner(record))
+          .map((record) => ({
+            pluginId: record.id,
+            rootDir: record.rootDir,
+            entryFile: record.manifestPath === record.source ? record.source : undefined,
+          })),
+      );
+      for (const [id, digest] of Object.entries(captured.sourceDigests)) {
+        const prior = expected.get(id);
+        if (prior !== undefined && prior !== digest) {
+          throw new ManagedPluginLifecycleError(
+            "Plugin " + id + " source changed before reload admission",
+          );
+        }
+        expected.set(id, digest);
+      }
+      beforePersistentApply();
+    }
     return {
       pluginIds: resolved.map((target) => target.pluginId),
-      application: await params.applyRuntime({
+      application: await consume({
         config,
         pluginIds,
         reason: "reload",

@@ -1800,6 +1800,26 @@ captures its original worker admission before awaiting configuration and other
 health work; cached health replies await the count while retaining cached ingress
 pressure.
 
+Plugin reload handoffs use the same `delivery_queue_entries` owner in a private
+`plugin-reload` queue namespace. Each accepted operation stores its resolved
+plugin IDs, exact originating session and lifecycle binding, delivery route,
+permission and tool ceilings, and an attested operator-source snapshot without
+transport credentials. One idempotent outcome records applied, failed, or
+interrupted maintenance; no old runtime closure or replayable reload command is
+stored. Admission of a fresh continuation requires the canonical outcome and
+current original-source authority, not merely a matching operation ID.
+
+After process loss, an accepted operation without an outcome becomes interrupted
+and is never automatically re-applied. Existing session lifecycle checks suppress
+stopped, replaced, archived, or deleted targets. A dispatched continuation is not
+rearmed just because it produced no visible reply: it may already have performed
+effects or transferred custody to another execution. Terminal settlement strips
+the payload and operator-source snapshot using the queue's existing tombstone
+policy. Older binaries scan only the `session` namespace, so downgrade leaves
+these entries inert rather than executing them with synthetic authority. Reopen
+on a supporting version reconciles the recorded outcome. This adds a durable
+payload contract without changing table DDL or the schema version.
+
 Outbound ACK settlement also runs in that worker. It captures the selected state
 root and options before admission, preserves exact attempt ownership checks,
 and returns committed media paths before host cleanup. A lost worker reply

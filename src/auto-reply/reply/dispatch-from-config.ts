@@ -1,3 +1,4 @@
+import { withPluginReloadHandoff } from "../../agents/plugin-reload-handoff.js";
 import { scopePreparedModelRuntimeLease } from "../../agents/prepared-model-runtime-generation-scope.js";
 import { SessionRestartRecoveryTombstoneError } from "../../config/sessions/lifecycle.js";
 import { withPluginRuntimeRegistryScope } from "../../plugins/runtime/gateway-request-scope.js";
@@ -26,7 +27,7 @@ export type { DispatchFromConfigResult } from "./dispatch-from-config.types.js";
 export async function dispatchReplyFromConfig(
   params: DispatchFromConfigParams,
 ): Promise<DispatchFromConfigResult> {
-  return await dispatchReplyFromConfigWithQueuePolicy(params, false);
+  return await withPluginReloadHandoff(() => dispatchReplyFromConfigWithQueuePolicy(params, false));
 }
 
 /** Low-level plugin dispatch must reach queue policy before waiting on the active reply owner. */
@@ -34,7 +35,9 @@ export async function dispatchLowLevelChannelReplyFromConfig(
   params: DispatchFromConfigParams,
 ): Promise<DispatchFromConfigResult> {
   // A group coordinator must retain this turn until execution, not just queue publication.
-  return await dispatchReplyFromConfigWithQueuePolicy(params, !getGroupThreadTurn());
+  return await withPluginReloadHandoff(() =>
+    dispatchReplyFromConfigWithQueuePolicy(params, !getGroupThreadTurn()),
+  );
 }
 
 async function dispatchReplyFromConfigWithQueuePolicy(

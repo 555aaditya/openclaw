@@ -67,8 +67,54 @@ export function readGatewayOperatorRecoverySource(
   return restored.source;
 }
 
-/** Re-admit the exact durable source under current policy; never revive an old run capability. */
+/** Re-admit only the canonical restart claim; copied source metadata cannot authorize a run. */
 export async function restoreGatewayOperatorRecovery(params: {
+  target: OperatorRecoveryTarget;
+  context: GatewayRequestContext;
+  assertCurrent: () => void;
+}) {
+  const target = { ...params.target };
+  return restoreGatewayOperatorContinuation({
+    ...params,
+    readSource: async (assertOwner) => {
+      const entry = await readSessionEntryReadOnlyInWorker(target, assertOwner);
+      if (!entry?.restartRecoveryOperatorSource) {
+        return undefined;
+      }
+      const source = decodeGatewayOperatorRecoverySource(entry.restartRecoveryOperatorSource);
+      const assertClaim = (current: InternalSessionEntry | undefined) => {
+        const reservation = current?.mainRestartRecovery?.reservation;
+        if (
+          !current ||
+          current.sessionId !== target.sessionId ||
+          current.lifecycleRevision !== source.lifecycleRevision ||
+          current.restartRecoveryDeliveryRunId !== target.recoveryRunId ||
+          current.restartRecoveryDeliverySourceRunId !== target.sourceRunId ||
+          (reservation &&
+            (reservation.runId !== target.recoveryRunId ||
+              reservation.lifecycleGeneration !== getAgentEventLifecycleGeneration())) ||
+          source.agentId !== target.agentId ||
+          source.sessionKey !== target.sessionKey ||
+          source.sessionId !== target.sessionId ||
+          source.sourceRunId !== target.sourceRunId ||
+          !isDeepStrictEqual(current.restartRecoveryOperatorSource, source)
+        ) {
+          throw new Error("Restart recovery operator source no longer owns this input.");
+        }
+      };
+      assertClaim(entry);
+      return source;
+    },
+  });
+}
+
+/** Shared policy restoration; the durable producer must verify its exact owned input on every read. */
+export async function restoreGatewayOperatorContinuation(params: {
+  readSource: (
+    assertCurrent: () => void,
+  ) => Promise<
+    import("./operator-run-recovery-source.js").RestartRecoveryOperatorSource | undefined
+  >;
   target: OperatorRecoveryTarget;
   context: GatewayRequestContext;
   assertCurrent: () => void;
@@ -120,34 +166,19 @@ export async function restoreGatewayOperatorRecovery(params: {
   };
   const release = releaseHold();
   try {
-    const read = () => readSessionEntryReadOnlyInWorker(target, assertOwner);
-    const entry = await read();
-    if (!entry?.restartRecoveryOperatorSource) {
+    const source = await params.readSource(assertOwner);
+    if (!source) {
       release();
       return undefined;
     }
-    const source = decodeGatewayOperatorRecoverySource(entry.restartRecoveryOperatorSource);
-    const assertClaim = (current: InternalSessionEntry | undefined) => {
-      const reservation = current?.mainRestartRecovery?.reservation;
-      if (
-        !current ||
-        current.sessionId !== target.sessionId ||
-        current.lifecycleRevision !== source.lifecycleRevision ||
-        current.restartRecoveryDeliveryRunId !== target.recoveryRunId ||
-        current.restartRecoveryDeliverySourceRunId !== target.sourceRunId ||
-        (reservation &&
-          (reservation.runId !== target.recoveryRunId ||
-            reservation.lifecycleGeneration !== getAgentEventLifecycleGeneration())) ||
-        source.agentId !== target.agentId ||
-        source.sessionKey !== target.sessionKey ||
-        source.sessionId !== target.sessionId ||
-        source.sourceRunId !== target.sourceRunId ||
-        !isDeepStrictEqual(current.restartRecoveryOperatorSource, source)
-      ) {
-        throw new Error("Restart recovery operator source no longer owns this input.");
-      }
-    };
-    assertClaim(entry);
+    if (
+      source.agentId !== target.agentId ||
+      source.sessionKey !== target.sessionKey ||
+      source.sessionId !== target.sessionId ||
+      source.sourceRunId !== target.sourceRunId
+    ) {
+      throw new Error("Continuation source does not own this input.");
+    }
     const snapshot = source.snapshot;
     const generationOwner = context.sharedGatewaySessionGenerationState;
     if (snapshot.sharedGeneration !== undefined) {
@@ -259,7 +290,9 @@ export async function restoreGatewayOperatorRecovery(params: {
       assertPolicy();
     }
     assertPolicy();
-    assertClaim(await read());
+    if (!isDeepStrictEqual(await params.readSource(assertOwner), source)) {
+      throw new Error("Continuation source changed during admission.");
+    }
     assertPolicy();
     const live = captureChannelOperatorRunAuthority({
       profileId: snapshot.profileId,

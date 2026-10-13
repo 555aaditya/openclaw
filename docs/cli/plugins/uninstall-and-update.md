@@ -159,8 +159,8 @@ openclaw plugins reload <ids...> --wait
 
 Reload discovered plugins after editing their TypeScript source, imported helpers,
 or manifest, including plugins selected through `plugins.load.paths`. The command
-requires a running Gateway and waits for the replacement to finish without
-restarting it. Configured enablement is preserved, and unchanged
+requires a running Gateway. From a human terminal, it waits for the replacement
+to finish without restarting the Gateway. Configured enablement is preserved, and unchanged
 plugins keep their runtime instances. JSON output includes `pluginIds`,
 `restartRequired`, and the applied runtime receipt with its generation
 and source digests when available. The receipt's `selectedEntries` names the files
@@ -180,16 +180,37 @@ and the previous generation resumes serving; unfinished runs are not forcibly
 disposed. Retry `openclaw plugins reload <id>` after that work finishes, or use
 `openclaw plugins reload <id> --wait` to wait without a deadline for admitted work.
 
-`--wait` keeps new runs behind the same replacement gate. Press Ctrl+C to cancel
-the wait; disconnecting its Gateway request also cancels it. Before publication,
+`--wait` keeps new runs behind the same replacement gate. For a synchronous
+human-terminal request, press Ctrl+C to cancel the wait; disconnecting its
+Gateway request also cancels it. Before publication,
 cancellation restores the previous generation when recovery succeeds, without
 cancelling admitted runs. Once publication commits, cancellation does not undo it.
 Service shutdown, resource cleanup, and recovery keep their existing deadlines.
 Detailed readiness exposes the pending reload; an explicit wait has no drain
 deadline. Incoming messages retain their channel's existing queue and replay
 contract; this option does not add durable ingress to channels that lack it.
-Run this maintenance command outside a turn that itself holds the target plugin:
-waiting for that turn while it waits for reload cannot make progress.
+
+Supported Gateway-hosted agent conversations can request reload with the native
+`plugins` tool or through a top-level managed local `exec` running this CLI. The
+request returns `status: "accepted"`, not an applied receipt. OpenClaw ends the
+physical turn, releases its runtime resources, performs normal replacement, then
+automatically continues the same conversation with the recorded outcome and
+prior transcript. The original prompt and completed actions are not replayed.
+Check that outcome before using the changed plugin; do not repeat the accepted
+request.
+
+This handoff requires the original authenticated administrator authority. It
+preserves the turn's tool restrictions and rechecks current permission and session
+state. Stop, reset, archive, deletion, or authority revocation prevents stale
+continuation. A Gateway restart with no recorded outcome reports an interrupted
+operation; it does not blindly replay the reload. The continuation must inspect
+the current runtime before proceeding.
+
+A running Code Mode program cannot transfer its JavaScript stack to the new
+runtime. Request reload outside that program. Unsupported runtimes and callers
+without transferable authority must finish the turn and reload from a human
+terminal or the Control UI; waiting on a turn that itself holds the target plugin
+cannot make progress.
 
 Replacement requires the previous registration's resource cleanup to finish
 before its successor acquires those resources. Failed cleanup can prevent

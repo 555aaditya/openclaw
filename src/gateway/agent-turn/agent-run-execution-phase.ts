@@ -18,11 +18,13 @@ import {
   releaseMainSessionRecoveryOwner,
   type MainSessionRecoveryPendingTarget,
 } from "../../agents/main-session-recovery/main-session-recovery-store.js";
+import { withPluginReloadHandoff } from "../../agents/plugin-reload-handoff.js";
 import { withPreparedModelRuntimePluginGenerationScope } from "../../agents/prepared-model-runtime-generation-scope.js";
 import { resolveScheduledToolPolicyContext } from "../../agents/scheduled-tool-policy.js";
 import { resolveIngressWorkspaceOverrideForSessionRun } from "../../agents/spawned-context.js";
 import { runWithAgentWorkspaceReadiness } from "../../agents/workspace-readiness.js";
 import { isExecutionIdentityCollectionEnabled } from "../../audit/audit-config.js";
+import { intersectSessionEventToolsAllow } from "../../auto-reply/reply/session-event-target.js";
 import {
   resolveReplySourceTurnId,
   setChannelSourceTurnId,
@@ -67,15 +69,18 @@ import { settleUnstartedGatewayFollowup } from "./agent-run-subagent.js";
 import {
   annotateAgentRunUserTurnPrompt,
   finalizePreparedAgentRunUserTurn,
+  publishSettledAgentRunUserTurn,
   releaseStoppedAgentRunUserTurn,
 } from "./agent-run-user-turn.js";
 
 export async function startAgentRunExecution(params: StartAgentRunExecutionParams): Promise<void> {
   // Autonomous turns prepare their own workspace and cannot borrow a previous chat run's gate.
-  return await runWithChatAbortExecution(
-    params.prepared.activeRunAbort.entry,
-    () => runWithAgentWorkspaceReadiness(undefined, () => executeAgentRun(params)),
-    params.prepared.activeRunAbort.cleanup,
+  return await withPluginReloadHandoff(() =>
+    runWithChatAbortExecution(
+      params.prepared.activeRunAbort.entry,
+      () => runWithAgentWorkspaceReadiness(undefined, () => executeAgentRun(params)),
+      params.prepared.activeRunAbort.cleanup,
+    ),
   );
 }
 
@@ -158,17 +163,7 @@ async function executeAgentRun(params: StartAgentRunExecutionParams): Promise<vo
       prepared.activeGatewayWorkAdmission.release();
       leaseActive = false;
       mediaCleanup ??= discardPreparedInboundMedia(refsToDiscard, params.context.logGateway);
-      if (prepared.userTurn.recorder && params.resolvedSessionKey) {
-        emitSessionsChanged(
-          params.context,
-          {
-            sessionKey: params.resolvedSessionKey,
-            agentId: params.activeSessionAgentId,
-            reason: "agent.input.settled",
-          },
-          { accessChanged: false, rowScope: "runtime" },
-        );
-      }
+      publishSettledAgentRunUserTurn(params, prepared.userTurn);
     };
     let dispatched = false;
     const dispatchAdmittedAgentRun = (
@@ -515,7 +510,10 @@ async function executeAgentRun(params: StartAgentRunExecutionParams): Promise<vo
                 extraSystemPrompt: params.request.extraSystemPrompt,
                 bootstrapContextMode: params.request.bootstrapContextMode,
                 bootstrapContextRunKind: params.effectiveBootstrapContextRunKind,
-                toolsAllow: pluginSubagentToolsAllow ?? params.restoredCronContinuation?.toolsAllow,
+                toolsAllow: intersectSessionEventToolsAllow(
+                  pluginSubagentToolsAllow ?? params.restoredCronContinuation?.toolsAllow,
+                  params.client?.internal?.continuationToolsAllow,
+                ),
                 runtimePluginToolGrant,
                 trustedInternalHandoff: prepared.trustedInternalHandoff,
                 pinnedWidgetAuthoring: restartRecoveryContext?.pinnedWidgetAuthoring,

@@ -69,6 +69,8 @@ import type {
 } from "./bash-tools.exec-types.js";
 import type { BashSandboxConfig } from "./bash-tools.shared.js";
 import { chunkString, clampWithDefault, readEnvInt } from "./bash-tools.shared.js";
+import { PLUGIN_RELOAD_ORIGIN_ENV } from "./plugin-reload-origin-env.js";
+import { registerPluginReloadOrigin } from "./plugin-reload-origin.js";
 import { recordAgentCleanupFailure } from "./run-cleanup-timeout.js";
 import type { AgentToolResult } from "./runtime/index.js";
 import { createSessionSlug } from "./session-slug.js";
@@ -574,6 +576,7 @@ export async function runExecProcess({
   let terminateSandboxProcess: (() => Promise<void>) | undefined;
   let sandboxTermination: Promise<{ error: unknown } | undefined> | undefined;
   let secretEgressGrant: SecretEgressProcessGrant | undefined;
+  let reloadOrigin: ReturnType<typeof registerPluginReloadOrigin>;
   const beginSandboxTermination = () => {
     const terminate = terminateSandboxProcess;
     if (!terminate || sandboxTermination || session.exited) {
@@ -612,6 +615,7 @@ export async function runExecProcess({
     outcome: ExecProcessOutcome,
   ): Promise<ExecProcessOutcome> => {
     secretEgressGrant?.revoke();
+    reloadOrigin?.revoke();
     let finalOutcome = outcome;
     session.finalizing = true;
     try {
@@ -720,6 +724,7 @@ export async function runExecProcess({
   const launchLifecycle = createExecLaunchLifecycle(initialInitiateSpawn, initialReleaseSpawn);
   const onOperatorRevoked = () => managedRun?.cancel("manual-cancel");
   const releaseExecutionContext = () => {
+    reloadOrigin?.revoke();
     onSettledBeforeNotify = undefined;
     operatorSignal?.removeEventListener("abort", onOperatorRevoked);
     releaseOperatorAuthority?.();
@@ -755,13 +760,27 @@ export async function runExecProcess({
         : undefined;
       secretEgressGrant = grant;
       try {
+        const env = { ...input.env, ...grant?.env };
+        // A host launch replaces inherited/model-provided hints with its own live origin.
+        delete env[PLUGIN_RELOAD_ORIGIN_ENV];
+        reloadOrigin?.revoke();
+        reloadOrigin =
+          !opts.sandbox && opts.requestOwners?.length
+            ? registerPluginReloadOrigin(assertCurrent)
+            : undefined;
+        if (reloadOrigin) {
+          env[PLUGIN_RELOAD_ORIGIN_ENV] = reloadOrigin.token;
+        } else if (getGatewayToolCallerIdentity()) {
+          env[PLUGIN_RELOAD_ORIGIN_ENV] = "unsupported-runtime";
+        }
         return await withoutGatewayToolCallerIdentity(() =>
           supervisor.spawn({
             ...input,
-            ...(grant ? { env: { ...input.env, ...grant.env } } : {}),
+            env,
             onCancel: () => {
               beginSandboxTermination();
               grant?.revoke();
+              reloadOrigin?.revoke();
             },
             assertCurrent,
             beforeSpawn: assertHostPolicyCurrent,
@@ -770,6 +789,7 @@ export async function runExecProcess({
         );
       } catch (error) {
         grant?.revoke();
+        reloadOrigin?.revoke();
         throw error;
       }
     });

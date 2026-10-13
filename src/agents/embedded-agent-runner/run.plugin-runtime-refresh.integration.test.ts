@@ -6,6 +6,7 @@ import type { AgentHarness } from "../harness/types.js";
 import { captureAgentPluginRuntimeRefresh } from "../plugin-runtime-refresh.js";
 import type { PreparedModelRuntimePluginGeneration } from "../prepared-model-runtime.types.js";
 import { buildEmbeddedRunnerAssistant } from "../test-helpers/embedded-agent-runner-e2e-fixtures.js";
+import { classifyEmbeddedAgentRunResultForModelFallback } from "./result-fallback-classifier.js";
 import { makeAttemptResult } from "./run.overflow-compaction.fixture.js";
 import {
   mockedAcquireAgentRunPreparedModelRuntime,
@@ -42,6 +43,49 @@ afterEach(async () => {
 });
 
 describe("plugin runtime refresh admission", () => {
+  it("hands accepted reload custody off without empty-result fallback or another model attempt", async () => {
+    const setTerminalLifecycleMeta = vi.fn();
+    mockedRunEmbeddedAttempt.mockImplementationOnce(async (params) => {
+      params.registerPluginRuntimeRefreshConsumer?.(() => true);
+      captureAgentPluginRuntimeRefresh().requestHandoff();
+      return makeAttemptResult({
+        assistantTexts: [],
+        toolMetas: [{ toolName: "plugins", isError: false }],
+        setTerminalLifecycleMeta,
+      });
+    });
+    const result = await runEmbeddedAgent({
+      ...createOverflowRunParams(state),
+      prompt: "reload and verify",
+      agentHarnessId: "openclaw",
+      provider: "fixture-provider",
+      model: "fixture-model",
+      sessionKey: undefined,
+    });
+    expect(mockedRunEmbeddedAttempt).toHaveBeenCalledOnce();
+    expect(result.meta).toMatchObject({
+      yielded: true,
+      pluginReloadHandoff: true,
+      continuationPending: true,
+      replayInvalid: true,
+      livenessState: "paused",
+      stopReason: "end_turn",
+    });
+    expect(setTerminalLifecycleMeta).toHaveBeenCalledWith({
+      yielded: true,
+      livenessState: "paused",
+      stopReason: "end_turn",
+      replayInvalid: true,
+    });
+    expect(
+      classifyEmbeddedAgentRunResultForModelFallback({
+        provider: "fixture-provider",
+        model: "fixture-model",
+        result,
+      }),
+    ).toBeNull();
+  });
+
   it("retains settled work from an overloaded attempt through a later plugin refresh", async () => {
     const originalPrompt = "write the receipt, reload the plugin, then report the receipt ID";
     const originalMessage = { role: "user" as const, content: originalPrompt, timestamp: 1 };

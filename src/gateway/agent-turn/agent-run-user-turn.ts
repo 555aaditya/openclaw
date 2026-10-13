@@ -41,6 +41,7 @@ import { hasGatewayAdminScope } from "../operator-scopes.js";
 import type { AgentRunRequest } from "../server-methods/agent-request-types.js";
 import { resolveSessionRuntimeCwd } from "../server-methods/agent-session-reset.js";
 import { gatewayClientSenderFields } from "../server-methods/gateway-client-identity.js";
+import { emitSessionsChanged } from "../server-methods/session-change-event.js";
 import { resolveGatewayInputParticipant } from "../session-input-participant.js";
 import { loadGatewaySessionEntryReadOnlyInWorker } from "../session-utils-store-worker.js";
 import { formatForLog } from "../ws-log.js";
@@ -479,6 +480,23 @@ export async function releasePreparedAgentRunUserTurnAfterFailure(
     return new AggregateError(
       [error, cleanupError],
       `${formatForLog(error)}; pending input cleanup failed: ${formatForLog(cleanupError)}`,
+    );
+  }
+}
+
+export function publishSettledAgentRunUserTurn(
+  params: { context: AgentTurnContext; resolvedSessionKey?: string; activeSessionAgentId: string },
+  userTurn: PreparedAgentRunUserTurn,
+): void {
+  if (userTurn.recorder && params.resolvedSessionKey) {
+    emitSessionsChanged(
+      params.context,
+      {
+        sessionKey: params.resolvedSessionKey,
+        agentId: params.activeSessionAgentId,
+        reason: "agent.input.settled",
+      },
+      { accessChanged: false, rowScope: "runtime" },
     );
   }
 }

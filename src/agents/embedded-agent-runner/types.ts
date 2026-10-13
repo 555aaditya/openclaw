@@ -181,6 +181,8 @@ export type EmbeddedAgentRunMeta = {
   intentionalTerminalCompletion?: "tool-batch";
   terminalReply?: AgentRunTerminalReplySnapshot;
   yielded?: boolean;
+  /** Host-owned maintenance will continue this task after the complete dispatch releases. */
+  pluginReloadHandoff?: true;
   /** Explicit user-facing waiting status supplied to sessions_yield. */
   yieldAcknowledgment?: string;
   /**

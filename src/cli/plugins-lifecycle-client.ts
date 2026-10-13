@@ -7,6 +7,7 @@ import type {
   PluginsInspectResult,
   PluginsReloadResult,
 } from "../../packages/gateway-protocol/src/schema/plugins.js";
+import { PLUGIN_RELOAD_ORIGIN_ENV } from "../agents/plugin-reload-origin-env.js";
 import { readActiveGatewayLockIdentity } from "../infra/gateway-lock.js";
 import type { PluginCapabilityConsentHandler } from "../plugins/capability-consent.js";
 import type { PluginInstallBatchReload } from "../plugins/install-runtime-batch.js";
@@ -21,7 +22,7 @@ export async function resolvePluginBatchReload(): Promise<PluginInstallBatchRelo
         const result = await gateway<PluginsReloadResult>("plugins.reload", {
           plugins,
         });
-        if (!result.runtime) {
+        if (!("runtime" in result)) {
           throw new Error(
             "Gateway did not confirm the plugin batch runtime generation. Inspect plugin status before retrying.",
           );
@@ -42,7 +43,9 @@ export type PluginLifecycleGateway = <T>(
 ) => Promise<T>;
 
 /** Select the local runtime owner before acquiring a lease the Gateway also needs. */
-export async function resolvePluginLifecycleGateway(): Promise<PluginLifecycleGateway | null> {
+export async function resolvePluginLifecycleGateway(
+  options: { allowTurnHandoff?: boolean } = {},
+): Promise<PluginLifecycleGateway | null> {
   const owner = await readActiveGatewayLockIdentity({ requireInspection: true });
   if (!owner) {
     return null;
@@ -60,7 +63,12 @@ export async function resolvePluginLifecycleGateway(): Promise<PluginLifecycleGa
     try {
       return await callGateway<T>({
         method,
-        params,
+        params:
+          options.allowTurnHandoff &&
+          method === "plugins.reload" &&
+          process.env[PLUGIN_RELOAD_ORIGIN_ENV]
+            ? { ...params, originToken: process.env[PLUGIN_RELOAD_ORIGIN_ENV] }
+            : params,
         localPortOverride: owner.port,
         ignoreEnvUrlOverride: true,
         requiredMethods: [...new Set([method, "plugins.reload"])],

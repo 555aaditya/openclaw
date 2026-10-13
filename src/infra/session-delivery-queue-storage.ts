@@ -15,7 +15,7 @@ import { bindDeliveryQueueEntry } from "./delivery-queue-sqlite-bound.js";
 import {
   prepareClaimedSessionDelivery,
   prepareSessionDelivery,
-  SESSION_DELIVERY_QUEUE_NAME,
+  sessionDeliveryQueueName,
   SessionDeliveryAcknowledgementFinalizeError,
   SessionDeliveryAttemptStartError,
   SessionDeliveryDeadLetteredError,
@@ -23,7 +23,10 @@ import {
   type QueuedSessionDeliveryPayload,
   type SessionDeliverySettledOutcome,
 } from "./session-delivery-queue.records.js";
-import type { SessionDeliveryAgentRunUpdate } from "./session-delivery-queue.worker-contract.js";
+import type {
+  SessionDeliveryAgentRunUpdate,
+  PluginReloadOutcomeUpdate,
+} from "./session-delivery-queue.worker-contract.js";
 import type { SessionDeliveryWorkerOperations } from "./session-delivery-queue.worker.js";
 import { createSqliteWorkerWriteAdmission } from "./sqlite-worker-store.js";
 
@@ -142,7 +145,7 @@ function prepareEntry(
 ): ReturnType<typeof bindDeliveryQueueEntry> {
   // Preserve the JSON persistence boundary before the transport serializes its input.
   return bindDeliveryQueueEntry({
-    queueName: SESSION_DELIVERY_QUEUE_NAME,
+    queueName: sessionDeliveryQueueName(entry.id),
     entry,
     ...(mode === "insert" ? { insertOnly: true } : { updatePendingOnly: true }),
   });
@@ -185,6 +188,13 @@ export async function enqueueClaimedSessionDelivery(
     "sessionDelivery.enqueueClaimed",
     context,
   );
+}
+
+export async function recordPluginReloadOutcome(
+  input: PluginReloadOutcomeUpdate,
+  context: OpenClawStateWorkerContext,
+): Promise<void> {
+  await executeSessionDelivery(context, { type: "sessionDelivery.pluginReloadOutcome", input });
 }
 
 export async function releaseSessionDeliveryClaim(

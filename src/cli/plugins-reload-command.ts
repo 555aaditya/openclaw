@@ -12,7 +12,7 @@ export async function runPluginsReloadCommand(
   opts: PluginsReloadOptions = {},
 ): Promise<void> {
   const pluginIds = [...new Set(ids)];
-  const gateway = await resolvePluginLifecycleGateway();
+  const gateway = await resolvePluginLifecycleGateway({ allowTurnHandoff: true });
   if (!gateway) {
     throw new Error("The Gateway is not running. Start it before reloading a plugin.");
   }
@@ -31,6 +31,12 @@ export async function runPluginsReloadCommand(
   );
   if (opts.json) {
     return defaultRuntime.writeJson(result);
+  }
+  if (!("runtime" in result)) {
+    defaultRuntime.log(
+      `Accepted plugin reload ${result.operationId}. The requesting agent turn will finish cleanup, then continue automatically with the reload outcome. This is not an applied receipt.`,
+    );
+    return;
   }
   for (const warning of result.warnings ?? []) {
     defaultRuntime.log(theme.warn(warning));

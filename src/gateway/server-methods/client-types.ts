@@ -88,6 +88,8 @@ export type GatewayClient = Pick<
     runtimePluginToolGrant?: RuntimePluginToolGrant;
     /** Host-owned exact tool cap for a tracked plugin subagent run. */
     pluginSubagentToolsAllow?: string[];
+    /** Original tool ceiling restored from a canonical continuation record. */
+    continuationToolsAllow?: string[];
     /** Opaque in-process subagent-completion capability; never accepted from wire params. */
     delegatedToolPolicyHandoffId?: string;
   };

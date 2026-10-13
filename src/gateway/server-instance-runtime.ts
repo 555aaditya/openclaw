@@ -231,15 +231,37 @@ export function createGatewayInstanceRuntime(
           throw new Error("Restart recovery operator run is no longer active.");
         }
       };
-      const restoredOperator = recoveryTarget
+      const reloadContinuation = dispatchOptions.pluginReloadContinuationId
         ? await (
-            await loadOperatorRecovery()
-          ).restoreGatewayOperatorRecovery({
-            target: recoveryTarget,
+            await import("./plugin-reload-continuation-authority.js")
+          ).restorePluginReloadContinuationAuthority({
+            queueId: dispatchOptions.pluginReloadContinuationId,
+            payload,
             context,
-            assertCurrent: assertRecoveryCurrent,
+            // Retained operator policy may authorize an accepted successor after
+            // this run closes. Tool execution still uses assertRecoveryCurrent
+            // and the exact admitted run; source revocation remains independent.
+            assertCurrent: () => {
+              assertDispatchAvailable("agent");
+              dispatchOptions.assertAdmissionCurrent?.();
+              dispatchOptions.signal?.throwIfAborted();
+              if (options.getContext() !== context) {
+                throw new Error("Gateway continuation context changed.");
+              }
+            },
           })
         : undefined;
+      const restoredOperator =
+        reloadContinuation ??
+        (recoveryTarget
+          ? await (
+              await loadOperatorRecovery()
+            ).restoreGatewayOperatorRecovery({
+              target: recoveryTarget,
+              context,
+              assertCurrent: assertRecoveryCurrent,
+            })
+          : undefined);
       let delegatedToolPolicyHandoffId: string | undefined;
       try {
         assertRecoveryCurrent();
@@ -266,6 +288,7 @@ export function createGatewayInstanceRuntime(
                   ? { kind: "operator", profileId: restoredOperator.authority.profileId }
                   : { kind: "system" },
                 operatorRunAuthority: restoredOperator?.authority,
+                continuationToolsAllow: reloadContinuation?.toolsAllow,
                 allowModelOverride:
                   dispatchOptions.allowModelOverride === true ||
                   dispatchOptions.allowSyntheticModelOverride === true,

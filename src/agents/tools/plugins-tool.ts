@@ -6,6 +6,7 @@ import { boundedJsonUtf8Bytes } from "../../infra/json-utf8-bytes.js";
 import type { PluginRuntimeApplication } from "../../plugins/lifecycle.js";
 import type { listManagedPlugins } from "../../plugins/management-service.js";
 import { formatSelectedEntry } from "../../plugins/reload-entry-guidance.js";
+import { registerPluginReloadOrigin } from "../plugin-reload-origin.js";
 import { captureAgentPluginRuntimeRefresh } from "../plugin-runtime-refresh.js";
 import { stringEnum } from "../schema/typebox.js";
 import { jsonResult, readToolStringParam, ToolInputError, type AnyAgentTool } from "./common.js";
@@ -114,7 +115,7 @@ export function createPluginsTool(): AnyAgentTool {
     name: "plugins",
     label: "Plugins",
     description:
-      "Inspect, search, install from the official catalog or ClawHub, enable, disable, uninstall, or reload plugins. Reload an installed plugin after editing its local files. Check restartRequired: compiled bundled code needs a Gateway restart. Cleanup is best effort; read warnings in the result. Supported conversations refresh their tools at the next model step after running programs settle; finish the current program before using changed tools. Other runtimes may require a new conversation for changed tool names or schemas. Do not repeat completed mutations.",
+      "Inspect, search, install from the official catalog or ClawHub, enable, disable, uninstall, or reload plugins. Reload an installed plugin after editing its local files. Check restartRequired: compiled bundled code needs a Gateway restart. Read cleanup warnings in the result. Reload must be a top-level tool call outside Code Mode. An accepted reload ends this turn; after runtime cleanup and replacement, the same conversation continues automatically with the actual outcome. Accepted does not mean applied. Unsupported runtimes must reload from a human terminal or the Control UI. Do not repeat completed mutations.",
     parameters: PluginsToolSchema,
     execute: async (_toolCallId, args, signal) => {
       runtimeRefresh.assertCurrent();
@@ -175,6 +176,15 @@ export function createPluginsTool(): AnyAgentTool {
         default:
           throw new ToolInputError(`Unknown plugin action: ${action}`);
       }
+      const origin = action === "reload" ? registerPluginReloadOrigin() : undefined;
+      if (action === "reload") {
+        if (!origin) {
+          throw new Error(
+            "This runtime cannot hand off plugin reload. Finish this turn and reload from a human terminal or the Control UI.",
+          );
+        }
+        request.originToken = origin.token;
+      }
       let result: Record<string, unknown> & { runtime?: PluginRuntimeApplication };
       try {
         result = await callAgentToolGatewayRequest({
@@ -206,6 +216,11 @@ export function createPluginsTool(): AnyAgentTool {
           isError: true,
           ...(refresh ? { terminate: true } : {}),
         };
+      } finally {
+        origin?.revoke();
+      }
+      if (result.status === "accepted") {
+        return { ...pluginsToolResult(result, false), terminate: true };
       }
       if (action === "list") {
         // SAFETY: The list action dispatches only plugins.list, whose handler returns listManagedPlugins.

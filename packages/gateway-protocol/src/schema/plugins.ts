@@ -23,7 +23,23 @@ import {
   PluginInstallTrustSchema,
   PluginOperatorGrantsSchema,
 } from "./plugin-inspection.js";
+import {
+  PluginCapabilityAcknowledgmentSchema,
+  PluginRuntimeApplicationSchema,
+} from "./plugin-lifecycle.js";
 import { NonEmptyString } from "./primitives.js";
+
+export {
+  MAX_PLUGIN_RELOAD_TARGETS,
+  PluginReloadTargetSchema,
+  PluginsReloadParamsSchema,
+  PluginsReloadResultSchema,
+  PluginRuntimeApplicationSchema,
+  type PluginReloadTarget,
+  type PluginsReloadParams,
+  type PluginsReloadResult,
+  type PluginRuntimeApplication,
+} from "./plugin-lifecycle.js";
 
 export {
   PLUGIN_UI_CAPABILITIES,
@@ -321,10 +337,6 @@ export const CapabilityConsentErrorDetailsSchema = closedObject({
   reviewToken: NonEmptyString,
   widened: Type.Optional(PluginDeclaredSurfaceWideningSchema),
   acceptedAt: Type.Optional(NonEmptyString),
-});
-
-const PluginCapabilityAcknowledgmentSchema = closedObject({
-  reviewToken: NonEmptyString,
 });
 
 /** Request payload for searching installable ClawHub plugin families. */
@@ -669,15 +681,6 @@ export const PluginsInstallParamsSchema = Type.Union([
   }),
 ]);
 
-/** Receipt emitted only after the requested runtime generation was applied. */
-export const PluginRuntimeApplicationSchema = closedObject({
-  operationId: NonEmptyString,
-  generation: Type.Integer({ minimum: 0 }),
-  pluginIds: Type.Array(NonEmptyString),
-  sourceDigests: Type.Optional(Type.Record(NonEmptyString, NonEmptyString)),
-  selectedEntries: Type.Optional(Type.Record(NonEmptyString, NonEmptyString)),
-});
-
 export const PluginsChangedEventSchema = closedObject({
   generation: Type.Integer({ minimum: 0 }),
 });
@@ -697,32 +700,6 @@ export const PluginsRefreshResultSchema = closedObject({
   ok: Type.Literal(true),
   restartRequired: Type.Optional(Type.Boolean()),
   runtime: Type.Optional(PluginRuntimeApplicationSchema),
-  warnings: Type.Optional(Type.Array(Type.String())),
-});
-
-/** Reload installed sources without changing their enabled policy. */
-export const MAX_PLUGIN_RELOAD_TARGETS = 64;
-export const PluginReloadTargetSchema = closedObject({
-  pluginId: NonEmptyString,
-  installHash: Type.Optional(Type.String({ pattern: "^[a-f0-9]{64}$" })),
-  sourceDigests: Type.Optional(
-    Type.Record(NonEmptyString, Type.String({ pattern: "^[a-f0-9]{64}$" })),
-  ),
-});
-export const PluginsReloadParamsSchema = closedObject({
-  plugins: Type.Array(PluginReloadTargetSchema, {
-    minItems: 1,
-    maxItems: MAX_PLUGIN_RELOAD_TARGETS,
-    uniqueItems: true,
-  }),
-  waitForDrain: Type.Optional(Type.Boolean()),
-  acknowledgeCapabilities: Type.Optional(PluginCapabilityAcknowledgmentSchema),
-});
-export const PluginsReloadResultSchema = closedObject({
-  ok: Type.Literal(true),
-  pluginIds: Type.Array(NonEmptyString, { minItems: 1, maxItems: MAX_PLUGIN_RELOAD_TARGETS }),
-  restartRequired: Type.Boolean(),
-  runtime: PluginRuntimeApplicationSchema,
   warnings: Type.Optional(Type.Array(Type.String())),
 });
 
@@ -783,10 +760,6 @@ export type PluginsInstallParams = Static<typeof PluginsInstallParamsSchema>;
 export type PluginsInstallResult = Static<typeof PluginsInstallResultSchema>;
 export type PluginsRefreshParams = Static<typeof PluginsRefreshParamsSchema>;
 export type PluginsRefreshResult = Static<typeof PluginsRefreshResultSchema>;
-export type PluginReloadTarget = Static<typeof PluginReloadTargetSchema>;
-export type PluginsReloadParams = Static<typeof PluginsReloadParamsSchema>;
-export type PluginsReloadResult = Static<typeof PluginsReloadResultSchema>;
-export type PluginRuntimeApplication = Static<typeof PluginRuntimeApplicationSchema>;
 export type PluginsChangedEvent = Static<typeof PluginsChangedEventSchema>;
 export type PluginsUninstallParams = Static<typeof PluginsUninstallParamsSchema>;
 export type PluginsUninstallResult = Static<typeof PluginsUninstallResultSchema>;

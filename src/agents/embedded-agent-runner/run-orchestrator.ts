@@ -47,6 +47,7 @@ import { runBestEffortCallback } from "../embedded-agent-subscribe.callback.js";
 import type { AgentHarnessPluginSelection } from "../harness/runtime-plugin-load-plan.js";
 import { resolveLegacyInheritedAuthDir } from "../legacy-inherited-auth-dir.js";
 import { resolveModelCandidateChain } from "../model-fallback-candidates.js";
+import { withPluginReloadHandoff } from "../plugin-reload-handoff.js";
 import {
   getPreparedModelRuntimePluginGeneration,
   runOutsidePreparedModelRuntimePluginGenerationScope,
@@ -72,7 +73,10 @@ import { runEmbeddedAgentViaCliBackendIfEligible } from "./cli-backend-dispatch.
 import { waitForDeferredTurnMaintenanceForSession } from "./context-engine-maintenance.js";
 import { resolveGlobalLane, resolveSessionLane } from "./lanes.js";
 import { log } from "./logger.js";
-import { createEmbeddedAgentPluginRuntimeRefresh } from "./plugin-runtime-refresh.js";
+import {
+  createEmbeddedAgentPluginRuntimeRefresh,
+  mergeRefreshedRunUsage,
+} from "./plugin-runtime-refresh.js";
 import { runPreparedEmbeddedLoop } from "./run-loop.js";
 import { createEmbeddedRunStageSummaryEmitter } from "./run/attempt-stage-timing.js";
 import { withExecutionPhaseDiagnostics } from "./run/execution-phase-diagnostics.js";
@@ -98,7 +102,6 @@ import {
   createUsageAccumulator,
   mergeAttemptRunStatsIntoAccumulator,
   mergeUsageIntoAccumulator,
-  toNormalizedUsage,
 } from "./usage-accumulator.js";
 
 const EMPTY_EMBEDDED_AGENT_CONFIG: OpenClawConfig = Object.freeze({});
@@ -117,23 +120,25 @@ export function runEmbeddedAgent(
     (internalParamsInput.preparedModelRuntimeMode === "isolated-read-only"
       ? undefined
       : getPreparedModelRuntimePluginGeneration());
-  return withAgentRunLifecycleGeneration(lifecycleGeneration, async () => {
-    const prepared = await prepareEmbeddedRunSession({
-      ...internalParamsInput,
-      config,
-      lifecycleGeneration,
-      ...(pluginGeneration ? { pluginGeneration } : {}),
-    });
-    return await withRequiredSessionPlacement(
-      prepared.runSessionTarget,
-      {
-        config: prepared.params.config,
-        assertCurrent: prepared.params.preparedRunAdmission?.assertSourceCurrent,
-        signal: prepared.params.abortSignal,
-      },
-      () => runEmbeddedAgentForSession(prepared),
-    );
-  });
+  return withPluginReloadHandoff(() =>
+    withAgentRunLifecycleGeneration(lifecycleGeneration, async () => {
+      const prepared = await prepareEmbeddedRunSession({
+        ...internalParamsInput,
+        config,
+        lifecycleGeneration,
+        ...(pluginGeneration ? { pluginGeneration } : {}),
+      });
+      return await withRequiredSessionPlacement(
+        prepared.runSessionTarget,
+        {
+          config: prepared.params.config,
+          assertCurrent: prepared.params.preparedRunAdmission?.assertSourceCurrent,
+          signal: prepared.params.abortSignal,
+        },
+        () => runEmbeddedAgentForSession(prepared),
+      );
+    }),
+  );
 }
 
 async function runEmbeddedAgentForSession(
@@ -654,21 +659,7 @@ async function runEmbeddedAgentForSession(
             }
             if (!continuation) {
               if (refreshed && result.meta.agentMeta) {
-                result = {
-                  ...result,
-                  meta: {
-                    ...result.meta,
-                    durationMs: Date.now() - started,
-                    agentMeta: {
-                      ...result.meta.agentMeta,
-                      usage: toNormalizedUsage(usage),
-                      costUsd:
-                        usage.cost && usage.cost !== "unavailable" ? usage.cost.total : undefined,
-                      assistantTurns: usage.assistantTurns,
-                      ...(usage.bridgeCalls ? { bridgeCalls: usage.bridgeCalls } : {}),
-                    },
-                  },
-                };
+                result = mergeRefreshedRunUsage(result, usage, started);
               }
               failed = Boolean(result.meta.error) || result.meta.stopReason === "error";
               break;
@@ -685,6 +676,9 @@ async function runEmbeddedAgentForSession(
           if (ownsAssistantErrorTranscript) {
             assistantErrorTranscript?.settle(failed && !params.abortSignal?.aborted);
           }
+        }
+        if (result.meta.pluginReloadHandoff) {
+          await generationCleanup;
         }
         refresh.mergeTerminalReceipt(result);
         if (

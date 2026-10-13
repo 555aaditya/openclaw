@@ -18,6 +18,7 @@ import {
   mergeSessionDeliveryPreparedMediaBlocks,
   moveSessionDeliveryToFailed,
   releaseSessionDeliveryClaim,
+  recordPluginReloadOutcome,
 } from "./session-delivery-queue-storage.js";
 import { withSessionDeliveryQueue } from "./session-delivery-queue.test-helpers.js";
 
@@ -43,6 +44,105 @@ describe("session-delivery queue storage", () => {
       .get(id) as { status?: string } | undefined;
     return row?.status;
   }
+
+  it("isolates reload continuations from old readers and commits one outcome", async () => {
+    await withSessionDeliveryQueue(async (stateDir, queueContext) => {
+      // Storage-only fixture: these facts never pass an operator admission boundary.
+      const payload = {
+        kind: "agentTurn" as const,
+        sessionKey: "agent:main:main",
+        message: "accepted, not applied",
+        messageId: "reload-operation",
+        idempotencyKey: "reload-operation",
+        pluginReload: {
+          permission: {},
+          operationId: "reload-operation",
+          pluginIds: ["probe"],
+          source: {
+            version: 1 as const,
+            agentId: "main",
+            sessionKey: "agent:main:main",
+            sessionId: "original",
+            sourceRunId: "source",
+            snapshot: {
+              profileId: "fixture",
+              scopes: ["operator.admin"],
+              assignedRole: null,
+              githubLogin: null,
+              grant: null,
+              aliasBindingIds: [],
+              authPolicy: {
+                generation: "" as const,
+                grantGeneration: "fixture",
+                role: "operator" as const,
+                authMethod: "token" as const,
+              },
+              controlUiAdmin: false,
+              localOperator: true,
+              sourceIngress: "internal" as const,
+            },
+          },
+        },
+      };
+      const id = await enqueueSessionDelivery(payload, queueContext);
+      expect(id).toMatch(/^plugin-reload:/);
+      expect(readSessionQueueStatus(stateDir, id)).toBeUndefined();
+      expect(await loadPendingSessionDeliveries(queueContext)).toHaveLength(1);
+      const runtime = {
+        operationId: "actual-publication",
+        generation: 2,
+        pluginIds: ["probe"],
+        restartRequired: true,
+      };
+      await recordPluginReloadOutcome(
+        {
+          id,
+          operationId: "reload-operation",
+          outcome: { status: "applied", message: "applied", runtime },
+          message: "actual outcome",
+        },
+        queueContext,
+      );
+      await recordPluginReloadOutcome(
+        {
+          id,
+          operationId: "reload-operation",
+          outcome: { status: "interrupted", message: "must not overwrite" },
+          message: "must not overwrite",
+        },
+        queueContext,
+      );
+      expect(await loadPendingSessionDelivery(id, queueContext)).toMatchObject({
+        message: "actual outcome",
+        pluginReload: { outcome: { status: "applied", runtime } },
+      });
+      await expect(
+        recordPluginReloadOutcome(
+          {
+            id,
+            operationId: "different",
+            outcome: { status: "failed", message: "wrong owner" },
+            message: "wrong",
+          },
+          queueContext,
+        ),
+      ).rejects.toThrow("owner changed");
+      await settleSessionDelivery(id, queueContext);
+      expect(await loadPendingSessionDelivery(id, queueContext)).toBeNull();
+      expect(await enqueueSessionDelivery(payload, queueContext)).toBe(id);
+      expect(await loadPendingSessionDeliveries(queueContext)).toEqual([]);
+      const { db } = openOpenClawStateDatabase({
+        env: { ...process.env, OPENCLAW_STATE_DIR: stateDir },
+      });
+      const row = db
+        .prepare(
+          "SELECT entry_json FROM delivery_queue_entries WHERE queue_name = 'plugin-reload' AND id = ?",
+        )
+        .get(id);
+      expect(JSON.stringify(row)).not.toContain("profileId");
+      expect(JSON.stringify(row)).not.toContain("actual outcome");
+    });
+  });
 
   it("grants one initial-attempt lease and releases it for recovery", async () => {
     await withSessionDeliveryQueue(async (_stateDir, queueContext) => {

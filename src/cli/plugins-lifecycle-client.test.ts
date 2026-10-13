@@ -1,7 +1,7 @@
 import "../test-utils/prepare-compiled-subprocesses.js";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GatewayClientRequestError } from "../../packages/gateway-client/src/request-error.js";
 import { buildCapabilityConsentErrorDetails } from "../../packages/gateway-protocol/src/capability-consent-error-details.js";
 import { withTestDir } from "../test-helpers/temp-dir.js";
@@ -17,6 +17,25 @@ const { resolvePluginLifecycleGateway, resolvePluginBatchReload } =
   await import("./plugins-lifecycle-client.js");
 
 describe("plugin lifecycle CLI transport", () => {
+  afterEach(() => vi.unstubAllEnvs());
+  it("carries the host origin only for an explicit managed reload, not batch mutations", async () => {
+    vi.stubEnv("OPENCLAW_PLUGIN_RELOAD_ORIGIN_TOKEN", "host-issued-origin");
+    const targets = { plugins: [{ pluginId: "demo" }] };
+    const gateway = await resolvePluginLifecycleGateway({ allowTurnHandoff: true });
+    await gateway!("plugins.reload", targets);
+    expect(mocks.call).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        params: { ...targets, originToken: "host-issued-origin" },
+      }),
+    );
+    await gateway!("plugins.uninstall", { pluginId: "demo" });
+    expect(mocks.call).toHaveBeenLastCalledWith(
+      expect.objectContaining({ params: { pluginId: "demo" } }),
+    );
+    const ordinary = await resolvePluginLifecycleGateway();
+    await ordinary!("plugins.reload", targets);
+    expect(mocks.call).toHaveBeenLastCalledWith(expect.objectContaining({ params: targets }));
+  });
   beforeEach(() => {
     mocks.lock.mockReset().mockResolvedValue({ port: 19001 });
     mocks.call.mockReset().mockResolvedValue({ runtime: { generation: 2 } });

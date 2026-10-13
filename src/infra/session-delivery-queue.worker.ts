@@ -26,9 +26,14 @@ import {
 import type { DeliveryQueueStoredStatus } from "./delivery-queue-sqlite.kernel.js";
 import {
   SESSION_DELIVERY_QUEUE_NAME,
+  PLUGIN_RELOAD_DELIVERY_QUEUE_NAME,
+  sessionDeliveryQueueName,
   type QueuedSessionDelivery,
 } from "./session-delivery-queue.records.js";
-import type { SessionDeliveryAgentRunUpdate } from "./session-delivery-queue.worker-contract.js";
+import type {
+  SessionDeliveryAgentRunUpdate,
+  PluginReloadOutcomeUpdate,
+} from "./session-delivery-queue.worker-contract.js";
 
 function readSessionDelivery(
   database: OpenClawStateDatabase,
@@ -36,7 +41,7 @@ function readSessionDelivery(
 ): QueuedSessionDelivery | null {
   const entry = loadDeliveryQueueEntryInDatabase(
     database,
-    SESSION_DELIVERY_QUEUE_NAME,
+    sessionDeliveryQueueName(id),
     id,
     "pending",
   );
@@ -45,9 +50,8 @@ function readSessionDelivery(
 }
 
 function readStatus(database: OpenClawStateDatabase, id: string) {
-  return getDeliveryQueueEntryOwnersInDatabase(database, [SESSION_DELIVERY_QUEUE_NAME], id).get(
-    SESSION_DELIVERY_QUEUE_NAME,
-  )?.status;
+  const queueName = sessionDeliveryQueueName(id);
+  return getDeliveryQueueEntryOwnersInDatabase(database, [queueName], id).get(queueName)?.status;
 }
 
 function update(
@@ -55,8 +59,8 @@ function update(
   id: string,
   transform: (entry: QueuedSessionDelivery) => QueuedSessionDelivery,
 ) {
-  return updateDeliveryQueueEntryInDatabase(database, SESSION_DELIVERY_QUEUE_NAME, id, (entry) =>
-    // SAFETY: Only the session namespace reaches this payload transform.
+  return updateDeliveryQueueEntryInDatabase(database, sessionDeliveryQueueName(id), id, (entry) =>
+    // SAFETY: Only session-delivery namespaces reach this payload transform.
     transform(entry as QueuedSessionDelivery),
   );
 }
@@ -117,6 +121,22 @@ export const sessionDeliveryOperations = {
       },
       { operationLabel: "sessionDelivery.enqueueClaimed" },
     ),
+  "sessionDelivery.pluginReloadOutcome": (input: PluginReloadOutcomeUpdate, { open }) => {
+    update(open(), input.id, (entry) => {
+      if (entry.kind !== "agentTurn" || entry.pluginReload?.operationId !== input.operationId) {
+        throw new Error("Plugin reload continuation owner changed");
+      }
+      // Idempotent fact publication does not repeat the reload or replace a settled receipt.
+      if (entry.pluginReload.outcome) {
+        return entry;
+      }
+      return {
+        ...entry,
+        message: input.message,
+        pluginReload: { ...entry.pluginReload, outcome: input.outcome },
+      };
+    });
+  },
   "sessionDelivery.releaseClaim": (input: { id: string }, { open }) => {
     const database = open();
     update(database, input.id, (entry) => ({ ...entry, availableAt: Date.now() }));
@@ -199,7 +219,7 @@ export const sessionDeliveryOperations = {
     const database = open();
     const { id } = input;
     return finalize(database, id, "completed", () => {
-      completeDeliveryQueueEntryInDatabase(database, SESSION_DELIVERY_QUEUE_NAME, id);
+      completeDeliveryQueueEntryInDatabase(database, sessionDeliveryQueueName(id), id);
     });
   },
   "sessionDelivery.fail": (
@@ -237,8 +257,10 @@ export const sessionDeliveryOperations = {
     readSessionDelivery(open(), input.id),
   "sessionDelivery.list": (_input: undefined, { open }) => {
     const database = open();
-    const entries = loadDeliveryQueueEntriesInDatabase(database, SESSION_DELIVERY_QUEUE_NAME);
-    // SAFETY: All returned rows belong to the canonical session-delivery namespace.
+    const entries = [SESSION_DELIVERY_QUEUE_NAME, PLUGIN_RELOAD_DELIVERY_QUEUE_NAME].flatMap(
+      (queueName) => loadDeliveryQueueEntriesInDatabase(database, queueName),
+    );
+    // SAFETY: All returned rows belong to canonical session-delivery namespaces.
     return entries as QueuedSessionDelivery[];
   },
   "sessionDelivery.moveToFailed": (input: { id: string }, { open }) => {
@@ -247,14 +269,14 @@ export const sessionDeliveryOperations = {
     return finalize(database, id, "failed", () => {
       const entry = readSessionDelivery(database, id);
       if (!entry) {
-        throw deliveryQueueEntryNotFoundError(SESSION_DELIVERY_QUEUE_NAME, id);
+        throw deliveryQueueEntryNotFoundError(sessionDeliveryQueueName(id), id);
       }
       const result = terminalizePendingDeliveryQueueEntryInDatabase(
         database,
-        prepareDeliveryQueueTerminalEntry({ queueName: SESSION_DELIVERY_QUEUE_NAME, id, entry }),
+        prepareDeliveryQueueTerminalEntry({ queueName: sessionDeliveryQueueName(id), id, entry }),
       );
       if (result.status !== "terminalized") {
-        throw deliveryQueueEntryNotFoundError(SESSION_DELIVERY_QUEUE_NAME, id);
+        throw deliveryQueueEntryNotFoundError(sessionDeliveryQueueName(id), id);
       }
     });
   },

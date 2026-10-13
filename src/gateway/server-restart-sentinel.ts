@@ -102,7 +102,11 @@ export async function deliverQueuedSessionDelivery(params: {
   resolveGatewayContext?: import("./server-methods/types.js").GatewayContextResolver;
 }) {
   params.queueContext.admission.assertCurrent();
-  const queuedEntry = resolveCorrelatedSubagentDelivery(params.entry);
+  let queuedEntry = resolveCorrelatedSubagentDelivery(params.entry);
+  if (queuedEntry.kind === "agentTurn" && queuedEntry.pluginReload) {
+    const { reconcilePluginReloadContinuation } = await import("./plugin-reload-handoff.js");
+    queuedEntry = await reconcilePluginReloadContinuation(queuedEntry, params.queueContext);
+  }
   if (queuedEntry.kind === "agentTurn" && queuedEntry.requesterBinding) {
     await deliverQueuedGeneratedMediaAgentTurn({
       ...params,

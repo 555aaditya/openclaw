@@ -11,6 +11,8 @@ import type {
 import type { AgentRunRequest } from "./server-methods/agent-request-types.js";
 
 export type GatewayInstanceAgentDispatchOptions = {
+  /** Private queue identity; the instance reads and authorizes the canonical outcome itself. */
+  pluginReloadContinuationId?: string;
   /** Exact source custody to re-admit; the instance reads its private durable record itself. */
   restartRecoveryOperatorTarget?: import("./operator-run-recovery.js").OperatorRecoveryTarget;
   assertAdmissionCurrent?: () => void;
