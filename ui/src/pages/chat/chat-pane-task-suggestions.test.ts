@@ -3,6 +3,7 @@
 import { render } from "lit";
 import { describe, expect, it, vi } from "vitest";
 import type {
+  AgentsListResult,
   TaskSuggestion,
   TaskSuggestionsAcceptResult,
   TaskSuggestionsListResult,
@@ -395,7 +396,7 @@ describe("chat pane task suggestion lifecycle", () => {
           mainKey: "main",
           scope: "per-sender",
           agents: [{ id: "main" }],
-        });
+        } satisfies AgentsListResult);
       }
       return method === "taskSuggestions.accept"
         ? ++attempts === 1

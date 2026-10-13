@@ -14,12 +14,12 @@ import { loadChatHistory } from "./chat-history.ts";
 import { requestCalls } from "./chat-host.test-support.ts";
 import { createTestChatPane } from "./chat-pane.test-support.ts";
 
-const agentsList: AgentsListResult = {
+const agentsList = {
   defaultId: "main",
   mainKey: "main",
   scope: "per-sender",
   agents: [{ id: "main" }],
-};
+} satisfies AgentsListResult;
 
 function createCanonicalRoutePane(request: ReturnType<typeof vi.fn>) {
   const client = { request } as unknown as GatewayBrowserClient;
@@ -98,8 +98,10 @@ describe("chat pane history issuance across Gateway connection transitions", () 
   });
 
   it("issues a disconnected history request once when connection redirects the route", async () => {
-    const request = vi.fn(async (method: string) =>
-      method === "agents.list" ? agentsList : assistantHistory("Recovered transcript"),
+    const request = vi.fn((method: string) =>
+      Promise.resolve(
+        method === "agents.list" ? agentsList : assistantHistory("Recovered transcript"),
+      ),
     );
     const { pane, state, snapshot } = createCanonicalRoutePane(request);
     state.connected = false;

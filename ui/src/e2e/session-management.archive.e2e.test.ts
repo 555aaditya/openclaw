@@ -618,6 +618,7 @@ suite.define(() => {
       }
 
       const selectedRow = rowFor(selected.key);
+      await gateway.deferNext("sessions.patch", { key: selected.key, archived: true });
       await selectedRow.hover();
       await selectedRow.click({ button: "right" });
       await activateSelfRemovingControl(
@@ -629,11 +630,13 @@ suite.define(() => {
         gateway,
         (params) => params.key === selected.key && params.archived === true,
       );
-      const archiveToast = page.locator("openclaw-toast-host .app-toast");
-      await expect.poll(() => archiveToast.textContent()).toContain("Session archived");
+      // A pending description must not publish archived state before the archive action.
       await gateway.setMethodResponse("sessions.describe", {
         session: { ...selectedWithoutDerivedTitle, archived: true, archivedAt, archivedBy },
       });
+      await gateway.resolveDeferred("sessions.patch", {});
+      const archiveToast = page.locator("openclaw-toast-host .app-toast");
+      await expect.poll(() => archiveToast.textContent()).toContain("Session archived");
       const archivedSession = await gateway.getSessionRow(selected.key);
       await gateway.emitGatewayEvent("sessions.changed", {
         ...selected,
