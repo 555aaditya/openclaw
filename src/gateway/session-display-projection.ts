@@ -88,13 +88,12 @@ export function buildSessionPreviewItems(
   maxChars: number,
   view: "display" | "model-context" = "display",
 ): SessionPreviewItem[] {
-  if (view === "display") {
-    messages = projectIntentionalSilenceHistory([...messages]);
-  }
+  const visibleMessages =
+    view === "display" ? projectIntentionalSilenceHistory([...messages]) : messages;
   const items: SessionPreviewItem[] = [];
   // Rejected rows do not consume the limit; older text cannot affect a full preview.
-  for (let index = messages.length - 1; index >= 0 && items.length < maxItems; index -= 1) {
-    const projected = projectSessionDisplayMessage(messages[index], { maxChars, view });
+  for (let index = visibleMessages.length - 1; index >= 0 && items.length < maxItems; index -= 1) {
+    const projected = projectSessionDisplayMessage(visibleMessages[index], { maxChars, view });
     if (!projected) {
       continue;
     }

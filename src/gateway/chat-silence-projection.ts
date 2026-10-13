@@ -110,9 +110,11 @@ export function projectIntentionalSilenceHistory(messages: unknown[]): unknown[]
     } else if (isIntentionalSilenceToolResult(row)) {
       hidden.add(index);
       const nested = readNestedToolActivity(row)?.details;
-      const candidate = candidates.get(
-        `${nested?.runId ?? runId}\0${nested?.parentToolCallId ?? row?.toolCallId}`,
-      );
+      const toolCallId = nested?.parentToolCallId ?? row?.toolCallId;
+      const candidate =
+        typeof toolCallId === "string"
+          ? candidates.get(`${nested?.runId ?? runId}\0${toolCallId}`)
+          : undefined;
       if (candidate && (candidate.none || nested)) {
         hidden.add(candidate.index);
       }

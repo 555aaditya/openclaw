@@ -494,16 +494,16 @@ export function projectChatDisplayMessagesWithState(
   options?: ChatDisplayProjectionOptions,
 ): ChatDisplayProjectionResult {
   options?.subagentCoordination?.assertCurrent?.();
-  messages = filterPendingOptionalHistory(projectIntentionalSilenceHistory(messages));
+  const visibleMessages = filterPendingOptionalHistory(projectIntentionalSilenceHistory(messages));
   const recovery = createChatHistoryRecoveryProjection(options);
-  recovery.append(messages);
+  recovery.append(visibleMessages);
   const recoveredErrors = recovery.result();
   const projectedErrors = projectEmptyAssistantErrorMessages(recoveredErrors.messages);
   const activity =
     options?.activity === false
       ? []
       : projectAgentHistoryActivity(
-          messages.flatMap((message) => {
+          visibleMessages.flatMap((message) => {
             const messageId = asOptionalRecord(asOptionalRecord(message)?.["__openclaw"])?.id;
             return typeof messageId === "string" ? [{ messageId, message }] : [];
           }),

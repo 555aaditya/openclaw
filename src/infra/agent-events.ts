@@ -9,11 +9,6 @@ import {
   getAgentEventExecutionContext,
   recordAgentEventRouting,
 } from "./agent-event-execution-context.js";
-import {
-  captureAgentRunPresentation,
-  clearAgentRunPresentationBuffers,
-} from "./agent-run-presentation.js";
-export { captureAgentRunLifecycleGeneration } from "./agent-event-execution-context.js";
 import { hasInvalidLifecycleStartTimestamp } from "./agent-event-lifecycle.js";
 import type {
   AgentAssistantProjection,
@@ -22,6 +17,10 @@ import type {
   AgentEventRuntimePayload,
 } from "./agent-events.types.js";
 import { createAgentRunStaleLifecycleError } from "./agent-lifecycle-error.js";
+import {
+  captureAgentRunPresentation,
+  clearAgentRunPresentationBuffers,
+} from "./agent-run-presentation.js";
 import {
   getAgentRunContext,
   getAgentRunContextOwnership,
@@ -34,6 +33,7 @@ import {
 import type { AgentRunContext, AgentRunEventState } from "./agent-run-registry.types.js";
 import { recordAgentRunOutputTokens } from "./agent-run-usage.js";
 
+export { captureAgentRunLifecycleGeneration } from "./agent-event-execution-context.js";
 export type {
   AgentApprovalEventData,
   AgentAssistantProjection,

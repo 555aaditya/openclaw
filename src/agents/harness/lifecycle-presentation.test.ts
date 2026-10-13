@@ -133,10 +133,10 @@ describe("optional turn presentation", () => {
       const unsubscribe = onAgentEvent((event) => {
         sequences.push(event.seq);
         observed.push(
-          `${event.stream}:${event.data.text ?? event.data.progressText ?? event.data.phase}`,
+          `${event.stream}:${String(event.data.text ?? event.data.progressText ?? event.data.phase)}`,
         );
       });
-      const entered = createDeferred<void>();
+      const entered = createDeferred();
       const completed = createDeferred<AgentHarnessAttemptResult>();
       const harness: AgentHarness = {
         id: "fixture",

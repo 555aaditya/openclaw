@@ -652,6 +652,7 @@ export async function runAgentsApiAttempt(
       error: resolveAgentsApiSessionAccessError(terminal.error, remoteSessionId),
     };
   }
+  const lastAssistant = toolSurface?.delivery.intentionalSilence ? undefined : reply?.lastAssistant;
   const result: EmbeddedRunAttemptResult = {
     terminal,
     sessionIdUsed: params.sessionId,
@@ -660,18 +661,11 @@ export async function runAgentsApiAttempt(
     messagesSnapshot: (
       await SessionManager.openAsync(target, params.workspaceDir)
     ).buildSessionContext().messages,
-    assistantTexts: toolSurface?.delivery.intentionalSilence
-      ? []
-      : (reply?.lastAssistant?.content
-          .filter((part) => part.type === "text")
-          .map((part) => part.text) ?? []),
-    lastAssistant: toolSurface?.delivery.intentionalSilence ? undefined : reply?.lastAssistant,
-    currentAttemptAssistant: toolSurface?.delivery.intentionalSilence
-      ? undefined
-      : reply?.lastAssistant,
-    currentAttemptCompletedAssistant: toolSurface?.delivery.intentionalSilence
-      ? undefined
-      : reply?.lastAssistant,
+    assistantTexts:
+      lastAssistant?.content.filter((part) => part.type === "text").map((part) => part.text) ?? [],
+    lastAssistant,
+    currentAttemptAssistant: lastAssistant,
+    currentAttemptCompletedAssistant: lastAssistant,
     assistantTranscriptOwned: Boolean(reply?.lastAssistant),
     assistantTranscriptIdempotencyKey:
       reply?.lastAssistant && terminalTurnId

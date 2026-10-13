@@ -5,6 +5,12 @@ import { registerAgentRunPresentationBuffer } from "../../infra/agent-run-presen
 import { resolveReplyExpectation } from "../reply-completion.js";
 import type { AgentHarnessAttemptParamsV2 } from "./types.js";
 
+function presentationKey(prefix: string, event: Pick<AgentEventPayload, "stream" | "data">) {
+  const itemId = typeof event.data.itemId === "string" ? event.data.itemId : "";
+  const kind = typeof event.data.kind === "string" ? event.data.kind : "";
+  return `${prefix}:${event.stream}:${itemId}:${kind}`;
+}
+
 function presentationKind(
   event: Pick<AgentEventPayload, "stream" | "data">,
   silenceToolCalls: Set<string>,
@@ -80,7 +86,7 @@ export function createOptionalTurnPresentation(params: AgentHarnessAttemptParams
       enqueue(
         publish,
         kind === "text" && event.stream !== "transcript"
-          ? `global:${event.stream}:${event.data.itemId ?? ""}:${event.data.kind ?? ""}`
+          ? presentationKey("global", event)
           : undefined,
         kind === "terminal",
       );
@@ -152,9 +158,7 @@ export function createOptionalTurnPresentation(params: AgentHarnessAttemptParams
           }
           enqueue(
             () => params.onAgentEvent?.(event),
-            kind === "text"
-              ? `callback:${event.stream}:${event.data.itemId ?? ""}:${event.data.kind ?? ""}`
-              : undefined,
+            kind === "text" ? presentationKey("callback", event) : undefined,
             kind === "terminal",
           );
         }
