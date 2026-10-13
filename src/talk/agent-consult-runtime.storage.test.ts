@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readSessionMessageIdentity } from "../../packages/gateway-client/src/session-projection-message-identity.js";
 import type { RunEmbeddedAgentParams } from "../agents/embedded-agent-runner/run/params.js";
 import { resolveAgentRunSessionTarget } from "../agents/run-session-target.js";
-import { resolveSandboxRuntimeStatus } from "../agents/sandbox/runtime-status.js";
+import { resolveSandboxRuntimeStatusAsync } from "../agents/sandbox/runtime-status.js";
 import { guardSessionManager } from "../agents/session-tool-result-guard-wrapper.js";
 import { SessionManager } from "../agents/sessions/index.js";
 import { makeAgentAssistantMessage } from "../agents/test-helpers/agent-message-fixtures.js";
@@ -222,7 +222,7 @@ describe("voice consult concrete store ownership", () => {
         contextMode === "fork" ? parentStore : state.statePath("consult", "sessions.sqlite");
       runEmbeddedAgent.mockImplementation(async () => {
         expect(
-          resolveSandboxRuntimeStatus({
+          await resolveSandboxRuntimeStatusAsync({
             cfg: { ...cfg, session: { store: storePath } },
             agentId: "main",
             sessionKey,

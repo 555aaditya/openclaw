@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { observeHostDataSql } from "../../../test/helpers/sqlite-statement-execution-counter.js";
 import { useAutoCleanupTempDirTracker } from "../../../test/helpers/temp-dir.js";
 import { clearBootstrapSnapshot, getOrLoadBootstrapFiles } from "../../agents/bootstrap-cache.js";
-import { resolveSandboxRuntimeStatus } from "../../agents/sandbox/runtime-status.js";
+import { resolveSandboxRuntimeStatusAsync } from "../../agents/sandbox/runtime-status.js";
 import { writeSessionEntry } from "../../config/sessions/session-accessor.sqlite-entry-store.js";
 import type { InternalSessionEntry as SessionEntry } from "../../config/sessions/types.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
@@ -110,7 +110,7 @@ describe("cron session preparation", () => {
         const row = actualAccessor.loadSessionEntry({ storePath: database.path, sessionKey });
         expect(row?.createdActor).toEqual(createdActor);
         expect(row?.sandboxProvenance).toEqual(sandboxProvenance);
-        const runtime = resolveSandboxRuntimeStatus({ cfg: config, sessionKey });
+        const runtime = await resolveSandboxRuntimeStatusAsync({ cfg: config, sessionKey });
         expect(runtime.sandboxRequired).toBe(kind === "legacy" || kind === "channel");
         expect(runtime.isolationSubject).toEqual(
           kind === "legacy"

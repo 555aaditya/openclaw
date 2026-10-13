@@ -7,7 +7,7 @@ import type { RunEmbeddedAgentParams } from "../../agents/embedded-agent-runner/
 import { registerSandboxBackend } from "../../agents/sandbox/backend.js";
 import { resolveSandboxContext } from "../../agents/sandbox/context.js";
 import { hashTextSha256 } from "../../agents/sandbox/hash.js";
-import { resolveSandboxRuntimeStatus } from "../../agents/sandbox/runtime-status.js";
+import { resolveSandboxRuntimeStatusAsync } from "../../agents/sandbox/runtime-status.js";
 import { AUTOMATIONS_TOOL_NAME } from "../../agents/tools/automations-tool-name.js";
 import {
   createAdmittedGatewayToolCallerIdentity,
@@ -234,7 +234,7 @@ describe("scheduled isolation is independent of creator attribution", () => {
       let observed = false;
       runEmbeddedAgentMock.mockImplementation(async (params: RunEmbeddedAgentParams) => {
         const sessionKey = expectDefined(params.sessionKey, "execution session");
-        const runtime = resolveSandboxRuntimeStatus({
+        const runtime = await resolveSandboxRuntimeStatusAsync({
           cfg: params.config,
           agentId: "main",
           sessionKey,

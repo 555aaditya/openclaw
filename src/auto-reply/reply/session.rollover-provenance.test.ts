@@ -1,6 +1,6 @@
 import path from "node:path";
 import { afterAll, expect, it, vi } from "vitest";
-import { resolveSandboxRuntimeStatus } from "../../agents/sandbox/runtime-status.js";
+import { resolveSandboxRuntimeStatusAsync } from "../../agents/sandbox/runtime-status.js";
 import { loadSessionEntry } from "../../config/sessions/session-accessor.js";
 import { useSessionStoreTempDirs } from "../../test-utils/session-state-cleanup.js";
 import {
@@ -72,7 +72,7 @@ it("preserves an unqualified ACP parent agent through command-triggered daily ro
     sandboxProvenance: { actor: { type: "human", source: "profile", id: "isolation-bob" } },
   });
   expect(
-    resolveSandboxRuntimeStatus({ cfg: { session: { store: storePath } }, sessionKey })
+    (await resolveSandboxRuntimeStatusAsync({ cfg: { session: { store: storePath } }, sessionKey }))
       .isolationSubject,
   ).toEqual({ kind: "profile", profileId: "isolation-bob" });
 });
