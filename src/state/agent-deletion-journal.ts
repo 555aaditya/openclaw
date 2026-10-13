@@ -40,7 +40,6 @@ import {
 } from "./openclaw-state-db-schema-additive.js";
 import { tableExists } from "./openclaw-state-db-schema-helpers.js";
 import type { DB as OpenClawStateKyselyDatabase } from "./openclaw-state-db.generated.js";
-import { runOpenClawStateWriteTransaction } from "./openclaw-state-db.js";
 import { resolveOpenClawRegisteredAgentDatabasePath } from "./openclaw-state-db.paths.js";
 import { captureOpenClawStateWorkerContext } from "./openclaw-state-worker-context.js";
 
@@ -55,32 +54,13 @@ type AgentDeletionDatabase = Pick<
   "agent_databases" | "agent_deletion_journal"
 >;
 
-const journalFenceFields = [
-  "agent_id",
-  "operation_id",
-  "phase",
-  "agent_dir",
-  "workspace_dir",
-  "sessions_dir",
-  "database_paths_json",
-  "cleanup_paths_json",
-] as const;
-type JournalFenceRow = Pick<
-  Selectable<AgentDeletionDatabase["agent_deletion_journal"]>,
-  (typeof journalFenceFields)[number] | "cleanup_completed"
->;
-
 type AgentDeletionPathFenceSnapshot = {
   claimAgentId: string;
   claimPath: string;
   fenceAgentId?: string;
   targetPaths: string[];
-  journal: "known" | "unknown";
   purpose: AgentDeletionJournalPurpose;
-  entries: Array<{
-    row: JournalFenceRow;
-    fences: Array<{ path: string; canonicalPath: string }>;
-  }>;
+  env: NodeJS.ProcessEnv;
 };
 
 /** Deletion ownership refusal is distinct from an unhealthy native database. */
@@ -144,17 +124,10 @@ export function prepareAgentDeletionPathFence(
   options: OpenClawStateDatabaseOptions = {},
   purpose: AgentDeletionJournalPurpose = claim.fenceAgentId ? "maintenance" : "runtime",
 ): AgentDeletionPathFenceSnapshot {
-  const { rows, known } = runOpenClawStateWriteTransaction(
-    (database) => readAgentDeletionPathFenceRows(database.db, purpose),
-    {
-      ...options,
-      initializationAgentPaths: [...(options.initializationAgentPaths ?? []), claim.path],
-    },
-  );
   const env = options.env ?? process.env;
   return {
-    journal: known ? "known" : "unknown",
     purpose,
+    env,
     claimAgentId: normalizeAgentId(claim.agentId),
     claimPath: path.resolve(claim.path),
     ...(claim.fenceAgentId ? { fenceAgentId: normalizeAgentId(claim.fenceAgentId) } : {}),
@@ -165,21 +138,6 @@ export function prepareAgentDeletionPathFence(
     targetPaths: resolveSqliteDatabaseFilePaths(claim.path).map((filePath) =>
       normalizeAgentDirRegistryPath(filePath, env),
     ),
-    entries: rows.map(({ databasePaths, cleanupPaths, ...row }) => ({
-      row: { ...row, cleanup_completed: row.cleanup_completed === 1 ? 1 : 0 },
-      fences: [
-        ...[row.agent_dir, row.workspace_dir, row.sessions_dir, ...databasePaths].map(
-          (pathname) => ({
-            path: pathname,
-            canonicalPath: normalizeAgentDirRegistryPath(pathname, env),
-          }),
-        ),
-        ...cleanupPaths.map((cleanupPath) => ({
-          path: cleanupPath.path,
-          canonicalPath: normalizeAgentDirRegistryPath(cleanupPath.canonicalPath, env),
-        })),
-      ],
-    })),
   };
 }
 
@@ -233,21 +191,25 @@ export function assertAgentDeletionPathFence(
     ) {
       continue;
     }
-    const entry = snapshot.entries.find((candidate) =>
-      journalFenceFields.every((field) => candidate.row[field] === row[field]),
-    );
-    if (row.cleanup_completed !== 1 && !entry) {
-      throw new AgentDatabaseDeletionRefusedError(
-        "Agent deletion journal changed while preparing a database claim.",
-      );
-    }
     assertAgentDeletionIdentityClaimAllowed(snapshot.claimAgentId, row.agent_id);
     if (row.cleanup_completed === 1) {
       continue;
     }
-    // Filesystem canonicalization stays outside the SQLite write transaction; the exact journal
-    // row is revalidated here so a concurrent deletion can only make the claim fail closed.
-    for (const fence of entry!.fences) {
+    // Only the current identity and owned paths can exclude this claim. Unrelated journal
+    // changes are allowed; synchronous canonicalization stays with this effect's transaction.
+    const fences = [
+      ...[row.agent_dir, row.workspace_dir, row.sessions_dir, ...row.databasePaths].map(
+        (pathname) => ({
+          path: pathname,
+          canonicalPath: normalizeAgentDirRegistryPath(pathname, snapshot.env),
+        }),
+      ),
+      ...row.cleanupPaths.map((cleanupPath) => ({
+        path: cleanupPath.path,
+        canonicalPath: normalizeAgentDirRegistryPath(cleanupPath.canonicalPath, snapshot.env),
+      })),
+    ];
+    for (const fence of fences) {
       const blockedPath = snapshot.targetPaths.find(
         (targetPath) =>
           targetPath === fence.canonicalPath || isPathInside(fence.canonicalPath, targetPath),

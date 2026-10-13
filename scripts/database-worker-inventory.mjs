@@ -1159,12 +1159,6 @@ const reviewedOperations = new Map([
         evidence:
           "agent-deletion.worker.ts owns all production journal mutations; synchronous fixture adapters live under test-utils. Native SDK cleanup retains only live journal/lease reads around agent COMMIT",
       },
-      {
-        tier: "T2",
-        operations: ["prepareAgentDeletionPathFence"],
-        evidence:
-          "Pre-open registration/schema/lease admission at openclaw-agent-db-registry.ts:79, schema.ts:519 and lease.ts:161,495,699; runtime journal mutation/fence reads stay T1",
-      },
     ],
   ],
   [
