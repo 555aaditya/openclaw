@@ -2276,6 +2276,7 @@ describe("messaging tool media URL tracking", () => {
       },
       message: "visible after redaction",
       isError: false,
+      completesSourceReply: true,
     },
     {
       name: "partial broadcast",
@@ -2288,10 +2289,11 @@ describe("messaging tool media URL tracking", () => {
       expected: { status: "settled", partialDelivery: true, createdThreadIds: [] },
       message: "visible before failure",
       isError: true,
+      completesSourceReply: false,
     },
   ])(
     "commits $name delivery after middleware replaces details",
-    async ({ delivery, expected, message, isError }) => {
+    async ({ delivery, expected, message, isError, completesSourceReply }) => {
       const { ctx } = createTestContext();
       ctx.params.sourceReplyDeliveryMode = "message_tool_only";
       const messageDelivery = projectEmbeddedMessageDeliveryFact({
@@ -2312,7 +2314,10 @@ describe("messaging tool media URL tracking", () => {
         result: { details: { redacted: true } },
       });
       expect(ctx.state.messagingToolSentTexts).toEqual([message]);
-      expect(ctx.state.messageToolOnlySourceReplyDelivered).toBe(true);
+      expect(ctx.state.messageToolOnlySourceReplyDelivered).toBe(completesSourceReply);
+      expect(ctx.state.sourceReplyDeliveryState).toBe(
+        completesSourceReply ? "delivered" : "missing",
+      );
     },
   );
 
