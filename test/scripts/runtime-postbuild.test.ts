@@ -2183,6 +2183,12 @@ describe("previous release update compatibility", () => {
     ["config-doctor", "missing"],
     ["native-hook-relay", "present"],
     ["native-hook-relay", "missing"],
+    ["control-ui", "present"],
+    ["control-ui", "missing"],
+    ["control-ui.build-123-fixture", "present"],
+    ["control-ui.build-123-fixture", "missing"],
+    ["control-ui.build-123-fixture.retired", "present"],
+    ["control-ui.build-123-fixture.retired", "missing"],
   ])(
     "excludes the isolated %s graph when the runtime binding is %s",
     async (directory, runtime) => {
@@ -2207,6 +2213,42 @@ describe("previous release update compatibility", () => {
       expect(bridge.runner).toBe(declaration.x);
     },
   );
+
+  it("keeps update bridges independent of Control UI publication during traversal", async () => {
+    const inventory = recordFixture();
+    const root = createTempDir("update-compat-ui-publication-");
+    candidate(root);
+    const distDir = path.join(root, "dist");
+    const current = path.join(distDir, "current.mjs");
+    const uiDirectories = [
+      "control-ui",
+      "control-ui.build-123-fixture",
+      "control-ui.build-123-fixture.retired",
+    ];
+    for (const directory of uiDirectories) {
+      write(root, `dist/${directory}/inspect.mjs`, fsSync.readFileSync(current, "utf8"));
+    }
+    const readdir = fsSync.readdirSync;
+    const publication = vi.spyOn(fsSync, "readdirSync").mockImplementation((directory, options) => {
+      const entries = readdir(directory, options);
+      if (directory === distDir) {
+        // Publish after enumeration so returned directory entries refer to old paths.
+        for (const name of uiDirectories) {
+          fsSync.renameSync(path.join(distDir, name), path.join(root, name));
+        }
+      }
+      return entries;
+    });
+    try {
+      writeUpdateCompatibilityChunks({ distDir, sourceDir: root, inventory });
+    } finally {
+      publication.mockRestore();
+    }
+    const bridge = await import(pathToFileURL(path.join(distDir, "service-abcdefgh.js")).href);
+    const declaration = await import(pathToFileURL(current).href);
+    expect(bridge.mode).toBe(declaration.y);
+    expect(bridge.runner).toBe(declaration.x);
+  });
 
   it.each(["missing", "ambiguous"])(
     "refuses %s required implementations before writing bridges",

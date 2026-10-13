@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import * as ts from "typescript/unstable/ast";
 import { createNativeTypeScriptParser } from "./native-typescript.mts";
+import { CONTROL_UI_BUILD_PREFIX } from "./output-root-guard.mjs";
 import { isRecord as object } from "./record-shared.mjs";
 import { parseReleaseVersion } from "./release-version.mjs";
 import {
@@ -79,8 +80,11 @@ function moduleFiles(root: string): string[] {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
       const file = path.join(directory, entry.name);
       if (entry.isDirectory()) {
-        // Plugin outputs and installed dependencies are independent runtime graphs.
-        if (!["node_modules", "extensions", "plugin-sdk"].includes(entry.name)) {
+        // UI publication renames these independent trees while runtime postbuild runs.
+        if (
+          !["node_modules", "extensions", "plugin-sdk", "control-ui"].includes(entry.name) &&
+          !entry.name.startsWith(CONTROL_UI_BUILD_PREFIX)
+        ) {
           visit(file);
         }
       } else if (entry.isFile() && /\.m?js$/.test(entry.name)) {
