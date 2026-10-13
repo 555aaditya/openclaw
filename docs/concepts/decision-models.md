@@ -47,6 +47,9 @@ Configure the provider plugin before selecting its model:
 - [ONNX](/plugins/onnx) runs local CPU classifiers in a persistent subprocess.
   Follow its development-checkout or compatible-package setup, then explicitly
   download the model or prepare a local export. Inference needs no hosted API credential.
+- [SubQ](/plugins/subq) connects to hosted SubQ Snap for text/JSON decisions.
+  Configure a protected SubQ credential. Its advertised image input is not
+  exposed by the shared Decision API.
 - [TypeSafe AI](/plugins/typesafe) connects to hosted Jev or a local System One
   server such as Kev. Install and enable the external plugin, then configure a
   protected hosted credential or an explicit loopback `baseUrl`. Hosted
@@ -63,11 +66,12 @@ The current plugins declare these model references:
 | `onnx/gliclass-instruct-edge-v1.0`   | GLiClass Instruct Edge | Local export                                           |
 | `onnx/gliner2.5-base-v1`             | GLiNER 2.5 Base        | Download pinned ONNX artifacts                         |
 | `onnx/gliner2.5-small-v1`            | GLiNER 2.5 Small       | Download pinned ONNX artifacts                         |
+| `subq/subq-snap-preview`             | SubQ Snap (preview)    | SubQ credential and account credits                    |
 | `typesafe/jev-1.13.0`                | Jev 1.13.0             | TypeSafe credential                                    |
 | `typesafe/jev-latest`                | Jev                    | TypeSafe credential; follows the vendor's latest model |
 | `typesafe/kev-latest`                | Kev (local server)     | Running System One server and explicit loopback URL    |
 
-Both plugins are currently unpublished candidates. Their setup pages explain
+These plugins are currently unpublished candidates. Their setup pages explain
 source-checkout use and the packaged host floor. The table describes the plugins' declared models,
 not which artifacts or credentials are ready on your machine.
 
@@ -290,13 +294,14 @@ perform another effect.
 
 ## Limits and unavailable results
 
-For portable rubrics, use at most 32 questions, 2–64 Choice alternatives, 2–10
+For portable rubrics, use at most 16 questions, 2–64 Choice alternatives, 2–10
 meaningful Score anchors, explicit true/false descriptions, and concise evidence.
 Provider limits differ:
 
 | Provider    | Choice alternatives | Score levels | Additional limits                                                                  |
 | ----------- | ------------------- | ------------ | ---------------------------------------------------------------------------------- |
 | ONNX        | 2–64                | 2–64         | Up to 32 questions; 512 tokens per encoded input; one MiB of compiled batch inputs |
+| SubQ        | 2–255               | 2–10         | Up to 16 questions; text/JSON state; question IDs at most 100 characters           |
 | TypeSafe AI | 2–255               | 2–10         | Subject to the host's batch limits and the vendor input contract                   |
 
 The host bounds requests to one MiB, 20,000 JSON nodes, depth 32, and 256 questions. It admits at most four
