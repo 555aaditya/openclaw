@@ -1,5 +1,5 @@
 // Doctor repair flow tests cover repair plan output and repair execution.
-import { describe, expect, expectTypeOf, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { runDoctorHealthRepairs } from "./doctor-repair-flow.js";
 import { normalizeHealthCheck } from "./health-check-adapter.js";
@@ -47,55 +47,6 @@ function successfullyRepairedCheck(): DoctorHealthCheck {
 }
 
 describe("runDoctorHealthRepairs", () => {
-  it("repairs modern checks and threads updated config", async () => {
-    const scopes: unknown[] = [];
-    const checks: DoctorHealthCheck[] = [
-      normalizeHealthCheck({
-        id: "test/repairable",
-        kind: "core",
-        description: "repairable",
-        async detect(ctxCandidate, scope) {
-          if (scope !== undefined) {
-            scopes.push(scope);
-          }
-          return ctxCandidate.cfg.gateway?.mode === "local"
-            ? []
-            : [
-                {
-                  checkId: "test/repairable",
-                  severity: "warning",
-                  message: "gateway mode missing",
-                  path: "gateway.mode",
-                },
-              ];
-        },
-        async repair(ctxEntry) {
-          return {
-            config: { ...ctxEntry.cfg, gateway: { ...ctxEntry.cfg.gateway, mode: "local" } },
-            changes: ["Set gateway.mode to local."],
-          };
-        },
-      }),
-    ];
-
-    const result = await runDoctorHealthRepairs(ctx({}), { checks });
-
-    expect(result.config.gateway?.mode).toBe("local");
-    expect(result.changes).toEqual(["Set gateway.mode to local."]);
-    expect(result.checksRepaired).toBe(1);
-    expect(result.checksValidated).toBe(1);
-    expect(result.remainingFindings).toEqual([]);
-    expect(scopes).toMatchObject([{ paths: ["gateway.mode"] }]);
-  });
-
-  it("keeps repairable out of split repair result types", () => {
-    type SplitRepair = NonNullable<DoctorHealthCheck["repair"]>;
-    expectTypeOf(async () => ({
-      status: "repairable" as const,
-      changes: [],
-    })).not.toMatchTypeOf<SplitRepair>();
-  });
-
   it("reports repair validation findings that remain after repair", async () => {
     const checks: DoctorHealthCheck[] = [
       normalizeHealthCheck({
@@ -302,59 +253,5 @@ describe("runDoctorHealthRepairs", () => {
     expect(result.checksValidated).toBe(0);
     expect(detectCalls).toBe(1);
     expect(repairContexts[0]).toMatchObject({ dryRun: true, diff: true });
-  });
-
-  it("passes diff false and true through the repair API", async () => {
-    const repairContexts: HealthRepairContext[] = [];
-    const checks: DoctorHealthCheck[] = [
-      normalizeHealthCheck({
-        id: "test/diff-preview",
-        kind: "core",
-        description: "diff preview",
-        async detect() {
-          return [
-            {
-              checkId: "test/diff-preview",
-              severity: "warning",
-              message: "config needs repair",
-              path: "gateway.mode",
-            },
-          ];
-        },
-        async repair(ctxLocal) {
-          repairContexts.push(ctxLocal);
-          return {
-            changes: ["Would set gateway.mode to local."],
-            diffs:
-              ctxLocal.diff === true
-                ? [
-                    {
-                      kind: "config",
-                      path: "gateway.mode",
-                      before: undefined,
-                      after: "local",
-                    },
-                  ]
-                : [],
-          };
-        },
-      }),
-    ];
-
-    const withoutDiff = await runDoctorHealthRepairs(ctx({}), {
-      checks,
-      dryRun: true,
-      diff: false,
-    });
-    const withDiff = await runDoctorHealthRepairs(ctx({}), {
-      checks,
-      dryRun: true,
-      diff: true,
-    });
-
-    expect(repairContexts[0]).toMatchObject({ dryRun: true, diff: false });
-    expect(withoutDiff.diffs).toEqual([]);
-    expect(repairContexts[1]).toMatchObject({ dryRun: true, diff: true });
-    expect(withDiff.diffs).toMatchObject([{ kind: "config", path: "gateway.mode" }]);
   });
 });

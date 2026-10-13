@@ -141,7 +141,12 @@ export async function runGitHubProjectHealth(ctx: DoctorHealthFlowContext): Prom
 
 export async function runBrowserHealth(ctx: DoctorHealthFlowContext): Promise<void> {
   const { collectBrowserReadinessFindings } = await import("../commands/doctor-browser.js");
-  renderStructuredHealthFindings(ctx, await collectBrowserReadinessFindings(ctx.cfg));
+  const findings = await collectBrowserReadinessFindings(ctx.cfg);
+  // General Doctor stays problem-focused; lint still exposes informational browser guidance.
+  renderStructuredHealthFindings(
+    ctx,
+    findings.filter((finding) => finding.severity !== "info"),
+  );
 }
 
 export async function runOpenAIOAuthTlsHealth(ctx: DoctorHealthFlowContext): Promise<void> {

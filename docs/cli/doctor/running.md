@@ -92,6 +92,12 @@ macOS job between respawns is not offline: Doctor stops it before repair and
 resumes it afterward. Run repair from a shell outside the Gateway process tree. For externally supervised or unmatched installations, stop
 and start the Gateway through its owning supervisor.
 
+After pre-repair backups complete, Doctor checks update conflicts against current
+committed rows through its retained read-only maintenance connection. These checks
+share Doctor's repair scope with managed-service continuation checks, avoiding
+repeated whole-database scans with or without a cached writer.
+Pre-repair inspections still preserve the source database and its sidecars.
+
 Before a Linux maintenance stop, Doctor backs up and refreshes outdated OpenClaw
 unit policy and confirms `daemon-reload`. Operator drop-ins remain unchanged.
 The current service stop policy is 330 seconds. A resident Gateway can still have
@@ -294,10 +300,14 @@ Follow the provider-specific login command or credential correction shown in the
 finding. Tokens that are still valid but nearing expiration are **Recommended
 improvements**; refresh them before expiration to avoid an interruption. After
 an accepted OAuth refresh, Doctor reports the remaining credential state rather
-than the pre-refresh warning. See [OAuth](/concepts/oauth).
+than the pre-refresh warning. Normal Doctor combines identical credential findings
+across checked stores and names stores only when the finding affects a subset.
+Read-only JSON and lint reports retain each store's path. See [OAuth](/concepts/oauth).
 
 Browser findings distinguish missing executables, launch prerequisites, and
-unsupported Chrome versions from optional setup. For Chrome extension setup,
+unsupported Chrome versions from optional setup. Healthy browser and manual
+setup guidance stays informational in lint and does not make it fail; normal
+Doctor omits this routine guidance. For Chrome extension setup,
 Doctor does not inspect personal browser profiles or access the macOS Keychain.
 If extension attach works, an uninspected bootstrap notice needs no action. If
 attach fails, run `openclaw browser extension status --json`, then

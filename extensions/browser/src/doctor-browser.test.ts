@@ -271,7 +271,8 @@ describe("browser doctor readiness", () => {
     expect(
       resolveManagedExecutable.mock.calls.map(([resolved]) => resolved.executablePath),
     ).toEqual(["/custom/chrome", "/global/missing-chrome"]);
-    expect(text).toContain("No Chromium-based browser executable");
+    expect(text).toContain("A configured browser executable could not be used");
+    expect(text).toContain("Correct browser.executablePath");
     expect(text).toContain("profile(s) are configured: fallback.");
     expect(text).not.toContain("custom");
     expect(text).not.toContain("shared");
@@ -297,6 +298,7 @@ describe("browser doctor readiness", () => {
       );
       expect(findings).toHaveLength(1);
       expect(findings[0]?.category).toBe(version.startsWith("143") ? "fix-now" : "recommended");
+      expect(findings[0]?.severity).toBe(version.startsWith("143") ? "warning" : "info");
       expect(text).toContain(expected);
       if (version.startsWith("143")) {
         expect(text).toContain("Chrome 144+");
@@ -323,6 +325,7 @@ describe("browser doctor readiness", () => {
     );
     expect(findings).toHaveLength(1);
     expect(findings[0]?.category).toBe("recommended");
+    expect(findings[0]?.severity).toBe("info");
     expect(text).toContain("explicit Chromium user data directory");
     expect(text).toContain("brave://inspect/#remote-debugging");
   });

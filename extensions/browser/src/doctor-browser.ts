@@ -59,10 +59,11 @@ export async function collectBrowserReadinessFindings(
     category: NonNullable<HealthFinding["category"]>,
     fixHint: string,
     docsUrl = "https://docs.openclaw.ai/tools/browser/troubleshooting",
+    severity: HealthFinding["severity"] = "warning",
   ) => {
     findings.push({
       checkId: "core/doctor/browser",
-      severity: "warning",
+      severity,
       category,
       message,
       fixHint,
@@ -92,6 +93,7 @@ export async function collectBrowserReadinessFindings(
       "recommended",
       `If extension attach does not work, run ${formatCliCommand("openclaw browser extension status --json")}; this may request browser profile access. Run ${formatCliCommand("openclaw browser extension install")} if repair is needed. No action needed if attach works.`,
       "https://docs.openclaw.ai/tools/browser/setup",
+      "info",
     );
   }
   const managedExecutables = new Map<
@@ -185,6 +187,7 @@ export async function collectBrowserReadinessFindings(
   const autoConnect = autoConnectProfiles.length > 0;
   const chrome = autoConnect ? resolveGoogleChromeExecutableForPlatform(platform) : null;
   let category: NonNullable<HealthFinding["category"]> = "recommended";
+  let severity: HealthFinding["severity"] = "info";
   const lines = [`Chrome MCP existing-session is configured for profile(s): ${profileLabel}.`];
 
   if (!autoConnect) {
@@ -194,6 +197,7 @@ export async function collectBrowserReadinessFindings(
     );
   } else if (!chrome) {
     category = "fix-now";
+    severity = "warning";
     const autoProfileLabel = autoConnectProfiles.map((profile) => profile.name).join(", ");
     lines.push(
       `Google Chrome was not found on this host for auto-connect profile(s): ${autoProfileLabel}. OpenClaw does not bundle Chrome.`,
@@ -205,11 +209,13 @@ export async function collectBrowserReadinessFindings(
     lines.push(`Chrome path: ${chrome.path}`);
     if (!versionRaw || major === null) {
       category = "fix-now";
+      severity = "warning";
       lines.push(
         `Could not determine the installed Chrome version. Chrome MCP requires Google Chrome ${CHROME_MCP_MIN_MAJOR}+ on this host.`,
       );
     } else if (major < CHROME_MCP_MIN_MAJOR) {
       category = "fix-now";
+      severity = "warning";
       lines.push(
         `Detected Chrome ${versionRaw}, which is too old for Chrome MCP existing-session attach. Upgrade to Chrome ${CHROME_MCP_MIN_MAJOR}+.`,
       );
@@ -240,6 +246,7 @@ export async function collectBrowserReadinessFindings(
     category,
     `Use Chromium ${CHROME_MCP_MIN_MAJOR}+ on the Gateway or node host, enable remote debugging (${REMOTE_DEBUGGING_PAGES}), and accept the first attach consent.${category === "recommended" ? " No action needed if existing-session attach already works." : ""}`,
     "https://docs.openclaw.ai/tools/browser/existing-session",
+    severity,
   );
   return findings;
 }

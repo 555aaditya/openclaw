@@ -113,19 +113,42 @@ function repairContext() {
 it.each([false, true])(
   "reports browser setup once without inspecting profiles or inventing failed repair (import %s)",
   async (allowSystemProfileImport) => {
-    ctx.cfg = { browser: { ...ctx.cfg.browser, allowSystemProfileImport } };
+    ctx.cfg = {
+      browser: {
+        ...ctx.cfg.browser,
+        allowSystemProfileImport,
+        ...(allowSystemProfileImport
+          ? {
+              profiles: {
+                manual: { driver: "existing-session", userDataDir: "/synthetic/browser-profile" },
+              },
+            }
+          : {}),
+      },
+    };
     await runBrowserHealth(ctx);
     expect(accesses).toEqual([]);
     expect(capture.note).not.toHaveBeenCalled();
-    expect(ctx.healthFindings).toEqual([
+    expect(ctx.healthFindings).toEqual([]);
+    const findings = await check.detect(repairContext());
+    expect(findings).toHaveLength(allowSystemProfileImport ? 2 : 1);
+    expect(findings).toContainEqual(
       expect.objectContaining({
+        severity: "info",
         category: "recommended",
         message: expect.stringContaining("native bootstrap was not inspected"),
         fixHint: expect.stringContaining("openclaw browser extension status --json"),
       }),
-    ]);
-    const findings = await check.detect(repairContext());
-    expect(findings).toEqual(ctx.healthFindings);
+    );
+    if (allowSystemProfileImport) {
+      expect(findings).toContainEqual(
+        expect.objectContaining({
+          severity: "info",
+          message: expect.stringContaining("explicit Chromium user data directory"),
+          fixHint: expect.stringContaining("No action needed"),
+        }),
+      );
+    }
     expect(check.repair === undefined).toBe(true);
     const run = await runDoctorHealthRepairs(repairContext(), { checks: [check] });
     expect(run).toMatchObject({

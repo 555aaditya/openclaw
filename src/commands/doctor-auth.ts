@@ -500,21 +500,44 @@ async function inspectAuthProfileHealthTarget(params: {
   return findings;
 }
 
+/** Aggregate normal Doctor output; lint retains each store's location and finding. */
 export async function inspectAuthProfileHealth(params: {
   cfg: OpenClawConfig;
   prompter: DoctorPrompter;
   allowKeychainPrompt: boolean;
 }): Promise<readonly HealthFinding[]> {
   const targets = listAuthProfileHealthTargets(params.cfg);
-  const findings: HealthFinding[] = [];
+  const grouped = new Map<string, { finding: HealthFinding; stores: Set<string> }>();
   for (const target of targets) {
-    findings.push(
-      ...(await inspectAuthProfileHealthTarget({
-        ...params,
-        target,
-        labelStores: targets.length > 1,
-      })),
-    );
+    const findings = await inspectAuthProfileHealthTarget({
+      ...params,
+      target,
+      labelStores: false,
+    });
+    for (const finding of findings) {
+      const { path: _path, ...diagnostic } = finding;
+      const key = JSON.stringify(diagnostic);
+      const group = grouped.get(key);
+      if (group) {
+        group.stores.add(target.label);
+      } else {
+        grouped.set(key, { finding, stores: new Set([target.label]) });
+      }
+    }
+  }
+  const findings: HealthFinding[] = [];
+  for (const { finding, stores } of [...grouped.values()].toSorted((left, right) =>
+    left.finding.message.localeCompare(right.finding.message),
+  )) {
+    const { path, ...diagnostic } = finding;
+    findings.push({
+      ...diagnostic,
+      ...(stores.size === 1 ? { path } : {}),
+      message:
+        stores.size === targets.length
+          ? finding.message
+          : `${finding.message} (stores: ${[...stores].toSorted().join(", ")})`,
+    });
   }
   return findings;
 }

@@ -146,7 +146,7 @@ it("supplements an older driver capture before sealed Doctor repair without repl
         let originalManifestPath = "";
         let originalManifestBytes: Buffer;
         try {
-          const findings = await maintenance!.run(async () => {
+          const captureResult = await maintenance!.run(async () => {
             const scope = getOpenClawDatabaseMaintenanceScope()!;
             const disposableHook = createDoctorOriginalCaptureHook({
               root: process.cwd(),
@@ -348,15 +348,17 @@ it("supplements an older driver capture before sealed Doctor repair without repl
             pluginId: "synthetic-legacy",
             message: "Synthetic legacy resources are undeclared",
           });
-          expect(findings).toContainEqual(
+          expect(captureResult.findings).toContainEqual(
             expect.objectContaining({
               category: "recommended",
               errorCode: "undeclared-migration-resources",
-              message: "Synthetic legacy resources are undeclared",
+              message:
+                "synthetic-legacy migration recovery coverage is unknown because no backup inventory was declared.",
               fixHint: expect.any(String),
               docsUrl: expect.any(String),
             }),
           );
+          expect(captureResult.warnings).toContain("Synthetic legacy resources are undeclared");
           expect(messages).not.toContain("Synthetic legacy resources are undeclared");
           for (const file of [shared, agent]) {
             expect(

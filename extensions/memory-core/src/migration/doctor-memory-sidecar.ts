@@ -510,7 +510,7 @@ export const memorySidecarStateMigration: PluginDoctorStateMigration = {
         `${source.agentId}.sqlite`,
         `${source.agentId}.retry-${crypto.createHash("sha256").update(path.resolve(source.legacyPath)).digest("hex").slice(0, 12)}.sqlite`,
       ]) {
-        for (const suffix of ["", "-wal", "-shm"]) {
+        for (const suffix of LEGACY_MEMORY_SIDECAR_SUFFIXES) {
           resources.push({
             path: path.join(params.stateDir, "memory", `${name}${suffix}`),
             kind: "file",
@@ -623,7 +623,7 @@ function createQmdRetirementMigration(kind: "workspace" | "locks"): PluginDoctor
       : "memory-core-qmd-file-locks-to-sqlite-leases",
     label: workspace ? "Memory Core retired QMD workspaces" : "Memory Core retired QMD file locks",
     ...(workspace ? { doctorOnly: true } : {}),
-    // Only empty directories and definitely stale locks are removed; neither holds user data.
+    // Retirement removes only empty directories or disposable stale coordination locks.
     collectBackupResources: () => [],
     async detectLegacyState(params) {
       const paths = await collect(params.stateDir);

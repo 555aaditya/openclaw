@@ -3,13 +3,13 @@ import { randomUUID } from "node:crypto";
 // exposing the same checks to structured lint and repair commands.
 import { measureGatewayBootstrapStep } from "../cli/startup-trace.js";
 import { shouldManageGatewayService } from "../commands/doctor-service-repair-policy.js";
-import { UPDATE_PARENT_RUNS_POST_ACTIVATION_INSPECTIONS_ENV } from "../commands/doctor/shared/update-phase.js";
+import { isUpdateDoctorInspectionReportMode } from "../commands/doctor/shared/update-phase.js";
 import { ConfigWritePostCommitError } from "../config/io.write-errors.js";
-import { isTruthyEnvValue } from "../infra/env.js";
 import {
   DoctorStateMigrationRefusalError,
   throwIfDoctorStateMigrationRefused,
 } from "../infra/state-migrations.messages.js";
+import { recordUpdateDoctorDeferredInspectionChecks } from "../infra/update-doctor-result.js";
 import { resolveUpdateRehearsalRoot } from "../infra/update-rehearsal-paths.js";
 import {
   runAuthProfileMigration,
@@ -436,7 +436,7 @@ function shouldDeferPostActivationInspections(env: NodeJS.ProcessEnv): boolean {
   return (
     isUpdateDoctorRun(env) &&
     !resolveUpdateRehearsalRoot(env) &&
-    isTruthyEnvValue(env[UPDATE_PARENT_RUNS_POST_ACTIVATION_INSPECTIONS_ENV])
+    isUpdateDoctorInspectionReportMode(env)
   );
 }
 
@@ -528,13 +528,6 @@ async function selectPostActivationInspections(
   });
 }
 
-/** Lint check ids for the inspections Doctor defers past Gateway activation. */
-export async function resolvePostActivationInspectionCheckIds(): Promise<string[]> {
-  return (await selectPostActivationInspections(resolveDoctorHealthContributions())).flatMap(
-    ({ checks }) => checks.map((check) => check.id),
-  );
-}
-
 async function runDoctorHealthContributionList(
   ctx: DoctorHealthFlowContext,
   contributions: readonly DoctorHealthContribution[],
@@ -557,12 +550,14 @@ async function runDoctorHealthContributionList(
         )
       : [],
   );
-  // Only an updater that runs these with `doctor --lint` after the restarted
-  // Gateway is ready sets this marker; shipped updaters keep them in this run.
-  const postActivationInspections = new Set(
-    shouldDeferPostActivationInspections(env)
+  // Without an owned receipt, the marker cannot defer any inspections.
+  let deferredCheckIds = shouldDeferPostActivationInspections(env)
+    ? recordUpdateDoctorDeferredInspectionChecks([])
+    : undefined;
+  const postActivationInspections = new Map(
+    deferredCheckIds
       ? (await selectPostActivationInspections(contributions)).map(
-          ({ contribution }) => contribution,
+          ({ contribution, checks }) => [contribution, checks.map((check) => check.id)] as const,
         )
       : [],
   );
@@ -590,11 +585,15 @@ async function runDoctorHealthContributionList(
     : contributions;
   try {
     for (const contribution of ordered) {
+      const inspectionIds = postActivationInspections.get(contribution);
+      if (inspectionIds) {
+        deferredCheckIds = recordUpdateDoctorDeferredInspectionChecks(inspectionIds);
+        continue;
+      }
       // Skip before opening a plugin snapshot; these diagnostics cannot establish
       // required migration readiness and have their own standalone invocation.
       if (
         rehearsalInspections.has(contribution) ||
-        postActivationInspections.has(contribution) ||
         (updateDoctorRun && contribution.updateWork?.kind === "standalone")
       ) {
         continue;
@@ -667,9 +666,9 @@ async function runDoctorHealthContributionList(
         `Deferred advisory inspections during copied-state rehearsal: ${[...rehearsalInspections].map((entry) => entry.id).join(", ")}. The live post-swap Doctor retains these checks.`,
       );
     }
-    if (postActivationInspections.size > 0) {
+    if (deferredCheckIds?.length) {
       ctx.runtime.log(
-        `Deferred advisory inspections until the restarted Gateway is ready: ${[...postActivationInspections].map((entry) => entry.id).join(", ")}. The updater runs their \`openclaw doctor --lint\` checks after restart.`,
+        `Deferred advisory inspections until the restarted Gateway is ready: ${deferredCheckIds.join(", ")}. The updater runs their \`openclaw doctor --lint\` checks after restart.`,
       );
     }
     const findings = [...(ctx.updateBudget?.deferred.values() ?? [])];

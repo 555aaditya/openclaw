@@ -21,8 +21,9 @@ export async function preserveDoctorOriginalState(params: {
   signal: AbortSignal;
   assertCurrent: () => void;
   writeAuthority?: UpdateDoctorWriteAuthority;
-}): Promise<readonly HealthFinding[]> {
+}): Promise<{ findings: readonly HealthFinding[]; warnings: readonly string[] }> {
   const findings: HealthFinding[] = [];
+  const warnings: string[] = [];
   const docsUrl =
     "https://docs.openclaw.ai/cli/doctor/state-migrations#plugin-migration-recovery-coverage";
   const original = params.writeAuthority?.originalRecoveryCapture;
@@ -85,12 +86,16 @@ export async function preserveDoctorOriginalState(params: {
       retainedOriginal,
     });
     assertCurrent();
+    warnings.push(...captured.warnings.map((warning) => warning.message));
     findings.push(
       ...captured.warnings.map((warning): HealthFinding => ({
         checkId: "core/doctor/migration-recovery",
         severity: "warning",
         category: "recommended",
-        message: warning.message,
+        message:
+          warning.kind === "undeclared-migration-resources"
+            ? `${warning.pluginId} migration recovery coverage is unknown because no backup inventory was declared.`
+            : warning.message,
         target: warning.pluginId,
         errorCode: warning.kind,
         fixHint:
@@ -99,7 +104,7 @@ export async function preserveDoctorOriginalState(params: {
       })),
     );
     if (captured.kind === "covered") {
-      return findings;
+      return { findings, warnings };
     }
     params.runtime.log(
       retainedOriginal
@@ -117,6 +122,7 @@ export async function preserveDoctorOriginalState(params: {
           `Retired standalone Doctor capture older than 30 days: ${directory}. Take a verified backup before an upgrade when you need a long-term recovery copy.`,
         );
       }
+      warnings.push(...retirement.warnings);
       findings.push(
         ...retirement.warnings.map((message): HealthFinding => ({
           checkId: "core/doctor/recovery-retirement",
@@ -129,16 +135,19 @@ export async function preserveDoctorOriginalState(params: {
         })),
       );
     } catch (error) {
+      const message = `Older Doctor recovery copies could not be retired: ${formatErrorMessage(error)}`;
+      warnings.push(message);
       findings.push({
         checkId: "core/doctor/recovery-retirement",
         severity: "warning",
         category: "historical",
-        message: `Older Doctor recovery copies could not be retired: ${formatErrorMessage(error)}`,
+        message,
         fixHint:
           "Keep the recovery copies and inspect their directory permissions. This does not prevent the current repair.",
         docsUrl,
       });
     }
+    warnings.push(...captured.diagnostics.databaseWarnings);
     findings.push(
       ...captured.diagnostics.databaseWarnings.map((message): HealthFinding => ({
         checkId: "core/doctor/recovery-database-verification",
@@ -164,15 +173,18 @@ export async function preserveDoctorOriginalState(params: {
         { cause: error },
       );
     }
+    const message = `Pre-repair recovery copy was unavailable: ${formatErrorMessage(error)}.`;
+    const fixHint =
+      "Save a verified backup of your OpenClaw state and configured plugin data before further repairs. Check installation access and disk space, then rerun openclaw doctor --fix; inspect retained evidence before restoring state.";
+    warnings.push(`${message} ${fixHint}`);
     findings.push({
       checkId: "core/doctor/recovery-capture",
       severity: "warning",
       category: "fix-now",
-      message: `Pre-repair recovery copy was unavailable: ${formatErrorMessage(error)}.`,
-      fixHint:
-        "Save a verified backup of your OpenClaw state and configured plugin data before further repairs. Check installation access and disk space, then rerun openclaw doctor --fix; inspect retained evidence before restoring state.",
+      message,
+      fixHint,
       docsUrl,
     });
   }
-  return findings;
+  return { findings, warnings };
 }

@@ -76,40 +76,59 @@ export function collectSessionSqliteMigrationFindings(
     "openclaw doctor --session-sqlite dry-run --session-sqlite-all-agents --json",
     env,
   );
-  return targets.flatMap((target) =>
-    [false, true].flatMap((historical) => {
-      const issues = target.issues.filter(
-        (issue) => isHistoricalSessionSqliteMigrationIssue(issue) === historical,
-      );
-      const common = {
-        checkId: "core/doctor/session-transcripts",
-        severity: "warning" as const,
-        path: target.storePath,
-        category: historical ? ("historical" as const) : ("fix-now" as const),
-        fixHint: historical
-          ? `No action needed if expected conversations are visible. Keep recovery archives. If a conversation is missing, inspect with "${inspect}".`
-          : `Inspect with "${inspect}" before attempting recovery.`,
-        docsUrl: "https://docs.openclaw.ai/cli/doctor/sqlite-maintenance#session-sqlite-migration",
-      };
-      const findings: HealthFinding[] = [];
-      for (const issue of issues.slice(0, MIGRATION_WARNING_EXAMPLE_LIMIT)) {
-        findings.push({
-          ...common,
-          errorCode: issue.code,
-          message: issue.message,
-        });
+  const findings: HealthFinding[] = [];
+  const historicalExamples: { storePath: string; message: string }[] = [];
+  const historicalPaths = new Set<string>();
+  let historicalCount = 0;
+  const docsUrl = "https://docs.openclaw.ai/cli/doctor/sqlite-maintenance#session-sqlite-migration";
+  for (const target of targets) {
+    const current: DoctorSessionSqliteTargetReport["issues"][number][] = [];
+    for (const issue of target.issues) {
+      if (isHistoricalSessionSqliteMigrationIssue(issue)) {
+        historicalCount++;
+        historicalPaths.add(target.storePath);
+        if (historicalExamples.length < MIGRATION_WARNING_EXAMPLE_LIMIT) {
+          historicalExamples.push({ storePath: target.storePath, message: issue.message });
+        }
+      } else {
+        current.push(issue);
       }
-      if (issues.length > MIGRATION_WARNING_EXAMPLE_LIMIT) {
-        findings.push({
-          ...common,
-          message: formatMigrationWarningSummary({
-            summary: `${issues.length} ${historical ? "historical recovery notice(s)" : "current session issue(s)"}`,
-            count: issues.length,
-            detail: `Inspect every finding with "${inspect}". Recovery evidence remains retained.`,
-          }),
-        });
-      }
-      return findings;
-    }),
-  );
+    }
+    const common = {
+      checkId: "core/doctor/session-transcripts",
+      severity: "warning" as const,
+      category: "fix-now" as const,
+      path: target.storePath,
+      fixHint: `Inspect with "${inspect}" before attempting recovery.`,
+      docsUrl,
+    };
+    for (const issue of current) {
+      findings.push({ ...common, errorCode: issue.code, message: issue.message });
+    }
+  }
+  if (historicalCount > 0) {
+    const summary =
+      historicalCount > MIGRATION_WARNING_EXAMPLE_LIMIT
+        ? formatMigrationWarningSummary({
+            summary: `${historicalCount} historical recovery notice(s)`,
+            count: historicalCount,
+            detail: "Recovery evidence remains retained.",
+          })
+        : `${historicalCount} historical recovery notice(s). Recovery evidence remains retained.`;
+    findings.push({
+      checkId: "core/doctor/session-transcripts",
+      severity: "warning",
+      category: "historical",
+      ...(historicalPaths.size === 1 ? { path: [...historicalPaths][0] } : {}),
+      message: [
+        summary,
+        ...historicalExamples.map(({ storePath, message }) =>
+          historicalPaths.size > 1 ? `  - ${storePath}: ${message}` : `  - ${message}`,
+        ),
+      ].join("\n"),
+      fixHint: `No action needed if expected conversations are visible. Keep recovery archives. If a conversation is missing, inspect with "${inspect}".`,
+      docsUrl,
+    });
+  }
+  return findings;
 }

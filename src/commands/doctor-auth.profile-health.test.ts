@@ -224,10 +224,22 @@ describe("inspectAuthProfileHealth", () => {
     );
     authProfileMocks.loadAuthProfileStoreForRuntime.mockImplementation((agentDir) => {
       if (agentDir === mainDir) {
-        return expiredStore("openai-codex:main", now - 60_000);
+        return {
+          version: 1,
+          profiles: {
+            ...expiredStore("openai-codex:shared", now - 60_000).profiles,
+            ...expiredStore("openai-codex:main", now - 60_000).profiles,
+          },
+        };
       }
       if (agentDir === coderDir) {
-        return expiredStore("openai-codex:coder", now - 60_000);
+        return {
+          version: 1,
+          profiles: {
+            ...expiredStore("openai-codex:shared", now - 60_000).profiles,
+            ...expiredStore("openai-codex:coder", now - 60_000).profiles,
+          },
+        };
       }
       throw new Error(`unexpected agent dir: ${agentDir ?? "<default>"}`);
     });
@@ -240,18 +252,24 @@ describe("inspectAuthProfileHealth", () => {
       allowKeychainPrompt: false,
     });
 
-    expect(findings).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          target: "openai-codex:coder",
-          message: expect.stringContaining("Agent coder auth profile"),
-        }),
-        expect.objectContaining({
-          target: "openai-codex:main",
-          message: expect.stringContaining("Agent main auth profile"),
-        }),
-      ]),
-    );
+    expect(findings).toEqual([
+      expect.objectContaining({
+        target: "openai-codex:coder",
+        message: "Auth profile openai-codex:coder is expired (0m). (stores: Agent coder)",
+        path: expectedAuthStorePath(coderDir),
+      }),
+      expect.objectContaining({
+        target: "openai-codex:main",
+        message: "Auth profile openai-codex:main is expired (0m). (stores: Agent main)",
+        path: expectedAuthStorePath(mainDir),
+      }),
+      expect.objectContaining({
+        target: "openai-codex:shared",
+        message: "Auth profile openai-codex:shared is expired (0m).",
+        fixHint: "Re-authenticate this profile.",
+      }),
+    ]);
+    expect(findings[2]?.path).toBeUndefined();
   });
 
   it("offers credential repair while the same profile is cooling down", async () => {

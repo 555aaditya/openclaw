@@ -36,7 +36,6 @@ import {
   syncDirectory,
 } from "./directory-durability.js";
 import { hasErrnoCode } from "./errno.js";
-import { formatErrorMessage } from "./errors.js";
 import {
   copyFileHandle,
   hashFileMutationSnapshotSync,
@@ -558,15 +557,22 @@ function captureRecoveryBaseline(params: RecoveryBaselineCaptureParams) {
               timeoutMs: params.timeoutMs,
               acquisition: params.acquisition,
             });
-      if (
-        [...databasePaths].some(
-          (pathname) =>
-            !Object.hasOwn(databases.sourceGenerations, pathname) ||
-            databases.sourceGenerations[pathname] !== generations[pathname],
-        )
-      ) {
+      const unverified = [...databasePaths].flatMap((pathname): [string, string][] =>
+        !Object.hasOwn(databases.sourceGenerations, pathname)
+          ? [[pathname, "no stable generation was recorded during its snapshot."]]
+          : databases.sourceGenerations[pathname] !== generations[pathname]
+            ? [[pathname, "generation changed after its snapshot."]]
+            : [],
+      );
+      if (unverified.length) {
         throw new Error(
-          "Original database generation changed or could not be verified; capture is unsealed.",
+          [
+            "Original database generation changed or could not be verified; capture is unsealed.",
+            ...unverified.map(([pathname, reason]) => `${pathname}: ${reason}`),
+            ...databases.warnings.filter((warning) =>
+              unverified.some(([pathname]) => warning.includes(pathname)),
+            ),
+          ].join("\n"),
         );
       }
       for (const [pathname, before] of observed) {
@@ -673,12 +679,9 @@ function captureRecoveryBaseline(params: RecoveryBaselineCaptureParams) {
         diagnostics: { databaseWarnings: databases.warnings },
       };
     } catch (cause) {
-      throw new Error(
-        `Original update capture failed: ${truncateUtf16Safe(formatErrorMessage(cause), 600)}; evidence retained at ${directory}`,
-        {
-          cause,
-        },
-      );
+      throw new Error(`Original update capture failed; evidence retained at ${directory}`, {
+        cause,
+      });
     } finally {
       await pin.close();
     }

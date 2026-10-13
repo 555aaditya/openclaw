@@ -13,7 +13,7 @@ export function createDoctorOriginalCaptureHook(
   > & {
     rehearsalRoot?: string;
     json?: boolean;
-    reportFindings: (findings: readonly HealthFinding[]) => void;
+    reportFindings: (findings: readonly HealthFinding[], warnings?: readonly string[]) => void;
   },
 ): NonNullable<DoctorMaintenanceParams["beforeStateMutation"]> {
   return async ({ env, signal }) => {
@@ -59,7 +59,7 @@ export function createDoctorOriginalCaptureHook(
         );
       }
     }
-    const findings = await measureGatewayBootstrapStep(
+    const { findings, warnings } = await measureGatewayBootstrapStep(
       "doctor.maintenance.preserve-original-state",
       () =>
         preserveDoctorOriginalState({
@@ -71,6 +71,6 @@ export function createDoctorOriginalCaptureHook(
           writeAuthority: params.writeAuthority,
         }),
     );
-    params.reportFindings(findings);
+    params.reportFindings(findings, warnings);
   };
 }
