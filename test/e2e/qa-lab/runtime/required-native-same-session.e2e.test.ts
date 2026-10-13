@@ -429,11 +429,11 @@ it.skipIf(process.platform === "win32")(
             const continueResume = createDeferred();
             const changedClear = createDeferred();
             const bEntered = createDeferred();
+            const bChangedClear = createDeferred();
             barriers.push(continueQuiesce, continueResume);
             let aClaim: string | undefined;
             let aRun: string | undefined;
             let bRun: string | undefined;
-            let aDone = false;
             let sawPending = false;
             let finishReleased = false;
             let sawClear = false;
@@ -461,13 +461,19 @@ it.skipIf(process.platform === "win32")(
                   });
                 }
                 sawPending = true;
-              } else if (finishReleased && !sawClear && placement?.state === "active") {
+              } else if (finishReleased && placement?.state === "active") {
                 const settled = readSettlement(gateway, key);
-                expect(settled.pending?.claim_id).not.toBe(aClaim);
-                expect(settled.placement?.turn_claim_id).not.toBe(aClaim);
-                sawClear = true;
-                record("sessions.changed-clear", { creation, timing });
-                changedClear.resolve();
+                if (!sawClear) {
+                  expect(settled.pending?.claim_id).not.toBe(aClaim);
+                  expect(settled.placement?.turn_claim_id).not.toBe(aClaim);
+                  sawClear = true;
+                  record("sessions.changed-clear", { creation, timing });
+                  changedClear.resolve();
+                }
+                if (bRun && !settled.pending && settled.placement?.turn_claim_id === null) {
+                  record("B-sessions.changed-clear", { creation, timing });
+                  bChangedClear.resolve();
+                }
               }
             };
             beforeInvoke = async (frame, host) => {
@@ -543,15 +549,7 @@ it.skipIf(process.platform === "win32")(
               bEntered.resolve();
             };
             await send(key, markers.A);
-            const aWait = wait(markers.A).then((value) => {
-              aDone = true;
-              if (value.status !== "ok") {
-                observationFailure.reject(new Error("A agent.wait: " + JSON.stringify(value)));
-              }
-              return value;
-            });
-            turnWaits.push(aWait);
-            void aWait.catch(() => undefined);
+            const aWait = wait(markers.A);
             await checkpoint(
               atQuiesce.promise,
               "A never reached physical terminal receipt / quiescence",
@@ -576,7 +574,6 @@ it.skipIf(process.platform === "win32")(
             expect(
               committed.messages.some((message) => wireMessageText(message) === markers.A),
             ).toBe(true);
-            expect(aDone).toBe(false);
             const placed = readSettlement(gateway, key).placement!;
             if (retained) {
               expect(placed.session_id).toBe(retained.session_id);
@@ -623,11 +620,11 @@ it.skipIf(process.platform === "win32")(
             }
             continueQuiesce.resolve();
             await checkpoint(atResume.promise, "A never accepted its unchanged workspace result");
-            expect(aDone).toBe(false);
-            finishReleased = true;
-            continueResume.resolve();
+            // The reply completes while workspace settlement still owns the turn claim.
             expect(await aWait).toMatchObject({ status: "ok" });
             record("A-agent.wait", { creation, timing });
+            finishReleased = true;
+            continueResume.resolve();
             await checkpoint(changedClear.promise, "settled placement never published clear");
             if (timing === "after-agent-wait") {
               const settled = readSettlement(gateway, key);
@@ -644,6 +641,7 @@ it.skipIf(process.platform === "win32")(
             // id owns queue cancellation and returns "pending" until adoption settles.
             // Wait on the exact real claim observed at native HTTP admission.
             expect(await wait(bRun!)).toMatchObject({ status: "ok" });
+            await checkpoint(bChangedClear.promise, "B settled placement never published clear");
             const final = readSettlement(gateway, key);
             expect(final.pending).toBeUndefined();
             expect(final.placement).toMatchObject({
