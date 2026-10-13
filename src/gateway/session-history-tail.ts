@@ -19,6 +19,7 @@ import {
   isHeartbeatHistoryTurnBoundaryMessage,
   createPreSessionStartAnnouncePairFilter,
 } from "./chat-display-projection.history.js";
+import { hasUnsettledHistoryToolCalls } from "./chat-silence-projection.js";
 import type { CurrentUserProfileDisplayResolver } from "./current-user-profile-display.js";
 import type {
   SessionTranscriptPageReader,
@@ -203,7 +204,7 @@ async function readNewerChatHistoryMessages(params: {
   return page.messages.slice(anchorIndex + 1, anchorIndex + 1 + params.limit);
 }
 
-/** Resolve only the newer turn context a historical page needs to classify its pending error. */
+/** Resolve bounded newer evidence for a page ending inside an assistant/tool exchange. */
 export async function readChatHistoryRecoveryContext(params: {
   messages: unknown[];
   createRecovery: (messages: unknown[]) => {
@@ -265,7 +266,7 @@ export async function readChatHistoryRecoveryContext(params: {
     }
     recovery ??= params.createRecovery(params.messages);
     recovery.append(context.slice(previousContextLength));
-    if (!recovery.pending) {
+    if (!recovery.pending && !hasUnsettledHistoryToolCalls(params.messages, context)) {
       break;
     }
   }
@@ -417,7 +418,8 @@ async function readIncrementalChatHistoryTailAttempt(params: {
     if (
       recoveryContext !== undefined ||
       newestPageSeq === undefined ||
-      !result.projection.assistantErrorPending
+      (!result.projection.assistantErrorPending &&
+        !hasUnsettledHistoryToolCalls(result.filteredRawMessages))
     ) {
       return result;
     }

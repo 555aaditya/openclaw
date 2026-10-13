@@ -1,6 +1,10 @@
 /** Messaging and child-completion guidance shared by full and minimal prompts. */
 import type { SourceReplyDeliveryMode } from "../auto-reply/get-reply-options.types.js";
-import { buildMessageToolTargetGuidance } from "../auto-reply/source-reply-delivery-mode.js";
+import {
+  buildMessageToolTargetGuidance,
+  MESSAGE_TOOL_SILENCE_GUIDANCE,
+} from "../auto-reply/source-reply-delivery-mode.js";
+import { SILENT_REPLY_TOKEN } from "../auto-reply/tokens.js";
 import type { ChatType } from "../channels/chat-type.js";
 import type { AgentPromptSurfaceKind } from "../plugins/types.js";
 import { isDeliverableMessageChannel, normalizeMessageChannel } from "../utils/message-channel.js";
@@ -20,6 +24,25 @@ export function resolveSilentReplyPromptMode(params: {
       ? "none"
       : "generic")
   );
+}
+
+export function buildSilentReplySection(params: {
+  isMinimal: boolean;
+  messageToolAvailable: boolean;
+  silentReplyPromptMode: SilentReplyPromptMode;
+}): string[] {
+  if (params.messageToolAvailable) {
+    return ["## Silent Replies", MESSAGE_TOOL_SILENCE_GUIDANCE, ""];
+  }
+  if (params.isMinimal || params.silentReplyPromptMode === "none") {
+    return [];
+  }
+  return [
+    "## Silent Replies",
+    `Nothing to say: entire reply exactly ${SILENT_REPLY_TOKEN}`,
+    "Never append to real response or wrap in Markdown/code.",
+    "",
+  ];
 }
 
 export function buildMessagingSection(params: {

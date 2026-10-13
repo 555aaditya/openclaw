@@ -14,6 +14,7 @@ import {
   dropPreSessionStartAnnouncePairs,
   isHeartbeatHistoryTurnBoundaryMessage,
 } from "../chat-display-projection.history.js";
+import { hasUnsettledHistoryToolCalls } from "../chat-silence-projection.js";
 import type { CurrentUserProfileDisplayResolver } from "../current-user-profile-display.js";
 import {
   dropChatHistoryOverreadContextMessage,
@@ -151,8 +152,12 @@ export async function readChatHistoryPageKernel(
       ),
       overreadContextMessage,
     );
-    const project = (messages: unknown[]) =>
-      projectChatDisplayMessagesWithState(messages, {
+    const newestPageSeq = readSequence(localMessages.at(-1));
+    const newestLocalIndex = readPage.messages.indexOf(localMessages.at(-1));
+    // Directional cursors exclude the anchor from display, but its receipt still decides silence.
+    const newerContext = newestLocalIndex < 0 ? [] : readPage.messages.slice(newestLocalIndex + 1);
+    const project = (messages: unknown[]) => {
+      const projection = projectChatDisplayMessagesWithState([...messages, ...newerContext], {
         subagentCoordination: options.readers.subagentCoordination,
         includeCommentaryFallbacks: true,
         maxChars: effectiveMaxChars,
@@ -163,13 +168,19 @@ export async function readChatHistoryPageKernel(
           : { resolveCurrentUserProfileDisplay: options.resolveCurrentUserProfileDisplay }),
         turnBoundaryPending: isHeartbeatHistoryTurnBoundaryMessage(overreadContextMessage),
       });
-    const projection = project(localMessages);
-    let projected = projection.messages;
-    const newestPageSeq = readSequence(localMessages.at(-1));
+      if (newerContext.length > 0) {
+        projection.messages = projection.messages.filter(
+          (message) => (readSequence(message) ?? Infinity) <= (newestPageSeq ?? -1),
+        );
+      }
+      return projection;
+    };
+    let projection = project(localMessages);
     if (
       (direction === "older" || readPage.offset > 0) &&
       newestPageSeq !== undefined &&
-      projection.assistantErrorPending
+      (projection.assistantErrorPending ||
+        hasUnsettledHistoryToolCalls(localMessages, newerContext))
     ) {
       const recoveryContext = await readChatHistoryRecoveryContext({
         messages: localMessages,
@@ -189,9 +200,8 @@ export async function readChatHistoryPageKernel(
         sessionStartedAt: entry?.sessionStartedAt,
       });
       if (recoveryContext.length > 0) {
-        projected = project([...localMessages, ...recoveryContext]).messages.filter(
-          (message) => (readSequence(message) ?? Infinity) <= newestPageSeq,
-        );
+        newerContext.splice(0, newerContext.length, ...recoveryContext);
+        projection = project(localMessages);
       }
     }
     const cursorMessages = dropChatHistoryOverreadContextMessage(
@@ -200,7 +210,7 @@ export async function readChatHistoryPageKernel(
     );
     const oldestSeq = readSequence(cursorMessages[0]);
     return {
-      messages: await attachReplyMessages(projected),
+      messages: await attachReplyMessages(projection.messages),
       ...(projection.activity.length ? { activity: projection.activity } : {}),
       ...(source
         ? {

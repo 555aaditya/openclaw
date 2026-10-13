@@ -11,6 +11,7 @@ import {
 } from "../../config/sessions/session-accessor.js";
 import { readTranscriptDisplayDelta } from "../../config/sessions/session-accessor.sqlite-history-events.js";
 import { replaceTranscriptEvents } from "../../config/sessions/session-accessor.sqlite-transcript-write.test-support.js";
+import { registerAgentRunPresentationBuffer } from "../../infra/agent-run-presentation.js";
 import {
   closeOpenClawAgentDatabasesAsync,
   closeOpenClawAgentDatabasesForTest,
@@ -29,6 +30,95 @@ const tempDirs = useAutoCleanupTempDirTracker((cleanup) =>
     cleanup();
   }),
 );
+
+it("keeps delta cursors behind withheld optional history", async () => {
+  setRuntimeConfigSnapshot({});
+  const scope = {
+    agentId: "main",
+    sessionKey: "agent:main:withheld-optional-history",
+    sessionId: "withheld-optional-history",
+    storePath: path.join(tempDirs.make("openclaw-withheld-history-"), "sessions.json"),
+  };
+  const entry = { sessionId: scope.sessionId, updatedAt: 1 };
+  await replaceSessionEntry(scope, entry);
+  await replaceTranscriptEvents(scope, [{ type: "session", version: 3, id: scope.sessionId }]);
+  const head = readTranscriptDisplayDelta(scope);
+  if (head.kind !== "page") {
+    throw new Error("Expected the initial history cursor");
+  }
+  await appendTranscriptMessage(scope, {
+    eventId: "optional-answer",
+    message: {
+      role: "assistant",
+      content: "Visible after settlement",
+      __openclaw: { runId: "optional-history-run" },
+    },
+  });
+  const read = (encodeResponse = false) =>
+    readChatHistoryPage({
+      encodeResponse,
+      entry,
+      provider: "openai",
+      sessionId: scope.sessionId,
+      storePath: scope.storePath,
+      sessionAgentId: scope.agentId,
+      canonicalKey: scope.sessionKey,
+      max: 10,
+      maxHistoryBytes: 1_000_000,
+      effectiveMaxChars: 10_000,
+      offset: undefined,
+      messageId: undefined,
+    });
+  const release = registerAgentRunPresentationBuffer(
+    "optional-history-run",
+    () => false,
+    () => true,
+    scope,
+  );
+  try {
+    for (const encodeResponse of [false, true]) {
+      const pending = await read(encodeResponse);
+      expect(pending.messages).toEqual([]);
+      expect(pending.encodedResponse).toBeUndefined();
+      expect.soft(pending.deltaCursor).toBeUndefined();
+    }
+    await expect
+      .soft(
+        readChatHistoryDelta({
+          agentId: scope.agentId,
+          cursor: head.cursor,
+          scope,
+          sessionKey: scope.sessionKey,
+          sessionSnapshot: {},
+        }),
+      )
+      .resolves.toEqual({ kind: "reset" });
+  } finally {
+    release();
+  }
+  const releaseUnrelated = registerAgentRunPresentationBuffer(
+    "unrelated-optional-run",
+    () => false,
+    () => true,
+    { sessionKey: "agent:main:unrelated", sessionId: "unrelated" },
+  );
+  try {
+    const settled = await read();
+    expect(settled.messages).toMatchObject([{ content: "Visible after settlement" }]);
+    expect(settled.deltaCursor).toEqual(expect.any(String));
+    await expect(
+      readChatHistoryDelta({
+        agentId: scope.agentId,
+        cursor: head.cursor,
+        scope,
+        sessionKey: scope.sessionKey,
+        sessionSnapshot: {},
+      }),
+    ).resolves.toMatchObject({ kind: "delta" });
+  } finally {
+    releaseUnrelated();
+  }
+});
 
 it.each([
   {

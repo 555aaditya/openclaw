@@ -19,9 +19,7 @@ import {
   normalizeUniqueStringEntries,
 } from "@openclaw/normalization-core/string-normalization";
 import type { SourceReplyDeliveryMode } from "../auto-reply/get-reply-options.types.js";
-import { MESSAGE_TOOL_SILENCE_GUIDANCE } from "../auto-reply/source-reply-delivery-mode.js";
 import type { ReasoningLevel } from "../auto-reply/thinking.js";
-import { SILENT_REPLY_TOKEN } from "../auto-reply/tokens.js";
 import { normalizeChatType } from "../channels/chat-type.js";
 import { CHANNEL_IDS } from "../channels/ids.js";
 import {
@@ -68,7 +66,11 @@ import type {
   ProviderSystemPromptContribution,
   ProviderSystemPromptSectionId,
 } from "./system-prompt-contribution.js";
-import { buildMessagingSection, resolveSilentReplyPromptMode } from "./system-prompt-messaging.js";
+import {
+  buildMessagingSection,
+  buildSilentReplySection,
+  resolveSilentReplyPromptMode,
+} from "./system-prompt-messaging.js";
 import { buildRuntimeLine } from "./system-prompt-runtime.js";
 import { buildSkillsSection } from "./system-prompt-skills.js";
 import {
@@ -847,14 +849,6 @@ export function buildAgentSystemPrompt(params: {
             ]),
         "",
       ],
-    !isMinimal &&
-      !messageToolAvailable &&
-      silentReplyPromptMode !== "none" && [
-        "## Silent Replies",
-        `Nothing to say: entire reply exactly ${SILENT_REPLY_TOKEN}`,
-        `Never append to real response or wrap in Markdown/code.`,
-        "",
-      ],
     // Approval UI and owner identity vary by turn, so keep both below the stable prefix.
     // A tool_call_style override owns the complete section and suppresses default guidance.
     !providerSectionOverrides.tool_call_style &&
@@ -930,9 +924,9 @@ export function buildAgentSystemPrompt(params: {
       promptMode === "minimal" ? "## Subagent Context" : "## Conversation Context";
     lines.push(contextHeader, extraSystemPrompt, "");
   }
-  if (messageToolAvailable) {
-    lines.push("## Silent Replies", MESSAGE_TOOL_SILENCE_GUIDANCE, "");
-  }
+  lines.push(
+    ...buildSilentReplySection({ isMinimal, messageToolAvailable, silentReplyPromptMode }),
+  );
   if (params.reactionGuidance) {
     const { level, channel } = params.reactionGuidance;
     const guidanceText =

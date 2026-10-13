@@ -138,7 +138,7 @@ describe("confirmed message-tool turn completion", () => {
             isError: false,
             details: { messageDelivery: { status: "silent" } },
           });
-          const reloaded: unknown[] = JSON.parse(JSON.stringify(agent.state.messages));
+          const reloaded: unknown[] = structuredClone(agent.state.messages);
           expect(projectIntentionalSilenceHistory(reloaded)).toEqual([
             expect.objectContaining({ role: "user" }),
           ]);

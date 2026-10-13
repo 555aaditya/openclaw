@@ -13,6 +13,41 @@ export function assistantResponseToolCount(message: unknown): number {
   return calls.length;
 }
 
+/** A page ending inside a tool exchange needs its exact newer result before display. */
+export function hasUnsettledHistoryToolCalls(
+  messages: unknown[],
+  resultContext: unknown[] = [],
+): boolean {
+  const pending = new Set<string>();
+  for (const message of messages) {
+    const row = asOptionalRecord(message);
+    if (row?.role === "assistant" && Array.isArray(row.content)) {
+      const callIds = row.content.flatMap((value) => {
+        const block = asOptionalRecord(value);
+        return block?.type === "toolCall" && typeof block.id === "string" ? [block.id] : [];
+      });
+      if (callIds.length === 0) {
+        continue;
+      }
+      const runId = readSessionTranscriptRunId(row) ?? "";
+      for (const id of callIds) {
+        pending.add(`${runId}\0${id}`);
+      }
+    }
+  }
+  if (pending.size === 0) {
+    return false;
+  }
+  for (const message of [...messages, ...resultContext]) {
+    const row = asOptionalRecord(message);
+    if (row?.role === "toolResult" && typeof row.toolCallId === "string") {
+      const runId = readSessionTranscriptRunId(row) ?? "";
+      pending.delete(`${runId}\0${row.toolCallId}`);
+    }
+  }
+  return pending.size > 0;
+}
+
 export function hasMessageSilenceAction(message: unknown): boolean {
   const row = asOptionalRecord(message);
   return (
@@ -30,7 +65,8 @@ export function hasMessageSilenceAction(message: unknown): boolean {
 }
 
 export function isIntentionalSilenceToolResult(message: unknown): boolean {
-  const nested = readNestedToolActivity(message)?.details;
+  const row = asOptionalRecord(message);
+  const nested = row?.role === "custom" ? readNestedToolActivity(row)?.details : undefined;
   if (
     nested?.toolName === "message" &&
     !nested.isError &&
@@ -41,7 +77,6 @@ export function isIntentionalSilenceToolResult(message: unknown): boolean {
         ?.status === "silent"
     );
   }
-  const row = asOptionalRecord(message);
   return (
     row?.role === "toolResult" &&
     row.toolName === "message" &&
@@ -64,7 +99,7 @@ function withoutInternalSilenceReason(message: unknown): unknown {
     const { reason: _reason, ...publicArgs } = args;
     return publicArgs;
   };
-  const nested = readNestedToolActivity(row);
+  const nested = row.role === "custom" ? readNestedToolActivity(row) : undefined;
   if (nested) {
     const input = redact(nested.details.toolName, nested.details.input);
     return input === nested.details.input

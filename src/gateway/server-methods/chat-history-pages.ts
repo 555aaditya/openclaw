@@ -7,7 +7,10 @@ import type {
   ChatHistoryPageParams,
   ChatHistoryMessageParams,
 } from "../../config/sessions/session-history-types.js";
-import { isAgentRunPresentationPending } from "../../infra/agent-run-presentation.js";
+import {
+  isAgentRunPresentationPending,
+  isAgentSessionPresentationPending,
+} from "../../infra/agent-run-presentation.js";
 import { isIncognitoSessionKey } from "../../shared/incognito-session-key.js";
 import {
   prepareForwardedMessageCronJobNameResolver,
@@ -126,10 +129,17 @@ export async function readChatHistoryPage(
     return page;
   }
   const messages = filterPendingOptionalHistory(source);
-  return messages === source
+  const pending =
+    input.sessionId &&
+    isAgentSessionPresentationPending({
+      sessionKey: input.canonicalKey,
+      sessionId: input.sessionId,
+    });
+  return messages === source && !pending
     ? page
     : {
         ...page,
+        deltaCursor: pending ? undefined : page.deltaCursor,
         messages,
         activity: page.encodedResponse?.activity ?? page.activity,
         encodedResponse: undefined,

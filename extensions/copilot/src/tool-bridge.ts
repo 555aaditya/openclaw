@@ -113,13 +113,13 @@ const EMPTY_PROMPT_TOOL_POLICY: CopilotToolBridge["promptToolPolicy"] = {
 const SUPPORTED_TOOL_PROVIDERS: ReadonlySet<string> = new Set(["github-copilot"]);
 
 export async function createCopilotToolBridge(
-  params: CopilotToolBridgeInput,
+  bridgeInput: CopilotToolBridgeInput,
 ): Promise<CopilotToolBridge> {
-  if (!params.allowModelTools && !SUPPORTED_TOOL_PROVIDERS.has(params.modelProvider)) {
+  if (!bridgeInput.allowModelTools && !SUPPORTED_TOOL_PROVIDERS.has(bridgeInput.modelProvider)) {
     return { codeModeEngaged: false, promptToolPolicy: EMPTY_PROMPT_TOOL_POLICY, sourceTools: [] };
   }
 
-  const input = { ...params, sessionRef: params.sessionRef ?? { current: undefined } };
+  const input = { ...bridgeInput, sessionRef: bridgeInput.sessionRef ?? { current: undefined } };
   const attemptParams = input.attemptParams;
   const toolPlan = resolveEmbeddedAttemptToolConstructionPlan({
     disableTools: attemptParams.disableTools,

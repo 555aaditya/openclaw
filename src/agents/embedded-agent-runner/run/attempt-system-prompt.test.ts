@@ -68,7 +68,10 @@ async function preparePermissionPrompt(
   isRawModelRun = false,
   thinkLevel?: EmbeddedRunAttemptParams["thinkLevel"],
   requireExplicitMessageTarget?: boolean,
-  session?: Pick<EmbeddedRunAttemptParams, "sessionKey" | "sandboxSessionKey">,
+  session?: Pick<
+    EmbeddedRunAttemptParams,
+    "sessionKey" | "sandboxSessionKey" | "terminalReplyExpectation"
+  >,
   skills?: { prompt: string; toolsAllow?: string[]; initialToolNames?: string[] },
   webSearchUnconfigured?: () => boolean,
 ) {
@@ -160,6 +163,17 @@ async function preparePermissionPrompt(
 }
 
 describe("buildAttemptSystemPrompt", () => {
+  it.each([
+    ["optional", "This is an optional turn; no answer is required."],
+    ["required", "This turn requires an answer."],
+  ] as const)("publishes the host-owned %s reply expectation", async (expectation, instruction) => {
+    const { prepared } = await preparePermissionPrompt(false, undefined, false, {
+      terminalReplyExpectation: expectation,
+    });
+    expect(prepared.systemPromptText).toContain(instruction);
+    expect(prepared.systemPromptText).toContain('message(action="none")');
+  });
+
   it("carries the prepared missing-search fact into the actual initial prompt and tool refresh", async () => {
     let missing = true;
     const { prepared, read, refreshSystemPrompt } = await preparePermissionPrompt(

@@ -8,6 +8,7 @@ import {
   projectAgentHistoryActivity,
   type AgentHistoryActivity,
 } from "../../infra/agent-activity-events.js";
+import { isAgentSessionPresentationPending } from "../../infra/agent-run-presentation.js";
 import { jsonUtf8BytesOrInfinity } from "../../infra/json-utf8-bytes.js";
 import { isIncognitoSessionKey } from "../../shared/incognito-session-key.js";
 import { isOpenClawDeliveryMirrorAssistantMessage } from "../../shared/transcript-only-openclaw-assistant.js";
@@ -153,6 +154,14 @@ async function projectChatHistoryDelta(
     ),
   );
   subagentCoordination.assertCurrent?.();
+  if (
+    isAgentSessionPresentationPending({
+      sessionKey: params.sessionKey,
+      sessionId: params.scope.sessionId,
+    })
+  ) {
+    return { kind: "reset" };
+  }
   let projectionState: SessionMessageProjectionState = {
     assistantErrorPending: false,
     turnBoundaryPending: false,

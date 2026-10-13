@@ -292,8 +292,12 @@ export async function prepareEmbeddedAttemptSystemPrompt(params: {
   const projectMemoryWriteInstruction = buildProjectMemoryWriteInstruction(
     attempt.preparedModelRuntime?.projectKey,
   );
+  const replyExpectation = resolveReplyExpectation(attempt);
   const extraSystemPrompt = joinPresentTextSegments([
     attempt.extraSystemPrompt,
+    replyExpectation === "optional"
+      ? "This is an optional turn; no answer is required."
+      : "This turn requires an answer.",
     projectMemoryWriteInstruction,
     buildModelToolsUnavailablePrompt(params.modelToolsEnabled),
   ]);
@@ -332,8 +336,7 @@ export async function prepareEmbeddedAttemptSystemPrompt(params: {
       sourceReplyDeliveryMode: attempt.sourceReplyDeliveryMode,
       requireExplicitMessageTarget: params.requireExplicitMessageTarget,
       silentReplyPromptMode:
-        attempt.silentReplyPromptMode ??
-        (resolveReplyExpectation(attempt) === "optional" ? "generic" : "none"),
+        attempt.silentReplyPromptMode ?? (replyExpectation === "optional" ? "generic" : "none"),
       proactiveSubagentOrchestration: params.setup.proactiveSubagentOrchestration,
       acpEnabled: isAcpRuntimeSpawnAvailable({
         config: attempt.config,

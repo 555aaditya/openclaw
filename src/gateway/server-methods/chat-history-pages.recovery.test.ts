@@ -35,7 +35,10 @@ const answer = {
   __openclaw: { runId: "recovered-run" },
 };
 
-type PageOptions = Pick<Parameters<typeof readChatHistoryPageKernel>[0], "offset" | "messageId"> & {
+type PageOptions = Pick<
+  Parameters<typeof readChatHistoryPageKernel>[0],
+  "offset" | "messageId" | "pageCursor"
+> & {
   max?: number;
   maxHistoryBytes?: number;
 };
@@ -93,6 +96,61 @@ async function withTranscript(
 }
 
 describe("historical page recovery context", () => {
+  it("keeps accepted silence hidden across directional and offset page boundaries", async () => {
+    await withTranscript(
+      [
+        ["question", user],
+        [
+          "quiet",
+          {
+            role: "assistant",
+            content: [
+              { type: "text", text: "I am staying silent." },
+              {
+                type: "toolCall",
+                name: "message",
+                id: "quiet-tool",
+                arguments: { action: "none" },
+              },
+            ],
+            __openclaw: { runId: "quiet-run" },
+          },
+        ],
+        [
+          "receipt",
+          {
+            role: "toolResult",
+            toolName: "message",
+            toolCallId: "quiet-tool",
+            isError: false,
+            content: [],
+            details: {
+              messageDelivery: { status: "silent", partialDelivery: false, createdThreadIds: [] },
+            },
+            __openclaw: { runId: "quiet-run" },
+          },
+        ],
+        ["later", { role: "user", content: "Later question" }],
+      ],
+      async ({ read, raw }) => {
+        const original = await raw();
+        const anchor = await read({ messageId: "receipt", offset: undefined });
+        if (!anchor.anchor) {
+          throw new Error("Expected the receipt's source-bound history anchor");
+        }
+        const older = await read({
+          messageId: "receipt",
+          offset: undefined,
+          pageCursor: { ...anchor.anchor, messageId: "receipt", direction: "older" },
+        });
+        expect.soft(older.messages).toEqual([]);
+        const offset = await read({ messageId: undefined, offset: 2 });
+        expect.soft(offset.messages.map(readChatHistoryMessageId)).toEqual(["question"]);
+        expect(await raw()).toEqual(original);
+      },
+    );
+  });
+
   it("includes bounded off-page originals once for repeated reply references", async () => {
     const originalText = "q".repeat(600);
     await withTranscript(
