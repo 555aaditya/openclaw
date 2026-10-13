@@ -1,6 +1,10 @@
-import { vi } from "vitest";
+import { afterEach, vi } from "vitest";
 import { installPopoverPolyfill } from "./popover.ts";
+import { cleanupSolid } from "./solid-cleanup.ts";
 import { installSafeLocalStorageForTesting } from "./storage.ts";
+
+// Setup files run for every suite even when fixture modules stay cached.
+afterEach(cleanupSolid);
 
 installPopoverPolyfill();
 
