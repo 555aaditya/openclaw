@@ -72,15 +72,41 @@ beforeEach(() => {
 
 describe("scheduled isolation is independent of creator attribution", () => {
   it.each([
-    { name: "autonomous ordinary source", via: "operator", requester: false, required: false },
-    { name: "B in A's ordinary source", via: "operator", requester: true, required: false },
-    { name: "B in A's delegated source", via: "spawn", requester: true, required: false },
-    { name: "B in A's cron source", via: "cron", requester: true, required: false },
+    {
+      name: "Lab off with B in A's ordinary source",
+      via: "operator",
+      requester: true,
+      required: false,
+      enabled: false,
+    },
+    {
+      name: "autonomous ordinary source",
+      via: "operator",
+      requester: false,
+      required: false,
+      enabled: true,
+    },
+    {
+      name: "B in A's ordinary source",
+      via: "operator",
+      requester: true,
+      required: false,
+      enabled: true,
+    },
+    {
+      name: "B in A's delegated source",
+      via: "spawn",
+      requester: true,
+      required: false,
+      enabled: true,
+    },
+    { name: "B in A's cron source", via: "cron", requester: true, required: false, enabled: true },
     {
       name: "required source after role relaxation",
       via: "operator",
       requester: true,
       required: true,
+      enabled: true,
     },
   ] as const)(
     "$name keeps A's containment through creation, reopen and real file I/O",
@@ -97,6 +123,7 @@ describe("scheduled isolation is independent of creator attribution", () => {
         ...cfg,
         agents: {
           defaults: {
+            experimental: { delegatedCreatorAttribution: scenario.enabled },
             skipBootstrap: true,
             workspace,
             sandbox: {
@@ -191,9 +218,11 @@ describe("scheduled isolation is independent of creator attribution", () => {
       requester?.release();
       const job = expectDefined((await fixture.read())[0], "stored job");
       expect(job.createdActor).toEqual(
-        scenario.requester
-          ? { type: "human", source: "profile", id: bob.id }
-          : { type: "agent", id: "main" },
+        !scenario.enabled
+          ? aliceActor
+          : scenario.requester
+            ? { type: "human", source: "profile", id: bob.id }
+            : { type: "agent", id: "main" },
       );
       await fixture.context.cron.update(job.id, { name: "Edited without restamping isolation" });
       assignSessionOwner(

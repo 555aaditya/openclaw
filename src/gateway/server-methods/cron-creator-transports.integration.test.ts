@@ -86,7 +86,6 @@ describe("original caller through Cron creator transports", () => {
         agents: {
           ...cfg.agents,
           defaults: {
-            ...cfg.agents?.defaults,
             experimental: { delegatedCreatorAttribution: true },
           },
         },

@@ -70,7 +70,11 @@ describe("voice consult concrete store ownership", () => {
       );
       const assignment = assignSessionOwner(
         { agentId: "main", storePath, sessionKey: parentKey },
-        { owner: { type: "human", id: "different-assignee" }, assignedAt: 1 },
+        {
+          owner: { type: "human", id: "different-assignee" },
+          assignedAt: 1,
+          assignedBy: { type: "system", id: "fixture" },
+        },
       );
       expect(assignment?.actor).toEqual({ type: "human", id: "different-assignee" });
       expect(
