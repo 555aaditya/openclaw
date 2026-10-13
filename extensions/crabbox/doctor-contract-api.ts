@@ -167,7 +167,7 @@ export const stateMigrations: PluginDoctorStateMigration[] = [
     id: "crabbox-warm-profile-v3",
     label: "Crabbox warm profiles",
     doctorOnly: true,
-    // Core capture already includes the shared plugin-state database.
+    // The host recovery inventory already includes shared plugin-state SQLite.
     collectBackupResources: () => [],
     async detectLegacyState({ context }) {
       const images = await context
