@@ -92,7 +92,7 @@ it("withholds a tool-free optional message at host egress until settlement", asy
 });
 
 describe("chat.message.get recovery visibility", () => {
-  it("hides recovered failures across hidden announce chunks while retaining unresolved and partial replies", async () => {
+  it("hides attempt diagnostics across hidden announce chunks while retaining partial replies", async () => {
     await withOpenClawTestState({ scenario: "minimal" }, async () => {
       await captureRuntimeConfigAsyncReader()();
       const scope = {
@@ -187,9 +187,9 @@ describe("chat.message.get recovery visibility", () => {
         __openclaw: expect.objectContaining({ id: "failed" }),
       });
       await lookup("failed");
-      expect(respond).toHaveBeenCalledWith(true, expect.objectContaining({ ok: true }));
-      // The initial page ends on the hidden announce; its paired reply is newer lookahead.
-      expect(await readHistory({ offset: 1, limit: messages.length - 1 })).toContainEqual(
+      expect(respond).toHaveBeenCalledWith(true, { ok: false, unavailableReason: "not_found" });
+      // Neither a bounded page nor a receipt-less attempt establishes terminal failure.
+      expect(await readHistory({ offset: 1, limit: messages.length - 1 })).not.toContainEqual(
         failedMessage,
       );
 
@@ -213,7 +213,7 @@ describe("chat.message.get recovery visibility", () => {
             : [expect.objectContaining({ __openclaw: expect.objectContaining({ id: "user" }) })],
         );
       }
-      // Both hidden rows now fit the initial window; only the real retry repairs the failure.
+      // Both hidden rows now fit the initial window; the attempt diagnostic remains hidden.
       expect(await readHistory({ offset: 1, limit: messages.length })).not.toContainEqual(
         failedMessage,
       );
