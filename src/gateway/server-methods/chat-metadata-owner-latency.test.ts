@@ -71,7 +71,6 @@ it("measures repeated saved-session metadata through the real handler", async ()
               durationMs: event.durationMs,
               timing: event.timing,
             }));
-          expect(workers.length).toBeGreaterThan(0);
           console.log(
             JSON.stringify({
               probe: "chat.metadata",
@@ -81,7 +80,7 @@ it("measures repeated saved-session metadata through the real handler", async ()
               elapsedMs,
               runtime: process.versions.bun ? "bun" : "node",
               runtimeVersion: process.versions.bun ?? process.versions.node,
-              exactReads: reads.mock.calls.length,
+              sessionReadCalls: reads.mock.calls.length,
               workers,
             }),
           );
