@@ -120,6 +120,11 @@ const cases: ScopeCase[] = [
     paths: ["src/infra/sqlite-existing-database.ts"],
     expected: { fastTasks: ["bun-launcher"] },
   },
+  { paths: ["src/infra/update-retained-imports.ts"], expected: { fastTasks: ["bun-launcher"] } },
+  {
+    paths: ["src/infra/update-retained-runtime.ts"],
+    expected: { fastTasks: ["bun-launcher"] },
+  },
 ];
 
 describe("narrow PR check families", () => {

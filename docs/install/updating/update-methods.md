@@ -370,6 +370,14 @@ files let the old updater finish after its installation is replaced. They do not
 preserve a running Gateway's old module state, cover arbitrary plugin imports,
 or make rollback into an older published package safe without restarting.
 
+These compatibility files remain the guaranteed path for every supported
+previous release and runtime. Newer updaters add a second layer: on Node they
+load their own later imports from their retained runtime copy instead of the
+replaced installation; on Bun, which has no module hooks, they load the
+modules they can need after replacement before replacing anything, and Bun
+keeps them in memory. Nothing is persisted for either layer, so a later
+release can change or remove it without affecting any installed updater.
+
 For a root-owned Linux system-global install, if `openclaw update` fails with
 `EACCES`, recover with system npm while keeping the Gateway stopped for the
 manual replacement. Use the same profile flags/environment you normally use for
