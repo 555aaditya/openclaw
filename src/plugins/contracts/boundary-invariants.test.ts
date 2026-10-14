@@ -61,11 +61,7 @@ const BUNDLED_TYPED_HOOK_REGISTRATION_GUARDS = {
 const BUNDLED_LIVE_CONFIG_HOOK_GUARDS = {
   "extensions/active-memory/index.ts": ["resolveLivePluginConfigObject(", '"active-memory"'],
   "extensions/codex/index.ts": ["resolveLivePluginConfigObject(", '"codex"'],
-  "extensions/diffs/src/plugin.ts": [
-    "resolveLivePluginConfigObject(",
-    '"diffs"',
-    "const currentConfig = api.runtime.config.current()",
-  ],
+  "extensions/diffs/src/plugin.ts": ["resolveLivePluginConfigObject(", '"diffs"'],
   "extensions/memory-core/src/dreaming.ts": [
     "resolveMemoryDreamingPluginConfig(startupCfg)",
     "api.runtime.config?.current?.() ?? api.config",
@@ -278,6 +274,46 @@ function collectTypedHookNames(source: string): string[] {
     .toSorted();
 }
 
+function collectLiveConfigReaders(source: string): Set<string> {
+  const readers = new Set<string>();
+  const sourceFile = parser.parseSourceFile("live-config-input.ts", source);
+  function visit(node: ts.Node, owner?: string): void {
+    if (ts.isFunctionDeclaration(node)) {
+      if (node.body) {
+        visit(node.body, node.name?.text);
+      }
+      return;
+    } else if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer &&
+      (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer))
+    ) {
+      visit(node.initializer.body, node.name.text);
+      return;
+    } else if (ts.isFunctionLikeDeclaration(node)) {
+      return;
+    }
+    if (owner && ts.isCallExpression(node) && node.arguments.length === 0) {
+      let callee = node.expression;
+      const parts: string[] = [];
+      while (ts.isPropertyAccessExpression(callee)) {
+        parts.unshift(callee.name.text);
+        callee = callee.expression;
+      }
+      if (
+        ts.isIdentifier(callee) &&
+        [callee.text, ...parts].join(".") === "api.runtime.config.current"
+      ) {
+        readers.add(owner);
+      }
+    }
+    node.forEachChild((child) => visit(child, owner));
+  }
+  visit(sourceFile);
+  return readers;
+}
+
 describe("plugin contract boundary invariants", () => {
   let bundledCapabilityMetadataOffenders: string[];
 
@@ -398,6 +434,10 @@ describe("plugin contract boundary invariants", () => {
       },
     );
     expect(missingGuards).toStrictEqual([]);
+    const diffsReaders = collectLiveConfigReaders(readRepoSource("extensions/diffs/src/plugin.ts"));
+    for (const consumer of ["resolveCurrentAccessConfig", "resolveDiffsLanguagePackAvailability"]) {
+      expect(diffsReaders.has(consumer), consumer).toBe(true);
+    }
   });
 
   it("keeps live provider config surfaces on runtime config lookups", () => {
