@@ -67,7 +67,7 @@ export function resolveBoundaryRootShimsTimeoutMs(env: NodeJS.ProcessEnv = proce
   const raw = env.OPENCLAW_PLUGIN_SDK_BOUNDARY_ROOT_SHIMS_TIMEOUT_MS?.trim();
   return raw
     ? parsePositiveInt(raw, "OPENCLAW_PLUGIN_SDK_BOUNDARY_ROOT_SHIMS_TIMEOUT_MS")
-    : 300_000;
+    : 600_000;
 }
 /**
  * Prefixes streamed child output line-by-line without breaking partial chunks.

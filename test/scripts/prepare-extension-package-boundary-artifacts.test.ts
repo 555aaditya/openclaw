@@ -723,8 +723,8 @@ child.once("message", () => process.exit(${exitCode}));
     expect(() => parseMode(["--mode=nope"])).toThrow("Unknown mode: nope");
   });
 
-  it("gives cold root shim generation macOS runner headroom", () => {
-    expect(resolveBoundaryRootShimsTimeoutMs({})).toBe(300_000);
+  it("gives cold SDK declaration preparation bounded runner headroom", () => {
+    expect(resolveBoundaryRootShimsTimeoutMs({})).toBe(600_000);
     expect(
       resolveBoundaryRootShimsTimeoutMs({
         OPENCLAW_PLUGIN_SDK_BOUNDARY_ROOT_SHIMS_TIMEOUT_MS: "450000",
