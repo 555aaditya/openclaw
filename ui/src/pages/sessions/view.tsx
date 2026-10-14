@@ -281,6 +281,10 @@ function SessionsTable(props: SessionsProps) {
   const paginated = createMemo(() =>
     displayRows().slice(page() * props.pageSize, (page() + 1) * props.pageSize),
   );
+  const selectedOnPage = createMemo(
+    () => paginated().filter((row) => props.selectedKeys.has(row.key)).length,
+  );
+  const allSelected = () => selectedOnPage() === paginated().length;
   const emptyBecauseFiltered = createMemo(
     () =>
       rawRows().length === 0 &&
@@ -335,8 +339,7 @@ function SessionsTable(props: SessionsProps) {
         <SettingsSegmented<SessionArchivedFilter>
           value={props.statusFilter}
           ariaLabel={t("sessionsView.sessionState")}
-          // oxlint-disable-next-line solid/no-react-specific-props -- The shared SettingsSegmented API owns this prop.
-          className="sessions-view-segment"
+          class="sessions-view-segment"
           options={[
             { value: "active", label: t("common.active") },
             {
@@ -376,15 +379,10 @@ function SessionsTable(props: SessionsProps) {
                 {paginated().length > 0 ? (
                   <input
                     type="checkbox"
-                    checked={paginated().every((r) => props.selectedKeys.has(r.key))}
-                    prop:indeterminate={
-                      paginated().some((r) => props.selectedKeys.has(r.key)) &&
-                      !paginated().every((r) => props.selectedKeys.has(r.key))
-                    }
+                    checked={allSelected()}
+                    prop:indeterminate={selectedOnPage() > 0 && !allSelected()}
                     onChange={() => {
-                      const update = paginated().every((r) => props.selectedKeys.has(r.key))
-                        ? props.onDeselectPage
-                        : props.onSelectPage;
+                      const update = allSelected() ? props.onDeselectPage : props.onSelectPage;
                       update(paginated().map((r) => r.key));
                     }}
                     aria-label={t("sessionsView.selectAllOnPage")}

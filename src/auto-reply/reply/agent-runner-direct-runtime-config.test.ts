@@ -1,11 +1,16 @@
 // Tests direct runtime config overrides passed into agent runner execution.
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { createDeferred } from "../../../test/helpers/promise.js";
+import { createAdmittedRunOperatorAuthority } from "../../agents/admitted-run-context.js";
 import { OAuthRefreshFailureError } from "../../agents/auth-profiles/oauth-refresh-failure.js";
 import { FailoverError } from "../../agents/failover-error.js";
 import { SessionManager } from "../../agents/sessions/session-manager.js";
+import {
+  clearRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot,
+} from "../../config/runtime-snapshot.js";
 import {
   appendTranscriptMessage,
   loadSessionEntry,
@@ -16,6 +21,7 @@ import {
   clearMemoryPluginState,
   registerMemoryCapability,
 } from "../../plugins/memory-state.test-fixtures.js";
+import { createUserTurnTranscriptRecorder } from "../../sessions/user-turn-transcript.js";
 import { withTestDir } from "../../test-helpers/temp-dir.js";
 import { withReplyDispatcher } from "../dispatch-dispatcher.js";
 import { getReplyPayloadMetadata } from "../reply-payload.js";
@@ -387,9 +393,8 @@ describe("runReplyAgent runtime config", () => {
           }),
         );
         const onBlockReply = vi.fn();
-        replyParams.opts = { onBlockReply };
-        const replyOperation = createReplyOperation();
-        replyParams.replyOperation = replyOperation;
+        const onReplyOperationOwned = vi.fn<(operation: ReplyOperation) => void>();
+        replyParams.opts = { onBlockReply, onReplyOperationOwned };
         executeAgentTurnMock.mockImplementation(async () => {
           expect(SessionManager.open(scope).buildSessionContext().messages).toEqual(
             messages.map((message) => expect.objectContaining(message)),
@@ -404,7 +409,7 @@ describe("runReplyAgent runtime config", () => {
 
         expect(result).toEqual({ text: "main reply" });
         expect(followupRun.run.sessionId).toBe(sessionEntry.sessionId);
-        expect(replyOperation.sessionId).toBe(sessionEntry.sessionId);
+        expect(onReplyOperationOwned.mock.calls[0]?.[0].sessionId).toBe(sessionEntry.sessionId);
         expect(loadSessionEntry(scope)).toMatchObject({
           sessionId: sessionEntry.sessionId,
           lifecycleRevision: sessionEntry.lifecycleRevision,
@@ -453,7 +458,7 @@ describe("runReplyAgent runtime config", () => {
         followupRun.run.provider = "anthropic";
         followupRun.run.model = "claude-sonnet-4-6";
         const abort = new AbortController();
-        const operationAbort = new AbortController();
+        const onReplyOperationOwned = vi.fn<(operation: ReplyOperation) => void>();
         const lifecycle = {
           admission: "exclusive" as const,
           abortSignal: abort.signal,
@@ -464,16 +469,11 @@ describe("runReplyAgent runtime config", () => {
           onAbandoned: vi.fn(),
         };
         followupRun.turnAdoptionLifecycle = lifecycle;
-        replyParams.opts = { turnAdoptionLifecycle: lifecycle };
+        replyParams.opts = { turnAdoptionLifecycle: lifecycle, onReplyOperationOwned };
         replyParams.sessionKey = sessionKey;
         replyParams.sessionEntry = sessionEntry;
         replyParams.sessionStore = { [sessionKey]: sessionEntry };
         replyParams.storePath = storePath;
-        replyParams.replyOperation = createMockReplyOperation({
-          key: "test",
-          sessionId: "session-1",
-          abortSignal: operationAbort.signal,
-        }).replyOperation;
         resolveQueuedReplyExecutionConfigMock.mockResolvedValue(
           withTestModelContextTokens({
             cfg: {},
@@ -501,7 +501,11 @@ describe("runReplyAgent runtime config", () => {
           expect(lifecycle.onAdopted).not.toHaveBeenCalled();
           expect(lifecycle.onDeferredHeartbeat.mock.calls.length).toBeGreaterThanOrEqual(2);
           if (outcome === "abort" || outcome === "operation abort") {
-            (outcome === "abort" ? abort : operationAbort).abort();
+            if (outcome === "abort") {
+              abort.abort();
+            } else {
+              expect(onReplyOperationOwned.mock.calls[0]?.[0].abortByUser()).toBe(true);
+            }
             lifecycle.onDeferredHeartbeat.mockClear();
             await vi.advanceTimersByTimeAsync(500);
             expect(lifecycle.onDeferredHeartbeat).not.toHaveBeenCalled();
@@ -573,15 +577,15 @@ describe("runReplyAgent runtime config", () => {
           replyParams.sessionEntry = sessionEntry;
           replyParams.sessionStore = { [sessionKey]: sessionEntry };
           replyParams.storePath = storePath;
-          replyParams.replyOperation = createReplyOperation();
-          resolveQueuedReplyExecutionConfigMock.mockResolvedValue(
-            withTestModelContextTokens({
-              cfg: { agents: { defaults: { compaction: { memoryFlush: {} } } } },
-              followupRun,
-              defaultModel: replyParams.defaultModel,
-              contextTokens: 100_000,
-            }),
-          );
+          const cfg = withTestModelContextTokens({
+            cfg: { agents: { defaults: { compaction: { memoryFlush: {} } } } },
+            followupRun,
+            defaultModel: replyParams.defaultModel,
+            contextTokens: 100_000,
+          });
+          resolveQueuedReplyExecutionConfigMock.mockResolvedValue(cfg);
+          setRuntimeConfigSnapshot(cfg);
+          onTestFinished(() => clearRuntimeConfigSnapshot());
           const entered = createDeferred();
           const release = createDeferred();
           runEmbeddedAgentMock.mockImplementationOnce(async () => {
@@ -770,6 +774,78 @@ describe("runReplyAgent runtime config", () => {
       ],
     });
   });
+
+  it.each([
+    { source: "current", revokeDuring: undefined, kept: true },
+    { source: "revoked during preflight", revokeDuring: "preflight", kept: false },
+    { source: "revoked while the append awaits", revokeDuring: "persist", kept: false },
+    { source: "revoked original input", revokeDuring: "source", kept: false },
+  ] as const)(
+    "keeps the user turn after a failed required preflight only for a $source source",
+    async ({ revokeDuring, kept }) => {
+      await withTestDir({ prefix: "openclaw-preflight-user-turn-" }, async (tempDir) => {
+        const { replyParams, followupRun } = createDirectRuntimeReplyParams();
+        const sessionKey = "agent:main:telegram:default:direct:test";
+        const sessionEntry: SessionEntry = { sessionId: "session-1", updatedAt: 1 };
+        const storePath = join(tempDir, "sessions.json");
+        const scope = { agentId: "main", sessionId: sessionEntry.sessionId, sessionKey, storePath };
+        await replaceSessionEntry(scope, sessionEntry);
+        await appendTranscriptMessage(scope, { message: { role: "user", content: "earlier" } });
+        let revoked = false;
+        const input = {
+          text: "the turn that hit the failed preflight",
+          idempotencyKey: "source-1",
+        };
+        followupRun.userTurnTranscriptRecorder = createUserTurnTranscriptRecorder({
+          input,
+          assertOriginalInputCommit: () => {
+            if (revokeDuring === "source") {
+              throw new Error("original input source revoked");
+            }
+          },
+          // Message resolution is the first await inside persistApproved().
+          resolveInput: async () => {
+            revoked ||= revokeDuring === "persist";
+            return input;
+          },
+          target: { ...scope, sessionEntry, cwd: tempDir, config: {} },
+        });
+        followupRun.operatorAuthority = createAdmittedRunOperatorAuthority({
+          profileId: "linked-admin",
+          scopes: ["operator.admin"],
+          gatewayAccessGrant: null,
+          source: {},
+          assertCurrent: () => {
+            if (revoked) {
+              throw new Error("operator access revoked");
+            }
+          },
+        });
+        replyParams.sessionKey = sessionKey;
+        replyParams.storePath = storePath;
+        replyParams.sessionEntry = sessionEntry;
+        replyParams.sessionStore = { [sessionKey]: sessionEntry };
+        runSessionCompactionIfNeededMock.mockImplementation(async () => {
+          revoked = revokeDuring === "preflight";
+          throw new Error("Preflight compaction required but failed: summarization_failed");
+        });
+
+        const result = await runReplyAgent(replyParams);
+
+        expect(result).toMatchObject({ text: expect.stringContaining("couldn't shorten it") });
+        expect(executeAgentTurnMock).not.toHaveBeenCalled();
+        const failedTurn = expect.objectContaining({
+          role: "user",
+          content: "the turn that hit the failed preflight",
+          idempotencyKey: "source-1",
+        });
+        expect((await SessionManager.openAsync(scope)).buildSessionContext().messages).toEqual([
+          expect.objectContaining({ role: "user", content: "earlier" }),
+          ...(kept ? [failedTurn] : []),
+        ]);
+      });
+    },
+  );
 
   it("does not resolve secrets before the enqueue-followup queue path", async () => {
     const { followupRun, resolvedQueue, replyParams } = createDirectRuntimeReplyParams({

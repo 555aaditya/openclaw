@@ -7,11 +7,10 @@ import type {
 } from "../config/sessions/session-entry-read-runtime.types.js";
 import { resolveSessionStorePathForScope } from "../config/sessions/session-store-path.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { assertExistingDatabaseIdentity } from "../infra/sqlite-worker-identity.js";
 import { isIncognitoSessionKey } from "../routing/session-key.js";
 import { sessionChanges } from "../sessions/session-row-changes.js";
 import { getAsyncWorkSignal } from "../shared/async-work-scope.js";
-import { readUserProfileAliases } from "../state/user-profile-list.js";
+import { readResidentUserProfileAliases } from "../state/user-profile-list.js";
 import { readGatewayAccessRevision } from "./gateway-access-revision.js";
 import {
   authorizeCurrentOperatorRoleScopes,
@@ -63,7 +62,7 @@ export function prepareQuestionSharing(
   return prepareSessionSharing(
     { cfg, client },
     {
-      aliases: identity ? readUserProfileAliases(identity.id) : new Set(),
+      aliases: identity ? readResidentUserProfileAliases(identity.id) : new Set(),
       sessionCap: operatorSessionCap(client, cfg),
       isMember,
     },
@@ -225,6 +224,7 @@ export async function withPreparedQuestionSessionOwner<T>(
                 }
               : null;
             const assertCurrent = () => {
+              operation.assertCurrent();
               if (
                 !active ||
                 changed ||
@@ -234,10 +234,6 @@ export async function withPreparedQuestionSessionOwner<T>(
                 throw new Error("Question session preparation is no longer current");
               }
               read.assertCurrent();
-              const identity = read.result.databaseIdentity;
-              if (identity) {
-                assertExistingDatabaseIdentity(read.database.path, `file:${identity.identity}`);
-              }
               const currentCfg = context.getRuntimeConfig();
               if (
                 !selection.custody &&

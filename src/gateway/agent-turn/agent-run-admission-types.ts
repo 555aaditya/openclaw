@@ -74,6 +74,7 @@ export type PrepareAgentRunDispatchParams = {
     assertAdmissionCurrent?: () => void;
     hasCurrentClientAuthority?: () => boolean;
     promptedAt: number;
+    lifecycleStorePath: string;
     requestedSessionKey?: string;
     preAcceptedReservedSessionKey?: string;
     delivery: AgentDeliveryPhaseResult;

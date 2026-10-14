@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, expect, vi } from "vitest";
 import type { QuestionRequestQuestion } from "../../../packages/gateway-protocol/src/index.js";
+import {
+  clearRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot,
+} from "../../config/runtime-snapshot.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import {
   claimAgentRunDelegatedAuthority,
@@ -12,6 +16,7 @@ import {
 import type { ensureProfileForEmail } from "../../state/user-profiles.js";
 import { createTestGatewayScheduler } from "../../test-utils/gateway-scheduler-clock.js";
 import { createAgentRuntimeApprovalAuthorityValidator } from "../agent-runtime-approval-authority.js";
+import { prepareGatewayRecipientProfile } from "../expected-profile.js";
 import { QuestionManager } from "../question-manager.js";
 import type { GatewayBroadcastFn } from "../server-broadcast-types.js";
 import { createDirectChatContext } from "../server-chat.agent-events.test-helpers.js";
@@ -50,6 +55,7 @@ export function createQuestionTestPeer(
       updatedAt: profile.updatedAt,
     },
   };
+  prepareGatewayRecipientProfile(client);
   return { client, socket };
 }
 
@@ -66,6 +72,7 @@ export let reloadSecrets: ReturnType<typeof vi.fn<SecretStoreReload>>;
 
 export function installQuestionTestHooks(options?: { waitForRecovery?: () => Promise<void> }) {
   beforeEach(() => {
+    setRuntimeConfigSnapshot({});
     // Keep projection metadata alive independently of the exact admitted authority.
     registerAgentRunContext(requestParams.runId, {
       sessionKey: requestParams.sessionKey,
@@ -109,6 +116,7 @@ export function installQuestionTestHooks(options?: { waitForRecovery?: () => Pro
     clearAgentRunContext(requestParams.runId);
     manager.close();
     await manager.drain();
+    clearRuntimeConfigSnapshot();
     vi.restoreAllMocks();
     vi.useRealTimers();
   });

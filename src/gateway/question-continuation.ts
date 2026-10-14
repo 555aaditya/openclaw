@@ -21,14 +21,14 @@ import type { GatewayInstanceRuntime } from "./server-instance-runtime.types.js"
 import type { GatewayRequestContext } from "./server-methods/shared-types.js";
 import { createSyntheticPluginRuntimeClient } from "./server-plugin-runtime-client.js";
 
-export type QuestionCompletionOwed = {
+type QuestionCompletionOwed = {
   status: "completion_owed";
   questionId: string;
   runId: string;
   repair: () => Promise<void>;
 };
 
-export type QuestionTerminalOwed = {
+type QuestionTerminalOwed = {
   status: "terminal_owed";
   questionId: string;
   runId: string;

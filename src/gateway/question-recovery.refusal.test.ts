@@ -1,6 +1,7 @@
 import path from "node:path";
 import { expect, it, vi } from "vitest";
 import { discoverRestartRecoveryStoreTargets } from "../agents/main-session-recovery/main-session-restart-recovery-shared.js";
+import { setRuntimeConfigSnapshot } from "../config/runtime-snapshot.js";
 import { replaceSessionEntry } from "../config/sessions/session-accessor.js";
 import type { SessionStoreTarget } from "../config/sessions/targets-collision.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
@@ -15,6 +16,8 @@ import { createQuestionRecovery } from "./question-recovery.js";
 it("reports a refused configured recovery source while preserving its healthy sibling after preparation settles", async () => {
   await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
     const cfg: OpenClawConfig = { agents: { entries: { healthy: {}, refused: {} } } };
+    await state.writeConfig(cfg);
+    setRuntimeConfigSnapshot(cfg);
     for (const agentId of ["healthy", "refused"]) {
       await replaceSessionEntry(
         { agentId, env: state.env, sessionKey: `agent:${agentId}:main` },

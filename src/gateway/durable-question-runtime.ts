@@ -1,4 +1,4 @@
-import type { SessionAccessScope } from "../config/sessions/session-accessor.sqlite-contract.js";
+import type { SessionAccessScope } from "../config/sessions/session-accessor.types.js";
 import { matchesDurableQuestionDefinition } from "../config/sessions/session-questions-definition.js";
 import {
   readSessionQuestionCustody,

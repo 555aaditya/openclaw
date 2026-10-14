@@ -69,6 +69,12 @@ openclaw plugins update openclaw-codex-app-server --acknowledge-install-policy-w
 
 Updates apply to tracked plugin installs in the managed plugin index and tracked hook-pack installs in shared SQLite state. They reuse the source that the user already chose when installing the plugin, so they do not require a second source acknowledgement.
 
+Eligible official OpenClaw npm plugins follow the running host's release cohort
+when their recorded selector is bare, `latest`, or an older OpenClaw release.
+This applies to named updates and `--all`, so recovering a stale plugin uses the
+same target as `openclaw update` and `openclaw update repair`. An explicit version
+or tag supplied in the current command still takes precedence.
+
 Supply multiple IDs or npm specs to update a selection, or use `--all` without
 IDs. Repeated targets and sibling plugin IDs update their package once. An
 explicit npm spec overrides an ID-only selection of the same package; two
@@ -183,7 +189,15 @@ Detailed readiness exposes the pending reload; an explicit wait has no drain
 deadline. Incoming messages retain their channel's existing queue and replay
 contract; this option does not add durable ingress to channels that lack it.
 Run this maintenance command outside a turn that itself holds the target plugin:
-waiting for that turn while it waits for reload cannot make progress.
+waiting for that turn while it waits for reload cannot make progress. Agents can
+use the `plugins` tool with `action: "reloadAndResume"` and `pluginId` instead.
+This explicit handoff ends the active turn (not the conversation), lets normal
+cleanup release its plugin leases, then runs the ordinary authorized reload and
+wakes the same session with the result, including failures and cleanup warnings.
+It requires a Gateway-hosted conversation with turn-yield support. Stop cancels
+a pending handoff; it never force-releases leases or rolls back a committed reload.
+The handoff is process-local: if the Gateway exits before delivery, inspect the
+plugin state before retrying. Plain CLI reloads are not intercepted or deferred.
 
 Replacement requires the previous registration's resource cleanup to finish
 before its successor acquires those resources. Failed cleanup can prevent

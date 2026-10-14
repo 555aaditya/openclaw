@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, expect, it, vi } from "vitest";
+import { isPostgresSqlConnection } from "../infra/sql-connection.js";
 import { corruptSqliteIndexKey } from "../infra/sqlite-index-corruption.test-support.js";
 import { migrateLegacyMediaPersistence } from "../infra/state-migrations.media-persistence.js";
 import { captureUpdateRecoveryBaseline } from "../infra/update-recovery-baseline-capture.js";
@@ -163,8 +164,10 @@ it("binds semantic preservation to original backups across a partial migration a
     try {
       await maintenance!.run(async () => {
         const scope = getOpenClawDatabaseMaintenanceScope()!;
-        const capture = (runId: string) =>
-          captureUpdateRecoveryBaseline({
+        const capture = async (runId: string) => {
+          // Registry assertions reopen this handle; drain its WAL maintenance before raw capture.
+          await closeOpenClawStateDatabaseAsync();
+          return captureUpdateRecoveryBaseline({
             runId,
             installRoot: process.cwd(),
             env: state.env,
@@ -172,6 +175,7 @@ it("binds semantic preservation to original backups across a partial migration a
             assertCurrent: scope.assertAdmission,
             acquisition: { mode: "maintenance-owner" },
           });
+        };
         await backupDoctorMigrationDatabases({
           env: state.env,
           pendingDatabasePaths: [external],
@@ -231,7 +235,7 @@ it("binds semantic preservation to original backups across a partial migration a
         expect(registryVersions()).toEqual([24, OPENCLAW_AGENT_SCHEMA_VERSION]);
         openOpenClawStateDatabase()
           .db.prepare(
-            "UPDATE agent_databases SET schema_version = 25 WHERE agent_id = ? AND schema_version = ?",
+            "UPDATE agent_databases SET schema_version = 27 WHERE agent_id = ? AND schema_version = ?",
           )
           .run("external", OPENCLAW_AGENT_SCHEMA_VERSION);
         const staleRegistration = (await capture("witness-stale-registration")).ref;
@@ -240,10 +244,13 @@ it("binds semantic preservation to original backups across a partial migration a
         ).rejects.toThrow(/Registry schema version/u);
         openOpenClawStateDatabase()
           .db.prepare(
-            "UPDATE agent_databases SET schema_version = ? WHERE agent_id = ? AND schema_version = 25",
+            "UPDATE agent_databases SET schema_version = ? WHERE agent_id = ? AND schema_version = 27",
           )
           .run(OPENCLAW_AGENT_SCHEMA_VERSION, "external");
         const admittedState = openOpenClawStateDatabase();
+        if (isPostgresSqlConnection(admittedState.db)) {
+          throw new Error("This registry witness fixture requires its native SQLite source.");
+        }
         const registryWitness = captureOpenClawMigrationWitness(
           admittedState.db,
           { role: "global" },
@@ -254,7 +261,7 @@ it("binds semantic preservation to original backups across a partial migration a
                 agentId: "external",
                 path: external,
                 requireRegistration: true,
-                expectedSchemaVersion: 26,
+                expectedSchemaVersion: OPENCLAW_AGENT_SCHEMA_VERSION,
               },
             ],
             phase: "candidate",

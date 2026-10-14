@@ -106,7 +106,7 @@ export async function inspectDoctorMigrationPreservation(params: {
         agentId: string;
         path: string;
         requireRegistration: boolean;
-        expectedSchemaVersion: 25 | 26;
+        expectedSchemaVersion: 25 | 26 | 27 | 28;
       }[] = [];
       for (const entry of original.entries) {
         const owner = originalOwners.get(entry.sourcePath);
@@ -121,12 +121,18 @@ export async function inspectDoctorMigrationPreservation(params: {
         const afterWitness = readWitness(params.candidate, after, owner);
         assertOpenClawMigrationWitnessPreserved(beforeWitness, afterWitness);
         agentPairs.set(entry.sourcePath, { before: beforeWitness, after: afterWitness });
-        if ([25, 26].includes(afterWitness.schemaVersion)) {
+        const expectedSchemaVersion = afterWitness.schemaVersion;
+        if (
+          expectedSchemaVersion === 25 ||
+          expectedSchemaVersion === 26 ||
+          expectedSchemaVersion === 27 ||
+          expectedSchemaVersion === 28
+        ) {
           migratingAgents.push({
             agentId: owner.agentId,
             path: owner.path,
             requireRegistration: beforeWitness.schemaVersion < afterWitness.schemaVersion,
-            expectedSchemaVersion: afterWitness.schemaVersion === 25 ? 25 : 26,
+            expectedSchemaVersion,
           });
         }
       }

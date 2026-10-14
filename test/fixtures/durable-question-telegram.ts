@@ -125,7 +125,7 @@ export async function createDurableQuestionTelegram(signal: AbortSignal) {
     close: async () => {
       listener.listener.closeAllConnections();
       await listener.releaseListener();
-      listener.claim.release();
+      await listener.claim.release();
     },
   };
 }

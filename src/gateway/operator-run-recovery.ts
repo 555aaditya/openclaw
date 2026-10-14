@@ -10,7 +10,6 @@ import type { DurableQuestion } from "../config/sessions/session-questions.types
 import type { InternalSessionEntry } from "../config/sessions/types.js";
 import { getAgentEventLifecycleGeneration } from "../infra/agent-events.js";
 import { isPairedDeviceTokenIdentityCurrent } from "../infra/device-pairing-identity.js";
-import { capturePublishedOperatorDeviceSource } from "../infra/device-pairing-publication.js";
 import { loadPairedDevicePairingStoreRecordReadOnly } from "../infra/device-pairing-store-readonly.js";
 import { onSessionIdentityMutation } from "../sessions/session-lifecycle-events.js";
 import { onUserProfilesChanged } from "../state/user-profile-events.js";
@@ -196,7 +195,6 @@ async function restoreGatewayDurableOperatorRecovery(params: {
       assertClaim(entry);
     }
     const snapshot = source.snapshot;
-    let pairingSource: ReturnType<typeof capturePublishedOperatorDeviceSource> | undefined;
     const generationOwner = context.sharedGatewaySessionGenerationState;
     if (snapshot.sharedGeneration !== undefined) {
       if (!generationOwner || generationOwner.requiredGeneration !== snapshot.sharedGeneration) {
@@ -218,7 +216,6 @@ async function restoreGatewayDurableOperatorRecovery(params: {
     }
     const assertSourcePolicy = () => {
       assertOwner();
-      pairingSource?.assertCurrent();
       const cfg = getConfig();
       const role = resolveOperatorRolePolicyForAssignment(
         snapshot.profileId,
@@ -261,33 +258,38 @@ async function restoreGatewayDurableOperatorRecovery(params: {
     assertSourcePolicy();
     identity = await prepareUserProfileIdentity(snapshot.profileId);
     const profileIdentity = identity;
+    let githubAccountIds: readonly number[] | undefined;
     const assertFacts = () => {
       const cfg = assertSourcePolicy();
       const profile = profileIdentity.readCurrentFacts(snapshot.aliasBindingIds).profile;
       if (
         profile.profileId !== snapshot.profileId ||
         profile.assignedRole !== snapshot.assignedRole ||
-        (profile.githubLogin ?? null) !== snapshot.githubLogin
+        (profile.githubLogin ?? null) !== snapshot.githubLogin ||
+        githubAccountIds?.some((accountId) => !profile.githubAccountIds?.includes(accountId))
       ) {
         throw new Error("Restart recovery operator identity changed.");
       }
+      githubAccountIds ??= profile.githubAccountIds ?? [];
       return { cfg, profile };
     };
     let accessAuthority: ReturnType<typeof resumeGatewayOperatorAccessGrant>;
     assertPolicy = () => {
       try {
         const { profile, cfg } = assertFacts();
-        const access = resumeGatewayOperatorAccessGrant(profile, cfg, snapshot.grant);
+        const access = resumeGatewayOperatorAccessGrant(
+          profile,
+          cfg,
+          snapshot.grant,
+          accessAuthority,
+        );
         if (access && !accessAuthority) {
           accessAuthority = access;
           const onAbort = () => revoke(access.signal.reason);
           access.signal.addEventListener("abort", onAbort, { once: true });
           subscriptions.push(() => access.signal.removeEventListener("abort", onAbort));
         }
-        // Retain the first exact resumed owner before recovery yields. Later
-        // policy checks cannot replace a revoked source with a fresh authority.
-        accessAuthority?.signal.throwIfAborted();
-        accessAuthority?.assertCurrent();
+        // The grant assertion can synchronously abort its signal.
         accessAuthority?.signal.throwIfAborted();
         // A policy callback can change committed identity/config synchronously.
         return assertFacts().cfg;
@@ -306,12 +308,6 @@ async function restoreGatewayDurableOperatorRecovery(params: {
         revoke();
       }
       assertPolicy();
-      pairingSource = capturePublishedOperatorDeviceSource(
-        snapshot.device,
-        snapshot.scopes,
-        revoke,
-      );
-      subscriptions.push(pairingSource.release);
     }
     assertPolicy();
     if (params.questionId && params.expectedQuestion) {

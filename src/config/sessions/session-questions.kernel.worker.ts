@@ -10,9 +10,14 @@ import { getAdmittedSqliteSchemaFacts } from "../../infra/sqlite-schema-facts.js
 import type { OpenClawAgentReadOnlyDatabase } from "../../state/openclaw-agent-db-readonly.js";
 import type { DB } from "../../state/openclaw-agent-db.generated.js";
 import type { OpenClawAgentDatabase } from "../../state/openclaw-agent-db.js";
-import { readSessionEntryRow } from "./session-accessor.sqlite-entry-read.js";
+import {
+  readSessionEntryRow,
+  readExactSessionEntryRow,
+} from "./session-accessor.sqlite-entry-read.js";
+import { captureSessionEntrySnapshot } from "./session-accessor.sqlite-entry-snapshot.js";
 import { writeSessionEntry } from "./session-accessor.sqlite-entry-store.js";
 import { captureSessionEntryReadSource } from "./session-entry-read-source.js";
+import type { SessionEntryWritePostimages } from "./session-entry-write-postimage.js";
 import { hasQuestionOwnerNativeReference } from "./session-question-recovery-owner.js";
 import { SessionQuestionCustodyRetiredError } from "./session-questions-custody-error.js";
 import { matchesDurableQuestionDefinition } from "./session-questions-definition.js";
@@ -188,6 +193,7 @@ function assertQuestionGeneration(database: OpenClawAgentDatabase, question: Dur
 export function operateSessionQuestion(
   database: OpenClawAgentDatabase,
   input: SessionQuestionOperation,
+  postimages: SessionEntryWritePostimages,
 ): SessionQuestionResult {
   const query = questionKysely(database);
   if (input.kind === "register") {
@@ -356,7 +362,7 @@ export function operateSessionQuestion(
         continuation_reason: null,
       }),
     );
-    recordQuestionOwner(database, question);
+    recordQuestionOwner(database, question, postimages);
     return question;
   }
   if (!current) {
@@ -453,18 +459,24 @@ export function operateSessionQuestion(
   }
   const result = readQuestion(database, id);
   if (input.kind === "claim" && result) {
-    recordQuestionOwner(database, result);
+    recordQuestionOwner(database, result, postimages);
   }
   return result;
 }
 
 /** This marker remains bounded when the separate terminal question receipt expires. */
-function recordQuestionOwner(database: OpenClawAgentDatabase, question: DurableQuestion): void {
-  const fresh = readSessionEntryRow(database, question.sessionKey)?.entry;
+function recordQuestionOwner(
+  database: OpenClawAgentDatabase,
+  question: DurableQuestion,
+  postimages: SessionEntryWritePostimages,
+): void {
+  const selected = readExactSessionEntryRow(database, question.sessionKey, "full", undefined, true);
+  const fresh = selected?.entry;
   assertQuestionGeneration(database, question);
-  if (!fresh) {
+  if (!fresh || !selected) {
     throw new Error("Question lost its current session before ownership publication.");
   }
+  const facts = captureSessionEntrySnapshot(selected);
   const owners = (fresh.durableQuestionOwners ?? []).filter((owner) => {
     if (owner.questionId === question.record.id || hasQuestionOwnerNativeReference(fresh, owner)) {
       return true;
@@ -508,7 +520,14 @@ function recordQuestionOwner(database: OpenClawAgentDatabase, question: DurableQ
         owner,
       ],
     },
-    { canonicalPreviousEntry: fresh, questionOwnerMutation: true },
+    {
+      canonicalPreviousEntry: fresh,
+      canonicalPreviousRow: selected.row,
+      canonicalPreviousWindow: facts.window,
+      canonicalPreviousSideTables: facts.sideTables,
+      postimages,
+      questionOwnerMutation: true,
+    },
   );
 }
 

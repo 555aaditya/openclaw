@@ -1,13 +1,6 @@
 import { isMainThread } from "node:worker_threads";
+import type { DurableQuestionRecoveryOwner } from "./session-question-recovery-owner.types.js";
 import type { InternalSessionEntry, InternalSessionEntry as SessionEntry } from "./types.js";
-
-export type DurableQuestionRecoveryOwner = {
-  questionId: string;
-  sourceRunId: string;
-  continuationRunId?: string;
-  sessionId: string;
-  lifecycleRevision: string;
-};
 
 /** A retained native reference must never lose its question exclusion proof. */
 export function hasQuestionOwnerNativeReference(
