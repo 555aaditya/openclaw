@@ -394,7 +394,7 @@ suite.define(() => {
           });
           const failure = await installChunkFailure(
             page,
-            controlUiE2eBuiltModuleRequest("ui/src/components/command-palette.ts"),
+            controlUiE2eBuiltModuleRequest("ui/src/components/command-palette.tsx"),
             { manualProbe },
           );
           await installMockGateway(page);
@@ -511,7 +511,7 @@ suite.define(() => {
       }
       const failure = await installChunkFailure(
         page,
-        controlUiE2eBuiltModuleRequest("ui/src/components/command-palette.ts"),
+        controlUiE2eBuiltModuleRequest("ui/src/components/command-palette.tsx"),
       );
       await installMockGateway(page);
       await page.goto(`${suite.server.baseUrl}chat`);

@@ -35,6 +35,7 @@ export const databaseWorkerCoreTestFiles = [
   "src/agents/interrupted-input-context.integration.test.ts",
   // Physical admission and descriptor custody belong to the application host, not an unhosted test Worker.
   "src/infra/database-engine/physical-facts.test.ts",
+  "src/state/openclaw-state-db.postgres.test.ts",
   "src/infra/postgres-sync/locks.test.ts",
   "src/acp/runtime/session-meta-read.cache.test.ts",
   "src/state/user-profile-catalog-identity.read.test.ts",
@@ -237,6 +238,8 @@ export const databaseWorkerCoreTestFiles = [
   "src/agents/sandbox/runtime-status.session-override.test.ts",
   "src/auto-reply/reply/agent-runner-steer-adoption.worker.test.ts",
   "src/auto-reply/reply/followup-turn-execution.steering.test.ts",
+  "src/auto-reply/reply/followup-turn-admission.test.ts",
+  "src/auto-reply/reply/queue.personal-bootstrap-overflow.test.ts",
   "src/auto-reply/reply/queue.authority.test.ts",
   "src/auto-reply/reply/queue.collect.test.ts",
   "src/auto-reply/reply/reply-run-registry.preparation.test.ts",
