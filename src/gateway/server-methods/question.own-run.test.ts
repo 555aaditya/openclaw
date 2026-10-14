@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../test/helpers/promise.js";
 import {
@@ -67,6 +68,122 @@ async function withOwnRunQuestion(
 }
 
 describe("durable post-commit registration", () => {
+  it.each([
+    ["get", "definition"],
+    ["list", "definition"],
+    ["get", "timestamps"],
+    ["list", "timestamps"],
+  ] as const)(
+    "rejects a same-binding recycled ID through %s when its %s changes",
+    async (method, changed) => {
+      await withOpenClawTestState({ scenario: "minimal" }, async () => {
+        const f = await createOwnRunFixture(true);
+        try {
+          const registered = await f.call(
+            "question.request",
+            { ...requestParams, timeoutMs: 900_000, durable: true },
+            f.runtime,
+          );
+          expect(registered[0], JSON.stringify(registered[2])).toBe(true);
+          const id = (registered[1] as { id: string }).id;
+          const observation = manager.observe(id)!;
+          const scope = { ...sessionScope, assertCurrent() {} };
+          const original = await questionStorage.executeSessionQuestionOperation(scope, {
+            kind: "get",
+            id,
+          });
+          if (!original || Array.isArray(original)) {
+            throw new Error("Expected original canonical custody");
+          }
+          const capturedScope = { ...scope, storePath: original.sessionBinding.storePath };
+          await questionStorage.executeSessionQuestionOperation(capturedScope, {
+            kind: "settle",
+            id,
+            expectedQuestion: original,
+            outcome: { id, status: "cancelled" },
+            resolutionId: "original-terminal",
+          });
+          await questionStorage.executeSessionQuestionOperation(capturedScope, {
+            kind: "block",
+            id,
+            expectedQuestion: original,
+            reason: "Original native continuation is terminal",
+          });
+          await closeOpenClawAgentDatabaseByPathAsync(original.sessionBinding.databasePath);
+          const terminal = new DatabaseSync(original.sessionBinding.databasePath);
+          try {
+            // Advance only this canonical fixture's retention deadline. The native
+            // registration transaction below owns pruning and reusing its ID.
+            terminal
+              .prepare("UPDATE session_questions SET terminal_at = ? WHERE question_id = ?")
+              .run(Date.now() - 24 * 60 * 60 * 1000 - 1, id);
+          } finally {
+            terminal.close();
+          }
+          expect(observation.isCurrent()).toBe(true);
+          const successor = structuredClone(original);
+          if (changed === "definition") {
+            successor.record.questions[0]!.question = "Successor-only question";
+          } else {
+            successor.record.createdAtMs += 1;
+            successor.record.expiresAtMs += 1;
+          }
+          expect(successor.sessionBinding).toEqual(original.sessionBinding);
+          expect(
+            await questionStorage.executeSessionQuestionOperation(capturedScope, {
+              kind: "register",
+              question: successor,
+            }),
+          ).toEqual(successor);
+          await questionStorage.executeSessionQuestionOperation(capturedScope, {
+            kind: "settle",
+            id,
+            expectedQuestion: successor,
+            outcome: {
+              id,
+              status: "answered",
+              answers: { answers: { destination: ["Successor"] } },
+            },
+            resolutionId: "successor-answer",
+          });
+          expect(observation.isCurrent()).toBe(true);
+          const broad = { cfg: f.cfg, client: adminRequestClient };
+          const result = await callQuestionRpc(
+            method === "get" ? "question.get" : "question.list",
+            method === "get" ? { id, includeContinuation: true } : { includeContinuation: true },
+            broad,
+          );
+          if (method === "get") {
+            expect(result).toMatchObject([
+              false,
+              undefined,
+              { details: { reason: "QUESTION_NOT_FOUND" } },
+            ]);
+          } else {
+            expect(result[0]).toBe(true);
+            expect(result[1]).toMatchObject({ questions: [] });
+          }
+          expect(observation.isCurrent()).toBe(false);
+          expect(
+            await questionStorage.executeSessionQuestionOperation(capturedScope, {
+              kind: "get",
+              id,
+            }),
+          ).toMatchObject({
+            record: {
+              ...successor.record,
+              status: "answered",
+              answers: { answers: { destination: ["Successor"] } },
+            },
+            resolutionId: "successor-answer",
+          });
+        } finally {
+          await f.close();
+        }
+      });
+    },
+  );
+
   it("retains committed custody when the original caller retires before publication", async () => {
     await withOpenClawTestState({ scenario: "minimal" }, async () => {
       const f = await createOwnRunFixture(true);

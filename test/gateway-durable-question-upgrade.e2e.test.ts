@@ -210,7 +210,8 @@ it.skipIf(!stableRoot)(
         expect(doctor.code).toBe(0);
         const migrated = await inspectUpgradeDatabases(instance.state.stateDir);
         const migratedAgent = migrated.find((row) => row.cacheCount !== undefined);
-        expect(migratedAgent?.version).toBe(27);
+        expect(migratedAgent?.version).toBe(28);
+        expect(migratedAgent).toMatchObject({ hasQuestions: true, hasOutboxSequence: true });
         expect(migratedAgent?.cacheDigest).toBe(baselineAgent?.cacheDigest);
         expect(migrated.some((row) => row.version === 22)).toBe(true);
         trace("candidate-doctor", {
