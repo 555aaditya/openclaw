@@ -117,6 +117,22 @@ test("introduces itself once when Telegram reports joining an allowed supergroup
   const pendingPolls = new Set<ServerResponse>();
   let groundedModelResponses = 0;
   let mock: Awaited<ReturnType<typeof startQaMockOpenAiServer>> | undefined;
+  let providerRequests = 0;
+  const phaseStartedAt = performance.now();
+  const recordPhase = (phase: string) => {
+    console.log(
+      `TELEGRAM_PHASE ${JSON.stringify({
+        case: "join-intro",
+        phase,
+        elapsedMs: Math.round(performance.now() - phaseStartedAt),
+        providerRequests,
+        groundedModelResponses,
+        telegramSends: telegramCalls.filter((call) => call.method === "sendMessage").length,
+        pendingPolls: pendingPolls.size,
+      })}`,
+    );
+  };
+  recordPhase("case-start");
 
   const queueUpdate = (update: unknown) => {
     const pendingPoll = pendingPolls.values().next().value;
@@ -176,6 +192,10 @@ test("introduces itself once when Telegram reports joining an allowed supergroup
   const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     const pathname = new URL(req.url ?? "/", "http://127.0.0.1").pathname;
     if (pathname.startsWith("/v1/")) {
+      providerRequests += 1;
+      if (providerRequests === 1) {
+        recordPhase("first-provider-request");
+      }
       await proxyProviderRequest(req, res, pathname);
       return;
     }
@@ -217,6 +237,9 @@ test("introduces itself once when Telegram reports joining an allowed supergroup
       return;
     }
     if (method === "sendMessage") {
+      if (telegramCalls.filter((call) => call.method === "sendMessage").length === 1) {
+        recordPhase("first-telegram-send");
+      }
       succeed(res, {
         message_id: 9001,
         date: 1_754_000_000,
@@ -243,8 +266,10 @@ test("introduces itself once when Telegram reports joining an allowed supergroup
         try {
           const repoRoot = path.resolve(import.meta.dirname, "../../../..");
           mock = await startQaMockOpenAiServer();
+          recordPhase("acquisition-start");
           gateway = await gatewayOwner.start({
             repoRoot,
+            onListening: () => recordPhase("gateway-listening"),
             command: createQaPreparedRepoCliCommand(repoRoot),
             providerBaseUrl: `${apiRoot}/v1`,
             mockSessionObserverUrl: mock.sessionObserverUrl,
@@ -286,6 +311,7 @@ test("introduces itself once when Telegram reports joining an allowed supergroup
               return cfg;
             },
           });
+          recordPhase("startup-returned");
 
           queueUpdate(joinUpdate());
           await expect
@@ -346,12 +372,18 @@ test("introduces itself once when Telegram reports joining an allowed supergroup
           expect(introRequest?.allInputText).toEqual(
             expect.stringContaining(UNAVAILABLE_HISTORY_FACT),
           );
+          recordPhase("assertions-complete");
         } finally {
+          recordPhase("cleanup-start");
           await settleCleanup(
-            async () => await stopQaGatewayFixture(gatewayOwner),
+            async () => {
+              await stopQaGatewayFixture(gatewayOwner);
+              recordPhase("gateway-stopped");
+            },
             async () => await mock?.stop(),
           );
         }
       }),
   );
+  recordPhase("cleanup-complete");
 }, 120_000);

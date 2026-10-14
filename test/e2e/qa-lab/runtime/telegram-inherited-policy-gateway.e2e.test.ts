@@ -43,6 +43,20 @@ test.each(["allowlist", "open"] as const)(
     const telegramCalls: TelegramCall[] = [];
     const pendingUpdates: unknown[] = [];
     const pendingPolls = new Set<ServerResponse>();
+    const phaseStartedAt = performance.now();
+    const recordPhase = (phase: string) => {
+      console.log(
+        `TELEGRAM_PHASE ${JSON.stringify({
+          case: "inherited-policy",
+          groupPolicy,
+          phase,
+          elapsedMs: Math.round(performance.now() - phaseStartedAt),
+          telegramSends: telegramCalls.filter((call) => call.method === "sendMessage").length,
+          pendingPolls: pendingPolls.size,
+        })}`,
+      );
+    };
+    recordPhase("case-start");
     const bot = { id: BOT_ID, is_bot: true, first_name: "QA Policy", username: "qa_policy_bot" };
     const chat = { id: CHAT_ID, type: "supergroup", title: "QA Policy Room", is_forum: false };
     let updateId = 0;
@@ -85,6 +99,9 @@ test.each(["allowlist", "open"] as const)(
       } else if (method === "getChat") {
         succeed(res, chat);
       } else if (method === "sendMessage") {
+        if (telegramCalls.filter((call) => call.method === "sendMessage").length === 1) {
+          recordPhase("first-telegram-send");
+        }
         succeed(res, {
           message_id: 9000 + telegramCalls.length,
           date: Math.floor(Date.now() / 1000),
@@ -138,8 +155,10 @@ test.each(["allowlist", "open"] as const)(
           };
           const deliveries = () => telegramCalls.filter((call) => call.method === "sendMessage");
           try {
+            recordPhase("acquisition-start");
             gateway = await gatewayOwner.start({
               repoRoot,
+              onListening: () => recordPhase("gateway-listening"),
               command: {
                 executablePath: process.execPath,
                 argsPrefix: [
@@ -196,6 +215,7 @@ test.each(["allowlist", "open"] as const)(
                 return cfg;
               },
             });
+            recordPhase("startup-returned");
             evidence.gatewayPort = new URL(gateway.baseUrl).port;
             expect(evidence.gatewayPort).not.toBe("18789");
             await expect.poll(() => pendingPolls.size, { timeout: 30_000 }).toBeGreaterThan(0);
@@ -247,7 +267,9 @@ test.each(["allowlist", "open"] as const)(
               text: REPLY_MARKER,
             };
             evidence.passed = true;
+            recordPhase("assertions-complete");
           } finally {
+            recordPhase("cleanup-start");
             const outputDir = path.join(
               repoRoot,
               ".artifacts/qa-e2e/telegram-inherited-policy",
@@ -283,6 +305,7 @@ test.each(["allowlist", "open"] as const)(
                 await stopQaGatewayFixture(gatewayOwner, {
                   preserveToDir: path.join(outputDir, "gateway"),
                 });
+                recordPhase("gateway-stopped");
               } finally {
                 await mock.stop();
               }
@@ -290,6 +313,7 @@ test.each(["allowlist", "open"] as const)(
           }
         }),
     );
+    recordPhase("cleanup-complete");
   },
   180_000,
 );

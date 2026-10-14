@@ -36,6 +36,21 @@ test("visibly settles a message-tool-only Telegram turn after a provider failure
   const providerBodies: JsonObject[] = [];
   let providerRequests = 0;
   let updateDelivered = false;
+  const phaseStartedAt = performance.now();
+  const recordPhase = (phase: string) => {
+    console.log(
+      `TELEGRAM_PHASE ${JSON.stringify({
+        case: "failure-settlement",
+        phase,
+        elapsedMs: Math.round(performance.now() - phaseStartedAt),
+        providerRequests,
+        modelRequests: providerBodies.length,
+        telegramSends: telegramSends.length,
+        pendingPolls: pendingPolls.size,
+      })}`,
+    );
+  };
+  recordPhase("case-start");
 
   const update = {
     update_id: 1,
@@ -52,6 +67,9 @@ test("visibly settles a message-tool-only Telegram turn after a provider failure
     const pathname = new URL(req.url ?? "/", "http://127.0.0.1").pathname;
     if (pathname.startsWith("/v1/")) {
       providerRequests += 1;
+      if (providerRequests === 1) {
+        recordPhase("first-provider-request");
+      }
       const body = await readRequest(req);
       const isModelRequest = pathname === "/v1/responses";
       if (isModelRequest) {
@@ -93,6 +111,9 @@ test("visibly settles a message-tool-only Telegram turn after a provider failure
     }
     if (method === "sendMessage") {
       telegramSends.push(body);
+      if (telegramSends.length === 1) {
+        recordPhase("first-telegram-send");
+      }
       succeed(res, {
         message_id: 10_000 + telegramSends.length,
         date: 1_754_000_000,
@@ -115,8 +136,10 @@ test("visibly settles a message-tool-only Telegram turn after a provider failure
         const gatewayOwner = createQaGatewayChild();
         try {
           const repoRoot = path.resolve(import.meta.dirname, "../../../..");
+          recordPhase("acquisition-start");
           const gateway = await gatewayOwner.start({
             repoRoot,
+            onListening: () => recordPhase("gateway-listening"),
             command: createQaPreparedRepoCliCommand(repoRoot),
             providerBaseUrl: `${apiRoot}/v1`,
             transportBaseUrl: apiRoot,
@@ -167,6 +190,7 @@ test("visibly settles a message-tool-only Telegram turn after a provider failure
               return cfg;
             },
           });
+          recordPhase("startup-returned");
 
           await expect
             .poll(
@@ -192,12 +216,16 @@ test("visibly settles a message-tool-only Telegram turn after a provider failure
           const publicReplies = telegramSends.map((send) => send.text).join("\n");
           expect(publicReplies).not.toContain(RAW_ERROR_DETAIL);
           expect(publicReplies).not.toContain(RAW_ERROR_CANARY);
+          recordPhase("assertions-complete");
         } finally {
+          recordPhase("cleanup-start");
           await stopQaGatewayFixture(gatewayOwner);
+          recordPhase("gateway-stopped");
           for (const poll of pendingPolls) {
             poll.destroy();
           }
         }
       }),
   );
+  recordPhase("cleanup-complete");
 }, 120_000);
