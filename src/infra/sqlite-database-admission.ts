@@ -110,7 +110,6 @@ const scopedWrites = createSqliteDatabaseWriteReceipts({
   readRevision: readSqliteDatabaseWriteRevision,
   writer: (database) => state.dataWriters.get(database),
   suspended: (database) => state.suspended.has(database),
-  exchange,
   publish(record) {
     state.registry.publish(record);
     exchange(record);
@@ -122,6 +121,7 @@ export const {
   withoutSqliteDatabaseWriteScope,
   readSqliteDatabaseScopedWriteToken,
   readSqliteDatabaseScopedWriteTokenForPath,
+  readSqliteDatabaseScopedWriteTokensForPath,
   readSqliteDatabasePendingScopedWriteToken,
   readSqliteDatabaseWriteTokenForPath,
   readSqliteDatabasePendingWriteToken,

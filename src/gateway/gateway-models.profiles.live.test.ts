@@ -82,7 +82,6 @@ import {
 } from "../config/sessions/transcript-write-context.js";
 import type { ModelsConfig, ModelProviderConfig, OpenClawConfig } from "../config/types.js";
 import { OpenClawSchema } from "../config/zod-schema.js";
-import { ModelCompatSchema } from "../config/zod-schema.model-compat.js";
 import {
   captureAgentRunLifecycleGeneration,
   withAgentRunLifecycleGeneration,
@@ -132,6 +131,7 @@ import { cleanupSessionStateForTest } from "../test-utils/session-state-cleanup.
 import { GATEWAY_CLIENT_MODES, GATEWAY_CLIENT_NAMES } from "../utils/message-channel.js";
 import { GatewayClient } from "./client.js";
 import { enterIsolatedGatewayLiveDiscoveryState } from "./gateway-models.profiles.live.discovery.test-helpers.js";
+import { toLiveModelConfig } from "./gateway-models.profiles.live.model-config.test-helpers.js";
 import {
   createExplicitLiveFallbackModel,
   createGatewayLiveTestModel,
@@ -203,8 +203,6 @@ const GATEWAY_LIVE_CONFIG_TEST_AGENT_DIR = path.join(
 const GATEWAY_LIVE_EXEC_READ_NONCE_MISS_SKIP_MODEL_KEYS = new Set([
   "fireworks/accounts/fireworks/models/glm-5",
   "fireworks/accounts/fireworks/models/kimi-k2p5",
-  "fireworks/accounts/fireworks/models/kimi-k2p6",
-  "fireworks/accounts/fireworks/routers/kimi-k2p6-turbo",
   "google/gemini-3.1-flash-lite",
 ]);
 const GATEWAY_LIVE_TOOL_NONCE_MISS_SKIP_MODEL_KEYS = new Set([
@@ -975,14 +973,6 @@ describe("shouldSkipExecReadNonceMissForLiveModel", () => {
     expect(
       shouldSkipExecReadNonceMissForLiveModel("fireworks/accounts/fireworks/models/kimi-k2p5"),
     ).toBe(true);
-    expect(
-      shouldSkipExecReadNonceMissForLiveModel("fireworks/accounts/fireworks/models/kimi-k2p6"),
-    ).toBe(true);
-    expect(
-      shouldSkipExecReadNonceMissForLiveModel(
-        "fireworks/accounts/fireworks/routers/kimi-k2p6-turbo",
-      ),
-    ).toBe(true);
   });
 });
 
@@ -1685,7 +1675,6 @@ describe("providerScopedModelRegistryProviders", () => {
     ).toEqual([
       { provider: "openrouter", id: "openai/gpt-5.2-chat" },
       { provider: "openrouter", id: "minimax/minimax-m2.7" },
-      { provider: "openrouter", id: "ai21/jamba-large-1.7" },
     ]);
     expect(
       resolvePrioritizedGatewayLiveModelRefs({
@@ -5223,45 +5212,6 @@ async function loadAuthBackedLiveModelRegistry(params: {
     "[all-models] load model registry",
   );
   return { authProfileStore, authStorage, modelRegistry, all };
-}
-
-function toLiveModelConfig(model: Model): NonNullable<ModelProviderConfig["models"]>[number] {
-  return {
-    id: model.id,
-    name: model.name,
-    api: model.api as ModelProviderConfig["api"],
-    baseUrl: model.baseUrl,
-    input: model.input ?? ["text"],
-    reasoning: model.reasoning,
-    ...(model.thinkingLevelMap ? { thinkingLevelMap: model.thinkingLevelMap } : {}),
-    cost: {
-      ...model.cost,
-      ...(model.cost.tieredPricing
-        ? {
-            tieredPricing: model.cost.tieredPricing.map((tier) => ({
-              ...tier,
-              range:
-                tier.range.length === 2 && tier.range[1] === Number.POSITIVE_INFINITY
-                  ? [tier.range[0]]
-                  : [...tier.range],
-            })),
-          }
-        : {}),
-    },
-    contextWindow: model.contextWindow,
-    maxTokens: model.maxTokens,
-    ...(model.compat ? { compat: pickConfigModelCompat(model.compat) } : {}),
-  };
-}
-
-// Runtime normalization can add plugin-internal compat flags (Xiaomi's omitEmptyArrayItems)
-// that the config schema rejects; the plugin re-applies them when it resolves the configured model.
-const CONFIG_MODEL_COMPAT_KEYS = new Set(Object.keys(ModelCompatSchema.unwrap().shape));
-
-function pickConfigModelCompat(compat: NonNullable<Model["compat"]>) {
-  return Object.fromEntries(
-    Object.entries(compat).filter(([key]) => CONFIG_MODEL_COMPAT_KEYS.has(key)),
-  );
 }
 
 function mergeLiveProviderConfig(params: {
