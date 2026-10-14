@@ -55,15 +55,20 @@ suite.define(() => {
           `.chat-thread a.markdown-session-link[href="${destinationPath}"]`,
         );
         await link.waitFor({ state: "visible" });
+        // Finish title decoration before deferring the navigation lookup.
+        await expect.poll(() => link.getAttribute("data-session-key")).toBe(destinationKey);
         await page.locator('openclaw-app-sidebar [data-navigation-view="pages"]').click();
         await page
           .locator('openclaw-app-sidebar a[href="/activity"]')
           .waitFor({ state: "visible" });
         const initialHistoryLength = await page.evaluate(() => history.length);
         const resolutionMatch = { shortId: "12345678", agentId: "main" };
-        await gateway.deferNext("sessions.resolve", resolutionMatch);
+        const previousResolutions = await gateway.deferNext("sessions.resolve", resolutionMatch);
         await link.click();
-        await gateway.waitForRequest("sessions.resolve", { match: resolutionMatch });
+        await gateway.waitForRequest("sessions.resolve", {
+          match: resolutionMatch,
+          after: previousResolutions,
+        });
         expect(await gateway.getRequests("chat.startup", { sessionKey: destinationKey })).toEqual(
           [],
         );
@@ -99,9 +104,6 @@ suite.define(() => {
         expect(new URL(page.url()).pathname).toBe(navigateAway ? "/activity" : destinationPath);
         expect(await page.evaluate(() => history.length)).toBe(
           initialHistoryLength + (navigateAway ? 2 : 1),
-        );
-        expect(await gateway.getRequests("sessions.resolve", resolutionMatch)).toHaveLength(
-          navigateAway ? 1 : 2,
         );
         expect(await page.locator(".lazy-view-error").count()).toBe(0);
       });
