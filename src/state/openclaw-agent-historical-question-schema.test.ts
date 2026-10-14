@@ -27,14 +27,14 @@ describe("historical agent question schema boundaries", () => {
       db.close();
     }
   });
-  it("installs the canonical question contract only at the schema 26 migration target", () => {
+  it("installs the canonical question contract only at the schema 27 migration target", () => {
     const db = new DatabaseSync(":memory:");
     try {
-      db.exec(getOpenClawAgentMigrationSchema(25));
+      db.exec(getOpenClawAgentMigrationSchema(26));
       expect(
         db.prepare("SELECT name FROM sqlite_schema WHERE name = 'session_questions'").get(),
       ).toBeUndefined();
-      db.exec(getOpenClawAgentMigrationSchema(26));
+      db.exec(getOpenClawAgentMigrationSchema(27));
       expect(
         db.prepare("SELECT name FROM sqlite_schema WHERE name = 'session_questions'").get(),
       ).toMatchObject({ name: "session_questions" });

@@ -1,9 +1,3 @@
-import { isDeepStrictEqual } from "node:util";
-import { listAgentIds, tryResolveAmbientOwnerAgentId } from "../agents/agent-scope-config.js";
-import {
-  resolveSessionStoreCompatibilityAgentId,
-  tryResolveLegacyCompatibilityAgentId,
-} from "../config/legacy.default-agent-owner.js";
 import {
   projectSessionSharingEntry,
   retainPreparedSessionSharingFacts,
@@ -13,39 +7,10 @@ import {
   isSessionStoreReadCandidateCurrent,
   type SessionStoreReadCandidate,
 } from "../config/sessions/session-store-read-candidates.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { assertExistingDatabaseIdentity } from "../infra/sqlite-worker-identity.js";
 import { SessionMutationFactsUnavailableError } from "./session-sharing-incognito.js";
-import type { PreparedSessionMutationFacts } from "./session-sharing-policy.js";
 import type { PreparedSessionFactsSource } from "./session-sharing-source.types.js";
-
-function routeFacts(cfg: OpenClawConfig) {
-  return {
-    agents: listAgentIds(cfg),
-    storeOwner: resolveSessionStoreCompatibilityAgentId(cfg),
-    compatibilityOwner: tryResolveLegacyCompatibilityAgentId(cfg),
-    systemOwner: tryResolveAmbientOwnerAgentId(cfg),
-    store: cfg.session?.store,
-    mainKey: cfg.session?.mainKey,
-    scope: cfg.session?.scope,
-  };
-}
-
-export function captureSessionMutationRouting(
-  cfg: OpenClawConfig,
-  changed: () => Error = () => new SessionMutationFactsUnavailableError(),
-) {
-  const route = routeFacts(cfg);
-  return (current: OpenClawConfig) => {
-    if (!isDeepStrictEqual(routeFacts(current), route)) {
-      throw changed();
-    }
-  };
-}
-export type PreparedSessionSourceFacts = PreparedSessionMutationFacts & {
-  sourcePath?: string;
-  sourceAgentId?: string;
-};
+import type { PreparedSessionSourceFacts } from "./session-sharing-target.types.js";
 
 export type { PreparedSessionFactsSource } from "./session-sharing-source.types.js";
 
@@ -115,6 +80,12 @@ export async function prepareCapturedSessionSharingSource(params: {
     canonicalKey: source.canonicalKey,
     storePath: source.storePath,
   });
+  const readSource = {
+    agentId: source.agentId,
+    path: source.path,
+    databaseIdentity: source.databaseIdentity,
+    databaseBirthtime: source.databaseBirthtime,
+  };
   const readFacts = (): PreparedSessionSourceFacts => {
     assertSource();
     const current = retained.readCurrent();
@@ -128,8 +99,10 @@ export async function prepareCapturedSessionSharingSource(params: {
     return {
       sourcePath: source.path,
       sourceAgentId: source.agentId,
+      readSource,
       target: {
         ...storageTarget,
+        readSource,
         storeKey: source.canonicalKey,
         storeKeys: [source.canonicalKey],
         entry: current.entry,

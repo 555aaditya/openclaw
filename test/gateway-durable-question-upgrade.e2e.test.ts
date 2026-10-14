@@ -32,7 +32,9 @@ it.skipIf(!stableRoot)(
     const stableManifest = JSON.parse(
       await readFile(path.join(stableRoot, "package.json"), "utf8"),
     );
-    expect(stableManifest.version).toBe("2026.10.1");
+    const stableVersion = process.env.OPENCLAW_TEST_INSTALLED_STABLE_VERSION ?? "2026.10.1";
+    expect(["2026.10.1", "2026.10.3"]).toContain(stableVersion);
+    expect(stableManifest.version).toBe(stableVersion);
     expect(stableManifest.openclaw.schemaVersions).toEqual({ agent: 24, state: 20 });
     const fixture = await createQuestionUpgradeFixture(stableRoot, signal);
     const { instance } = fixture;
@@ -208,9 +210,9 @@ it.skipIf(!stableRoot)(
         expect(doctor.code).toBe(0);
         const migrated = await inspectUpgradeDatabases(instance.state.stateDir);
         const migratedAgent = migrated.find((row) => row.cacheCount !== undefined);
-        expect(migratedAgent?.version).toBe(26);
+        expect(migratedAgent?.version).toBe(27);
         expect(migratedAgent?.cacheDigest).toBe(baselineAgent?.cacheDigest);
-        expect(migrated.some((row) => row.version === 20)).toBe(true);
+        expect(migrated.some((row) => row.version === 22)).toBe(true);
         trace("candidate-doctor", {
           versions: migrated.map((row) => row.version),
           cacheCount: migratedAgent?.cacheCount,
