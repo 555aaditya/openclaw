@@ -271,8 +271,8 @@ Existing recommendation-based promotions from the 8-class remain for `checks-nod
 
 Current-target `checks-ui-e2e-real-gateway` rows use the 16-class. Frozen or
 unclassified targets retain the 32-class. The
-planner balances serial fixtures and audited parallel standalone files in the
-first row; the second owns the remaining parallel files. The first row also owns
+planner places serial fixtures in the first row; the second owns all selected
+audited parallel files. The first row also owns
 the desktop transport proof when selected by full manual/release validation or
 a direct desktop-spec edit. Both rows retain their existing worker limits, build-before-test
 ordering, hosted fallbacks, and test deadlines. Runtime-only preparation leaves
