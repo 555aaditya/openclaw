@@ -43,7 +43,7 @@ import type {
 } from "./session-entry-provenance.js";
 import type { AgentPatchedSessionModelFallback } from "./session-model-fallback.js";
 import type { SessionSkillSnapshot } from "./session-prompt-types.js";
-import type { DurableQuestionRecoveryOwner } from "./session-question-recovery-owner.js";
+import type { DurableQuestionRecoveryOwner } from "./session-question-recovery-owner.types.js";
 import type { SessionSystemPromptReport } from "./session-system-prompt-report.js";
 import type { SessionToolOverrides } from "./session-tool-overrides.js";
 import type { PendingSessionWorktree } from "./session-worktree-intent.js";
