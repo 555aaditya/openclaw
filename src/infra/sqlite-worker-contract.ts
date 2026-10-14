@@ -2,6 +2,7 @@ import { isNativeError, isProxy } from "node:util/types";
 import type { MessagePort } from "node:worker_threads";
 import { resolveGlobalSingleton } from "../shared/global-singleton.js";
 import type { OpenClawStateWorkerErrorPayload } from "../state/openclaw-state-worker-error.js";
+import type { DiagnosticWorkerRequestFields } from "./diagnostic-process-types.js";
 import type { SqliteDatabaseAdmissions } from "./sqlite-database-admission.js";
 import {
   SQLITE_WORKER_SOURCE_FENCE,
@@ -12,13 +13,27 @@ import type { DatabasePathIdentity } from "./sqlite-worker-identity.js";
 import type { SqliteWorkerStateContext } from "./sqlite-worker-state-context.js";
 import type { SqliteWorkerTransferHandle } from "./sqlite-worker-transfer.js";
 
-export type SqliteWorkerOperations = Record<string, { input: unknown; output: unknown }>;
-/** Process-private locator; live owner admission remains separate from this identity. */
-export type SqliteWorkerEphemeralTarget = {
-  kind: "ephemeral";
-  handle: string;
-  incarnation: string;
+export type SqliteWorkerRequestCustodyDescriptor = {
+  slot: Int32Array<SharedArrayBuffer>;
+  request: Int32Array<SharedArrayBuffer>;
 };
+
+export type SqliteWorkerExecutionAuthority = {
+  logical: Int32Array<SharedArrayBuffer>;
+  native: Int32Array<SharedArrayBuffer>;
+  physicalIdentity: string;
+  incarnation: string;
+  birthtime?: string;
+};
+
+export type SqliteWorkerAdmissionRequest = {
+  stage: "open" | "prepare" | "transaction" | "commit";
+  facts: unknown;
+  /** Opt-in wait budget in milliseconds; omission retains the live-owner wait. */
+  deadlineMs?: number;
+};
+
+export type SqliteWorkerOperations = Record<string, { input: unknown; output: unknown }>;
 export type SqliteWorkerCommand<Operations extends SqliteWorkerOperations> = {
   [Key in keyof Operations]: { type: Key; input: Operations[Key]["input"] };
 }[keyof Operations];
@@ -73,15 +88,17 @@ export type SqliteWorkerRequest = {
   actor: number;
   stateContext?: SqliteWorkerStateContext;
   operationAdmission?: MessagePort;
+  requestCustody?: SqliteWorkerRequestCustodyDescriptor;
+  executionAuthority?: SqliteWorkerExecutionAuthority;
   stateDatabasePath?: string;
   databaseAdmissions?: SqliteDatabaseAdmissions;
+  timing?: DiagnosticWorkerRequestFields["timing"];
 } & (
   | {
       type: "open";
       moduleUrl: string;
       sourceLoaderUrl?: string;
       databasePath: string;
-      target?: SqliteWorkerEphemeralTarget;
       existingIdentity?: string;
       openAdmission?: "input" | "identity";
       input: Uint8Array;
@@ -96,6 +113,7 @@ export type SqliteWorkerRequest = {
 
 export type SqliteWorkerReply = {
   id: number;
+  timing?: DiagnosticWorkerRequestFields["timing"];
   cleanupFailure?: OpenClawStateWorkerErrorPayload;
   databaseAdmissions?: SqliteDatabaseAdmissions;
 } & (
@@ -204,11 +222,8 @@ export function isSqliteWorkerError(
   }
 }
 
-/** Recognize selected canonical worker codes through safe cause and cleanup envelopes. */
-export function hasSqliteWorkerErrorCode(
-  error: unknown,
-  codes: readonly SqliteWorkerError["code"][],
-): boolean {
+/** Unknown native outcomes remain terminal through canonical cause and cleanup envelopes. */
+export function hasSqliteWorkerOutcomeUnknown(error: unknown): boolean {
   const pending: unknown[] = [error];
   const seen = new Set<unknown>();
   while (pending.length > 0) {
@@ -218,9 +233,7 @@ export function hasSqliteWorkerErrorCode(
     }
     seen.add(current);
     if (
-      codes.some(
-        (code) => Object.getOwnPropertyDescriptor(current, retainedWorkerErrorCode)?.value === code,
-      )
+      Object.getOwnPropertyDescriptor(current, retainedWorkerErrorCode)?.value === "outcome-unknown"
     ) {
       return true;
     }
@@ -264,9 +277,4 @@ export function hasSqliteWorkerErrorCode(
     }
   }
   return false;
-}
-
-/** Unknown outcomes retain their existing canonical envelope classification. */
-export function hasSqliteWorkerOutcomeUnknown(error: unknown): boolean {
-  return hasSqliteWorkerErrorCode(error, ["outcome-unknown"]);
 }

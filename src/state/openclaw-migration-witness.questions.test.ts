@@ -6,7 +6,7 @@ import {
   captureOpenClawMigrationWitness,
 } from "./openclaw-migration-witness.js";
 
-function fixture(version: 25 | 26) {
+function fixture(version: 25 | 26 | 27) {
   const db = new DatabaseSync(":memory:");
   db.exec(getOpenClawAgentMigrationSchema(version));
   db.exec(`PRAGMA user_version = ${version};
@@ -22,10 +22,10 @@ function addQuestion(db: DatabaseSync) {
     VALUES ('question', 'agent:main:question', 'session', 'revision', '{}', '{}', '{}', 'pending')`);
 }
 
-describe("schema 26 migration witnesses", () => {
-  it("accepts only the empty additive question contract while retaining schema 25 content", () => {
-    const original = fixture(25);
-    const upgraded = fixture(26);
+describe("schema 27 migration witnesses", () => {
+  it("accepts only the empty additive question contract while retaining schema 26 content", () => {
+    const original = fixture(26);
+    const upgraded = fixture(27);
     try {
       const before = captureOpenClawMigrationWitness(original, { role: "agent", agentId: "main" });
       const capture = () =>
@@ -47,6 +47,10 @@ describe("schema 26 migration witnesses", () => {
   });
   it.each([
     {
+      mutation: "UPDATE session_nodes SET session_started_at = 2",
+      retainedTable: "session_nodes",
+    },
+    {
       mutation: "DELETE FROM session_canonical_validation_pending",
       retainedTable: "session_canonical_validation_pending",
     },
@@ -55,12 +59,18 @@ describe("schema 26 migration witnesses", () => {
       retainedTable: "session_key_contract",
     },
   ])(
-    "preserves existing schema 25 $retainedTable content during 25→26 migration",
+    "preserves existing schema 26 $retainedTable content during 26→27 migration",
     ({ mutation, retainedTable }) => {
-      const original = fixture(25);
-      const upgraded = fixture(26);
+      const original = fixture(26);
+      const upgraded = fixture(27);
       try {
         for (const db of [original, upgraded]) {
+          db.exec(`INSERT INTO session_nodes(session_key, current_session_id, entry_json, updated_at, session_started_at)
+            VALUES ('agent:main:retained', 'retained', '{}', 1, 1);
+            INSERT INTO session_windows(session_id, session_key, created_at, updated_at)
+            VALUES ('retained', 'agent:main:retained', 1, 1);
+            INSERT INTO transcript_events(session_id, seq, event_json, created_at)
+            VALUES ('retained', 1, '{}', 1)`);
           // Pending validation deliberately has no node foreign key: it retains work for later admission.
           db.exec(
             "INSERT INTO session_canonical_validation_pending(session_key) VALUES ('agent:main:pending')",
@@ -93,9 +103,9 @@ describe("schema 26 migration witnesses", () => {
       sql: "CREATE TRIGGER extra_question_trigger AFTER INSERT ON session_questions BEGIN SELECT 1; END",
       refusal: /unexpected trigger extra_question_trigger/u,
     },
-  ])("rejects an unclassified question schema object during 25→26 preservation: $sql", (extra) => {
-    const original = fixture(25);
-    const upgraded = fixture(26);
+  ])("rejects an unclassified question schema object during 26→27 preservation: $sql", (extra) => {
+    const original = fixture(26);
+    const upgraded = fixture(27);
     try {
       const before = captureOpenClawMigrationWitness(original, { role: "agent", agentId: "main" });
       upgraded.exec(extra.sql);
@@ -110,8 +120,8 @@ describe("schema 26 migration witnesses", () => {
       upgraded.close();
     }
   });
-  it("retains question content and schema for same-version schema 26 evidence", () => {
-    const db = fixture(26);
+  it("retains question content and schema for same-version schema 27 evidence", () => {
+    const db = fixture(27);
     try {
       addQuestion(db);
       const capture = () => captureOpenClawMigrationWitness(db, { role: "agent", agentId: "main" });

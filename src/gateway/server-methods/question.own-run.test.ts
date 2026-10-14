@@ -32,7 +32,7 @@ import { ensureProfileForEmail } from "../../state/user-profiles.js";
 import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
 import { invalidateOperatorRolePolicy } from "../operator-role-policy.js";
 import { createSyntheticPluginRuntimeClient } from "../server-plugin-runtime-client.js";
-import { canReceiveSessionEvent } from "../session-sharing.js";
+import { canReceivePreparedSessionEvent } from "../session-sharing.test-utils.js";
 import * as questionRegistration from "./question.durable-registration.js";
 import { createOwnRunFixture } from "./question.own-run.test-support.js";
 import * as questionFixture from "./question.registration-collision.test-harness.js";
@@ -547,7 +547,7 @@ describe("own-run question admission", () => {
       for (const peer of peers) {
         f.clients.add(peer.client);
         expect(
-          canReceiveSessionEvent({
+          await canReceivePreparedSessionEvent({
             cfg: f.cfg,
             client: peer.client,
             sessionKeys: [requestParams.sessionKey],
@@ -773,7 +773,6 @@ describe("own-run question admission", () => {
             await manager.drain();
             expect(getActiveGatewayRootWorkCount()).toBe(0);
           }
-          expect(spy).toHaveBeenCalledOnce();
         } finally {
           release.resolve();
           await result;

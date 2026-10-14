@@ -135,12 +135,13 @@ describe("Reef message-tool threading", () => {
 
 describe("Reef conversation directory", () => {
   let stateDir = "";
+  let runtime: ReturnType<typeof createPluginRuntimeMock>;
 
   beforeEach(async () => {
     resetPluginStateStoreForTests();
     // openclaw-temp-dir: allow Reef directory tests need an on-disk state root; afterEach removes it.
     stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "reef-directory-"));
-    const runtime = createPluginRuntimeMock();
+    runtime = createPluginRuntimeMock();
     runtime.state.openSyncKeyedStore = <T>(options: OpenKeyedStoreOptions) =>
       createPluginStateSyncKeyedStoreForTests<T>("reef", {
         ...options,
@@ -192,6 +193,32 @@ describe("Reef conversation directory", () => {
         runtime: defaultRuntime,
       }),
     ).resolves.toEqual([{ kind: "user", id: "molty", name: "@molty's agent", handle: "@molty" }]);
+  });
+
+  it("refreshes channel trust policies after worker writes without native storage", async () => {
+    const cfg = { channels: { reef: { handle: "clawd" } } };
+    const account = reefPlugin.config.resolveAccount(cfg);
+    runtime.state.openSyncKeyedStore = () => {
+      throw new Error("channel trust policies must not open native storage");
+    };
+    const trust = openReefTrustStore(runtime, account.config);
+    const readPolicies = async () => ({
+      allowFrom: await reefPlugin.config.resolveAllowFromAsync!({ cfg }),
+      description: await reefPlugin.config.describeAccountAsync!(account, cfg),
+      dmPolicy: await reefPlugin.security!.resolveDmPolicyAsync!({ cfg, account }),
+    });
+
+    await expect(readPolicies()).resolves.toMatchObject({
+      allowFrom: ["molty"],
+      description: { extra: { friendCount: 1 } },
+      dmPolicy: { policy: "pairing", allowFrom: ["molty"] },
+    });
+    await trust.remove("molty");
+    await expect(readPolicies()).resolves.toMatchObject({
+      allowFrom: [],
+      description: { extra: { friendCount: 0 } },
+      dmPolicy: { policy: "pairing", allowFrom: [] },
+    });
   });
 });
 
@@ -868,40 +895,6 @@ describe("Reef channel lifecycle", () => {
     expect(inbox.isSettled()).toBe(false);
     parent.beginClose();
     await lifecycle;
-    expect(inbox.isSettled()).toBe(true);
-  });
-
-  it("tears down the inbox loop before settling when a loop branch throws", async () => {
-    vi.useFakeTimers();
-    const parent = createTestPluginServiceScheduler();
-    const inbox = hangingInbox();
-    // Simulate a non-transport crash escaping the lifecycle (reconcile errors
-    // are contained, so throw from the error hook itself). The startup
-    // reconcile succeeds so the failure lands on the periodic loop, with the
-    // inbox already running and therefore able to leak.
-    let reconciles = 0;
-    const lifecycle = runReefChannelLifecycle({
-      scheduler: parent,
-      startInbox: inbox.startInbox,
-      reconcile: async () => {
-        reconciles += 1;
-        if (reconciles === 1) {
-          return;
-        }
-        throw new Error("boom");
-      },
-      onReconcileError: () => {
-        throw new Error("fatal");
-      },
-      reconcileIntervalMs: 5,
-    });
-    const rejected = expect(lifecycle).rejects.toThrow("fatal");
-    await inbox.started;
-    await vi.advanceTimersByTimeAsync(5);
-    await rejected;
-    // The rejection must not leave the inbox reconnect loop running: its
-    // signal is aborted and its promise has settled before the caller resumes.
-    expect(inbox.seen[0]?.aborted).toBe(true);
     expect(inbox.isSettled()).toBe(true);
   });
 

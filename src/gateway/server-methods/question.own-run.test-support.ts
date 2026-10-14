@@ -1,5 +1,6 @@
 import { expect, vi } from "vitest";
 import { createDeferred } from "../../../test/helpers/promise.js";
+import { setRuntimeConfigSnapshot } from "../../config/runtime-snapshot.js";
 import type { SessionEntry } from "../../config/sessions/types.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import {
@@ -12,7 +13,9 @@ import { captureGatewayOperatorRunAuthority } from "../operator-run-authority.js
 import { createGatewayBroadcaster } from "../server-broadcast.js";
 import { createSyntheticPluginRuntimeClient } from "../server-plugin-runtime-client.js";
 import { GatewayClientRegistry } from "../server/client-registry.js";
-import { canReceiveSessionEvent } from "../session-sharing.js";
+import { createSessionRowProjection } from "../session-row-projection.js";
+import { canReceiveSessionEvent, prepareProjectedSessionSharing } from "../session-sharing.js";
+import { resolveSessionStoreIdentity } from "../session-store-key.js";
 import { writeQuestionFixtureEntry } from "./question.registration-collision.test-harness.js";
 import {
   broadcast,
@@ -57,6 +60,7 @@ export async function createOwnRunFixture(
     visibility: "shared",
     createdActor: { type: "human", source: "profile", id: creatorProfileId ?? profile.id },
   };
+  setRuntimeConfigSnapshot(cfg);
   await writeQuestionFixtureEntry(sessionScope, entry, legacyGeneration);
   const browser = createQuestionTestPeer(profile, "original-browser");
   if (durable) {
@@ -101,11 +105,36 @@ export async function createOwnRunFixture(
       },
     },
   };
+  const projection = await createSessionRowProjection({ cfg });
+  await projection.ensureMaterialized();
   const clients = new GatewayClientRegistry([browser.client]);
   const broadcaster = createGatewayBroadcaster({
     clients,
     canReceiveSessionEvent: (client, sessionKeys, agentId, event, payload) =>
-      canReceiveSessionEvent({ cfg, client, sessionKeys, agentId, event, payload }),
+      canReceiveSessionEvent({
+        cfg,
+        client,
+        sessionKeys,
+        agentId,
+        event,
+        payload,
+        prepared: {
+          sharing: prepareProjectedSessionSharing({
+            cfg,
+            client,
+            isMember: (target, identityId) =>
+              projection.hasMembership(target.storePath, target.storeKey, identityId),
+          }),
+          target: (key, targetAgentId) => {
+            const { agentId: ownerAgentId } = resolveSessionStoreIdentity({
+              cfg,
+              sessionKey: key,
+              agentId: targetAgentId,
+            });
+            return projection.sharingTarget({ key, agentId: ownerAgentId });
+          },
+        },
+      }),
   });
   broadcast.mockImplementation(broadcaster.broadcast);
   const call = (
@@ -167,10 +196,14 @@ export async function createOwnRunFixture(
     request,
     beginWait,
     close: async () => {
-      manager.reset();
-      await manager.drain();
-      releaseAgentRunDelegatedAuthority(authority);
-      source.release();
+      try {
+        manager.reset();
+        await manager.drain();
+        releaseAgentRunDelegatedAuthority(authority);
+        source.release();
+      } finally {
+        projection.dispose();
+      }
     },
   };
 }

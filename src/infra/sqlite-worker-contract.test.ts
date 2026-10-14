@@ -2,7 +2,6 @@ import { runInNewContext } from "node:vm";
 import { describe, expect, it, vi } from "vitest";
 import {
   hasSqliteWorkerOutcomeUnknown,
-  hasSqliteWorkerErrorCode,
   isSqliteWorkerError,
   retainSqliteWorkerErrorCode,
   SqliteWorkerError,
@@ -49,19 +48,3 @@ describe("unknown worker outcome classification", () => {
     expect(unsafe).not.toHaveBeenCalled();
   });
 });
-
-it.each(["closed", "overloaded", "unavailable", "outcome-unknown"] as const)(
-  "preserves canonical %s through wrapped cleanup",
-  (code) => {
-    const error = new SqliteWorkerError("Native infrastructure", code);
-    expect(
-      hasSqliteWorkerErrorCode(new AggregateError([new Error("Wrapper", { cause: error })]), [
-        code,
-      ]),
-    ).toBe(true);
-    expect(hasSqliteWorkerErrorCode(Object.assign(new Error("Forged"), { code }), [code])).toBe(
-      false,
-    );
-    expect(hasSqliteWorkerOutcomeUnknown(error)).toBe(code === "outcome-unknown");
-  },
-);
