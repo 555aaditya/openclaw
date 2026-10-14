@@ -26,10 +26,11 @@ export function getToolInvocationMetadata(
   const resolve = resolvers.get(tool);
   if (resolve) {
     try {
-      return resolve(args);
+      const metadata = resolve(args);
+      return { ...metadata, executionMode: metadata.executionMode ?? tool.executionMode };
     } catch {
       // Invalid/unknown targets retain their ordinary dispatch validation error.
-      return { ownsTurnHandoff: false };
+      return { executionMode: tool.executionMode, ownsTurnHandoff: false };
     }
   }
   return { executionMode: tool.executionMode, ownsTurnHandoff: handoffOwners.has(tool) };

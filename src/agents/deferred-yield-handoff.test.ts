@@ -19,6 +19,10 @@ import {
   createToolDefinitionFromAgentTool,
 } from "./sessions/tools/tool-definition-wrapper.js";
 import { createZeroUsageFixture } from "./test-helpers/usage-fixtures.js";
+import {
+  bindToolInvocationResolver,
+  getToolInvocationMetadata,
+} from "./tool-invocation-metadata.js";
 import { TOOL_CALL_RAW_TOOL_NAME } from "./tool-search-types.js";
 import {
   createToolSearchCatalogRef,
@@ -32,6 +36,7 @@ const validArgs = {};
 function deferredFixture(
   reason: unknown = { code: "sessions_yield", turnHandoff: true },
   declaredSequential = false,
+  resolverBacked = false,
 ) {
   const abort = new AbortController();
   const target = createSessionsYieldTool({
@@ -42,6 +47,10 @@ function deferredFixture(
     },
   });
   const execute = vi.spyOn(target, "execute");
+  if (resolverBacked) {
+    const ownership = getToolInvocationMetadata(target, validArgs);
+    bindToolInvocationResolver(target, () => ownership);
+  }
   const ordinary = {
     name: "lookup",
     label: "lookup",
@@ -156,10 +165,15 @@ async function runDeferredBatch(
   );
 }
 
-it.each([false, true])(
-  "honors declared sequential deferred targets before direct effects with loop detection %s",
-  async (enabled) => {
-    const f = deferredFixture(undefined, true);
+it.each([
+  [false, false],
+  [true, false],
+  [false, true],
+  [true, true],
+])(
+  "honors declared sequential deferred targets before direct effects with loop detection %s and resolver %s",
+  async (enabled, resolverBacked) => {
+    const f = deferredFixture(undefined, true, resolverBacked);
     const exec = vi.fn(async () => jsonResult({ status: "executed" }));
     const messages = await runDeferredBatch(f, enabled, "sessions_yield", exec);
     expect(f.execute).toHaveBeenCalledOnce();
