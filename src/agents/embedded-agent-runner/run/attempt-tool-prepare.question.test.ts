@@ -51,7 +51,8 @@ describe("prepared native question custody", () => {
     const config = {
       tools: { allow: ["ask_user"], codeMode: false, toolSearch: { enabled: false } },
     };
-    await withOpenClawTestState({ label: "prepared-question", config }, async (state) => {
+    await withOpenClawTestState({ label: "prepared-question" }, async (state) => {
+      await state.writeConfig(config);
       await captureRuntimeConfigAsyncReader()();
       const sessionKey = scenario.incognitoKey
         ? "agent:main:dashboard:incognito-question"
@@ -88,6 +89,9 @@ describe("prepared native question custody", () => {
       try {
         const admittedRunContext = await admission.admit("embedded");
         const assertCurrent = resolveAdmittedRunActiveAssertion(admittedRunContext);
+        if (!assertCurrent) {
+          throw new Error("Expected the native fixture's admitted run authority");
+        }
         if (scenario.incognitoKey) {
           binding = await acquireSessionActorStorage(target, {
             authority: { assertCurrent, authorize: assertCurrent },
