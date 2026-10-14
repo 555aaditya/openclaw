@@ -103,10 +103,12 @@ describeControlUiE2e("Control UI plugin runtime actions", () => {
         row.getByRole("button", { name: "Uninstall Calendar Plus", exact: true }),
       ]) {
         await button.waitFor({ state: "visible" });
-        const box = await button.boundingBox();
-        expect(box).not.toBeNull();
-        expect(box!.x).toBeGreaterThanOrEqual(0);
-        expect(box!.x + box!.width).toBeLessThanOrEqual(mobileViewport.width);
+        await expect
+          .poll(async () => {
+            const box = await button.boundingBox();
+            return Boolean(box && box.x >= 0 && box.x + box.width <= mobileViewport.width);
+          })
+          .toBe(true);
       }
       await captureScreenshot(page, "runtime-04-after-mobile.png");
       const loadError =
