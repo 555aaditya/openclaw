@@ -1,14 +1,6 @@
 import { isMainThread } from "node:worker_threads";
 import type { InternalSessionEntry as SessionEntry } from "./types.js";
 
-export type DurableQuestionRecoveryOwner = {
-  questionId: string;
-  sourceRunId: string;
-  continuationRunId?: string;
-  sessionId: string;
-  lifecycleRevision: string;
-};
-
 /** Alias relocation has no accepted owner for transferring durable native recovery fences. */
 export function assertQuestionAliasRelocation(previous: SessionEntry | undefined): void {
   assertQuestionLifecycleWorker(previous);
