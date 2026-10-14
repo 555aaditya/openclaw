@@ -43,7 +43,12 @@ export function renderPluginCompatibilityNotices(
               : t("pluginsPage.compatibilityDeprecatedUndated");
           },
           link: notice.migrationGuideUrl
-            ? { href: notice.migrationGuideUrl, text: t("pluginsPage.compatibilityDetails") }
+            ? {
+                href: notice.migrationGuideUrl,
+                get text() {
+                  return t("pluginsPage.compatibilityDetails");
+                },
+              }
             : undefined,
           details:
             showApis && notice.apis.length ? (
