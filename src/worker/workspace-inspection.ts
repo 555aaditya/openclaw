@@ -35,6 +35,7 @@ export async function inspectSessionWorkspace(
         cwd: root,
         sessionKey: request.sessionKey,
         baseCommit: request.baseCommit,
+        summaryOnly: request.summaryOnly,
       };
       let diff: Awaited<ReturnType<typeof loadCheckoutDiff>>;
       if (request.scope === "commit") {
