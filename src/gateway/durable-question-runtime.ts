@@ -36,6 +36,17 @@ export function installDurableQuestion(
         `question '${question.record.id}' already exists`,
       );
     }
+    const recovered = manager.reconcileDurableObservation(
+      existing,
+      question.record,
+      question.resolutionId,
+    );
+    if (question.retainUntilMs !== undefined) {
+      manager.retireDurableObservationAt(existing, question.retainUntilMs);
+    }
+    if (recovered && question.continuation.status === "owed") {
+      onContinuationOwed(question);
+    }
     return;
   }
   let current = question;

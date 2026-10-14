@@ -289,6 +289,30 @@ export class QuestionManager {
     return Boolean(this.entries.get(id)?.durableCustody);
   }
 
+  /** Recovery can observe a committed outcome whose acknowledgement never reached this map. */
+  reconcileDurableObservation(
+    observation: QuestionObservation,
+    record: QuestionRecord,
+    resolutionId?: string,
+  ): boolean {
+    const entry = this.entries.get(record.id);
+    if (
+      !entry?.durableCustody ||
+      entry.committing ||
+      !observation.isCurrent() ||
+      entry.record !== observation.record ||
+      entry.record.status !== "pending" ||
+      record.status === "pending"
+    ) {
+      return false;
+    }
+    entry.record = record;
+    entry.resolutionId = resolutionId;
+    entry.commitUnknown = false;
+    void this.finish(entry);
+    return true;
+  }
+
   /** Retire a native-confirmed lost custody observation without inventing terminal truth. */
   retireDurableCustodyObservation(observation: QuestionObservation): void {
     const entry = this.entries.get(observation.record.id);
