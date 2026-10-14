@@ -20,9 +20,8 @@ export function modelAuthEventInvalidates(
   event: Pick<GatewayEventFrame, "event" | "payload">,
 ): boolean {
   return (
-    event.event === "config.changed" ||
-    (event.event === "chat.metadata.changed" &&
-      asNullableRecord(event.payload)?.authChanged !== false)
+    event.event === "chat.metadata.changed" &&
+    asNullableRecord(event.payload)?.authChanged !== false
   );
 }
 

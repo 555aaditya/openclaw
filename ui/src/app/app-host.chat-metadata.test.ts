@@ -42,7 +42,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-it("retains model and auth reads across 50 metadata-only publications", async () => {
+it("retains auth reads until the metadata owner publishes an auth change", async () => {
   vi.useFakeTimers();
   const { gateway, current } = createGatewayStoreTestStore();
   gateway.start();
@@ -106,7 +106,7 @@ it("retains model and auth reads across 50 metadata-only publications", async ()
       await read();
       await read();
       expect(request.mock.calls.filter(([method]) => method === "models.authStatus")).toHaveLength(
-        1,
+        event === "chat.metadata.changed" ? 1 : 0,
       );
       expect(request.mock.calls.filter(([method]) => method === "models.list")).toHaveLength(1);
       expect(changed).toHaveBeenCalledOnce();

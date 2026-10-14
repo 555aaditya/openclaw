@@ -108,7 +108,7 @@ refreshes in the background. Before the first catalog arrives, it does not turn 
 configured default into a model option. Command palette model results use the same
 catalog cache and appear independently of slower search categories.
 
-Provider authentication status is shared across views and refreshes after account changes and near credential warning or expiry deadlines. Credentials without an expiry do not need periodic refreshes. Hidden tabs defer deadline refreshes until visible again.
+Provider authentication status is shared across views and refreshes when the Gateway publishes an authentication change and near credential warning or expiry deadlines. A configuration reload waits for that publication instead of issuing an early duplicate authentication read. Credentials without an expiry do not need periodic refreshes. Hidden tabs defer deadline refreshes until visible again.
 
 The sidebar loads automation status once per connection and refreshes after automation or configuration changes. Failed reads retry once per minute while the tab is visible and stop retrying after success. Sidebar health and Automations page refreshes pause during announced restarts or suspension and catch up when the Gateway is available again. Overdue warnings advance on a local deadline without polling the Gateway. Hidden tabs catch up when visible; returning to an unchanged tab does not poll automations. Command palette searches reuse their automation inventory on the same connection until one of those changes or a reconnect.
 
