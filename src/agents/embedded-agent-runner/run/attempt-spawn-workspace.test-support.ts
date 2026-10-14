@@ -530,10 +530,6 @@ vi.mock("../../system-prompt-params.js", () => ({
   }),
 }));
 
-vi.mock("../../system-prompt-report.js", () => ({
-  buildSystemPromptReport: () => undefined,
-}));
-
 vi.mock("../../system-prompt-config.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../system-prompt-config.js")>();
   return {
