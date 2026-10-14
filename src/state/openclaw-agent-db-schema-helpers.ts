@@ -1,6 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import { hasLegacyMemoryRecallMetadataColumns } from "../../packages/memory-host-sdk/src/host/memory-schema.js";
 import { repairCanonicalSqliteIndexes } from "../infra/sqlite-index-schema.js";
+import { captureSqliteSchemaFacts } from "../infra/sqlite-schema-admission.js";
 import {
   assertSqliteSchemaContains,
   assertSqliteSchemaTablesPresent,
@@ -26,11 +27,13 @@ import {
   withLegacyCanonicalSessionValidationTriggers,
 } from "./openclaw-agent-canonical-validation-migration.js";
 import { withoutCanonicalSessionValidationSchema } from "./openclaw-agent-canonical-validation-schema.js";
+import { hasPendingAgentStartupColumns } from "./openclaw-agent-db-additive-columns.js";
 import {
   CANONICAL_SESSION_VALIDATION_SCHEMA_VERSION,
   CANONICAL_SESSION_WRITER_VALIDATION_SCHEMA_VERSION,
   AGENT_STORAGE_SCHEMA_VERSION,
   AGENT_JSON_PREDICATE_SCHEMA_VERSION,
+  AGENT_OUTBOX_SEQUENCE_SCHEMA_VERSION,
 } from "./openclaw-agent-db-contract.js";
 import { AGENT_SCHEMA_COMPATIBILITY } from "./openclaw-agent-db-schema-compatibility.js";
 import {
@@ -41,18 +44,14 @@ import {
 import {
   ensureSessionAdditiveColumns,
   readSqliteTableColumns,
-  hasPendingSessionConversationRouteContextColumn,
-  hasPendingSessionProjectColumn,
-  hasPendingSessionRowTranscriptColumns,
-  hasPendingSessionTranscriptContextEligibilityColumn,
   ensureSessionEntryValidityProjection,
 } from "./openclaw-agent-db-session-migrations.js";
 import { withoutAgentJsonPredicateColumns } from "./openclaw-agent-json-predicate-schema.js";
+import { withoutOutboxEnqueueSequence } from "./openclaw-agent-outbox-sequence-migration.js";
 import {
   LEGACY_PARTICIPANT_OPTIONAL_COLUMNS,
   withLegacySessionParticipantsSchema,
 } from "./openclaw-agent-participants-migration.js";
-import { hasPendingInputConsumptionColumnMigration } from "./openclaw-agent-pending-inputs-schema.js";
 import {
   ensureOpenClawAgentProgressCardSchemaInTransaction,
   AGENT_PROGRESS_CARD_SCHEMA_SQL,
@@ -88,10 +87,14 @@ export function getOpenClawAgentMigrationSchema(targetVersion: number): string {
     targetVersion < DURABLE_QUESTIONS_SCHEMA_VERSION
       ? withoutSessionQuestionsSchema(OPENCLAW_AGENT_SCHEMA_SQL)
       : OPENCLAW_AGENT_SCHEMA_SQL;
+  const sequenceSchemaSql =
+    targetVersion < AGENT_OUTBOX_SEQUENCE_SCHEMA_VERSION
+      ? withoutOutboxEnqueueSequence(versionedSchemaSql)
+      : versionedSchemaSql;
   const predicateSchemaSql =
     targetVersion < AGENT_JSON_PREDICATE_SCHEMA_VERSION
-      ? withoutAgentJsonPredicateColumns(versionedSchemaSql)
-      : versionedSchemaSql;
+      ? withoutAgentJsonPredicateColumns(sequenceSchemaSql)
+      : sequenceSchemaSql;
   const canonicalSchemaSql =
     targetVersion < CANONICAL_SESSION_WRITER_VALIDATION_SCHEMA_VERSION
       ? withLegacyCanonicalSessionValidationTriggers(predicateSchemaSql)
@@ -374,10 +377,8 @@ export function hasPendingCurrentVersionAgentDatabaseMigration(database: Databas
     hasPendingMemoryChunkMetadataMigration(database) ||
     hasPendingSessionKeyContractSchemaMigration(database) ||
     hasRetiredAgentStateLeaseSchema(database) ||
-    hasPendingSessionConversationRouteContextColumn(database) ||
-    hasPendingSessionTranscriptContextEligibilityColumn(database) ||
-    hasPendingInputConsumptionColumnMigration(database) ||
-    hasPendingSessionProjectColumn(database) ||
-    hasPendingSessionRowTranscriptColumns(database)
+    hasPendingAgentStartupColumns(
+      (getAdmittedSqliteSchemaFacts(database) ?? captureSqliteSchemaFacts(database)).tableSql,
+    )
   );
 }

@@ -121,6 +121,8 @@ export async function inspectUpgradeDatabases(root: string) {
     digest: string;
     cacheDigest?: string;
     cacheCount?: number;
+    hasQuestions?: boolean;
+    hasOutboxSequence?: boolean;
   }> = [];
   const visit = async (directory: string): Promise<void> => {
     for (const entry of await readdir(directory, { withFileTypes: true })) {
@@ -156,6 +158,13 @@ export async function inspectUpgradeDatabases(root: string) {
                 .all()
             : undefined;
           rows.push({
+            hasQuestions: tables.some((table) => table.name === "session_questions"),
+            hasOutboxSequence:
+              tables.some((table) => table.name === "context_engine_turn_outbox") &&
+              database
+                .prepare("PRAGMA table_info(context_engine_turn_outbox)")
+                .all()
+                .some((column) => column.name === "enqueue_sequence"),
             relativePath: path.relative(root, filename),
             version,
             digest: createHash("sha256")

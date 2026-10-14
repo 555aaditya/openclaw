@@ -559,15 +559,9 @@ const reviewedOperations = new Map([
     [
       {
         tier: "T3",
-        operations: ["collectRecentSessionHistoryIds"],
+        operations: ["recentSessionHistoryIds"],
         evidence:
-          "Only readHistoricalSessionIdsInDatabase calls this collector, through session-transcript.worker.ts or native reclamation with reclamationMode=in-process. Production selectors of native mode are commands/sessions-cleanup.runtime.ts; the recency probe has its own reviewed reclamation/archive-worker classification.",
-      },
-      {
-        tier: "T3",
-        operations: ["isRecentHistoricalSessionId"],
-        evidence:
-          "Only reclamation.ts and archive.worker.ts materialization call this probe. Reclamation native execution requires an off-thread or schema/agent-maintenance owner; ordinary durable callers dispatch to workers. Archive materialization is called by its same-module batch under the materialize worker message.",
+          "Shared collector/probe query. readHistoricalSessionIdsInDatabase calls the collector through session-transcript.worker.ts or explicit CLI reclamationMode=in-process. Only reclamation.ts and archive.worker.ts materialization call the probe; native reclamation requires an off-thread or schema/agent-maintenance owner, and ordinary durable callers dispatch to workers.",
       },
     ],
   ],
@@ -934,12 +928,6 @@ const reviewedOperations = new Map([
   [
     "src/config/sessions/session-accessor.sqlite-maintenance-transaction.ts",
     [
-      {
-        tier: "W",
-        operations: ["readSessionMaintenanceInWorker"],
-        evidence:
-          "Only session-transcript.worker.ts:276 and openclaw-agent-execution-maintenance.ts:61 call this read-only planner; the latter owner is constructed only in openclaw-agent-execution.worker.ts:372. Metadata transactions have separate reviewed worker/maintenance ownership.",
-      },
       {
         tier: "T3",
         operations: ["runSessionMaintenanceMetadataInTransaction"],
@@ -1857,7 +1845,7 @@ const reviewedOperations = new Map([
         tier: "T2",
         operations: ["hasPendingCanonicalSessionValidation"],
         evidence:
-          "Native readiness is startup-migration.ts:359 via session-canonical-validation-readiness.ts:91. Runtime request-authorization.ts:461 and session-row-prepared-read.ts:240 pass captured PendingCanonicalValidation.source and skip that probe; the other caller is the mutation worker's has-pending operation.",
+          "Native readiness serves startup and Doctor maintenance through startup-migration.ts and session-canonical-validation-readiness.ts. Prepared Gateway row reads consume worker-admitted facts without a native readiness probe; the other caller is the mutation worker's has-pending operation.",
       },
     ],
   ],
