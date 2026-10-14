@@ -1,4 +1,3 @@
-import type { SessionAccessScope } from "../config/sessions/session-accessor.sqlite-contract.js";
 import { matchesDurableQuestionDefinition } from "../config/sessions/session-questions-definition.js";
 import {
   readSessionQuestionCustody,
@@ -132,30 +131,5 @@ export function installDurableQuestion(
   }
   if (question.continuation.status === "owed") {
     onContinuationOwed(question);
-  }
-}
-
-/** Restore canonical questions independently of transcript retention and compaction. */
-export async function recoverDurableQuestions(
-  manager: QuestionManager,
-  scopes: readonly SessionAccessScope[],
-  onContinuationOwed: (question: DurableQuestion) => void,
-  assertCurrent: () => void,
-  publication?: (
-    question: DurableQuestion,
-  ) => Pick<Parameters<QuestionManager["request"]>[0], "onResolved">,
-): Promise<void> {
-  for (const scope of scopes) {
-    const result = await executeSessionQuestionOperation(
-      { ...scope, assertCurrent },
-      { kind: "list" },
-    );
-    assertCurrent();
-    if (!Array.isArray(result)) {
-      throw new Error("Durable question recovery returned an invalid collection");
-    }
-    for (const question of result) {
-      installDurableQuestion(manager, question, onContinuationOwed, publication?.(question));
-    }
   }
 }
