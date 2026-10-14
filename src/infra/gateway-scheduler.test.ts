@@ -1,4 +1,5 @@
 import { AsyncLocalStorage, createHook } from "node:async_hooks";
+import { setImmediate as nextTurn } from "node:timers/promises";
 import { queryObjects } from "node:v8";
 import { describe, expect, it, vi } from "vitest";
 import { trackAsyncWork } from "../shared/async-work-scope.js";
@@ -127,17 +128,23 @@ describe("Gateway timed work", () => {
 
   it.each(["root", "scope"] as const)(
     "releases the retiring caller while its %s abort signal remains reachable",
-    (kind) => {
+    async (kind) => {
       class RetiredOwner {
         close() {
           const { scheduler } = fixture();
           const owner = kind === "root" ? scheduler : scheduler.scope();
           owner.beginClose();
+          // Composite signals refresh from weak sources when first observed.
+          expect(owner.signal.aborted).toBe(true);
           return owner.signal;
         }
       }
       const signals = Array.from({ length: 12 }, () => new RetiredOwner().close());
+      const control = new WeakRef({});
+      // Observe completed callers after the construction job releases temporary roots.
+      await nextTurn();
       expect(queryObjects(RetiredOwner)).toBe(0);
+      expect(control.deref()).toBeUndefined();
       for (const signal of signals) {
         expect(signal.aborted).toBe(true);
         expect(signal.reason).toMatchObject({ name: "AbortError" });
