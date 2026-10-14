@@ -11,6 +11,7 @@ import { mountSolid } from "../../test-helpers/mount-solid.ts";
 import { flush } from "../../test-helpers/solid-settle.ts";
 import { createPortaledHovercard, PortaledHovercardController } from "../portaled-hovercard.ts";
 import { SessionHovercardAutomations } from "../session-hovercard-automations.tsx";
+import "../../styles/base.css";
 import "../session-hovercard.css";
 
 registerGitHubEnglish();
@@ -77,8 +78,12 @@ it("tabs into a nested inspection, dismisses only the flyout with Escape, and re
   flush();
   const anchor = card.querySelector<HTMLAnchorElement>(".session-hovercard__automation-link")!;
   await vi.waitFor(() => expect(anchor.textContent).toBe("Check repository"));
-  await userEvent.click(anchor);
   const tooltip = card.querySelector("openclaw-tooltip")!;
+  const opened = new Promise<void>((resolve) => {
+    tooltip.addEventListener("overlay-after-show", () => resolve(), { once: true });
+  });
+  await userEvent.click(anchor);
+  await opened;
   await vi.waitFor(() => expect(tooltip.hasAttribute("open")).toBe(true));
   anchor.focus();
   await userEvent.tab();
