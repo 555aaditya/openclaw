@@ -41,6 +41,12 @@ export {
   StateDatabaseOfflineMaintenanceError,
 } from "./gateway-state-owner-errors.js";
 
+export const isStateDatabaseMaintenanceContention = (error: unknown): boolean =>
+  error instanceof AggregateError
+    ? error.errors.length > 0 && error.errors.every(isStateDatabaseMaintenanceContention)
+    : error instanceof StateDatabaseAdmissionPendingError ||
+      error instanceof StateDatabaseOfflineMaintenanceError;
+
 /** Persisted ownership can identify a holder but cannot lend this process maintenance authority. */
 export function assertPersistedStateDatabaseAccessAllowed(params: {
   databasePath: string;
