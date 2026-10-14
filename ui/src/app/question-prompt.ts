@@ -21,10 +21,6 @@ import {
   type QuestionClient,
   type QuestionClientResolutionOwner,
 } from "./question-prompt-client.ts";
-import {
-  attachQuestionContinuationReceipts,
-  refreshQuestionContinuationReceipt,
-} from "./question-prompt-continuation.ts";
 import { parseQuestion } from "./question-prompt-parse.ts";
 import {
   clearSecretQuestionDrafts,
@@ -49,7 +45,6 @@ export type QuestionPrompt = Pick<
   status: QuestionPromptStatus;
   answers?: QuestionAnswers;
   submittedAnswers?: QuestionAnswers;
-  continuationMessage?: string;
   answeredElsewhere: boolean;
   localResolutionConfirmed: boolean;
   locallyExpired: boolean;
@@ -361,24 +356,6 @@ export function handleQuestionPromptEvent(
     return false;
   }
   recordQuestionResolution(state, resolved);
-  const client = state.client;
-  const prompt = state.prompts.get(resolved.id);
-  if (client && prompt) {
-    const generation = state.clientGeneration;
-    const revision = prompt.revision;
-    // Receipt invalidation must not reinstall stale question records or start
-    // recovery for an unmatched outcome; reconnect hydration owns those reads.
-    void refreshQuestionContinuationReceipt(
-      client,
-      prompt,
-      () =>
-        state.client === client &&
-        state.clientGeneration === generation &&
-        state.prompts.get(resolved.id) === prompt &&
-        prompt.revision === revision,
-      state.onChange,
-    ).catch(() => {});
-  }
   return true;
 }
 
@@ -386,7 +363,7 @@ function parseQuestionListResult(value: unknown): QuestionRecord[] | null {
   if (!isRecord(value) || !Array.isArray(value.questions)) {
     return null;
   }
-  const questions = value.questions.map(parseQuestionRecord);
+  const questions = value.questions.map(parseQuestionRequestedEvent);
   return questions.every((question) => question !== null) ? questions : null;
 }
 
@@ -418,9 +395,7 @@ async function refreshPendingQuestions(
   isCurrentClient: () => boolean,
 ): Promise<boolean> {
   const startedAtRevision = state.revision;
-  const listResult = await requestQuestionGateway(client, "question.list", {
-    includeContinuation: true,
-  });
+  const listResult = await requestQuestionGateway(client, "question.list", {});
   const records = parseQuestionListResult(listResult);
   if (!records) {
     invalidateQuestionList(client);
@@ -436,7 +411,6 @@ async function refreshPendingQuestions(
       storeQuestionRecord(state, record.id, record, previous);
     }
   }
-  attachQuestionContinuationReceipts(listResult, (id) => state.prompts.get(id));
   scheduleExpiry(state);
   state.onChange();
   const missing: Array<{

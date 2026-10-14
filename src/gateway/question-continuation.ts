@@ -194,7 +194,7 @@ export async function dispatchQuestionContinuation(params: {
       assertContextCurrent: assertCurrent,
     });
     const delivery = question.provenance.delivery;
-    await turns.dispatch(
+    const turnResult = await turns.dispatch<{ status: "ok" | "error" | "timeout" }>(
       {
         agentId,
         sessionKey: question.sessionKey,
@@ -256,6 +256,11 @@ ${JSON.stringify({ id: questionId, status: question.record.status, answers: ques
         },
       },
     );
+    // A successful RPC frame can still contain a failed or cancelled native turn.
+    // Keep that attempt visible as interrupted, without admitting a replay.
+    if (turnResult.status !== "ok") {
+      throw new Error(`Durable question continuation ended with ${turnResult.status}.`);
+    }
     executionCompleted = true;
     restored?.release();
     restored = undefined;

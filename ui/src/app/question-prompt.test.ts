@@ -230,12 +230,11 @@ describe("question prompt state", () => {
 
   it("marks a locally submitted answer as local when its broadcast arrives", async () => {
     let releaseRequest: () => void = () => {};
-    const request = vi.fn<RequestFn>((method) =>
-      method === "question.list"
-        ? Promise.resolve({ questions: [] })
-        : new Promise((resolve) => {
-            releaseRequest = () => resolve(resolvedQuestion());
-          }),
+    const request = vi.fn<RequestFn>(
+      () =>
+        new Promise((resolve) => {
+          releaseRequest = () => resolve(resolvedQuestion());
+        }),
     );
     const { state } = createConnectedState(request, requestedPayload());
 
@@ -258,12 +257,11 @@ describe("question prompt state", () => {
 
   it("marks a concurrent winning answer from another surface", async () => {
     let rejectRequest: (error: Error) => void = () => {};
-    const request = vi.fn<RequestFn>((method) =>
-      method === "question.list"
-        ? Promise.resolve({ questions: [] })
-        : new Promise((_resolve, reject) => {
-            rejectRequest = reject;
-          }),
+    const request = vi.fn<RequestFn>(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectRequest = reject;
+        }),
     );
     const { state } = createConnectedState(request, requestedPayload());
 
@@ -287,12 +285,11 @@ describe("question prompt state", () => {
 
   it("keeps local provenance when the accepted resolve response is lost", async () => {
     let rejectRequest: (error: Error) => void = () => {};
-    const request = vi.fn<RequestFn>((method) =>
-      method === "question.list"
-        ? Promise.resolve({ questions: [] })
-        : new Promise((_resolve, reject) => {
-            rejectRequest = reject;
-          }),
+    const request = vi.fn<RequestFn>(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectRequest = reject;
+        }),
     );
     const { state } = createConnectedState(request, requestedPayload());
 
@@ -630,13 +627,11 @@ describe("refreshPendingQuestions", () => {
 
   it("preserves a resolution received while reconnect refresh is in flight", async () => {
     let finishList: (value: unknown) => void = () => {};
-    let listRequests = 0;
-    const request = vi.fn<RequestFn>(() =>
-      ++listRequests > 1
-        ? Promise.resolve({ questions: [] })
-        : new Promise((resolve) => {
-            finishList = resolve;
-          }),
+    const request = vi.fn<RequestFn>(
+      () =>
+        new Promise((resolve) => {
+          finishList = resolve;
+        }),
     );
     const { state, client } = createConnectedState(request, requestedPayload());
 

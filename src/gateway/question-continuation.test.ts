@@ -118,7 +118,9 @@ function fixture(saved = question()) {
     assertCurrent: vi.fn(),
   };
   const dispatch = vi.fn(
-    async (_request: AgentRunRequest, _options: InternalAgentTurnDispatchOptions) => ({}),
+    async (_request: AgentRunRequest, _options: InternalAgentTurnDispatchOptions) => ({
+      status: "ok",
+    }),
   );
   const facade = vi.fn(async (_principal: { client: unknown }) => ({ dispatch }));
   let canonical = saved;
@@ -218,6 +220,36 @@ describe("durable question continuation custody", () => {
       await scheduler.stop();
     }
   });
+
+  it.each(["error", "timeout"] as const)(
+    "records a non-throwing %s final as interrupted without replaying the turn",
+    async (status) => {
+      const f = fixture();
+      f.dispatch.mockImplementation(async (request, options) => {
+        await options.commitAdmission!({
+          runId: request.idempotencyKey,
+          sessionId: "session",
+          sessionKey: "agent:main:test",
+          storePath: "/tmp/fixture.db",
+          lifecycleGeneration: "epoch",
+          assertCurrent() {},
+        });
+        return { status };
+      });
+      await expect(dispatchQuestionContinuation(f.params)).rejects.toThrow(
+        `Durable question continuation ended with ${status}.`,
+      );
+      expect(f.dispatch).toHaveBeenCalledOnce();
+      const finishes = state.operate.mock.calls.filter(
+        ([, operation]) => operation.kind === "finish",
+      );
+      expect(finishes).toHaveLength(1);
+      expect(finishes[0]?.[1]).toMatchObject({
+        interrupted: true,
+        reason: expect.stringContaining("Start a new user turn"),
+      });
+    },
+  );
 
   it("does not dispatch under a system principal when original authority cannot be restored", async () => {
     const f = fixture();
@@ -336,7 +368,7 @@ describe("durable question continuation custody", () => {
           assertCurrent() {},
         });
         executed();
-        return {};
+        return { status: "ok" };
       });
       await expect(dispatchQuestionContinuation(f.params)).rejects.toThrow(
         owner === "revoked" ? "revoked after commit" : "acknowledgement lost",
@@ -435,7 +467,7 @@ describe("durable question continuation custody", () => {
           lifecycleGeneration: "epoch",
           assertCurrent() {},
         });
-        return {};
+        return { status: "ok" };
       });
       await expect(dispatchQuestionContinuation(f.params)).resolves.toMatchObject({
         status: "settled",
@@ -501,7 +533,7 @@ describe("durable question continuation custody", () => {
           assertCurrent() {},
         });
         completed = true;
-        return {};
+        return { status: "ok" };
       });
       const receipt = await dispatchQuestionContinuation(f.params);
       expect(receipt.status).toBe("completion_owed");
@@ -577,7 +609,7 @@ describe("pre-admission infrastructure recovery", () => {
           lifecycleGeneration: "epoch",
           assertCurrent() {},
         });
-        return {};
+        return { status: "ok" };
       });
       const clock = createGatewaySchedulerClock();
       const scheduler = createTestGatewayScheduler(clock.clock);
