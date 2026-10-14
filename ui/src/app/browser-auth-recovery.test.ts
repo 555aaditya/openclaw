@@ -179,6 +179,12 @@ describe("browser sign-in recovery", () => {
       }));
       let signedIn = false;
       const credentials: string[] = [];
+      const probes: Array<{
+        phase: "before-sign-in" | "credential";
+        attempt: number;
+        status: number;
+        signal: RequestInit["signal"];
+      }> = [];
       vi.stubGlobal(
         "fetch",
         vi.fn(async (_url: string, init?: RequestInit) => {
@@ -186,14 +192,24 @@ describe("browser sign-in recovery", () => {
             throw new TypeError("Failed to fetch");
           }
           expect(init.redirect).toBe("manual");
+          let response: Response;
           if (!signedIn) {
-            return redirectResponse();
+            response = redirectResponse();
+          } else {
+            const authorization = new Headers(init.headers).get("Authorization") ?? "";
+            credentials.push(authorization);
+            response =
+              authorization === `Bearer ${acceptedCredential}`
+                ? new Response(null, { headers: { "content-type": "application/json" } })
+                : new Response(null, { status: 401 });
           }
-          const authorization = new Headers(init.headers).get("Authorization") ?? "";
-          credentials.push(authorization);
-          return authorization === `Bearer ${acceptedCredential}`
-            ? new Response(null, { headers: { "content-type": "application/json" } })
-            : new Response(null, { status: 401 });
+          probes.push({
+            phase: signedIn ? "credential" : "before-sign-in",
+            attempt: credentials.length,
+            status: response.status,
+            signal: init.signal,
+          });
+          return response;
         }),
       );
       const restored = vi.fn();
@@ -205,7 +221,24 @@ describe("browser sign-in recovery", () => {
       await getRenderedModalDialog(document.body);
       signedIn = true;
       window.dispatchEvent(new Event("focus"));
-      await expect.poll(() => restored.mock.calls.length).toBe(1);
+      try {
+        await expect.poll(() => restored.mock.calls.length).toBe(1);
+      } catch (error) {
+        throw new Error(
+          `Browser sign-in recovery observations: ${JSON.stringify({
+            restored: restored.mock.calls.length,
+            probes: probes.map(({ signal, ...probe }) => ({
+              ...probe,
+              aborted: signal?.aborted ?? false,
+            })),
+            modalPresent: document.querySelector("openclaw-modal-dialog") !== null,
+            modalStatus: document
+              .querySelector('openclaw-modal-dialog [role="status"]')
+              ?.textContent?.trim(),
+          })}`,
+          { cause: error },
+        );
+      }
       expect(credentials).toEqual([
         "Bearer expired-device-token",
         "Bearer stored-token",
