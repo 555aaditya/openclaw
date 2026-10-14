@@ -1,12 +1,69 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../test/helpers/promise.js";
+import { wrapToolWithAbortSignal } from "../agent-tools.abort.js";
+import { SESSIONS_YIELD_ABORT_REASON } from "../embedded-agent-runner/run/attempt-sessions-yield.js";
 import { gatewayStub, validArgs } from "./ask-user-tool.gateway.test-fixture.js";
 import { createAskUserTool } from "./ask-user-tool.js";
 import { resetPendingAskUserQuestionsForTest } from "./ask-user-tool.test-support.js";
+import { createSessionsYieldTool } from "./sessions-yield-tool.js";
 
 afterEach(resetPendingAskUserQuestionsForTest);
 
 describe("native durable ask_user handoff", () => {
+  it("cancels a transient question when a sibling hands off the run", async () => {
+    const runAbort = new AbortController();
+    const answer = createDeferred<{ status: "cancelled" }>();
+    const gateway = gatewayStub(async (method, _opts, params) => {
+      if (method === "question.request") {
+        return { id: params.id };
+      }
+      if (method === "question.waitAnswer") {
+        return answer.promise;
+      }
+      if (method === "question.resolve") {
+        return { status: "cancelled" };
+      }
+      throw new Error(`Unexpected question operation: ${method}`);
+    });
+    const question = wrapToolWithAbortSignal(
+      createAskUserTool({ gatewayCall: gateway.call }),
+      runAbort.signal,
+    );
+    const execution = question.execute("transient-sibling", validArgs);
+    let outcome: unknown;
+    const observed = execution.then(
+      (value) => {
+        outcome = value;
+      },
+      (error: unknown) => {
+        outcome = error;
+      },
+    );
+    try {
+      await gateway.waitForCall("question.waitAnswer", execution);
+      const sibling = wrapToolWithAbortSignal(
+        createSessionsYieldTool({
+          sessionId: "transient-sibling",
+          claimYield: () => true,
+          onYield: () => {
+            runAbort.abort(SESSIONS_YIELD_ABORT_REASON);
+          },
+        }),
+        runAbort.signal,
+      );
+      expect(await sibling.execute("yield-sibling", {})).toMatchObject({
+        details: { status: "yielded" },
+      });
+      // The held transport has not settled; run cancellation must settle its wrapper.
+      await new Promise<void>((resolve) => {
+        setImmediate(resolve);
+      });
+      expect(outcome).toMatchObject({ name: "AbortError" });
+    } finally {
+      answer.resolve({ status: "cancelled" });
+      await observed;
+    }
+  });
   it("commits registration and delivers the prompt before yielding without a live answer waiter", async () => {
     const delivered = createDeferred();
     const yielded = vi.fn();

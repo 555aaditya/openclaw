@@ -469,7 +469,7 @@ export function createAskUserTool(params: {
   // Tool callbacks may run outside their creation scope; never borrow the invoker's owner.
   const questionAuthority = resolveAgentQuestionAnswerAuthority();
   const gatewayCall = resolveAgentQuestionGatewayCall(params.gatewayCall);
-  return markToolTurnHandoffOwner({
+  const tool: AnyAgentTool = {
     label: "Ask User",
     name: "ask_user",
     ...(params.nativeQuestionHandoff ? { executionMode: "sequential" as const } : {}),
@@ -720,5 +720,6 @@ export function createAskUserTool(params: {
         delivery.release();
       }
     },
-  });
+  };
+  return params.nativeQuestionHandoff ? markToolTurnHandoffOwner(tool) : tool;
 }

@@ -10,7 +10,7 @@ import {
 import { resolveStagedInputMediaPaths } from "../../../media/staged-inputs.js";
 import { extractModelCompat } from "../../../plugins/provider-model-compat.js";
 import { getPluginToolMeta } from "../../../plugins/tool-metadata.js";
-import { isSubagentSessionKey } from "../../../routing/session-key.js";
+import { isIncognitoSessionKey, isSubagentSessionKey } from "../../../routing/session-key.js";
 import { resolveAdmittedRunActiveAssertion } from "../../admitted-run-context.js";
 import {
   createOpenClawCodingToolsInternalAsync,
@@ -58,6 +58,7 @@ import {
 } from "./attempt-tool-construction-plan.js";
 import { buildEmbeddedAttemptToolRunContext } from "./attempt-tool-run-context.js";
 import type { EmbeddedRunAttemptInternalParams } from "./internal-params.js";
+import { assertAgentHarnessRunAdmission } from "./session-bootstrap.js";
 import type { EmbeddedRunAttemptParams } from "./types.js";
 
 type OpenClawCodingToolsOptions = NonNullable<
@@ -277,6 +278,13 @@ export async function prepareEmbeddedAttemptToolBase(params: {
     let constructedToolsRaw: Awaited<ReturnType<typeof createOpenClawCodingToolsInternalAsync>> =
       [];
     if (shouldConstructTools) {
+      const sessionAdmission = await assertAgentHarnessRunAdmission(attempt);
+      const nativeQuestionHandoff =
+        sessionAdmission?.entry.lifecycleRevision &&
+        !sessionAdmission.entry.incognito &&
+        !isIncognitoSessionKey(sessionAdmission.sessionKey)
+          ? params.onYield
+          : undefined;
       const codingToolOptions: OpenClawCodingToolsOptions = {
         agentId: params.setup.sessionAgentId,
         ...buildConversationContext(),
@@ -361,7 +369,7 @@ export async function prepareEmbeddedAttemptToolBase(params: {
             }
           : undefined,
         onYield: params.onYield,
-        nativeQuestionHandoff: params.onYield,
+        nativeQuestionHandoff,
       };
       const allTools = await createOpenClawCodingToolsInternalAsync(
         codingToolOptions,
