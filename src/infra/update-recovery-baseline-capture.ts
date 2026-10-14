@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type { BigIntStats } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -140,7 +139,7 @@ function maintenanceOwnerMayReadGenerationsInProcess(
 
 /** Capture for manual recovery under the original invocation's live custody.
  * Sources may remain active; final revalidation is not authority to restore them. */
-type RecoveryBaselineCaptureParams = {
+export function captureUpdateRecoveryBaseline(params: {
   runId: string;
   installRoot: string;
   env: NodeJS.ProcessEnv;
@@ -150,82 +149,11 @@ type RecoveryBaselineCaptureParams = {
   nodeRunner?: string;
   timeoutMs?: number;
   acquisition?: UpdateRecoveryCaptureAcquisition;
-};
-
-export function captureUpdateRecoveryBaseline(params: RecoveryBaselineCaptureParams) {
+}) {
   // Sealed helpers consume retained evidence; the installed CLI owns fresh capture.
   if (typeof SEALED_RUNTIME_BUILD === "boolean" && SEALED_RUNTIME_BUILD) {
     throw new Error("Fresh original-state capture requires the installed CLI.");
   }
-  return captureRecoveryBaseline(params);
-}
-
-type DoctorRecoveryCaptureResult =
-  | { kind: "covered"; warnings: PluginDoctorMigrationBackupWarning[] }
-  | ({ kind: "captured"; runId: string } & Awaited<
-      ReturnType<typeof captureUpdateRecoveryBaseline>
-    >);
-
-/** A separate manual copy never replaces an installed updater's admitted originals. */
-export async function captureDoctorRecoveryBaseline(
-  params: Omit<RecoveryBaselineCaptureParams, "runId" | "acquisition"> & {
-    retainedOriginal?: UpdateRecoveryBackupManifest;
-  },
-): Promise<DoctorRecoveryCaptureResult> {
-  const scope = getOpenClawDatabaseMaintenanceScope();
-  if (!scope?.ownsSchemaMaintenance) {
-    throw new Error("Pre-repair Doctor capture requires admitted maintenance ownership.");
-  }
-  const assertCurrent = () => {
-    params.signal?.throwIfAborted();
-    params.assertCurrent();
-    scope.assertOwnerCurrent();
-  };
-  assertCurrent();
-  if (params.retainedOriginal) {
-    const { snapshot } = await createConfigIO({
-      env: params.env,
-      configPath: resolveConfigPath(params.env),
-      observe: false,
-      pluginValidation: "core-only",
-    }).readConfigFileSnapshotForWrite();
-    if (snapshot.exists && snapshot.raw === null) {
-      throw new Error("Pre-repair Doctor configuration is unreadable.");
-    }
-    const warnings: PluginDoctorMigrationBackupWarning[] = [];
-    const inventory = await withOpenClawStateDatabaseReadSnapshot(
-      () =>
-        preparePluginDoctorMigrationBackupResources({
-          config: snapshot.sourceConfig,
-          env: params.env,
-          stateDir: resolvePathViaExistingAncestorSync(resolveStateDir(params.env)),
-          warnings,
-          requireLocalResources: true,
-        }),
-      { env: params.env },
-    );
-    assertCurrent();
-    inventory.assertCurrent();
-    const covered = new Set([
-      ...params.retainedOriginal.protectedPaths,
-      ...params.retainedOriginal.entries.map((entry) => entry.sourcePath),
-    ]);
-    if (inventory.resources.every((resource) => covered.has(canonicalEntryPath(resource.path)))) {
-      return { kind: "covered", warnings };
-    }
-  }
-  // This namespace has no update lineage and cannot impersonate its original capture.
-  const runId = `doctor-${randomUUID()}`;
-  const captured = await captureRecoveryBaseline({
-    ...params,
-    runId,
-    assertCurrent,
-    acquisition: { mode: "maintenance-owner" },
-  });
-  return { kind: "captured", runId, ...captured };
-}
-
-function captureRecoveryBaseline(params: RecoveryBaselineCaptureParams) {
   return withArtifactPreservingStateReads(async () => {
     const runId = params.runId;
     if (!/^[a-zA-Z0-9_-]{1,128}$/u.test(runId)) {

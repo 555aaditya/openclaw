@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { resolveStateDir } from "../config/paths.js";
 import type { HealthFinding } from "../flows/health-checks.js";
 import { resolvePathViaExistingAncestorSync } from "../infra/boundary-path.js";
@@ -10,7 +11,6 @@ import {
 import { readUpdateRunDriver } from "../infra/update-run-driver.js";
 import { hasCommandProcessCleanupError } from "../process/exec-result.js";
 import type { RuntimeEnv } from "../runtime.js";
-import type { UpdateRecoveryBackupManifest } from "./backup-verify-manifest.js";
 import { resolveDoctorUpdateAdmission } from "./doctor-maintenance-admission.js";
 
 /** Preserve evidence before repair; neither a capture nor its lineage authorizes restoration. */
@@ -35,6 +35,12 @@ export async function preserveDoctorOriginalState(params: {
     params.writeAuthority?.assertCurrent();
   };
   assertCallerCurrent();
+  if (updateInProgress && !runId) {
+    params.runtime.log(
+      "Original update recovery copy is unavailable. Doctor will continue without creating another copy or replacing retained originals.",
+    );
+    return { findings, warnings };
+  }
   let admission: ReturnType<typeof resolveDoctorUpdateAdmission> | undefined;
   const assertCurrent = () => {
     assertCallerCurrent();
@@ -42,7 +48,6 @@ export async function preserveDoctorOriginalState(params: {
   };
   try {
     // Older drivers may lack capture lineage; repair keeps its live maintenance and write authority.
-    let retainedOriginal: UpdateRecoveryBackupManifest | undefined;
     admission =
       updateInProgress && runId
         ? resolveDoctorUpdateAdmission(params.env, original?.runId)
@@ -59,12 +64,12 @@ export async function preserveDoctorOriginalState(params: {
         assertCurrent,
       });
       assertCurrent();
-      if (retained) {
-        retainedOriginal = retained.manifest;
-        params.runtime.log(
-          `Original update recovery copy retained. No action needed. For manual recovery: ${retained.ref.manifestPath}.`,
-        );
-      }
+      params.runtime.log(
+        retained
+          ? `Original update recovery copy retained. For manual recovery: ${retained.ref.manifestPath}.`
+          : "Original update recovery copy is unavailable. Doctor will continue without creating another copy or replacing retained originals.",
+      );
+      return { findings, warnings };
     }
     const installRoot = params.root;
     if (!installRoot) {
@@ -74,16 +79,18 @@ export async function preserveDoctorOriginalState(params: {
     if (!driver) {
       throw new Error("The Doctor process could not be identified for the pre-repair capture.");
     }
-    const { captureDoctorRecoveryBaseline, retireExpiredStandaloneDoctorCaptures } =
+    const { captureUpdateRecoveryBaseline, retireExpiredStandaloneDoctorCaptures } =
       await import("../infra/update-recovery-baseline-capture.js");
     assertCurrent();
-    const captured = await captureDoctorRecoveryBaseline({
+    const standaloneRunId = `doctor-${randomUUID()}`;
+    const captured = await captureUpdateRecoveryBaseline({
+      runId: standaloneRunId,
       installRoot,
       env: params.env,
       drivers: [driver],
       assertCurrent,
       signal: params.signal,
-      retainedOriginal,
+      acquisition: { mode: "maintenance-owner" },
     });
     assertCurrent();
     warnings.push(...captured.warnings.map((warning) => warning.message));
@@ -103,18 +110,13 @@ export async function preserveDoctorOriginalState(params: {
         docsUrl,
       })),
     );
-    if (captured.kind === "covered") {
-      return { findings, warnings };
-    }
     params.runtime.log(
-      retainedOriginal
-        ? `Separate pre-repair recovery copy saved. The original updater copy is unchanged. For manual recovery: ${captured.ref.manifestPath}.`
-        : `Recovery copy saved before repair. No action needed. For manual recovery: ${captured.ref.manifestPath}.`,
+      `Recovery copy saved before repair. No action needed. For manual recovery: ${captured.ref.manifestPath}.`,
     );
     try {
       const retirement = await retireExpiredStandaloneDoctorCaptures({
         stateDir: resolvePathViaExistingAncestorSync(resolveStateDir(params.env)),
-        keepRunId: captured.runId,
+        keepRunId: standaloneRunId,
         assertCurrent,
       });
       for (const directory of retirement.retired) {
@@ -164,11 +166,11 @@ export async function preserveDoctorOriginalState(params: {
     if (hasCommandProcessCleanupError(error)) {
       throw error;
     }
-    if (updateInProgress) {
+    if (original?.ref) {
       // An admitted baseline is part of this repair's contract, not optional
       // diagnostics. Never replace lost evidence with a capture of changed state.
       throw new DoctorMaintenanceRefusalError(
-        `Doctor could not preserve the required pre-repair recovery data: ${formatErrorMessage(error)}. State repair has not started. Keep the original recovery copy, check the named paths and disk space, then inspect openclaw update status --json before retrying Doctor.`,
+        `Doctor could not verify its admitted original recovery copy: ${formatErrorMessage(error)}. State repair has not started. Keep the original recovery copy, check the named paths and disk space, then inspect openclaw update status --json before retrying Doctor.`,
         { kind: "data-at-risk", reason: "unreadable-state" },
         { cause: error },
       );

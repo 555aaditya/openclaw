@@ -2,14 +2,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "../test-utils/prepare-compiled-subprocesses.js";
 import type { ProviderPlugin } from "../plugins/types.js";
-import { withEnvAsync } from "../test-utils/env.js";
 import {
   arrangeLegacyStateMigrationTest,
   confirm,
   createDoctorRuntime,
   ensureAuthProfileStore,
   mockDoctorConfigSnapshot,
-  resolveOpenClawPackageRoot,
   serviceIsLoaded,
   serviceRestart,
   transformConfigFile,
@@ -106,15 +104,11 @@ describe("doctor command", () => {
         runtime,
         runLegacyStateMigrations,
       } = await arrangeLegacyStateMigrationTest();
-      resolveOpenClawPackageRoot.mockResolvedValue(process.cwd());
       migrationCalls = () => runLegacyStateMigrations.mock.calls.length;
       try {
-        // This fixture has only core legacy state; plugin migration capture has separate proof.
-        await withEnvAsync({ OPENCLAW_DISABLE_BUNDLED_PLUGINS: "1" }, async () => {
-          await (
-            doctorCommandValue as (runtime: unknown, opts: Record<string, unknown>) => Promise<void>
-          )(runtime, { yes: true });
-        });
+        await (
+          doctorCommandValue as (runtime: unknown, opts: Record<string, unknown>) => Promise<void>
+        )(runtime, { yes: true });
       } finally {
         doctorSettled = true;
       }
@@ -214,7 +208,6 @@ describe("doctor command", () => {
       },
     ]);
 
-    resolveOpenClawPackageRoot.mockResolvedValue(process.cwd());
     const previousConfigWriteSupport =
       process.env.OPENCLAW_UPDATE_PARENT_SUPPORTS_DOCTOR_CONFIG_WRITE;
     process.env.OPENCLAW_UPDATE_PARENT_SUPPORTS_DOCTOR_CONFIG_WRITE = "1";

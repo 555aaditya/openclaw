@@ -2,11 +2,9 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, expect, it, vi } from "vitest";
+import { sha256Hex } from "../infra/crypto-digest.js";
 import { resolveUpdateCaptureRoot } from "../infra/update-capture-paths.js";
-import {
-  captureUpdateRecoveryBaseline,
-  type UpdateRecoveryBaselineRef,
-} from "../infra/update-recovery-baseline-capture.js";
+import { captureUpdateRecoveryBaseline } from "../infra/update-recovery-baseline-capture.js";
 import { buildUpdateRehearsalPathEnv } from "../infra/update-rehearsal-paths.js";
 import type { PluginDoctorStateMigration } from "../plugins/doctor-contract-module.js";
 import * as pluginResources from "../plugins/doctor-contract-registry.js";
@@ -30,7 +28,6 @@ import { parseUpdateRecoveryBackupManifest } from "./backup-verify-manifest.js";
 import * as doctorAdmission from "./doctor-maintenance-admission.js";
 import { beginDoctorMaintenance } from "./doctor-maintenance.js";
 import { backupDoctorMigrationDatabases } from "./doctor-migration-backup.js";
-import { createDoctorOriginalCaptureHook } from "./doctor-original-capture-admission.js";
 import { preserveDoctorOriginalState } from "./doctor-original-capture.js";
 
 afterEach(() => {
@@ -38,7 +35,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("supplements an older driver capture before sealed Doctor repair without replacing its originals", async () => {
+it("keeps config and declared plugin resources while excluding disposable core images and aliases", async () => {
   await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
     const stateDir = await fs.realpath(state.stateDir);
     await withEnvAsync(
@@ -92,9 +89,8 @@ it("supplements an older driver capture before sealed Doctor repair without repl
         );
         // Synthetic declarations isolate plugin execution; discovery, native custody,
         // snapshots, file traversal, manifests and publication use production code.
-        const collectResources = vi
-          .spyOn(pluginResources, "preparePluginDoctorMigrationBackupResources")
-          .mockImplementation(async (params) => {
+        vi.spyOn(pluginResources, "preparePluginDoctorMigrationBackupResources").mockImplementation(
+          async (params) => {
             params.warnings.push({
               kind: "undeclared-migration-resources",
               pluginId: "synthetic-legacy",
@@ -122,7 +118,8 @@ it("supplements an older driver capture before sealed Doctor repair without repl
               notices: [],
               assertCurrent() {},
             };
-          });
+          },
+        );
         const messages: string[] = [];
         const runtime: RuntimeEnv = {
           log: (...args) => {
@@ -142,147 +139,16 @@ it("supplements an older driver capture before sealed Doctor repair without repl
           runtime,
         });
         expect(maintenance).toBeDefined();
-        let originalRef: UpdateRecoveryBaselineRef;
-        let originalManifestPath = "";
-        let originalManifestBytes: Buffer;
         try {
           const captureResult = await maintenance!.run(async () => {
             const scope = getOpenClawDatabaseMaintenanceScope()!;
-            const disposableHook = createDoctorOriginalCaptureHook({
-              root: process.cwd(),
-              runtime,
-              rehearsalRoot: stateDir,
-              reportFindings() {},
-            });
-            await disposableHook({ env: process.env, signal: maintenance!.signal });
-            await expect(fs.stat(captures)).rejects.toMatchObject({ code: "ENOENT" });
-            expect(await fs.readFile(canvasDocument, "utf8")).toBe("original Canvas document");
-            const emptyInventory = async () => ({
-              resources: [],
-              deferredPluginIds: new Set<string>(),
-              notices: [],
-              assertCurrent() {},
-            });
-            vi.mocked(pluginResources.preparePluginDoctorMigrationBackupResources)
-              .mockImplementationOnce(emptyInventory)
-              .mockImplementationOnce(emptyInventory);
-            const original = await captureUpdateRecoveryBaseline({
-              runId: "older-installed-driver",
-              installRoot: process.cwd(),
-              env: process.env,
-              drivers: [],
-              signal: maintenance!.signal,
-              assertCurrent: scope.assertAdmission,
-              acquisition: { mode: "maintenance-owner" },
-            });
-            originalRef = original.ref;
-            originalManifestPath = original.ref.manifestPath;
-            originalManifestBytes = await fs.readFile(originalManifestPath);
-            expect(
-              parseUpdateRecoveryBackupManifest(originalManifestBytes.toString()).entries.some(
-                (entry) => entry.sourcePath === canvasDocument,
-              ),
-            ).toBe(false);
-            const currentOriginal = await captureUpdateRecoveryBaseline({
-              runId: "current-installed-driver",
-              installRoot: process.cwd(),
-              env: process.env,
-              drivers: [],
-              signal: maintenance!.signal,
-              assertCurrent: scope.assertAdmission,
-              acquisition: { mode: "maintenance-owner" },
-            });
-            vi.stubGlobal("SEALED_RUNTIME_BUILD", true);
-            expect(() =>
-              captureUpdateRecoveryBaseline({
-                runId: "candidate-cannot-replace-original",
-                installRoot: process.cwd(),
-                env: process.env,
-                drivers: [],
-                assertCurrent: scope.assertAdmission,
-              }),
-            ).toThrow("Fresh original-state capture requires the installed CLI");
-            vi.spyOn(doctorAdmission, "resolveDoctorUpdateAdmission").mockReturnValue({
-              assertCurrent: scope.assertAdmission,
-              readContinuation: () => undefined,
-              recordContinuation() {},
-            });
             const result = await preserveDoctorOriginalState({
               root: process.cwd(),
               env: process.env,
               runtime,
               signal: maintenance!.signal,
               assertCurrent: scope.assertAdmission,
-              writeAuthority: {
-                inputHash: "synthetic-config-hash",
-                assertCurrent: scope.assertAdmission,
-                originalRecoveryCapture: {
-                  runId: "older-installed-driver",
-                  installRoot: process.cwd(),
-                  ref: original.ref,
-                },
-              },
             });
-            const captureNames = async () =>
-              (await fs.readdir(captures)).filter((name) => name.startsWith("doctor-"));
-            const supplementalNames = await captureNames();
-            expect(supplementalNames).toHaveLength(1);
-            const currentCollector = collectResources.getMockImplementation()!;
-            // Core rehearsal images are already disposable, not external plugin recovery data.
-            collectResources.mockImplementationOnce(async (params) => {
-              const inventory = await currentCollector(params);
-              return {
-                ...inventory,
-                resources: inventory.resources.filter((resource) => resource.path !== shared),
-              };
-            });
-            await preserveDoctorOriginalState({
-              root: process.cwd(),
-              env: process.env,
-              runtime,
-              signal: maintenance!.signal,
-              assertCurrent: scope.assertAdmission,
-              writeAuthority: {
-                inputHash: "synthetic-config-hash",
-                assertCurrent: scope.assertAdmission,
-                originalRecoveryCapture: {
-                  runId: "current-installed-driver",
-                  installRoot: process.cwd(),
-                  ref: currentOriginal.ref,
-                },
-              },
-            });
-            expect(await captureNames()).toEqual(supplementalNames);
-            const invalidInventory = async () => ({
-              resources: [{ path: skill, kind: "directory" as const }],
-              deferredPluginIds: new Set<string>(),
-              notices: [],
-              assertCurrent() {},
-            });
-            vi.mocked(pluginResources.preparePluginDoctorMigrationBackupResources)
-              .mockImplementationOnce(invalidInventory)
-              .mockImplementationOnce(invalidInventory);
-            const beforeStateMutation = createDoctorOriginalCaptureHook({
-              root: process.cwd(),
-              runtime,
-              reportFindings() {},
-              writeAuthority: {
-                inputHash: "synthetic-config-hash",
-                assertCurrent: scope.assertAdmission,
-                originalRecoveryCapture: {
-                  runId: "older-installed-driver",
-                  installRoot: process.cwd(),
-                  ref: original.ref,
-                },
-              },
-            });
-            await expect(
-              beforeStateMutation({ env: process.env, signal: maintenance!.signal }),
-            ).rejects.toMatchObject({
-              refusal: { kind: "data-at-risk" },
-              message: expect.stringContaining(skill),
-            });
-            expect(await fs.readFile(canvasDocument, "utf8")).toBe("original Canvas document");
             await backupDoctorMigrationDatabases({
               env: process.env,
               pendingDatabasePaths: [agent],
@@ -290,25 +156,12 @@ it("supplements an older driver capture before sealed Doctor repair without repl
             });
             return result;
           });
-          expect(await fs.readFile(originalManifestPath)).toEqual(originalManifestBytes!);
           const names = (await fs.readdir(captures)).filter((name) => name.startsWith("doctor-"));
-          // Failed snapshots retain their partial evidence; only the successful copy is sealed.
-          const sealedNames: string[] = [];
-          for (const name of names) {
-            if (
-              await fs.stat(path.join(captures, name, "manifest.json")).then(
-                () => true,
-                () => false,
-              )
-            ) {
-              sealedNames.push(name);
-            }
-          }
-          expect(sealedNames, messages.join("\n")).toHaveLength(1);
-          const directory = path.join(captures, sealedNames[0]!);
-          const manifest = parseUpdateRecoveryBackupManifest(
-            await fs.readFile(path.join(directory, "manifest.json"), "utf8"),
-          );
+          expect(names, messages.join("\n")).toHaveLength(1);
+          const directory = path.join(captures, names[0]!);
+          const manifestPath = path.join(directory, "manifest.json");
+          const manifestBytes = await fs.readFile(manifestPath);
+          const manifest = parseUpdateRecoveryBackupManifest(manifestBytes.toString());
           expect(manifest.databases).toEqual([]);
           for (const file of [shared, agent, `${agent}-journal`, alias, companionAlias]) {
             expect(manifest.excludedRoots).toContain(file);
@@ -367,113 +220,58 @@ it("supplements an older driver capture before sealed Doctor repair without repl
               ),
             ).toBe(false);
           }
+          const laterWorkspace = state.path("later-declared-workspace");
+          const workspaceFile = path.join(laterWorkspace, "document.txt");
+          await fs.mkdir(laterWorkspace);
+          await fs.writeFile(workspaceFile, "workspace omitted from the original inventory");
+          expect(manifest.entries.some((entry) => entry.sourcePath === laterWorkspace)).toBe(false);
+          vi.mocked(pluginResources.preparePluginDoctorMigrationBackupResources).mockResolvedValue({
+            resources: [{ path: laterWorkspace, kind: "directory" }],
+            deferredPluginIds: new Set(),
+            notices: [],
+            assertCurrent() {},
+          });
+          vi.stubGlobal("SEALED_RUNTIME_BUILD", true);
+          await maintenance!.run(async () => {
+            const scope = getOpenClawDatabaseMaintenanceScope()!;
+            vi.spyOn(doctorAdmission, "resolveDoctorUpdateAdmission").mockReturnValue({
+              assertCurrent: scope.assertAdmission,
+              readContinuation: () => undefined,
+              recordContinuation() {},
+            });
+            await preserveDoctorOriginalState({
+              root: process.cwd(),
+              env: process.env,
+              runtime,
+              signal: maintenance!.signal,
+              assertCurrent: scope.assertAdmission,
+              writeAuthority: {
+                inputHash: "synthetic-config-hash",
+                assertCurrent: scope.assertAdmission,
+                originalRecoveryCapture: {
+                  runId: manifest.runId,
+                  installRoot: process.cwd(),
+                  ref: { directory, manifestPath, manifestSha256: sha256Hex(manifestBytes) },
+                },
+              },
+            });
+          });
+          expect((await fs.readdir(captures)).filter((name) => name.startsWith("doctor-"))).toEqual(
+            names,
+          );
+          expect(await fs.readFile(manifestPath)).toEqual(manifestBytes);
+          expect(await fs.readFile(workspaceFile, "utf8")).toBe(
+            "workspace omitted from the original inventory",
+          );
         } finally {
           await maintenance?.release();
+          await fs.rm(captures, { recursive: true, force: true });
         }
         expect(
           await Promise.all(
             [shared, agent, pluginDatabase, skill].map((file) => fs.readFile(file)),
           ),
         ).toEqual(sourceBytes);
-        await withEnvAsync(
-          { OPENCLAW_SKIP_CANVAS_HOST: undefined, OPENCLAW_UPDATE_IN_PROGRESS: "1" },
-          async () => {
-            const liveMaintenance = await beginDoctorMaintenance({
-              root: process.cwd(),
-              options: { repair: true, nonInteractive: true },
-              runtime,
-            });
-            expect(liveMaintenance).toBeDefined();
-            try {
-              await liveMaintenance!.run(async () => {
-                const scope = getOpenClawDatabaseMaintenanceScope()!;
-                vi.mocked(doctorAdmission.resolveDoctorUpdateAdmission).mockReturnValue({
-                  assertCurrent: scope.assertAdmission,
-                  readContinuation: () => undefined,
-                  recordContinuation() {},
-                });
-                const hook = createDoctorOriginalCaptureHook({
-                  root: process.cwd(),
-                  runtime,
-                  reportFindings() {},
-                  writeAuthority: {
-                    inputHash: "synthetic-config-hash",
-                    assertCurrent: scope.assertAdmission,
-                    originalRecoveryCapture: {
-                      runId: "older-installed-driver",
-                      installRoot: process.cwd(),
-                      ref: originalRef!,
-                    },
-                  },
-                });
-                const unsafeResource = async () => ({
-                  resources: [{ path: skill, kind: "directory" as const }],
-                  deferredPluginIds: new Set<string>(),
-                  notices: [],
-                  assertCurrent() {},
-                });
-                collectResources
-                  .mockImplementationOnce(unsafeResource)
-                  .mockImplementationOnce(unsafeResource);
-                await expect(
-                  hook({ env: process.env, signal: liveMaintenance!.signal }),
-                ).rejects.toMatchObject({
-                  refusal: { kind: "data-at-risk" },
-                  message: expect.stringContaining(skill),
-                });
-                expect(await fs.readFile(canvasDocument, "utf8")).toBe("original Canvas document");
-                const before = new Set(await fs.readdir(captures));
-                await hook({ env: process.env, signal: liveMaintenance!.signal });
-                const newCapture = (await fs.readdir(captures)).find(
-                  (name) => !before.has(name) && name.startsWith("doctor-"),
-                );
-                expect(newCapture).toBeDefined();
-                const liveDirectory = path.join(captures, newCapture!);
-                const liveManifest = parseUpdateRecoveryBackupManifest(
-                  await fs.readFile(path.join(liveDirectory, "manifest.json"), "utf8"),
-                );
-                expect(liveManifest.excludedRoots).not.toContain(shared);
-                expect(
-                  (liveManifest.databases ?? []).some((database) => database.path === shared),
-                ).toBe(true);
-                const retained = liveManifest.entries.find(
-                  (entry) => entry.sourcePath === canvasDocument,
-                );
-                if (retained?.kind !== "file") {
-                  throw new Error("Live Doctor omitted the Canvas original");
-                }
-                const migrated = await stateMigrations[0]!.migrateLegacyState({
-                  config: {
-                    plugins: {
-                      entries: { canvas: { config: { host: { root: legacyCanvasRoot } } } },
-                    },
-                  },
-                  env: process.env,
-                  stateDir,
-                  oauthDir: path.join(stateDir, "credentials"),
-                  context: {
-                    openPluginStateKeyedStore() {
-                      throw new Error("Canvas file migration must not access plugin state");
-                    },
-                  },
-                });
-                expect(migrated.warnings).toEqual([]);
-                expect(migrated.changes).toHaveLength(1);
-                await expect(fs.stat(canvasDocument)).rejects.toMatchObject({ code: "ENOENT" });
-                expect(
-                  await fs.readFile(path.join(canvasDestination, "retained", "index.html"), "utf8"),
-                ).toBe("original Canvas document");
-                expect(
-                  await fs.readFile(path.join(liveDirectory, retained.archivePath), "utf8"),
-                ).toBe("original Canvas document");
-                expect(await fs.readFile(originalManifestPath)).toEqual(originalManifestBytes!);
-              });
-            } finally {
-              await liveMaintenance?.release();
-              await fs.rm(captures, { recursive: true, force: true });
-            }
-          },
-        );
       },
     );
   });
