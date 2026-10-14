@@ -56,6 +56,7 @@ async function installChunkFailure(
 ) {
   let headCount = 0;
   let chunkRequestCount = 0;
+  let reachable = options.automaticReload ?? false;
   let failedChunkUrl: string | undefined;
   await page.route("**/*", async (route) => {
     if (route.request().method() !== "HEAD") {
@@ -63,7 +64,9 @@ async function installChunkFailure(
       return;
     }
     headCount += 1;
-    if (headCount === 1 && !options.automaticReload) {
+    // Automatic recovery keeps probing. Manual cases stay offline until Retry
+    // is clicked, so a background probe cannot remove its button mid-click.
+    if (!reachable) {
       await route.fulfill({ status: 503 });
       return;
     }
@@ -85,7 +88,13 @@ async function installChunkFailure(
     }
     await route.fallback();
   });
-  return { chunkRequestCount: () => chunkRequestCount, headCount: () => headCount };
+  return {
+    chunkRequestCount: () => chunkRequestCount,
+    headCount: () => headCount,
+    restoreReachability: () => {
+      reachable = true;
+    },
+  };
 }
 
 function focusPath(target: ControlUiFocusBuildTarget): string {
@@ -107,9 +116,14 @@ async function expectRealChunkFailure(page: Page, label: string) {
   return error;
 }
 
-async function retryThroughReload(page: Page, error: ReturnType<Page["locator"]>): Promise<void> {
+async function retryThroughReload(
+  page: Page,
+  error: ReturnType<Page["locator"]>,
+  restoreReachability: () => void,
+): Promise<void> {
   const reloaded = page.waitForEvent("domcontentloaded");
   await error.getByRole("button", { name: "Retry", exact: true }).click();
+  restoreReachability();
   await reloaded;
 }
 
@@ -334,11 +348,11 @@ suite.define(() => {
         await error.waitFor();
         expect(await error.textContent()).toContain("Failed to fetch dynamically imported module");
         expect(failure.chunkRequestCount()).toBe(1);
-        await expect.poll(failure.headCount).toBe(1);
-        await Promise.all([
-          page.waitForEvent("domcontentloaded"),
-          error.getByRole("button", { name: "Reload", exact: true }).click(),
-        ]);
+        await expect.poll(failure.headCount).toBeGreaterThanOrEqual(1);
+        const reloaded = page.waitForEvent("domcontentloaded");
+        await error.getByRole("button", { name: "Reload", exact: true }).click();
+        failure.restoreReachability();
+        await reloaded;
         await rejectLogin();
         await page.locator('.login-gate__failure[data-kind="auth-required"]').waitFor();
         expect(failure.chunkRequestCount()).toBe(2);
@@ -394,7 +408,7 @@ suite.define(() => {
           await waitForControlUiGatewayReady(page);
           await page.keyboard.press("ControlOrMeta+k");
           const error = await expectRealChunkFailure(page, "command palette");
-          await expect.poll(failure.headCount).toBe(1);
+          await expect.poll(failure.headCount).toBeGreaterThanOrEqual(1);
           if (captureUiProof) {
             await page.screenshot({ path: path.join(artifactDir, "dismissed-retry-before.png") });
           }
@@ -402,8 +416,9 @@ suite.define(() => {
           const reloaded = new Promise<void>((resolve) => {
             page.once("domcontentloaded", () => resolve());
           });
+          failure.restoreReachability();
           await error.getByRole("button", { name: "Retry", exact: true }).click();
-          await expect.poll(failure.headCount).toBe(2);
+          await expect.poll(failure.headCount).toBeGreaterThanOrEqual(2);
           await page.keyboard.press("Escape");
           const paletteModal = page.locator('openclaw-modal-dialog[label="command palette"]');
           await expect.poll(() => paletteModal.count()).toBe(0);
@@ -467,10 +482,10 @@ suite.define(() => {
           const error = await expectRealChunkFailure(page, testCase.label);
           const failedPathname = new URL(page.url()).pathname;
           expect(failure.chunkRequestCount()).toBe(1);
-          await expect.poll(failure.headCount).toBe(1);
+          await expect.poll(failure.headCount).toBeGreaterThanOrEqual(1);
           expect(documentRequests).toBe(1);
 
-          await retryThroughReload(page, error);
+          await retryThroughReload(page, error, failure.restoreReachability);
           await testCase.ready(page);
 
           await expect.poll(failure.chunkRequestCount).toBe(2);
@@ -506,7 +521,7 @@ suite.define(() => {
         window.dispatchEvent(new CustomEvent("openclaw:command-palette-open"));
       });
       const error = await expectRealChunkFailure(page, "command palette");
-      await expect.poll(failure.headCount).toBe(1);
+      await expect.poll(failure.headCount).toBeGreaterThanOrEqual(1);
       expect(failure.chunkRequestCount()).toBe(1);
       if (captureUiProof) {
         await writeFile(
@@ -517,7 +532,7 @@ suite.define(() => {
         );
       }
 
-      await retryThroughReload(page, error);
+      await retryThroughReload(page, error, failure.restoreReachability);
       await page
         .locator("openclaw-command-palette")
         .getByRole("textbox", { name: "Search or start a task…" })
@@ -802,9 +817,9 @@ suite.define(() => {
           expect(await testCase.close(page).isVisible()).toBe(true);
           await composer.click({ position: { x: 8, y: 8 } });
           expect(await composer.inputValue()).toBe("Keep working");
-          await expect.poll(failure.headCount).toBe(1);
+          await expect.poll(failure.headCount).toBeGreaterThanOrEqual(1);
 
-          await retryThroughReload(page, error);
+          await retryThroughReload(page, error, failure.restoreReachability);
         }
         await testCase.ready(page).waitFor();
         expect(failure.chunkRequestCount()).toBe(2);
@@ -914,7 +929,8 @@ suite.define(() => {
         expect(response?.status()).toBe(200);
         await page.locator(".sidebar-rail").waitFor({ state: "attached" });
         const error = await expectRealChunkFailure(page, "openclaw-macos-titlebar-controls");
-        await expect.poll(failure.headCount).toBe(1);
+        // Let automatic recovery probe again before the manual action.
+        await expect.poll(failure.headCount).toBeGreaterThanOrEqual(2);
         expect(failure.chunkRequestCount()).toBe(1);
         if (railProofDir) {
           await page.screenshot({
@@ -922,7 +938,7 @@ suite.define(() => {
           });
         }
 
-        await retryThroughReload(page, error);
+        await retryThroughReload(page, error, failure.restoreReachability);
         const toolbar = page.locator(".macos-titlebar-controls");
         await toolbar.waitFor({ state: "visible" });
         await page.locator(".sidebar-session-toolbar__collapse").click();
