@@ -19,6 +19,7 @@ import {
   getOpenClawAgentMigrationSchema,
 } from "./openclaw-agent-db-schema-helpers.js";
 import { AGENT_JSON_PREDICATE_COLUMNS } from "./openclaw-agent-json-predicate-schema.js";
+import { withoutOutboxEnqueueSequence } from "./openclaw-agent-outbox-sequence-migration.js";
 import {
   identifier,
   registryRowSchema,
@@ -82,7 +83,7 @@ function parseOpenClawMigrationWitness(value: unknown): OpenClawMigrationWitness
   }
   if (
     (witness.role === "agent" &&
-      (witness.agentId === null || ![24, 25, 26, 27].includes(witness.schemaVersion))) ||
+      (witness.agentId === null || ![24, 25, 26, 27, 28].includes(witness.schemaVersion))) ||
     (witness.role !== "agent" && witness.agentId !== null) ||
     (witness.role !== "agent" && witness.schemaSha256 !== witness.migrationSchemaSha256) ||
     (witness.role !== "global" && witness.registryMigrationBinding !== null) ||
@@ -101,7 +102,7 @@ function parseOpenClawMigrationWitness(value: unknown): OpenClawMigrationWitness
           "transcript_events",
           "session_key_contract",
           "session_canonical_validation_pending",
-          ...(witness.schemaVersion === 27 ? ["session_questions"] : []),
+          ...(witness.schemaVersion === 28 ? ["session_questions"] : []),
         ]
       : witness.role === "global"
         ? ["schema_meta", "config_machine_state"]
@@ -131,7 +132,7 @@ type RegistryMigrationContext = {
     agentId: string;
     path: string;
     requireRegistration: boolean;
-    expectedSchemaVersion: 25 | 26 | 27;
+    expectedSchemaVersion: 25 | 26 | 27 | 28;
   }[];
   phase: "original" | "candidate";
   resolvePath: (value: string) => string;
@@ -190,7 +191,11 @@ function captureTable(
   if (columns.length === 0 || columns.length > 256) {
     throw new Error(`Unsupported migration witness columns: ${table}`);
   }
-  const names = columns.map(({ name }) => name);
+  const outbox = role === "agent" && table === "context_engine_turn_outbox";
+  // The named sequence aliases rowid; hash it once, retaining the old witness layout.
+  const names = columns
+    .map(({ name }) => name)
+    .filter((name) => !outbox || name !== "enqueue_sequence");
   if (!withoutRowid) {
     const rowid = ["rowid", "_rowid_", "oid"].find(
       (alias) => !names.some((name) => name.toLowerCase() === alias),
@@ -227,7 +232,7 @@ function captureTable(
       }),
     );
   const primary = columns.filter(({ pk }) => pk > 0).toSorted((a, b) => a.pk - b.pk);
-  const primaryNames = primary.map(({ name }) => name);
+  const primaryNames = outbox ? ["advancement_key"] : primary.map(({ name }) => name);
   for (const column of [...primaryNames, ...names.filter((name) => !primaryNames.includes(name))]) {
     query = query.orderBy(witnessIdentifier(column, "witness"));
   }
@@ -265,7 +270,7 @@ function captureTable(
     let registryKey = "";
     let registryLocator = "";
     let registryVersion = 0;
-    let expectedSchemaVersion: 25 | 26 | 27 | undefined;
+    let expectedSchemaVersion: 25 | 26 | 27 | 28 | undefined;
     if (registry) {
       const agentId = registryText(row, "agent_id");
       const storedPath = registryText(row, "path");
@@ -393,7 +398,7 @@ export function captureOpenClawMigrationWitness(
         throw new Error("Migration witness database owner does not match the backup inventory");
       }
       if (owner.role === "agent") {
-        if (![24, 25, 26, 27].includes(schemaVersion)) {
+        if (![24, 25, 26, 27, 28].includes(schemaVersion)) {
           throw new Error(`Unsupported agent migration witness schema: ${schemaVersion}`);
         }
         assertOpenClawAgentSchemaContains(
@@ -458,9 +463,9 @@ export function captureOpenClawMigrationWitness(
       );
     });
     const questionIndexes =
-      role === "agent" && schemaVersion === 27
+      role === "agent" && schemaVersion === 28
         ? new Set(
-            getCanonicalSqliteNamedIndexContracts(getOpenClawAgentMigrationSchema(27))
+            getCanonicalSqliteNamedIndexContracts(getOpenClawAgentMigrationSchema(28))
               .filter((index) => index.tableName === "session_questions")
               .map((index) => index.name),
           )
@@ -479,10 +484,10 @@ export function captureOpenClawMigrationWitness(
         continue;
       }
       schemaHash.update(JSON.stringify(object)).update("\n");
-      // Schema 27 adds this canonically validated table and its indexes only.
+      // Schema 28 adds this canonically validated table and its indexes only.
       if (
         role === "agent" &&
-        schemaVersion === 27 &&
+        schemaVersion === 28 &&
         object.tbl_name === "session_questions" &&
         ((object.type === "table" && object.name === "session_questions") ||
           (object.type === "index" &&
@@ -504,7 +509,12 @@ export function captureOpenClawMigrationWitness(
         object.type === "table" &&
         (object.name === "session_key_contract" || derivedMigrationColumns.has(object.name))
       ) {
-        const definition = parseSqliteTableDefinition(object.sql, object.name);
+        const definition = parseSqliteTableDefinition(
+          object.name === "context_engine_turn_outbox" && object.sql
+            ? withoutOutboxEnqueueSequence(object.sql)
+            : object.sql,
+          object.name,
+        );
         for (const column of definition.columns.keys()) {
           if (!migrationColumn(role, object.name, column)) {
             definition.columns.delete(column);
@@ -662,13 +672,13 @@ export function assertOpenClawMigrationWitnessPreserved(
   }
   if (
     crossing &&
-    current.schemaVersion === 27 &&
+    current.schemaVersion === 28 &&
     current.tables.find((table) => table.name === "session_questions")?.rowCount !== 0
   ) {
     throw new Error("Migration added unclassified question content");
   }
   const writerCrossing = crossing && original.schemaVersion === 24;
-  const questionCrossing = crossing && current.schemaVersion === 27;
+  const questionCrossing = crossing && current.schemaVersion === 28;
   const predicateCrossing = crossing && original.schemaVersion < 26 && current.schemaVersion >= 26;
   const normalizeContent = (table: string) =>
     writerCrossing ||

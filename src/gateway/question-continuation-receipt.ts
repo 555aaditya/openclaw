@@ -1,4 +1,5 @@
 import { hasSessionQuestionCustodyRetiredError } from "../config/sessions/session-questions-custody-error.js";
+import { matchesDurableQuestionDefinition } from "../config/sessions/session-questions-definition.js";
 import { readSessionQuestionCustody } from "../config/sessions/session-questions.js";
 import type { DurableQuestion } from "../config/sessions/session-questions.types.js";
 import type { QuestionObservation } from "./question-manager.js";
@@ -14,7 +15,23 @@ export async function readDurableQuestionFact(
     return undefined;
   }
   try {
-    return await readSessionQuestionCustody(binding, observation.record.id, assertCurrent);
+    const current = await readSessionQuestionCustody(binding, observation.record.id, assertCurrent);
+    const captured = observation.durableDefinition;
+    if (
+      current &&
+      (!captured ||
+        current.record.createdAtMs !== captured.record.createdAtMs ||
+        current.record.expiresAtMs !== captured.record.expiresAtMs ||
+        !matchesDurableQuestionDefinition(current, {
+          ...captured,
+          record: { ...captured.record, status: "pending" },
+        }))
+    ) {
+      assertCurrent();
+      retireObservation();
+      return undefined;
+    }
+    return current;
   } catch (error) {
     if (!hasSessionQuestionCustodyRetiredError(error)) {
       throw error;
