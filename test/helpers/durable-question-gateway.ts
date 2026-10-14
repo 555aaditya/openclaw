@@ -4,6 +4,7 @@ import {
   GATEWAY_CLIENT_MODES,
   GATEWAY_CLIENT_NAMES,
 } from "../../packages/gateway-protocol/src/client-info.js";
+import { TOOL_CALL_RAW_TOOL_NAME } from "../../src/agents/tool-search-types.js";
 import type { GatewayClientOptions } from "../../src/gateway/client.js";
 import { buildMockOpenAiResponsesProvider } from "../../src/gateway/test-openai-responses-model.js";
 import { loadOrCreateDeviceIdentity } from "../../src/infra/device-identity.js";
@@ -65,7 +66,7 @@ export async function createDurableQuestionGateway(
           if (text.includes("DURABLE_ASK_PROOF") && !issued && !nativeTools && !searched) {
             if (
               !observedToolNames.includes("tool_search") ||
-              !observedToolNames.includes("tool_call")
+              !observedToolNames.includes(TOOL_CALL_RAW_TOOL_NAME)
             ) {
               throw new Error(
                 `Native question discovery unavailable: ${observedToolNames.join(", ")}`,
@@ -108,7 +109,7 @@ export async function createDurableQuestionGateway(
               type: "function_call",
               id: "fc_durable_question",
               call_id: "call_durable_question",
-              name: nativeTools ? "ask_user" : "tool_call",
+              name: nativeTools ? "ask_user" : TOOL_CALL_RAW_TOOL_NAME,
               arguments: args,
             };
             const later = {

@@ -19,6 +19,7 @@ import {
 } from "./sessions/tools/tool-definition-wrapper.js";
 import { createZeroUsageFixture } from "./test-helpers/usage-fixtures.js";
 import { getToolInvocationMetadata } from "./tool-invocation-metadata.js";
+import { TOOL_CALL_RAW_TOOL_NAME } from "./tool-search-types.js";
 import {
   createToolSearchCatalogRef,
   createToolSearchTools,
@@ -60,7 +61,7 @@ function deferredFixture() {
   registerHeadlessToolSearchCatalog({ catalogRef, tools: [target, ordinary] });
   const dispatcher = expectDefined(
     createToolSearchTools({ catalogRef, abortSignal: abort.signal }).find(
-      (tool) => tool.name === "tool_call",
+      (tool) => tool.name === TOOL_CALL_RAW_TOOL_NAME,
     ),
     "native dispatcher",
   );
@@ -101,7 +102,7 @@ it.each([false, true])(
           {
             type: "toolCall",
             id: "question",
-            name: "tool_call",
+            name: TOOL_CALL_RAW_TOOL_NAME,
             arguments: { id: "ask_user", args: validArgs },
           },
           { type: "toolCall", id: "effect", name: "exec", arguments: {} },
@@ -158,7 +159,7 @@ it.each([false, true])(
   },
 );
 
-it("uses exact registered target metadata without making all tool_call invocations sequential", () => {
+it("uses exact registered target metadata without making all dispatcher invocations sequential", () => {
   const f = deferredFixture();
   expect(getToolInvocationMetadata(f.dispatcher, { id: "ask_user", args: {} })).toMatchObject({
     executionMode: "sequential",
