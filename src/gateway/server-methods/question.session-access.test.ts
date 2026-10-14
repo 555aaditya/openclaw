@@ -1,18 +1,15 @@
 import fs from "node:fs";
-import { afterEach, expect, it, vi } from "vitest";
+import { expect, it, vi } from "vitest";
 import { observeHostDataSql } from "../../../test/helpers/sqlite-statement-execution-counter.js";
 import { setRuntimeConfigSnapshot } from "../../config/config.js";
-import {
-  loadSessionEntry,
-  upsertSessionEntryCore,
-} from "../../config/sessions/session-accessor.js";
+import { upsertSessionEntryCore } from "../../config/sessions/session-accessor.js";
+import * as sessionEntryReads from "../../config/sessions/session-entry-read-runtime.js";
 import {
   executeSessionQuestionOperation,
   readSessionQuestionCustody,
 } from "../../config/sessions/session-questions.js";
 import type { DurableQuestion } from "../../config/sessions/session-questions.types.js";
 import { projectionLane } from "../../config/sessions/session-transcript-worker-resources.js";
-import type { SessionEntry } from "../../config/sessions/types.js";
 import { releaseAgentRunDelegatedAuthority } from "../../infra/agent-run-registry.js";
 import { sessionChanges } from "../../sessions/session-row-changes.js";
 import { AsyncWorkScope } from "../../shared/async-work-scope.js";
@@ -21,23 +18,19 @@ import {
   closeOpenClawAgentDatabaseByPathAsync,
   resolveOpenClawAgentSqlitePath,
 } from "../../state/openclaw-agent-db.js";
-import {
-  withOpenClawTestState,
-  type OpenClawTestState,
-} from "../../test-utils/openclaw-test-state.js";
+import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
 import { installDurableQuestion } from "../durable-question-runtime.js";
-import { captureGatewayOperatorRunAuthority } from "../operator-run-authority.js";
 import { publishDurableQuestionResolution } from "../question-session-access.js";
 import { createDurableQuestionSessionAccess } from "../question-session-durable-access.js";
 import { createGatewayBroadcaster } from "../server-broadcast.js";
 import { GatewayClientRegistry } from "../server/client-registry.js";
-import type { GatewayWsClient } from "../server/ws-types.js";
-import { canReceiveSessionEvent } from "../session-sharing.js";
-import { roleClient, rolePolicyConfig } from "../session-sharing.test-utils.js";
+import { createSessionRowProjection } from "../session-row-projection.js";
+import { canReceiveSessionEvent, prepareProjectedSessionSharing } from "../session-sharing.js";
+import { resolveSessionStoreIdentity } from "../session-store-key.js";
+import { createQuestionSessionAccessFixtureOwner } from "./question.session-access.test-support.js";
 import {
   adminRequestClient,
   broadcast,
-  callQuestionRpc,
   installQuestionTestHooks,
   manager,
   requesterAuthority,
@@ -45,7 +38,6 @@ import {
   secretRequestParams,
 } from "./question.test-support.js";
 import type { GatewayRequestContext } from "./shared-types.js";
-import type { GatewayClient } from "./types.js";
 
 installQuestionTestHooks();
 
@@ -58,103 +50,7 @@ function invalidateQuestionReadFacts() {
   });
 }
 
-const sourceReleases = new Set<() => void>();
-afterEach(() => {
-  for (const release of sourceReleases) {
-    release();
-  }
-  sourceReleases.clear();
-});
-
-function questionPeer(client: GatewayClient, connId: string) {
-  const send = vi.fn();
-  const socket = { readyState: 1, bufferedAmount: 0, send, close: vi.fn() };
-  const ws: GatewayWsClient = {
-    ...client,
-    authenticatedUserProfile: client.authenticatedUserProfile
-      ? {
-          ...client.authenticatedUserProfile,
-          avatarRevision: client.authenticatedUserProfile.avatarRevision ?? "",
-        }
-      : undefined,
-    connId,
-    usesSharedGatewayAuth: false,
-    socket: socket as unknown as GatewayWsClient["socket"],
-  };
-  return { ws, send };
-}
-
-async function fixture(state: OpenClawTestState) {
-  const owner = roleClient("view", "question-owner");
-  const viewer = roleClient("write", "question-viewer");
-  const cfg = rolePolicyConfig(["guest"]);
-  cfg.gateway!.roles!.definitions.view!.scopes.push("operator.questions");
-  cfg.gateway!.roles!.definitions.write!.sessions.others = "view";
-  cfg.gateway!.roles!.definitions.write!.scopes.push("operator.questions");
-  await state.writeConfig(cfg);
-  setRuntimeConfigSnapshot(cfg);
-  owner.connect.scopes = ["operator.sessions.write"];
-  viewer.connect.scopes = ["operator.sessions.read", "operator.sessions.write"];
-  const sourceController = new AbortController();
-  owner.internal = {
-    ...owner.internal,
-    operatorAccessAuthority: {
-      signal: sourceController.signal,
-      assertCurrent: () => sourceController.signal.throwIfAborted(),
-    },
-  };
-  const source = await captureGatewayOperatorRunAuthority({
-    client: owner,
-    context: { getRuntimeConfig: () => cfg },
-  });
-  if (!source) {
-    throw new Error("Expected admitted question source");
-  }
-  sourceReleases.add(source.release);
-  const producer: GatewayClient = {
-    ...owner,
-    internal: {
-      ...owner.internal,
-      operatorRunAuthority: source.authority,
-      agentRuntimeIdentity: adminRequestClient.internal!.agentRuntimeIdentity,
-    },
-  };
-  const entry = {
-    sessionId: "question-session",
-    lifecycleRevision: "question-generation",
-    updatedAt: 1,
-    visibility: "shared" as const,
-    createdActor: {
-      type: "human" as const,
-      source: "profile" as const,
-      id: owner.authenticatedUserProfile!.profileId,
-    },
-  };
-  const write = (delta: Partial<SessionEntry> = {}) =>
-    upsertSessionEntryCore(
-      { agentId: "main", sessionKey: requestParams.sessionKey },
-      { ...entry, ...delta },
-    );
-  await write();
-  expect(
-    loadSessionEntry({ agentId: "main", sessionKey: requestParams.sessionKey })?.createdActor,
-  ).toEqual(entry.createdActor);
-  const call = (
-    method: string,
-    params: Record<string, unknown>,
-    client = owner,
-    current?: () => boolean,
-  ) =>
-    callQuestionRpc(method, params, {
-      client,
-      cfg,
-      registered: true,
-      hasCurrentClientAuthority: current,
-    });
-  const request = (id = "ordinary-question", client = producer) =>
-    call("question.request", { ...requestParams, id, timeoutMs: 10_000 }, client);
-  return { owner, viewer, producer, cfg, entry, write, call, request, sourceController };
-}
+const { fixture, questionPeer, retainCleanup } = createQuestionSessionAccessFixtureOwner();
 
 it("keeps a trusted narrow question on worker-backed RPCs and fanout through label changes and completion", async () => {
   await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
@@ -167,9 +63,7 @@ it("keeps a trusted narrow question on worker-backed RPCs and fanout through lab
     );
     const admin = questionPeer(adminRequestClient, "sql-admin");
     const revoked = questionPeer({ ...f.viewer, invalidated: true }, "sql-revoked");
-    const fallback = vi.fn((client, sessionKeys, agentId, event, payload) =>
-      canReceiveSessionEvent({ cfg: f.cfg, client, sessionKeys, agentId, event, payload }),
-    );
+    const fallback = vi.fn(() => false);
     const broadcaster = createGatewayBroadcaster({
       clients: new GatewayClientRegistry([owner.ws, viewer.ws, broad.ws, admin.ws, revoked.ws]),
       canReceiveSessionEvent: fallback,
@@ -267,10 +161,36 @@ it("fans out requester-only questions after draft visibility changes with no glo
       { ...f.owner, connect: { ...f.owner.connect, scopes: ["operator.questions"] } },
       "broad-questions",
     );
+    const projection = await createSessionRowProjection({ cfg: f.cfg });
+    retainCleanup(() => projection.dispose());
+    await projection.ensureMaterialized();
     const broadcaster = createGatewayBroadcaster({
       clients: new GatewayClientRegistry([owner.ws, viewer.ws, broad.ws]),
       canReceiveSessionEvent: (client, sessionKeys, agentId, event, payload) =>
-        canReceiveSessionEvent({ cfg: f.cfg, client, sessionKeys, agentId, event, payload }),
+        canReceiveSessionEvent({
+          cfg: f.cfg,
+          client,
+          sessionKeys,
+          agentId,
+          event,
+          payload,
+          prepared: {
+            sharing: prepareProjectedSessionSharing({
+              cfg: f.cfg,
+              client,
+              isMember: (target, identityId) =>
+                projection.hasMembership(target.storePath, target.storeKey, identityId),
+            }),
+            target: (key, targetAgentId) => {
+              const { agentId: ownerAgentId } = resolveSessionStoreIdentity({
+                cfg: f.cfg,
+                sessionKey: key,
+                agentId: targetAgentId,
+              });
+              return projection.sharingTarget({ key, agentId: ownerAgentId });
+            },
+          },
+        }),
     });
     broadcast.mockImplementation(broadcaster.broadcast);
     expect((await f.request())[0]).toBe(true);
@@ -671,13 +591,14 @@ it.each([
       const entered = createDeferredCore();
       const release = createDeferredCore();
       invalidateQuestionReadFacts();
-      const run = projectionLane.pool.run.bind(projectionLane.pool);
-      const spy = vi.spyOn(projectionLane.pool, "run").mockImplementation(async (...args) => {
-        const result = await run(...args);
-        entered.resolve();
-        await release.promise;
-        return result;
-      });
+      const read = sessionEntryReads.withSessionEntriesFromStoresInWorker;
+      const spy = vi
+        .spyOn(sessionEntryReads, "withSessionEntriesFromStoresInWorker")
+        .mockImplementation(async (...args) => {
+          entered.resolve();
+          await release.promise;
+          return read(...args);
+        });
       let current = true;
       const observer = new AsyncWorkScope();
       broadcast.mockClear();
@@ -752,7 +673,9 @@ it.each(["admin", "narrow"] as const)(
           canReceiveSessionEvent: fallback,
         }).broadcast,
       );
-      const spy = vi.spyOn(projectionLane.pool, "run").mockRejectedValue(failure);
+      const spy = vi
+        .spyOn(sessionEntryReads, "withSessionEntriesFromStoresInWorker")
+        .mockRejectedValue(failure);
       try {
         invalidateQuestionReadFacts();
         const client = kind === "narrow" ? f.producer : adminRequestClient;

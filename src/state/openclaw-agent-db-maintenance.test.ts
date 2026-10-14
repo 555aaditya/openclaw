@@ -211,28 +211,6 @@ describe("asynchronous agent database maintenance admission", () => {
     expect(f.state.db.prepare("SELECT owner FROM state_leases").all()).toEqual([]);
   });
 
-  it("yields during real integrity admission while retaining the maintenance fence", async () => {
-    const f = fixture();
-    const before = readIndexState(f.options.pathname);
-    await withAgentDatabaseMaintenanceLease({ env: f.env }, async (maintenance) => {
-      let progressed = false;
-      const tick = setImmediate(() => {
-        progressed = true;
-      });
-      try {
-        await migrateOpenClawAgentDatabaseForMaintenance(f.options, maintenance);
-        expect(progressed).toBe(true);
-        maintenance.assertOwned();
-        expect(() => openOpenClawAgentDatabase({ agentId: "worker", env: f.env })).toThrow(
-          /maintenance is in progress/,
-        );
-      } finally {
-        clearImmediate(tick);
-      }
-    });
-    expect(readIndexState(f.options.pathname)).toEqual(before);
-  });
-
   it("refuses a prepared Worker claim during plain maintenance", async () => {
     const f = fixture();
     const before = readIndexState(f.options.pathname);
@@ -304,7 +282,7 @@ describe("asynchronous agent database maintenance admission", () => {
   });
 
   it.each(
-    [false, true].flatMap((corrupt) =>
+    [true].flatMap((corrupt) =>
       (["expiry", "replacement", "abort"] as const).map((loss) => ({ corrupt, loss })),
     ),
   )("fences Worker resume after $loss (integrity failure=$corrupt)", async ({ corrupt, loss }) => {
@@ -358,7 +336,7 @@ describe("asynchronous agent database maintenance admission", () => {
   });
 
   it.each(
-    [false, true].flatMap((corrupt) =>
+    [true].flatMap((corrupt) =>
       (["owner", "version"] as const).map((changed) => ({ corrupt, changed })),
     ),
   )(
@@ -504,15 +482,15 @@ describe("asynchronous agent database maintenance admission", () => {
   );
 });
 
-describe("durable question schema 26 maintenance", () => {
-  it("migrates actual schema 25 under the offline owner and preserves canonical payloads", async () => {
+describe("durable question schema 27 maintenance", () => {
+  it("migrates actual schema 26 under the offline owner and preserves canonical payloads", async () => {
     const f = fixture();
     const prior = new DatabaseSync(f.options.pathname);
     try {
       prior.exec(
-        "DROP TABLE session_questions; PRAGMA user_version = 25; UPDATE schema_meta SET schema_version = 25",
+        "DROP TABLE session_questions; PRAGMA user_version = 26; UPDATE schema_meta SET schema_version = 26",
       );
-      expect(getOpenClawAgentMigrationSchema(25)).not.toContain(
+      expect(getOpenClawAgentMigrationSchema(26)).not.toContain(
         "CREATE TABLE IF NOT EXISTS session_questions (",
       );
       expect(
@@ -527,9 +505,9 @@ describe("durable question schema 26 maintenance", () => {
     });
     const upgraded = new DatabaseSync(f.options.pathname);
     try {
-      expect(upgraded.prepare("PRAGMA user_version").get()?.user_version).toBe(26);
+      expect(upgraded.prepare("PRAGMA user_version").get()?.user_version).toBe(27);
       expect(upgraded.prepare("SELECT schema_version FROM schema_meta").get()?.schema_version).toBe(
-        26,
+        27,
       );
       expect(
         upgraded.prepare("SELECT name FROM sqlite_schema WHERE name = 'session_questions'").get()

@@ -1,4 +1,4 @@
-export const DURABLE_QUESTIONS_SCHEMA_VERSION = 26;
+export const DURABLE_QUESTIONS_SCHEMA_VERSION = 27;
 
 function sessionQuestionsSchemaRange(schema: string) {
   const start = schema.indexOf("CREATE TABLE IF NOT EXISTS session_questions (");

@@ -5,12 +5,14 @@ import { getSqliteWorkerStateContext } from "../../infra/sqlite-worker-state-con
 import { getOpenClawAgentDatabaseIfOpen } from "../../state/openclaw-agent-db.js";
 import type { AgentDatabaseAdmissionRestriction } from "../../state/openclaw-agent-execution-domain.js";
 import type { SessionEntryReplacementPublication } from "./session-accessor.sqlite-entry-cache.types.js";
-import { readSessionEntryRow } from "./session-accessor.sqlite-entry-read.js";
+import { readExactSessionEntryRow } from "./session-accessor.sqlite-entry-read.js";
 import { prepareSessionEntryReplacementPublication } from "./session-accessor.sqlite-replacement-state.js";
+import type { SessionEntryPatchReceipt } from "./session-entry-patch.types.js";
 import {
   createSessionWorkerOperationContext,
   transferSessionEntryWorkerCandidate,
 } from "./session-entry-patch.worker.js";
+import type { SessionEntryWritePostimages } from "./session-entry-write-postimage.js";
 import { operateSessionQuestion } from "./session-questions.kernel.worker.js";
 import type { SessionQuestionOperation, SessionQuestionResult } from "./session-questions.types.js";
 
@@ -22,7 +24,7 @@ export type SessionQuestionCandidate = {
 export type SessionQuestionOperations = {
   "session.question.operate": {
     input: SessionQuestionOperation;
-    output: ReturnType<typeof transferSessionEntryWorkerCandidate>;
+    output: SessionEntryPatchReceipt;
   };
 };
 
@@ -54,20 +56,19 @@ export function bindSqliteWorkerBackend(
     execute({ input: request }) {
       return writeTransaction("session.question.operate", "Question transaction", (current) => {
         admit("transaction");
+        const postimages: SessionEntryWritePostimages = new Map();
         const owner =
           request.kind === "register"
             ? request.question
             : request.kind === "claim"
-              ? operateSessionQuestion(current, { kind: "get", id: request.id })
+              ? operateSessionQuestion(current, { kind: "get", id: request.id }, postimages)
               : undefined;
         const question = owner && !Array.isArray(owner) ? owner : undefined;
         const previous = question
-          ? readSessionEntryRow(current, question.sessionKey)?.entry
+          ? readExactSessionEntryRow(current, question.sessionKey)?.entry
           : undefined;
-        const result = operateSessionQuestion(current, request);
-        const entry = question
-          ? readSessionEntryRow(current, question.sessionKey)?.entry
-          : undefined;
+        const result = operateSessionQuestion(current, request, postimages);
+        const entry = question ? postimages.get(question.sessionKey)?.entry : undefined;
         const candidate: SessionQuestionCandidate = {
           kind: "session-question",
           result,
@@ -82,6 +83,7 @@ export function bindSqliteWorkerBackend(
                     maintenancePlans: [],
                   },
                   current,
+                  { captureFullFacts: true, postimages },
                 )
               : undefined,
         };

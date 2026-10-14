@@ -1,4 +1,5 @@
-import { expect, it } from "vitest";
+import fs from "node:fs";
+import { expect, it, vi } from "vitest";
 import { setRuntimeConfigSnapshot } from "../config/config.js";
 import { replaceSessionEntrySync } from "../config/sessions/session-accessor.js";
 import { addSessionMember, removeSessionMember } from "../config/sessions/session-sharing-store.js";
@@ -38,6 +39,7 @@ it("retains original-store sharing publications after configured routing changes
     await state.writeConfig(cfg);
     setRuntimeConfigSnapshot(cfg);
     const identity = readDatabasePathIdentitySync(original);
+    let sourceCurrent = true;
     const prepared = await prepareSessionMutationFacts({
       cfg,
       agentId: "main",
@@ -49,7 +51,11 @@ it("retains original-store sharing publications after configured routing changes
         canonicalKey,
         databaseIdentity: identity.key.slice("file:".length),
         databaseBirthtime: identity.birthtime,
-        assertCurrent() {},
+        assertCurrent() {
+          if (!sourceCurrent) {
+            throw new Error("Captured source authority retired");
+          }
+        },
       },
     });
     try {
@@ -58,8 +64,20 @@ it("retains original-store sharing publications after configured routing changes
         canonicalKey,
         storePath: original,
       });
-      expect(prepared.readCurrent(cfg).target.entry.sessionId).toBe("original");
-      expect(prepared.readCurrent(cfg).membership.has("original-member")).toBe(true);
+      const stat = vi.spyOn(fs, "statSync");
+      const realpath = vi.spyOn(fs, "realpathSync");
+      try {
+        expect(prepared.readCurrent(cfg).target.entry.sessionId).toBe("original");
+        expect(prepared.readCurrent(cfg).membership.has("original-member")).toBe(true);
+        sourceCurrent = false;
+        expect(() => prepared.readCurrent(cfg)).toThrow("Session access facts are unavailable");
+        expect(stat).not.toHaveBeenCalled();
+        expect(realpath).not.toHaveBeenCalled();
+      } finally {
+        stat.mockRestore();
+        realpath.mockRestore();
+        sourceCurrent = true;
+      }
       await removeSessionMember(scope, "original-member");
       expect(prepared.readCurrent(cfg).membership.has("original-member")).toBe(false);
       await closeOpenClawAgentDatabaseByPathAsync(original, "main");
@@ -104,7 +122,7 @@ it("refuses mismatched physical custody and a different logical agent without bo
       }),
     ).rejects.toMatchObject({
       name: "SessionMutationFactsUnavailableError",
-      cause: { message: "SQLite database file identity changed before existing-only open" },
+      message: "Session access facts are unavailable; retry after session storage is ready.",
     });
     await expect(
       prepareSessionMutationFacts({
@@ -114,5 +132,19 @@ it("refuses mismatched physical custody and a different logical agent without bo
         preparedSource: { ...source, agentId: "other" },
       }),
     ).rejects.toThrow("Session access facts are unavailable");
+    const valid = await prepareSessionMutationFacts({
+      cfg,
+      agentId: "main",
+      sessionKey: canonicalKey,
+      preparedSource: source,
+    });
+    try {
+      expect(valid.readCurrent(cfg).target.entry).toMatchObject({
+        sessionId: "original",
+        lifecycleRevision: "revision",
+      });
+    } finally {
+      valid.release();
+    }
   });
 });

@@ -10,7 +10,6 @@ import type { DurableQuestion } from "../config/sessions/session-questions.types
 import type { InternalSessionEntry } from "../config/sessions/types.js";
 import { getAgentEventLifecycleGeneration } from "../infra/agent-events.js";
 import { isPairedDeviceTokenIdentityCurrent } from "../infra/device-pairing-identity.js";
-import { capturePublishedOperatorDeviceSource } from "../infra/device-pairing-publication.js";
 import { loadPairedDevicePairingStoreRecordReadOnly } from "../infra/device-pairing-store-readonly.js";
 import { onSessionIdentityMutation } from "../sessions/session-lifecycle-events.js";
 import { onUserProfilesChanged } from "../state/user-profile-events.js";
@@ -196,7 +195,6 @@ async function restoreGatewayDurableOperatorRecovery(params: {
       assertClaim(entry);
     }
     const snapshot = source.snapshot;
-    let pairingSource: ReturnType<typeof capturePublishedOperatorDeviceSource> | undefined;
     const generationOwner = context.sharedGatewaySessionGenerationState;
     if (snapshot.sharedGeneration !== undefined) {
       if (!generationOwner || generationOwner.requiredGeneration !== snapshot.sharedGeneration) {
@@ -218,7 +216,6 @@ async function restoreGatewayDurableOperatorRecovery(params: {
     }
     const assertSourcePolicy = () => {
       assertOwner();
-      pairingSource?.assertCurrent();
       const cfg = getConfig();
       const role = resolveOperatorRolePolicyForAssignment(
         snapshot.profileId,
@@ -306,12 +303,6 @@ async function restoreGatewayDurableOperatorRecovery(params: {
         revoke();
       }
       assertPolicy();
-      pairingSource = capturePublishedOperatorDeviceSource(
-        snapshot.device,
-        snapshot.scopes,
-        revoke,
-      );
-      subscriptions.push(pairingSource.release);
     }
     assertPolicy();
     if (params.questionId && params.expectedQuestion) {
