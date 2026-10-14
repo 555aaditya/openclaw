@@ -71,7 +71,7 @@ export async function prepareLocalSandboxWorkspace(params: {
         path.relative(owner.worktree.path, params.workspaceDir ?? owner.worktree.path),
       ),
       assertCurrent: owner.assertCurrent,
-      provision: async <T>(run: () => Promise<T>) =>
+      provision: async <T>(run: () => Promise<T>, signal?: AbortSignal) =>
         await withLocalWorkspaceProjection(
           owner,
           async () => {
@@ -80,7 +80,7 @@ export async function prepareLocalSandboxWorkspace(params: {
             owner.assertCurrent();
             return result;
           },
-          { provision: true },
+          { provision: true, signal },
         ),
       checkpoint: async () => {
         await withLocalWorkspaceProjection(owner, (state) => state.synchronize("canonical"));
@@ -110,36 +110,44 @@ export function bindLocalSandboxWorkspace(
     };
   }
   const shell = backend.runShellCommand.bind(backend);
-  backend.runShellCommand = async (params) => {
-    // Path preparation can await host and container probes after tool entry.
-    projection.assertCurrent();
-    return await shell(params);
-  };
+  backend.runShellCommand = (params) =>
+    projection.provision(async () => {
+      // A preceding background command may still have the runtime paused for checkpointing.
+      params.signal?.throwIfAborted();
+      projection.assertCurrent();
+      return await shell(params);
+    }, params.signal);
   const finalize = backend.finalizeExec?.bind(backend);
   const bindBuild =
     <Params>(build: (params: Params) => Promise<SandboxBackendExecSpec>) =>
     async (params: Params) => {
-      projection.assertCurrent();
-      const spec = await build(params);
+      let spec: SandboxBackendExecSpec | undefined;
       try {
-        projection.assertCurrent();
-      } catch (error) {
-        await finalize?.({
-          status: "failed",
-          exitCode: null,
-          timedOut: false,
-          token: spec.finalizeToken,
+        // Release preparation custody before the command's background lifetime begins.
+        return await projection.provision(async () => {
+          projection.assertCurrent();
+          spec = await build(params);
+          projection.assertCurrent();
+          const assertCurrent = spec.assertCurrent;
+          return {
+            ...spec,
+            assertCurrent: () => {
+              projection.assertCurrent();
+              assertCurrent?.();
+            },
+          };
         });
+      } catch (error) {
+        if (spec) {
+          await finalize?.({
+            status: "failed",
+            exitCode: null,
+            timedOut: false,
+            token: spec.finalizeToken,
+          });
+        }
         throw error;
       }
-      const assertCurrent = spec.assertCurrent;
-      return {
-        ...spec,
-        assertCurrent: () => {
-          projection.assertCurrent();
-          assertCurrent?.();
-        },
-      };
     };
   backend.buildExecSpec = bindBuild(backend.buildExecSpec.bind(backend));
   if (backend.buildProgramSpec) {

@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { expect, it, vi } from "vitest";
+import { createDeferred } from "../../../test/helpers/promise.js";
 import { runCommandBuffered } from "../../process/exec.js";
 import type { SandboxBackendHandle, SandboxBackendExecSpec } from "./backend-handle.types.js";
 import { createSandboxFsBridge } from "./fs-bridge.js";
@@ -14,12 +15,14 @@ it.runIf(process.platform !== "win32").each(["shell", "program"] as const)(
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-bound-local-bridge-"));
     let revoked = false;
     let revokeDuringBuild = false;
+    let failAfterProvision = false;
+    let waitForAdmission: Promise<void> | undefined;
     const checkpoint = vi.fn(async () => {});
     const finalized = vi.fn(async () => {});
-    const build = async (): Promise<SandboxBackendExecSpec> => {
+    const build = vi.fn(async (): Promise<SandboxBackendExecSpec> => {
       if (revokeDuringBuild) revoked = true;
       return { argv: ["true"], env: {}, stdinMode: "pipe-closed", finalizeToken: "prepared" };
-    };
+    });
     const backend: SandboxBackendHandle = {
       id: "local-test",
       runtimeId: "local-test",
@@ -54,7 +57,12 @@ it.runIf(process.platform !== "win32").each(["shell", "program"] as const)(
         workspaceDir: root,
         workspaceCwd: root,
         checkpoint,
-        provision: async (run) => await run(),
+        provision: async (run) => {
+          await waitForAdmission;
+          const value = await run();
+          if (failAfterProvision) throw new Error("provision release failed");
+          return value;
+        },
         assertCurrent: () => {
           if (revoked) {
             throw new Error("revoked");
@@ -96,6 +104,33 @@ it.runIf(process.platform !== "win32").each(["shell", "program"] as const)(
         token: "prepared",
       });
       expect(checkpoint).toHaveBeenCalledTimes(2);
+      revokeDuringBuild = false;
+      revoked = false;
+      failAfterProvision = true;
+      await expect(prepare()).rejects.toThrow("provision release failed");
+      expect(finalized).toHaveBeenCalledTimes(3);
+      expect(finalized).toHaveBeenLastCalledWith({
+        status: "failed",
+        exitCode: null,
+        timedOut: false,
+        token: "prepared",
+      });
+      expect(checkpoint).toHaveBeenCalledTimes(2);
+      failAfterProvision = false;
+      const admission = createDeferred();
+      waitForAdmission = admission.promise;
+      const shell = backend.runShellCommand({ script: `touch "${root}/blocked.txt"` });
+      const buildCalls = build.mock.calls.length;
+      const exec = prepare();
+      revoked = true;
+      admission.resolve();
+      await expect(shell).rejects.toThrow("revoked");
+      await expect(exec).rejects.toThrow("revoked");
+      expect(build).toHaveBeenCalledTimes(buildCalls);
+      expect(finalized).toHaveBeenCalledTimes(3);
+      await expect(fs.stat(path.join(root, "blocked.txt"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
