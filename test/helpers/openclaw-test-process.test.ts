@@ -2,7 +2,10 @@ import { afterEach, expect, it, vi } from "vitest";
 import { createDeferred } from "./promise.js";
 
 const { createChildAdapter } = vi.hoisted(() => ({ createChildAdapter: vi.fn() }));
-vi.mock("../../src/process/supervisor/adapters/child.js", () => ({ createChildAdapter }));
+vi.mock("../../src/process/supervisor/adapters/child.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/process/supervisor/adapters/child.js")>()),
+  createChildAdapter,
+}));
 
 import {
   GATEWAY_RESTART_TEST_KILL_MS,
