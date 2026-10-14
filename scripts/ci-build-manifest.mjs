@@ -686,6 +686,7 @@ if (uiE2eSelection) {
 const uiWebkitOwners = [
   "ui/vitest.config.ts",
   "ui/src/components/{web-awesome*,modal-dialog*,tooltip*,menu-*,overlay*,composer-menu*,dropdown-menu*,anchored-overlay*,textarea-token-anchor*,panel-tab-strip*,select-picker*,multi-select*,agent-select*,lobster-pet*,session-group-defaults-dialog*}.{ts,tsx}",
+  "ui/src/components/session-hovercard*.{ts,tsx,css}",
   "ui/src/components/solid/session-hovercard*.{ts,tsx}",
   "ui/src/app/app-shell-chrome.ts",
   "ui/src/pages/{cron/view-jobs-filter,plugins/settings-editor,plugins/settings-view}.{ts,tsx,css}",
@@ -1037,6 +1038,7 @@ const rawNodeTestShards = runNodeFull
           // the complete compact inventory within its 77-row main-tier cap.
           compact: compactPlanMode !== undefined,
           compactMode: mainValidation ? "pull-request" : compactPlanMode,
+          mainValidation,
           compactNodeJobCap: nodeMatrixLimit - nodeWorkerE2eShards.length,
           runnerBackend: nodeRunnerBackend,
         }),

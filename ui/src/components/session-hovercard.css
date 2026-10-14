@@ -31,6 +31,11 @@
   text-decoration: none;
 }
 
+.session-hovercard__automation-link > span {
+  /* Keep WebKit's click-based focus navigation start on the link. */
+  pointer-events: none;
+}
+
 .session-hovercard__automation-link:is(:hover, :focus-visible) {
   color: var(--text);
   background: var(--bg-hover);
