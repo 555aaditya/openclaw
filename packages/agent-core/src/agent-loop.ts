@@ -40,6 +40,7 @@ import {
   createToolExecutionErrorResult,
   finalizeToolCallOutcome,
   immediateToolCallError,
+  resolveToolResultContentSource,
   type FinalizedToolCallOutcome,
   type ImmediateToolCallOutcome,
 } from "./tool-call-outcome.js";
@@ -1252,10 +1253,8 @@ async function finalizeExecutedToolCall(
       isError,
       executionStarted: executed.executionStarted,
       ...(prepared.tool.hideFromChannelProgress === true ? { hideFromChannelProgress: true } : {}),
-      ...(executed.executionStarted &&
-      !executed.callerCancelled &&
-      prepared.tool.resultContentSource
-        ? { resultContentSource: prepared.tool.resultContentSource }
+      ...(executed.executionStarted && !executed.callerCancelled
+        ? resolveToolResultContentSource(prepared.tool, executed.result)
         : {}),
     },
     finalArgs,

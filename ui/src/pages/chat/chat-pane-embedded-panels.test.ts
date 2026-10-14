@@ -4,15 +4,16 @@ import { undo } from "@codemirror/commands";
 import { EditorView } from "@codemirror/view";
 import { expectDefined } from "@openclaw/normalization-core";
 import { html, nothing, render, type LitElement } from "lit";
-import "./components/chat-detail-panel.ts";
+import "./components/chat-detail-panel.tsx";
 import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { createDeferred } from "../../../../test/helpers/promise.js";
 import type { SessionWorkspaceGetResult } from "../../api/types.ts";
 import { loadSettings } from "../../app/settings.ts";
+import * as videoPosters from "../../lib/media/video-poster.ts";
 import { scopedAgentParamsForSession } from "../../lib/sessions/index.ts";
 import { PRESENTATION_CHANGED_EVENT } from "../../lit/presentation-binding.ts";
 import {
-  createReviewFixture,
+  createReviewFixture as createUnboundReviewFixture,
   renderPanelFixture,
 } from "../../test-helpers/chat-pane-embedded-panels.ts";
 import { gatewayHelloForMethods } from "../../test-helpers/gateway-methods.ts";
@@ -22,7 +23,7 @@ import { createSidebarFullMessageLoader } from "./chat-pane-sidebar-layout.ts";
 import { createGatewayBrowserClientFixture } from "./chat-pane.test-support.ts";
 import type { ChatPageHost } from "./chat-state-host.ts";
 import { createTestTranscript } from "./chat-view.test-helpers.ts";
-import type { ChatProps } from "./chat-view.ts";
+import type { ChatProps } from "./chat-view.tsx";
 import { renderChatDetailSlot } from "./components/chat-detail-slot.ts";
 import { renderAssistantAttachments } from "./components/chat-message-attachments.ts";
 import {
@@ -40,14 +41,15 @@ import {
   openSessionWorkspaceFile,
 } from "./components/chat-session-workspace.ts";
 import type { SidebarContent } from "./components/chat-sidebar-content-types.ts";
-import { renderChatThread } from "./components/chat-thread.ts";
+import { createChatSidebarContainer } from "./components/chat-sidebar.test-support.ts";
+import { renderChatThread } from "./components/chat-thread.test-support.ts";
 import {
   installTranscriptDomMocks,
   resetTranscriptTestDom,
   threadProps,
 } from "./components/chat-transcript.test-support.ts";
-import "./components/chat-sidebar-region.runtime.ts";
-import type { SessionDiscussionPanelConfig } from "./components/session-discussion-panel.ts";
+import "./components/chat-sidebar-region.runtime.tsx";
+import type { SessionDiscussionPanelConfig } from "./components/session-discussion-panel.tsx";
 import {
   closeSlot,
   ensureSidebarConversation,
@@ -57,6 +59,14 @@ import {
   setSidebarOpen,
   type SidebarLayout,
 } from "./sidebar-layout.ts";
+
+function createReviewFixture() {
+  const fixture = createUnboundReviewFixture();
+  const provider = createChatSidebarContainer();
+  fixture.mount.before(provider);
+  provider.append(fixture.mount);
+  return fixture;
+}
 
 function discussionSlots(discussionAvailable: boolean) {
   const discussion = {} as SessionDiscussionPanelConfig;
@@ -231,7 +241,7 @@ describe("chat pane embedded panels", () => {
       const attachmentId = crypto.randomUUID();
       const source = `/api/chat/media/outgoing/agent%3Amain%3Amain/${attachmentId}/full`;
       const container = document.body.appendChild(document.createElement("div"));
-      const detail = document.body.appendChild(document.createElement("div"));
+      const detail = document.body.appendChild(createChatSidebarContainer());
       let sidebarContent: SidebarContent | null = null;
       const pending = createDeferred<{ url: string } | null>();
       const secondResolver = vi.fn(() => pending.promise);
@@ -335,6 +345,7 @@ describe("chat pane embedded panels", () => {
     "reuses attachment metadata when Open shows %s content in Files",
     async (surface) => {
       installTranscriptDomMocks();
+      vi.spyOn(videoPosters, "requestVideoPoster").mockResolvedValue(null);
       const { context, mount, state } = createReviewFixture();
       const transcript = document.body.appendChild(document.createElement("div"));
       const fetchMetadata = vi.fn(() =>
@@ -631,7 +642,7 @@ describe("chat pane embedded panels", () => {
       sidebarLayout: { columns: [] },
       settings: loadSettings(),
     } as unknown as ChatPageHost;
-    const mount = document.body.appendChild(document.createElement("div"));
+    const mount = document.body.appendChild(createChatSidebarContainer());
     let presented = true;
     const owner = new EventTarget();
     const renderPanels = async (layout: SidebarLayout) => {
