@@ -146,6 +146,34 @@ describe("automatic reconnect resend", () => {
     },
   );
 
+  it("keeps the timed retry for a retryable rejection on a live connection", async () => {
+    let attempts = 0;
+    const host = makeChatHost({
+      chatMessage: "busy first",
+      requestHandlers: {
+        "chat.history": () => idleChatHistory(),
+        "chat.send": () => {
+          attempts += 1;
+          if (attempts === 1) {
+            throw new GatewayRequestError({
+              code: "UNAVAILABLE",
+              message: "busy",
+              retryable: true,
+              retryAfterMs: 20,
+            });
+          }
+          return { status: "ok", messageSeq: 1 };
+        },
+      },
+    });
+    await handleSendChat(host);
+    // The rejected attempt is rolled back, so the scheduled retry is a plain send on the
+    // same connection epoch rather than an automatic resend of an uncertain delivery.
+    await waitForFast(() => expect(attempts).toBe(2));
+    await waitForFast(() => expect(listStoredChatOutboxes(host)).toEqual([]));
+    expect(host.chatQueue.some((item) => item.sendState === "unconfirmed")).toBe(false);
+  });
+
   it("does not automatically resend a send the Gateway rejected", async () => {
     let attempts = 0;
     const host = makeChatHost({
