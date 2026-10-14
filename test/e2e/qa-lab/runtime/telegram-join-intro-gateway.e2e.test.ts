@@ -120,17 +120,21 @@ test("introduces itself once when Telegram reports joining an allowed supergroup
   let providerRequests = 0;
   const phaseStartedAt = performance.now();
   const recordPhase = (phase: string) => {
-    console.log(
-      `TELEGRAM_PHASE ${JSON.stringify({
-        case: "join-intro",
-        phase,
-        elapsedMs: Math.round(performance.now() - phaseStartedAt),
-        providerRequests,
-        groundedModelResponses,
-        telegramSends: telegramCalls.filter((call) => call.method === "sendMessage").length,
-        pendingPolls: pendingPolls.size,
-      })}`,
-    );
+    try {
+      process.stdout.write(
+        `TELEGRAM_PHASE ${JSON.stringify({
+          case: "join-intro",
+          phase,
+          elapsedMs: Math.round(performance.now() - phaseStartedAt),
+          providerRequests,
+          groundedModelResponses,
+          telegramSends: telegramCalls.filter((call) => call.method === "sendMessage").length,
+          pendingPolls: pendingPolls.size,
+        })}\n`,
+      );
+    } catch {
+      // Diagnostic output must not replace the original test or cleanup failure.
+    }
   };
   recordPhase("case-start");
 

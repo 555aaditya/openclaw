@@ -38,17 +38,21 @@ test("visibly settles a message-tool-only Telegram turn after a provider failure
   let updateDelivered = false;
   const phaseStartedAt = performance.now();
   const recordPhase = (phase: string) => {
-    console.log(
-      `TELEGRAM_PHASE ${JSON.stringify({
-        case: "failure-settlement",
-        phase,
-        elapsedMs: Math.round(performance.now() - phaseStartedAt),
-        providerRequests,
-        modelRequests: providerBodies.length,
-        telegramSends: telegramSends.length,
-        pendingPolls: pendingPolls.size,
-      })}`,
-    );
+    try {
+      process.stdout.write(
+        `TELEGRAM_PHASE ${JSON.stringify({
+          case: "failure-settlement",
+          phase,
+          elapsedMs: Math.round(performance.now() - phaseStartedAt),
+          providerRequests,
+          modelRequests: providerBodies.length,
+          telegramSends: telegramSends.length,
+          pendingPolls: pendingPolls.size,
+        })}\n`,
+      );
+    } catch {
+      // Diagnostic output must not replace the original test or cleanup failure.
+    }
   };
   recordPhase("case-start");
 

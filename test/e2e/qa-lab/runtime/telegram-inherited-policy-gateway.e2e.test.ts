@@ -45,16 +45,20 @@ test.each(["allowlist", "open"] as const)(
     const pendingPolls = new Set<ServerResponse>();
     const phaseStartedAt = performance.now();
     const recordPhase = (phase: string) => {
-      console.log(
-        `TELEGRAM_PHASE ${JSON.stringify({
-          case: "inherited-policy",
-          groupPolicy,
-          phase,
-          elapsedMs: Math.round(performance.now() - phaseStartedAt),
-          telegramSends: telegramCalls.filter((call) => call.method === "sendMessage").length,
-          pendingPolls: pendingPolls.size,
-        })}`,
-      );
+      try {
+        process.stdout.write(
+          `TELEGRAM_PHASE ${JSON.stringify({
+            case: "inherited-policy",
+            groupPolicy,
+            phase,
+            elapsedMs: Math.round(performance.now() - phaseStartedAt),
+            telegramSends: telegramCalls.filter((call) => call.method === "sendMessage").length,
+            pendingPolls: pendingPolls.size,
+          })}\n`,
+        );
+      } catch {
+        // Diagnostic output must not replace the original test or cleanup failure.
+      }
     };
     recordPhase("case-start");
     const bot = { id: BOT_ID, is_bot: true, first_name: "QA Policy", username: "qa_policy_bot" };
