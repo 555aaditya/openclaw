@@ -21,6 +21,7 @@ import { isPidAlive } from "../shared/pid-alive.js";
 import { readPidFile } from "../test-utils/process-tree.js";
 import { withTempDir } from "../test-utils/temp-dir.js";
 import { attachChildProcessBridge } from "./child-process-bridge.js";
+import { readCommandProcessFailure } from "./exec-result.js";
 import * as execSpawn from "./exec-spawn.js";
 import { resolveCommandEnv } from "./exec-spawn.js";
 import {
@@ -53,7 +54,28 @@ async function waitForDescendantExit(pid: number, signal: AbortSignal): Promise<
 }
 
 describe("runCommandWithTimeout", () => {
-  it.skipIf(process.platform === "win32").each(["cooperative", "forced"] as const)(
+  it("records private child control failures after settling the child", async () => {
+    const denial = new Error("private control refused");
+    const failure = await runCommandWithTimeout(nodeCommand("process.exit(0)"), {
+      onPrivateControlChild: () => {
+        throw denial;
+      },
+      timeoutMs: 3_000,
+    }).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+
+    expect(failure).toBe(denial);
+    expect(readCommandProcessFailure(failure)).toMatchObject({
+      cleanup: expect.any(String),
+      termination: "signal",
+    });
+  });
+
+  it
+    .skipIf(process.platform === "win32")
+    .each(["cooperative", "default-signal", "forced"] as const)(
     "reports invocation cleanup and honors the initial SIGINT signal: %s",
     async (mode) => {
       const controller = new AbortController();

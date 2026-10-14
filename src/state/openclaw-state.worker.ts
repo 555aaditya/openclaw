@@ -1,4 +1,5 @@
 import type { WorktreeTemplateWorkerOperations } from "../agents/worktrees/template-registry.worker.js";
+import { isClawAddStateCommand } from "../claws/add-state-worker-contract.js";
 import {
   loadDeviceIdentityIfPresent,
   loadOrCreateDeviceIdentity,
@@ -90,6 +91,7 @@ const commandRegistry = createWorkerOperationRegistry<
 });
 
 let agentCleanup: typeof import("./openclaw-agent-execution-cleanup.worker.js") | undefined;
+let clawAddState: typeof import("../claws/add-state.worker.js") | undefined;
 let pluginState: typeof import("../plugin-state/plugin-state.worker.js") | undefined;
 let capture: typeof import("../proxy-capture/store.worker.js") | undefined;
 let runtime: typeof import("./openclaw-state-worker-runtime.js") | undefined;
@@ -272,6 +274,14 @@ function createSharedStateWorkerBackend(
       }
     },
     [SQLITE_WORKER_PREPARE_COMMAND](commandType) {
+      if (isClawAddStateCommand({ type: commandType })) {
+        if (clawAddState) {
+          return undefined;
+        }
+        return import("../claws/add-state.worker.js").then((loaded) => {
+          clawAddState = loaded;
+        });
+      }
       if (
         commandType === "githubPublication.sourceFacts" ||
         commandType.startsWith("githubPublications.")
@@ -347,6 +357,12 @@ function createSharedStateWorkerBackend(
     execute(command) {
       if (closed) {
         throw new Error("Shared-state worker is closed");
+      }
+      if (isClawAddStateCommand(command)) {
+        if (!clawAddState) {
+          throw new Error("Claw Add state runtime is not prepared");
+        }
+        return clawAddState.executeClawAddStateCommand(command, open());
       }
       if (command.type === "githubPublication.sourceFacts") {
         if (!publicationSourceReader) {

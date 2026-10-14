@@ -555,15 +555,17 @@ export function writeUpdateCompatibilityChunks(params: {
   const candidates = new Map<string, Map<string, { file: string; exported: string }>>();
   for (const file of moduleFiles(distDir)) {
     const relative = portable(path.relative(distDir, file));
-    // Retained config repairs and the one-shot native hook relay are built
-    // separately from the updater's runtime graph; their copies of shared
-    // modules are not bridge candidates.
+    // Standalone workers and retained repair runtimes are built separately
+    // from the updater's runtime graph; their copies of shared modules are
+    // not bridge candidates.
     if (
       relative.startsWith("extensions/") ||
       relative.startsWith("plugin-sdk/") ||
       relative.startsWith("config-doctor/") ||
       relative.startsWith("state-retention/") ||
-      relative.startsWith("native-hook-relay/")
+      relative.startsWith("native-hook-relay/") ||
+      relative.startsWith("state/openclaw-state-read-") ||
+      relative.startsWith("infra/sqlite-readonly-")
     ) {
       continue;
     }

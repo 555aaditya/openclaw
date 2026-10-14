@@ -13,6 +13,7 @@ import * as streamOps from "./service/ops-stream.js";
 import type { OnExitRunOptions } from "./service/run-options.js";
 import {
   type CronAddOptions,
+  type CronRemoveOptions,
   type CronServiceDeps,
   type CronRunMode,
   type CronUpdatePrecondition,
@@ -140,7 +141,7 @@ export class CronService implements CronServiceContract {
     return await mutationOps.updateWithPrecondition(this.state, id, patch, precondition, opts);
   }
 
-  async remove(id: string, opts?: { systemOwned?: boolean; commitGuard?: () => void }) {
+  async remove(id: string, opts?: CronRemoveOptions) {
     return await mutationOps.remove(this.state, id, opts);
   }
 
@@ -148,7 +149,10 @@ export class CronService implements CronServiceContract {
     return await mutationOps.removeAgentJobsTransactional(this.state, agentId, commit);
   }
 
-  async quiesceJobs(jobs: readonly { id: string; revision: string }[], commitGuard: () => void) {
+  async quiesceJobs(
+    jobs: readonly { id: string; revision: string }[],
+    commitGuard: (cancel: () => void) => void | Promise<void>,
+  ) {
     await mutationOps.quiesceJobs(this.state, jobs, commitGuard);
   }
 

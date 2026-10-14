@@ -38,7 +38,7 @@ import type {
 } from "../plugins/runtime/types.js";
 import { bindInProcessSessionDeliveryGeneration } from "./in-process-session-delivery.js";
 import { authorizeOperatorScopesForRequiredScope } from "./method-scopes.js";
-import { normalizeOperatorScopeList } from "./operator-scopes.js";
+import { APPROVALS_SCOPE, normalizeOperatorScopeList } from "./operator-scopes.js";
 import type { GatewayNodeInvokeStream } from "./server-methods/shared-types.js";
 import type { GatewayContextResolver, GatewayRequestHandler } from "./server-methods/types.js";
 import { resolveTrustedPluginGitHubAccount } from "./server-plugin-github-account.js";
@@ -147,6 +147,9 @@ export async function dispatchTrustedPluginGatewayMethod<T>(
   return await dispatchGatewayMethodInProcess<T>(method, requestParams, {
     forceSyntheticClient: true,
     pluginRuntimeOwnerId: pluginId,
+    ...(method === "plugin.approval.request" && syntheticScopes?.includes(APPROVALS_SCOPE)
+      ? { allowHostPluginApprovalRequest: true }
+      : {}),
     resolveGatewayContext,
     ...(!scope?.client ? { operatorRoleActor: { kind: "system" as const } } : {}),
     ...(syntheticScopes ? { syntheticScopes } : {}),

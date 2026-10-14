@@ -7,7 +7,7 @@ export const CLAW_EXTENSION_FORMATS = ["openclaw", "claude", "codex", "cursor"] 
 
 export type ClawPackageKind = (typeof CLAW_PACKAGE_KINDS)[number];
 export type ClawPackageSource = typeof CLAW_PACKAGE_SOURCE;
-export type ClawExtensionFormat = (typeof CLAW_EXTENSION_FORMATS)[number];
+type ClawExtensionFormat = (typeof CLAW_EXTENSION_FORMATS)[number];
 
 export type ClawAppliedExtension = {
   id: string;
@@ -48,8 +48,6 @@ export type ClawDiagnostic = {
 };
 
 export type ClawOpenClawAgentSettings = {
-  model?: { primary: string; fallbacks?: string[] };
-  subagents?: { allowAgents?: string[]; delegationMode?: "suggest" | "prefer" };
   groupChat?: {
     mentionPatterns?: string[];
   };

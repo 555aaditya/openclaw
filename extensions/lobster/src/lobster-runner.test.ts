@@ -26,6 +26,7 @@ function createRunner() {
   const runtime = {
     runToolRequest: vi.fn<Runtime["runToolRequest"]>(),
     resumeToolRequest: vi.fn<Runtime["resumeToolRequest"]>(),
+    createToolContext: vi.fn<NonNullable<Runtime["createToolContext"]>>((ctx) => ctx),
   };
   const loadRuntime = vi.fn().mockResolvedValue(runtime);
   return { runtime, loadRuntime, runner: createEmbeddedLobsterRunner({ loadRuntime }) };
@@ -63,6 +64,7 @@ describe("resolveLobsterCwd", () => {
 describe("createEmbeddedLobsterRunner", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
   });
 
   it("bounds the model-visible result for an embedded workflow request", async () => {
@@ -133,15 +135,169 @@ describe("createEmbeddedLobsterRunner", () => {
   it("forwards approvalId through resume when token is absent", async () => {
     const { runtime, runner } = createRunner();
     runtime.resumeToolRequest.mockResolvedValue(success);
+    const assertInvocationCurrent = vi.fn();
 
     await runner.run(
-      runParams({ action: "resume", pipeline: undefined, approvalId: "dbc98d05", approve: true }),
+      runParams({
+        action: "resume",
+        pipeline: undefined,
+        approvalId: "dbc98d05",
+        approve: true,
+        assertInvocationCurrent,
+      }),
     );
 
     expect(runtime.resumeToolRequest).toHaveBeenCalledExactlyOnceWith({
       approvalId: "dbc98d05",
       approved: true,
       ctx: toolContext(),
+    });
+  });
+
+  it("refuses approved resumes when the embedded runtime drops host authority", async () => {
+    const { runtime, runner } = createRunner();
+    runtime.createToolContext.mockImplementation(() => ({}));
+    runtime.resumeToolRequest.mockResolvedValue(success);
+    const assertInvocationCurrent = vi.fn();
+
+    await expect(
+      runner.run(
+        runParams({
+          action: "resume",
+          pipeline: undefined,
+          token: "private-resume-token",
+          approve: true,
+          assertInvocationCurrent,
+        }),
+      ),
+    ).rejects.toThrow("Lobster runtime does not preserve host invocation authority");
+
+    expect(runtime.resumeToolRequest).not.toHaveBeenCalled();
+  });
+
+  it("does not commit an approved effect when the published runtime loses host authority", async () => {
+    const cwd = tempDirs.make("openclaw-lobster-authority-");
+    vi.stubEnv("LOBSTER_STATE_DIR", cwd);
+    const runner = createEmbeddedLobsterRunner();
+    const checkpoint = await runner.run(
+      runParams({ pipeline: "approve --prompt Write? | state.set committed", cwd }),
+    );
+    if (!checkpoint.ok || checkpoint.status !== "needs_approval") {
+      throw new Error("Lobster did not create an approval checkpoint");
+    }
+    const token = checkpoint.requiresApproval?.resumeToken;
+    if (!token) {
+      throw new Error("Lobster approval checkpoint is missing a resume token");
+    }
+
+    let current = true;
+    let checks = 0;
+    await expect(
+      runner.run(
+        runParams({
+          action: "resume",
+          pipeline: undefined,
+          token,
+          approve: true,
+          cwd,
+          assertInvocationCurrent: () => {
+            checks++;
+            if (!current) {
+              throw new Error("host invocation retired");
+            }
+            queueMicrotask(() => {
+              current = false;
+            });
+          },
+        }),
+      ),
+    ).rejects.toThrow(/host invocation retired|does not preserve host invocation authority/);
+
+    expect(checks).toBeGreaterThanOrEqual(1);
+    await expect(fs.stat(path.join(cwd, "committed.json"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("checks host authority after runtime loading and before an approved resume", async () => {
+    const { runtime, runner } = createRunner();
+    const assertInvocationCurrent = vi.fn(() => {
+      throw new Error("host invocation retired");
+    });
+
+    await expect(
+      runner.run(
+        runParams({
+          action: "resume",
+          pipeline: undefined,
+          token: "private-resume-token",
+          approve: true,
+          assertInvocationCurrent,
+        }),
+      ),
+    ).rejects.toThrow("host invocation retired");
+
+    expect(assertInvocationCurrent).toHaveBeenCalledOnce();
+    expect(runtime.resumeToolRequest).not.toHaveBeenCalled();
+  });
+
+  it("rechecks host authority after awaited resume preparation before an effect", async () => {
+    const { runtime, runner } = createRunner();
+    let preparationStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      preparationStarted = resolve;
+    });
+    let finishPreparation!: () => void;
+    const prepared = new Promise<void>((resolve) => {
+      finishPreparation = resolve;
+    });
+    let current = true;
+    let effects = 0;
+    const assertInvocationCurrent = vi.fn(() => {
+      if (!current) {
+        throw new Error("host invocation retired");
+      }
+    });
+    runtime.resumeToolRequest.mockImplementation(async ({ ctx }) => {
+      preparationStarted();
+      await prepared;
+      ctx?.assertInvocationCurrent?.();
+      effects++;
+      return success;
+    });
+
+    const pending = runner.run(
+      runParams({
+        action: "resume",
+        pipeline: undefined,
+        token: "private-resume-token",
+        approve: true,
+        assertInvocationCurrent,
+      }),
+    );
+    await started;
+    current = false;
+    finishPreparation();
+
+    await expect(pending).rejects.toThrow("host invocation retired");
+    expect(assertInvocationCurrent).toHaveBeenCalledTimes(2);
+    expect(effects).toBe(0);
+  });
+
+  it("passes approvalId through the normalized needs_approval envelope", async () => {
+    const { runtime, runner } = createRunner();
+    const approval = { prompt: "ok?", items: [], resumeToken: "eyJ...", approvalId: "dbc98d05" };
+    runtime.runToolRequest.mockResolvedValue({
+      ...success,
+      status: "needs_approval",
+      requiresApproval: approval,
+    });
+
+    expect(await runner.run(runParams())).toEqual({
+      ok: true,
+      status: "needs_approval",
+      output: [],
+      requiresApproval: { type: "approval_request", ...approval },
     });
   });
 

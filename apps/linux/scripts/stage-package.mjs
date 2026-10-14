@@ -20,7 +20,7 @@ export function resourceBytes(executable) {
   return Buffer.concat([Buffer.from("OPENCLAW-BUN-RUNTIME-V1\n"), executable]);
 }
 
-export function stageInstalledPackage(installed, work, target, plan) {
+function stageInstalledPackage(installed, work, target, plan) {
   const core = path.join(installed, "node_modules/openclaw");
   const require = createRequire(path.join(core, "package.json"));
   const platform = target.platform === "windows" ? "win32" : target.platform;
