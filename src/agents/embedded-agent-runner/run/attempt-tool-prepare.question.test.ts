@@ -66,7 +66,7 @@ describe("prepared native question custody", () => {
         sessionId: target.sessionId,
         updatedAt: 1,
         ...(scenario.legacy ? {} : { lifecycleRevision: "question-generation" }),
-        ...(scenario.incognitoEntry || scenario.incognitoKey ? { incognito: true } : {}),
+        ...(scenario.incognitoEntry || scenario.incognitoKey ? { incognito: true as const } : {}),
       };
       const admission = prepareSystemAgentRunAdmission(config, "prepared-question", "main", "test");
       let prepared: Awaited<ReturnType<typeof prepareEmbeddedAttemptToolBase>> | undefined;
