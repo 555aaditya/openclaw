@@ -9,7 +9,10 @@ import { buildMockOpenAiResponsesProvider } from "../../src/gateway/test-openai-
 import { loadOrCreateDeviceIdentity } from "../../src/infra/device-identity.js";
 import { reserveTestPortListener } from "../../src/test-utils/port-claims.js";
 import { acquireGatewayTestClient } from "./gateway-client.js";
-import { writeOpenAiResponsesSse, writeOpenAiResponsesText } from "./openai-responses-sse.js";
+import {
+  writeOpenAiResponsesFunctionCalls,
+  writeOpenAiResponsesText,
+} from "./openai-responses-sse.js";
 import { createOpenClawTestInstance } from "./openclaw-test-instance.js";
 import { createDeferred } from "./promise.js";
 
@@ -76,29 +79,10 @@ export async function createDurableQuestionGateway(
               name: "tool_search",
               arguments: JSON.stringify({ query: "ask_user" }),
             };
-            writeOpenAiResponsesSse(response, [
-              {
-                type: "response.output_item.added",
-                output_index: 0,
-                item: { ...item, arguments: "" },
-              },
-              {
-                type: "response.function_call_arguments.delta",
-                output_index: 0,
-                item_id: item.id,
-                delta: item.arguments,
-              },
-              { type: "response.output_item.done", output_index: 0, item },
-              {
-                type: "response.completed",
-                response: {
-                  id: "resp_question_search",
-                  status: "completed",
-                  output: [item],
-                  usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
-                },
-              },
-            ]);
+            writeOpenAiResponsesFunctionCalls(response, {
+              responseId: "resp_question_search",
+              calls: [item],
+            });
             return;
           }
           if (text.includes("DURABLE_ASK_PROOF") && !issued) {
@@ -136,41 +120,10 @@ export async function createDurableQuestionGateway(
                 command: "echo started > durable-question-side-effect-started",
               }),
             };
-            writeOpenAiResponsesSse(response, [
-              {
-                type: "response.output_item.added",
-                output_index: 0,
-                item: { ...item, arguments: "" },
-              },
-              {
-                type: "response.function_call_arguments.delta",
-                output_index: 0,
-                item_id: item.id,
-                delta: args,
-              },
-              { type: "response.output_item.done", output_index: 0, item },
-              {
-                type: "response.output_item.added",
-                output_index: 1,
-                item: { ...later, arguments: "" },
-              },
-              {
-                type: "response.function_call_arguments.delta",
-                output_index: 1,
-                item_id: later.id,
-                delta: later.arguments,
-              },
-              { type: "response.output_item.done", output_index: 1, item: later },
-              {
-                type: "response.completed",
-                response: {
-                  id: "resp_question",
-                  status: "completed",
-                  output: [item, later],
-                  usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
-                },
-              },
-            ]);
+            writeOpenAiResponsesFunctionCalls(response, {
+              responseId: "resp_question",
+              calls: [item, later],
+            });
             asked.resolve();
             return;
           }
@@ -237,29 +190,10 @@ export async function createDurableQuestionGateway(
                   workdir: instance.state.workspaceDir,
                 }),
               };
-              writeOpenAiResponsesSse(response, [
-                {
-                  type: "response.output_item.added",
-                  output_index: 0,
-                  item: { ...item, arguments: "" },
-                },
-                {
-                  type: "response.function_call_arguments.delta",
-                  output_index: 0,
-                  item_id: item.id,
-                  delta: item.arguments,
-                },
-                { type: "response.output_item.done", output_index: 0, item },
-                {
-                  type: "response.completed",
-                  response: {
-                    id: "resp_continuation_effect",
-                    status: "completed",
-                    output: [item],
-                    usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
-                  },
-                },
-              ]);
+              writeOpenAiResponsesFunctionCalls(response, {
+                responseId: "resp_continuation_effect",
+                calls: [item],
+              });
               return;
             }
           }

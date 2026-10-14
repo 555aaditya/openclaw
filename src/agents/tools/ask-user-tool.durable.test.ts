@@ -95,8 +95,7 @@ describe("native durable ask_user handoff", () => {
     ]);
   });
 
-  it("keeps generic harness yield callbacks on the transient answer path", async () => {
-    const yielded = vi.fn();
+  it("keeps questions transient without a native handoff owner", async () => {
     const gateway = gatewayStub(async (method, _opts, params) => {
       if (method === "question.request") {
         expect(params.durable).toBeUndefined();
@@ -110,10 +109,9 @@ describe("native durable ask_user handoff", () => {
       }
       throw new Error(`Unexpected method: ${method}`);
     });
-    const tool = createAskUserTool({ gatewayCall: gateway.call, onYield: yielded });
+    const tool = createAskUserTool({ gatewayCall: gateway.call });
     expect(tool.executionMode).toBeUndefined();
     await tool.execute("harness-call", validArgs);
-    expect(yielded).not.toHaveBeenCalled();
     expect(gateway.mock.mock.calls.map(([method]) => method)).toEqual([
       "question.request",
       "question.waitAnswer",

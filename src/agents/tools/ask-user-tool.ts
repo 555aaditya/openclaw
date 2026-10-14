@@ -463,8 +463,6 @@ export function createAskUserTool(params: {
   gatewayCall?: AgentHarnessQuestionGatewayCall | AgentQuestionDispatcher;
   /** How this run shows a prompt when its harness does not reserve one. */
   questionPrompt?: QuestionPromptDelivery;
-  /** Native deliberate handoff after durable registration and prompt delivery. */
-  onYield?: SessionsYieldCallback;
   /** Native batch-barrier owner; generic harness yield callbacks do not transfer custody. */
   nativeQuestionHandoff?: SessionsYieldCallback;
 }): AnyAgentTool {
