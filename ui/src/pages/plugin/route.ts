@@ -1,16 +1,19 @@
 import { definePage } from "@openclaw/uirouter";
-import { html } from "lit";
+import { createComponent } from "solid-js";
 import {
   INTERNAL_PLUGIN_PATH_PARAM,
   pluginTabSlugFromPath,
   routePageSpec,
 } from "../../app-route-paths.ts";
+import type { SolidRouteProps } from "../../app-route-types.ts";
 import type { ApplicationContext } from "../../app/context.ts";
 
 type PluginTabRef = {
   pluginId: string;
   id: string;
 };
+
+type PluginRouteData = PluginTabRef & { params: Readonly<Record<string, string>> };
 
 export function pluginTabRefFromSearch(search: string, pathname = "", basePath = ""): PluginTabRef {
   const params = new URLSearchParams(search);
@@ -42,23 +45,24 @@ export const page = definePage({
       pluginTabKey(pluginTabRefFromSearch(location.search, location.pathname, context.basePath)),
       pluginPageParams(location.search),
     ]),
-  loader: (context: ApplicationContext, options) => ({
+  loader: (context: ApplicationContext, options): PluginRouteData => ({
     ...pluginTabRefFromSearch(options.location.search, options.location.pathname, context.basePath),
     params: pluginPageParams(options.location.search),
   }),
   component: () =>
-    import("./plugin-page.tsx").then(() => ({
+    import("./plugin-page.tsx").then((module) => ({
       header: true,
-      render: (data: unknown) => {
-        const ref = (data ?? { pluginId: "", id: "", params: {} }) as PluginTabRef & {
-          params: Readonly<Record<string, string>>;
-        };
-        return html`<openclaw-plugin-page
-          .pluginId=${ref.pluginId}
-          .tabId=${ref.id}
-          .params=${ref.params}
-        >
-        </openclaw-plugin-page>`;
-      },
+      renderSolid: (props: SolidRouteProps<PluginRouteData>) =>
+        createComponent(module.PluginPage, {
+          get pluginId() {
+            return props.data?.pluginId ?? "";
+          },
+          get tabId() {
+            return props.data?.id ?? "";
+          },
+          get params() {
+            return props.data?.params ?? {};
+          },
+        }),
     })),
 });

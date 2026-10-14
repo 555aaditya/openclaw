@@ -17,6 +17,7 @@ import { flush, waitForSolid } from "../../test-helpers/solid-settle.ts";
 import { getLogbookState, stopLogbookPolling } from "./logbook-controller.ts";
 import { BUNDLED_TAB_VIEWS } from "./plugin-page-lifecycle.ts";
 import { PluginPage, type PluginPageProps } from "./plugin-page.tsx";
+import { page as pluginRoute } from "./route.ts";
 
 type ApplicationConfig = ApplicationConfigCapability["current"];
 const cleanups: Array<() => void> = [];
@@ -194,6 +195,38 @@ afterEach(() => {
 });
 
 describe("PluginPage", () => {
+  it("keeps the route host mounted while loader params change", async () => {
+    const fixture = createExternalPluginPage(vi.fn(), false);
+    fixture.dispose();
+    const module = await pluginRoute.component();
+    if (!module.renderSolid) {
+      throw new Error("Expected a native plugin route renderer");
+    }
+    const [data, setData] = createSignal({
+      pluginId: "external-plugin",
+      id: "panel",
+      params: { range: "week" },
+    });
+    const provider = createSolidApplicationContextProvider(fixture.context);
+    const view = mountSolid(
+      () =>
+        module.renderSolid!({
+          get data() {
+            return data();
+          },
+          loaderPending: false,
+          presented: true,
+        }),
+      { wrapper: provider.wrapper },
+    );
+    const host = view.container.querySelector("openclaw-plugin-page");
+    await waitForSolid(() => expect(host?.querySelector("iframe")).not.toBeNull());
+    setData({ pluginId: "external-plugin", id: "panel", params: { range: "month" } });
+    flush();
+    expect(view.container.querySelector("openclaw-plugin-page")).toBe(host);
+    expect(host?.params).toEqual({ range: "month" });
+  });
+
   it("offers Labs after a custom plugin is blocked, without mistaking a failure for disablement", async () => {
     const pluginId = "custom-review";
     let loading = true;
