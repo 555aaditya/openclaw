@@ -1,4 +1,4 @@
-import type { JSX } from "@solidjs/web";
+import type { JSX as SolidJSX } from "@solidjs/web";
 import { createEffect, createSignal, onCleanup, For } from "solid-js";
 import { Icon } from "../../components/solid/icon.tsx";
 import { Popover, type PopoverHandle } from "../../components/solid/popover.tsx";
@@ -23,7 +23,7 @@ export type PluginInstallActionProps = {
 
 export type PluginInstallActionElement = HTMLElement & { dismiss(): void };
 
-export function PluginInstallAction(props: PluginInstallActionProps): JSX.Element {
+export function PluginInstallAction(props: PluginInstallActionProps): SolidJSX.Element {
   let host!: HTMLElement;
   const [button, setButton] = createSignal<HTMLButtonElement>();
   const [open, setOpen] = createSignal(false);

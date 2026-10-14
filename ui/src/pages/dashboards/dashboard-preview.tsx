@@ -35,7 +35,11 @@ export function DashboardPreview(props: DashboardPreviewProps) {
     };
   });
   return (
-    <openclaw-dashboard-preview ref={host}>
+    <openclaw-dashboard-preview
+      ref={(element) => {
+        host = element;
+      }}
+    >
       <Show when={nearVisible()}>
         <Show
           when={!props.error}
