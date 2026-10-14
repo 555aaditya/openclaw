@@ -26,6 +26,7 @@ import * as temporaryArtifacts from "./temp-artifact-cleanup.js";
 import { runUpdateStateInspectionWorker } from "./update-candidate-state.inspection.js";
 import { createUpdateErrorFact } from "./update-failure-facts.js";
 import type { ResolvedGlobalInstallTarget } from "./update-global.js";
+import * as retainedImports from "./update-retained-imports.js";
 import { type RetainUpdateRuntime, withRetainedUpdateRuntime } from "./update-retained-runtime.js";
 
 const inspectionFixture = vi.hoisted(() => ({ moduleUrl: "" }));
@@ -891,6 +892,39 @@ it("retains and reclaims the runtime when the install is spelled unlike its nati
   });
   expect(await maintain()).toContain(`Removed abandoned updater runtime: ${directory}`);
   await expect(stat(directory)).rejects.toMatchObject({ code: "ENOENT" });
+});
+
+it("records a warning and keeps retaining when the import redirect cannot be installed", async () => {
+  const base = await fs.realpath(tempDirs.make("openclaw-retained-redirect-"));
+  const root = await fixture(base, "npm");
+  const serve = vi
+    .spyOn(retainedImports, "serveUpdaterImportsFromRetainedRuntime")
+    .mockImplementation(() => {
+      throw new Error("module hooks are unavailable");
+    });
+  const moduleUrl = pathToFileURL(path.join(root, "dist/updater.mjs")).href;
+  await withRetainedUpdateRuntime(moduleUrl, async (retain) => {
+    expect(
+      await retain({ mutationRoots: [root], timeoutMs: 30_000, assertCurrent() {} }),
+    ).toMatchObject({
+      retainedImports: false,
+      retainedImportsError: "module hooks are unavailable",
+      entries: expect.any(Number),
+    });
+    // Worker relocation is unaffected; only the main-thread redirect is skipped.
+    const retained = fileURLToPath(
+      captureRuntimeWorkerSource(
+        resolveRuntimeWorkerUrl({
+          currentModuleUrl: moduleUrl,
+          sourceWorkerName: "store",
+          distWorkerPath: "state/store.js",
+        }),
+      ).moduleUrl,
+    );
+    expect(retained.startsWith(`${root}${path.sep}`)).toBe(false);
+    expect(await readFile(retained, "utf8")).toBe(backend);
+  });
+  expect(serve).toHaveBeenCalledOnce();
 });
 
 it("falls back when the runtime sibling is read-only", async () => {

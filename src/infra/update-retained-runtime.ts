@@ -39,6 +39,8 @@ type RetainedUpdateRuntimeMetrics = {
   copied: number;
   /** Later updater imports load from the retained copy instead of the replaced install. */
   retainedImports: boolean;
+  /** Why the import redirect could not be installed; the update continues on the bridges. */
+  retainedImportsError?: string;
 };
 
 export type RetainUpdateRuntime = (params: {
@@ -239,23 +241,35 @@ async function runWithRetainedUpdateRuntime<T>(
           const resolve = (url: URL) =>
             pathToFileURL(relocateRuntimePath(fileURLToPath(url), relocations));
           bind(resolve);
-          const retainedImports = serveUpdaterImportsFromRetainedRuntime({
-            relocations: relocations.rules,
-            // Loaded module URLs use the launch spelling of the package root.
-            origins: [
-              ...(root === sourceRoot
-                ? []
-                : [{ sourceRoot: candidateRoot, destinationRoot: root }]),
-              ...plan.copies.map(([installed, retained]) => ({
-                sourceRoot: retained,
-                destinationRoot: installed,
-              })),
-            ],
-          });
+          // The redirect is defense in depth over the compatibility bridges, so a
+          // runtime that rejects it records a warning instead of blocking the update.
+          let retainedImports = false;
+          let retainedImportsError: string | undefined;
+          try {
+            retainedImports = serveUpdaterImportsFromRetainedRuntime({
+              relocations: relocations.rules,
+              // Loaded module URLs use the launch spelling of the package root.
+              origins: [
+                ...(root === sourceRoot
+                  ? []
+                  : [{ sourceRoot: candidateRoot, destinationRoot: root }]),
+                ...plan.copies.map(([installed, retained]) => ({
+                  sourceRoot: retained,
+                  destinationRoot: installed,
+                })),
+              ],
+            });
+          } catch (error) {
+            retainedImportsError = formatErrorMessage(error);
+            log.warn(
+              `Updater imports stay on the installed package; compatibility bridges serve them: ${retainedImportsError}`,
+            );
+          }
           assertCurrent();
           prepared = true;
           return {
             retainedImports,
+            ...(retainedImportsError ? { retainedImportsError } : {}),
             inventoryMs,
             materializationMs,
             entries: plan.entries.length,

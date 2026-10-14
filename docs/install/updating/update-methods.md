@@ -374,8 +374,9 @@ These compatibility files remain the guaranteed path for every supported
 previous release and runtime. Newer updaters add a second layer: they load
 their own later imports from their retained runtime copy instead of the
 replaced installation, through module hooks on Node and a runtime resolver
-plugin on Bun. Nothing is written for this layer, so a later release can
-change or remove it without affecting any installed updater.
+plugin on Bun. If a runtime rejects that redirect, the update logs a warning
+and continues on the compatibility files. Nothing is written for this layer, so
+a later release can change or remove it without affecting any installed updater.
 
 For a root-owned Linux system-global install, if `openclaw update` fails with
 `EACCES`, recover with system npm while keeping the Gateway stopped for the
