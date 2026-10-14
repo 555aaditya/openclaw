@@ -63,7 +63,7 @@ const executePhase: {
     scope: TransportScope,
     input: SessionActorCommandContext &
       SessionActorPhaseInputs[Phase] & { target: SessionActorTarget },
-  ) => Promise<SessionActorOutcome<SessionActorPhaseResults[Phase]>>;
+  ) => Promise<SessionActorOperations[`session.actor.${Phase}`]["output"]>;
 } = {
   acceptInput: (scope, input) => scope.execute({ type: "session.actor.acceptInput", input }),
   adoptRun: (scope, input) => scope.execute({ type: "session.actor.adoptRun", input }),
@@ -151,35 +151,46 @@ export function createSqliteSessionActorExecutor(
       }
     };
   };
-  const read = (authority: SessionActorAuthority) =>
-    params.transport.run(async (scope) => {
-      params.assertReadable();
-      authority.assertCurrent();
-      let snapshot = params.replica.read();
-      if (!snapshot) {
-        const pending = params.replica.beginRead();
-        try {
-          snapshot = await scope.execute({ type: "session.actor.read", input: { target } });
-          pending.install(snapshot);
-          // Disclose the immutable installed revision, including a superseding receipt.
-          snapshot = params.replica.read();
-        } finally {
-          pending.cancel();
+  const read = async (authority: SessionActorAuthority) => {
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return await params.transport.run(async (scope) => {
+          params.assertReadable();
+          authority.assertCurrent();
+          let snapshot = params.replica.read();
+          if (!snapshot) {
+            const pending = params.replica.beginRead();
+            try {
+              snapshot = await scope.execute({ type: "session.actor.read", input: { target } });
+              pending.install(snapshot);
+              // Disclose the immutable installed revision, including a superseding receipt.
+              snapshot = params.replica.read();
+            } finally {
+              pending.cancel();
+            }
+          }
+          if (!snapshot) {
+            throw new SessionActorReadInvalidatedError();
+          }
+          fenced = false;
+          params.assertReadable();
+          authority.assertCurrent();
+          authority.authorize("commit", snapshot);
+          authority.assertCurrent();
+          params.assertReadable();
+          // Policy callbacks do not write session state. A synchronous bookkeeping
+          // change during authorization is visible to the next read.
+          return snapshot;
+        }, authorize(authority));
+      } catch (error) {
+        // No command was accepted. Reenter the physical FIFO once with fresh
+        // caller authority after a newer publication revoked the read.
+        if (attempt > 0 || !(error instanceof SessionActorReadInvalidatedError)) {
+          throw error;
         }
       }
-      if (!snapshot) {
-        throw new SessionActorReadInvalidatedError();
-      }
-      fenced = false;
-      params.assertReadable();
-      authority.assertCurrent();
-      authority.authorize("commit", snapshot);
-      authority.assertCurrent();
-      params.assertReadable();
-      // Policy callbacks do not write session state. A synchronous bookkeeping
-      // change during authorization is visible to the next read.
-      return snapshot;
-    }, authorize(authority));
+    }
+  };
   const command = async <Phase extends SessionActorPhase>(
     name: Phase,
     input: SessionActorCommandContext & SessionActorPhaseInputs[Phase],
@@ -199,12 +210,23 @@ export function createSqliteSessionActorExecutor(
       }
       candidate = value;
     });
-    const unknown = (error: unknown): Outcome => ({
-      kind: "unknown",
-      target,
-      commandId: captured.commandId,
-      error: errorFacts(error),
-    });
+    const unknown = (error: unknown): Outcome => {
+      if (target.database.kind === "file") {
+        publishRetainedSessionEntryChange(
+          target.database.physicalIdentity,
+          target.sessionKey,
+          undefined,
+          previousEntry,
+          false,
+        );
+      }
+      return {
+        kind: "unknown",
+        target,
+        commandId: captured.commandId,
+        error: errorFacts(error),
+      };
+    };
     const preserveFailure = (error: unknown, origin?: "response"): Outcome => {
       if (!committed) {
         return unknown(error);
@@ -256,6 +278,8 @@ export function createSqliteSessionActorExecutor(
                 receipt.phaseId === captured.phaseId &&
                 receipt.phase === name
               ) {
+                // Register the shared postimage first so receipt freezing and replica settlement reuse it.
+                freezeJsonSnapshot(receipt.postimage);
                 // SAFETY: The paired worker constructs the typed result; native admission validates its settlement envelope.
                 committed = freezeJsonSnapshot(evidence) as Extract<Outcome, { kind: "committed" }>;
                 if (!reply.ok) {

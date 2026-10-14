@@ -123,6 +123,21 @@ describe("PostgreSQL conformance selection", () => {
   });
 
   it.each([
+    { changedPaths: null, label: "no path inventory" },
+    { changedPaths: ["extensions/workboard/README.md"], label: "a matching documentation path" },
+  ])("skips docs-only pull requests with $label", ({ changedPaths }) => {
+    const result = runCiManifestFixture({
+      bundledPlanner: true,
+      eventName: "pull_request",
+      changedPaths,
+      targetFiles: ["scripts/test-database-conformance.mjs"],
+      scopeEnv: { OPENCLAW_CI_DOCS_ONLY: "true" },
+    });
+    expect(result.status, result.output).toBe(0);
+    expect(result.outputs.run_postgres_conformance).toBe("false");
+  });
+
+  it.each([
     ["schedule", [], true, true],
     ["pull_request", null, true, true],
     ["schedule", [], false, false],
@@ -8399,6 +8414,7 @@ describe("ci workflow guards", () => {
     "selects changed-path-facts owner tests and preserves legacy task execution for $label",
     ({ changedPath, taskOverride, fullStatic }) => {
       const root = tempDirs.make("openclaw-fast-ci-routing-");
+      installCollectChecks(root);
       const changedPaths = [changedPath];
       const scopeEnv = Object.fromEntries(
         Object.entries(runCiChangedScopeFixture(changedPaths)).map(([key, value]) => [
@@ -8466,6 +8482,7 @@ describe("ci workflow guards", () => {
       ]);
       // Historical release checkouts retain these tasks; current PRs select the owner row above.
       const run = spawnSync("bash", ["-c", runStep.run], {
+        cwd: root,
         encoding: "utf8",
         env: {
           ...process.env,
@@ -11741,12 +11758,14 @@ describe("ci workflow guards", () => {
     ]);
   });
 
-  it("provisions ripgrep for filesystem, SQLite ratchet, and PR successor selections", () => {
+  it("provisions ripgrep for filesystem, SQLite ratchet, and native PR wrapper selections", () => {
     const contract = "src/agents/filesystem-tools-output-contract.test.ts";
     const nativeTools = "src/agents/sessions/tools/index.test.ts";
     const bytePaths = "src/agents/sessions/tools/grep.byte-path.test.ts";
     const sqliteRatchet = "test/scripts/check-database-worker-ratchet.test.ts";
     const prSuccessor = "test/scripts/pr-baseline-successor.test.ts";
+    const prSigning = "test/scripts/pr-baseline-signing.test.ts";
+    const prContinuation = "test/scripts/pr-correction-continuation.test.ts";
     const unrelated = "src/agents/run-wait.test.ts";
     const selections = [
       { targets: [contract] },
@@ -11764,6 +11783,12 @@ describe("ci workflow guards", () => {
       { targets: [prSuccessor] },
       { includePatterns: [prSuccessor] },
       { groups: [{ shard_name: "core-tooling-12", includePatterns: [prSuccessor] }] },
+      { targets: [prSigning] },
+      { includePatterns: [prSigning] },
+      { groups: [{ shard_name: "core-tooling-9", includePatterns: [prSigning] }] },
+      { targets: [prContinuation] },
+      { includePatterns: [prContinuation] },
+      { groups: [{ shard_name: "core-tooling-11", includePatterns: [prContinuation] }] },
       { includePatterns: [unrelated] },
       { shardName: "agentic-agents-core-runtime" },
       { shardName: "agentic-agents-support" },
@@ -11793,6 +11818,12 @@ describe("ci workflow guards", () => {
       expectDefined(result.outputs.checks_node_core_nondist_matrix, "non-dist Node matrix"),
     ) as { include: { requires_ripgrep?: boolean }[] };
     expect(matrix.include.map((row) => Boolean(row.requires_ripgrep))).toEqual([
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
       true,
       true,
       true,

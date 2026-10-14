@@ -47,6 +47,10 @@ Configure the provider plugin before selecting its model:
 - [ONNX](/plugins/onnx) runs local CPU classifiers in a persistent subprocess.
   Follow its development-checkout or compatible-package setup, then explicitly
   download the model or prepare a local export. Inference needs no hosted API credential.
+- [OpenAI](/providers/openai#decision-models) uses the bundled `openai` plugin
+  and the OpenAI Platform Decisions API. Configure an OpenAI API key;
+  ChatGPT/Codex subscription credentials do not authorize this endpoint.
+  Evaluations send the supplied evidence to OpenAI and incur Platform usage charges.
 - [SubQ](/plugins/subq) connects to hosted SubQ Snap for text/JSON decisions.
   Configure a protected SubQ credential. Its advertised image input is not
   exposed by the shared Decision API.
@@ -66,12 +70,13 @@ The current plugins declare these model references:
 | `onnx/gliclass-instruct-edge-v1.0`   | GLiClass Instruct Edge | Local export                                           |
 | `onnx/gliner2.5-base-v1`             | GLiNER 2.5 Base        | Download pinned ONNX artifacts                         |
 | `onnx/gliner2.5-small-v1`            | GLiNER 2.5 Small       | Download pinned ONNX artifacts                         |
+| `openai/gpt-6-luna`                  | GPT-6 Luna             | OpenAI Platform API key and Decisions API access       |
 | `subq/subq-snap-preview`             | SubQ Snap (preview)    | SubQ credential and account credits                    |
 | `typesafe/jev-1.13.0`                | Jev 1.13.0             | TypeSafe credential                                    |
 | `typesafe/jev-latest`                | Jev                    | TypeSafe credential; follows the vendor's latest model |
 | `typesafe/kev-latest`                | Kev (local server)     | Running System One server and explicit loopback URL    |
 
-These plugins are currently unpublished candidates. Their setup pages explain
+The ONNX, SubQ, and TypeSafe AI plugins are currently unpublished candidates. Their setup pages explain
 source-checkout use and the packaged host floor. The table describes the plugins' declared models,
 not which artifacts or credentials are ready on your machine.
 

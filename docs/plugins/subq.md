@@ -18,7 +18,7 @@ not replace your chat model or provide text generation or agent tool calling.
 This is an external plugin candidate; package publication is pending. Until a
 supporting release publishes it, use a source checkout containing
 `extensions/subq`, install its dependencies, and build OpenClaw. The packaged
-plugin declares OpenClaw and Plugin API `2026.10.2` or newer.
+plugin declares OpenClaw and Plugin API `2026.10.3` or newer.
 
 After publication, install it with `openclaw plugins install @openclaw/subq`.
 Create a SubQ API key at [console.subq.ai](https://console.subq.ai/) and store it
