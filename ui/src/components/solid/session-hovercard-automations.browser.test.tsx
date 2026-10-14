@@ -86,43 +86,103 @@ it("tabs into a nested inspection, dismisses only the flyout with Escape, and re
   await opened;
   await vi.waitFor(() => expect(tooltip.hasAttribute("open")).toBe(true));
   const summary = card.querySelector("summary")!;
-  const observations: Array<Record<string, string | number | boolean | null>> = [];
-  const nodeLabel = (node: EventTarget | null) =>
-    node instanceof Element ? `${node.tagName}.${node.getAttribute("class") ?? ""}` : null;
-  const observe = (point: string, event?: Event) => {
-    if (observations.length >= 20) {
-      return;
-    }
-    const surface = tooltip.shadowRoot?.querySelector<HTMLElement>(".tooltip-surface");
-    observations.push({
-      point,
-      target: nodeLabel(event?.target ?? null),
-      related: nodeLabel(event instanceof FocusEvent ? event.relatedTarget : null),
-      active: nodeLabel(document.activeElement),
-      shadowActive: nodeLabel(tooltip.shadowRoot?.activeElement ?? null),
-      documentFocused: document.hasFocus(),
-      key: event instanceof KeyboardEvent ? event.key : null,
-      prevented: event?.defaultPrevented ?? false,
-      open: tooltip.hasAttribute("open"),
-      phase: surface?.dataset.phase ?? null,
-      surfaceInert: surface?.inert ?? false,
-      richInert:
-        tooltip.shadowRoot?.querySelector(".tooltip-rich-content")?.hasAttribute("inert") ?? false,
-      summaryTabIndex: summary.tabIndex,
-    });
-  };
-  const record = (event: Event) => observe(event.type, event);
-  for (const type of ["keydown", "keyup", "focusin", "focusout"]) {
-    window.addEventListener(type, record);
-    onTestFinished(() => window.removeEventListener(type, record));
-  }
-  observe("before-focus");
   anchor.focus();
-  observe("after-focus");
   await userEvent.tab();
-  observe("after-tab");
-  console.log("hovercard-focus-diagnostic", JSON.stringify(observations));
-  expect(document.activeElement).toBe(summary);
+  try {
+    expect(document.activeElement).toBe(summary);
+  } catch (failure) {
+    const observations: Array<Record<string, string | number | boolean | null>> = [];
+    const surface = tooltip.shadowRoot!.querySelector<HTMLElement>(".tooltip-surface")!;
+    const tabIndex = summary.getAttribute("tabindex");
+    const input = document.createElement("input");
+    const record = (point: string, target: HTMLElement, popup?: HTMLElement) => {
+      if (observations.length >= 10) {
+        return;
+      }
+      const active = document.activeElement;
+      observations.push({
+        point,
+        active: active ? `${active.tagName}.${active.getAttribute("class") ?? ""}` : null,
+        targetFocused: active === target,
+        targetVisible: target.checkVisibility(),
+        targetTabIndex: target.tabIndex,
+        documentFocused: document.hasFocus(),
+        popupOpen: popup?.matches(":popover-open") ?? false,
+        popupInert: popup?.inert ?? false,
+        phase: popup?.dataset.phase ?? null,
+      });
+    };
+    const restoreTabIndex = () => {
+      if (tabIndex === null) {
+        summary.removeAttribute("tabindex");
+      } else {
+        summary.setAttribute("tabindex", tabIndex);
+      }
+    };
+    try {
+      record("original-failure", summary, surface);
+      summary.focus();
+      record("direct-summary-focus", summary, surface);
+      summary.tabIndex = 0;
+      anchor.focus();
+      await userEvent.tab();
+      record("explicit-summary-tabindex", summary, surface);
+      restoreTabIndex();
+      summary.closest('[slot="content"]')!.prepend(input);
+      anchor.focus();
+      await userEvent.tab();
+      record("first-rich-input", input, surface);
+      input.remove();
+      for (const withSource of [null, true, false]) {
+        const specimen = document.createElement("div");
+        const link = document.createElement("a");
+        link.href = "#native-inspection";
+        link.textContent = "Native inspection";
+        const content = document.createElement("div");
+        content.slot = "content";
+        content.innerHTML = "<details><summary>Instructions</summary><p>Details</p></details>";
+        const target = content.querySelector("summary")!;
+        document.body.append(specimen);
+        try {
+          let popup: HTMLElement | undefined;
+          if (withSource === null) {
+            specimen.append(link, content);
+          } else {
+            specimen.setAttribute("popover", "manual");
+            const host = document.createElement("div");
+            host.style.display = "contents";
+            specimen.append(host);
+            host.append(link, content);
+            const shadow = host.attachShadow({ mode: "open" });
+            shadow.innerHTML =
+              '<slot></slot><div popover="manual"><span><slot name="content"></slot></span></div>';
+            popup = shadow.querySelector("div")!;
+            specimen.showPopover();
+            popup.showPopover(withSource ? { source: link } : undefined);
+          }
+          link.focus();
+          await userEvent.tab();
+          record(
+            withSource === null ? "plain-summary" : `slotted-summary-source-${withSource}`,
+            target,
+            popup,
+          );
+        } finally {
+          specimen.remove();
+        }
+      }
+    } catch (error) {
+      observations.push({
+        point: "probe-error",
+        name: error instanceof Error ? error.name : "unknown",
+      });
+    } finally {
+      input.remove();
+      restoreTabIndex();
+      console.log("hovercard-focus-differential", JSON.stringify(observations));
+    }
+    throw failure;
+  }
   await userEvent.keyboard("{Enter}");
   expect(card.querySelector("details")!.open).toBe(true);
   await userEvent.keyboard("{Escape}");
