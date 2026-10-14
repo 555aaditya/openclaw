@@ -1,11 +1,14 @@
 import { copyFileSync, renameSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
+import { recoverDurableQuestions } from "../../gateway/durable-question-runtime.js";
+import { QuestionManager } from "../../gateway/question-manager.js";
 import { readDatabasePathIdentitySync } from "../../infra/sqlite-worker-identity.js";
 import {
   closeOpenClawAgentDatabasesAsync,
   openOpenClawAgentDatabase,
 } from "../../state/openclaw-agent-db.js";
+import { createTestGatewayScheduler } from "../../test-utils/gateway-scheduler-clock.js";
 import {
   loadSessionEntry,
   replaceSessionEntry,
@@ -191,6 +194,26 @@ describe("durable question custody", () => {
       resolutionId: "first-resolution",
       continuation: { status: "owed" },
     });
+    const scheduler = createTestGatewayScheduler();
+    const manager = new QuestionManager(scheduler);
+    const offered: DurableQuestion[] = [];
+    try {
+      const recover = () =>
+        recoverDurableQuestions(
+          manager,
+          [scope()],
+          (current) => offered.push(current),
+          () => {},
+        );
+      await recover();
+      await recover();
+      expect(offered).toEqual([settled]);
+      expect(manager.get(question.record.id)?.answers).toEqual(answer.answers);
+    } finally {
+      manager.close();
+      await manager.drain();
+      await scheduler.stop();
+    }
     await operate({
       kind: "claim",
       id: question.record.id,
@@ -707,6 +730,49 @@ describe("durable question custody", () => {
     expect(loadSessionEntry(scope())).toEqual(before);
     expect(loadSessionEntry({ ...scope(), sessionKey: targetKey })).toBeUndefined();
     expect(await operate({ kind: "get", id: question.record.id })).toEqual(question);
+  });
+
+  it("recovers a committed answer into an existing pending observation and offers its work once", async () => {
+    const question = await register();
+    const scheduler = createTestGatewayScheduler();
+    const manager = new QuestionManager(scheduler);
+    const offered: DurableQuestion[] = [];
+    const recover = () =>
+      recoverDurableQuestions(
+        manager,
+        [scope()],
+        (receipt) => offered.push(receipt),
+        () => {},
+      );
+    try {
+      await recover();
+      const waiting = manager.waitAnswer(question.record.id, undefined, true);
+      const answers = { answers: { choice: ["A"] } };
+      // The canonical write completed, but the process observation has not received its ACK.
+      await operate({
+        kind: "settle",
+        id: question.record.id,
+        outcome: { id: question.record.id, status: "answered", answers },
+        resolutionId: "recovered-answer",
+      });
+      await recover();
+      expect(manager.get(question.record.id)?.status).toBe("answered");
+      expect(await waiting).toEqual({
+        status: "answered",
+        answers,
+        resolutionId: "recovered-answer",
+      });
+      await manager.drain();
+      expect(offered).toMatchObject([
+        { record: { status: "answered", answers }, continuation: { status: "owed" } },
+      ]);
+      await recover();
+      expect(offered).toHaveLength(1);
+    } finally {
+      manager.close();
+      await manager.drain();
+      await scheduler.stop();
+    }
   });
 
   it("interrupts a prior admitted claim without replay and refuses claims after session replacement", async () => {
