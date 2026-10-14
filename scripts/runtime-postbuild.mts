@@ -12,7 +12,6 @@ import {
   RUNTIME_DEPENDENCY_OWNERSHIP_RELATIVE_PATH,
   type RuntimeDependencyOwnership,
 } from "../src/infra/runtime-dependency-ownership.ts";
-import { UPDATE_PRELOAD_IMPORTS_FILE } from "../src/infra/update-retained-imports-contract.ts";
 import { verifyBuiltPluginControlPlaneModules } from "./check-built-plugin-control-plane-modules.mts";
 import { copyBundledPluginMetadata } from "./copy-bundled-plugin-metadata.mts";
 import { copyHookMetadata, listHookMetadataOutputs } from "./copy-hook-metadata.ts";
@@ -28,7 +27,6 @@ import {
 } from "./lib/static-extension-assets.mts";
 import {
   isUpdateCompatibilityChunk,
-  listPostSwapImportChunks,
   listUpdateCompatibilityChunkPaths,
   readUpdateCompatibilityInventory,
   writeUpdateCompatibilityChunks,
@@ -245,7 +243,6 @@ export function listCoreRuntimePostBuildOutputs(params: RuntimeFsParams = {}) {
     ...listStableRootRuntimeAliasOutputs(params),
     ...listLegacyRootRuntimeCompatOutputs(params),
     ...LEGACY_CLI_EXIT_COMPAT_CHUNKS.map(({ dest }) => dest),
-    `dist/${UPDATE_PRELOAD_IMPORTS_FILE}`,
     ...listUpdateCompatibilityChunkPaths(
       readUpdateCompatibilityInventory(UPDATE_COMPATIBILITY_INVENTORY),
     ).map((fileName) => `dist/${fileName}`),
@@ -615,13 +612,6 @@ export function runRuntimePostBuild(params: RuntimePostBuildParams = {}) {
       inventory: readUpdateCompatibilityInventory(UPDATE_COMPATIBILITY_INVENTORY),
     }),
   );
-  runPhase("updater preload imports", () => {
-    const chunks = listPostSwapImportChunks(rootDir);
-    writeTextFileIfChanged(
-      path.join(rootDir, "dist", UPDATE_PRELOAD_IMPORTS_FILE),
-      `${JSON.stringify({ chunks }, null, 2)}\n`,
-    );
-  });
   runPhase("built plugin control-plane loads", () =>
     verifyBuiltPluginControlPlaneModules(phaseParams),
   );

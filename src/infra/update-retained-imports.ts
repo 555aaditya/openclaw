@@ -3,10 +3,12 @@ import Module, { createRequire, type ResolveFnOutput } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import vm from "node:vm";
-import { useNodeModuleHooks } from "../plugins/native-module-require.js";
+import {
+  registerCapturedPluginModuleResolver,
+  useNodeModuleHooks,
+  type BunPluginRuntime,
+} from "../plugins/native-module-require.js";
 import { readRecordValue } from "../shared/safe-record.js";
-import { hasErrnoCode } from "./errno.js";
-import { UPDATE_PRELOAD_IMPORTS_FILE } from "./update-retained-imports-contract.js";
 import {
   prepareRuntimeRelocations,
   relocateRuntimePath,
@@ -84,8 +86,9 @@ function isRetainedEsModule(file: string): boolean {
  * The hooks stay for the rest of this thread because the retained directory
  * outlives the command and post-command drains still import lazily.
  *
- * Bun keeps its native resolver (see `useNodeModuleHooks`), so it returns
- * false there and the caller preloads instead.
+ * Bun ignores module hooks; it redirects resolution through its runtime plugin
+ * owner instead (see `serveBunUpdaterImports`). Runtimes with neither return
+ * false and rely on the compatibility bridges.
  */
 export function serveUpdaterImportsFromRetainedRuntime(params: {
   /** Install paths, including spellings Node may use in module URLs, to retained paths. */
@@ -93,11 +96,11 @@ export function serveUpdaterImportsFromRetainedRuntime(params: {
   /** Retained real paths back to the install paths Node assigned before replacement. */
   origins: readonly RuntimeRelocation[];
 }): boolean {
-  if (!useNodeModuleHooks()) {
-    return false;
-  }
   const forward = prepareRuntimeRelocations(params.relocations);
   const reverse = prepareRuntimeRelocations(params.origins);
+  if (!useNodeModuleHooks()) {
+    return serveBunUpdaterImports(forward, reverse);
+  }
   const requireCache = createRequire(import.meta.url).cache;
   const retained = (file: string | undefined) => {
     if (!file) {
@@ -185,40 +188,56 @@ export function serveUpdaterImportsFromRetainedRuntime(params: {
 }
 
 /**
- * Load every chunk the updater can import after package replacement while the
- * installed bytes are still in place, for runtimes without module hooks.
- *
- * Bun keeps evaluated modules in its registry keyed by real path, so a later
- * `import()` of the same chunk returns the loaded module instead of reading the
- * replaced tree. The build lists the chunks; packages without the list (source
- * checkouts that were never built, older releases) keep their bridges.
+ * Bun counterpart of the module hooks: resolution from the updater's modules
+ * moves to the retained copy through the shared runtime plugin owner. Bun keys
+ * loaded modules by path, so a target loaded before replacement keeps its
+ * installed path and is reused instead of evaluated again from retained bytes.
  */
-export async function preloadUpdaterPostSwapImports(packageRoot: string): Promise<boolean> {
-  const distDir = path.join(packageRoot, "dist");
-  let listed: unknown;
-  try {
-    listed = JSON.parse(fs.readFileSync(path.join(distDir, UPDATE_PRELOAD_IMPORTS_FILE), "utf8"));
-  } catch (error) {
-    if (hasErrnoCode(error, "ENOENT")) {
-      return false;
+function serveBunUpdaterImports(
+  forward: ReturnType<typeof prepareRuntimeRelocations>,
+  reverse: ReturnType<typeof prepareRuntimeRelocations>,
+): boolean {
+  const bun: BunPluginRuntime | undefined = Reflect.get(globalThis, "Bun");
+  const resolveSync = bun?.resolveSync;
+  // Module requests reach runtime onResolve even where resolveSync bypasses it
+  // (see supportsBunRuntimeOnResolveTargets); a Bun that skips the hook keeps
+  // today's behavior, with the bridges.
+  if (!resolveSync || typeof bun.plugin !== "function") {
+    return false;
+  }
+  const loaded = createRequire(import.meta.url).cache;
+  const retained = (file: string | undefined) => {
+    if (!file) {
+      return undefined;
     }
-    throw error;
-  }
-  const chunks = readRecordValue(listed, "chunks");
-  if (
-    !Array.isArray(chunks) ||
-    !chunks.every(
-      (chunk) =>
-        typeof chunk === "string" &&
-        !path.isAbsolute(chunk) &&
-        !chunk.split("/").includes("..") &&
-        /\.m?js$/u.test(chunk),
-    )
-  ) {
-    throw new Error(`Invalid updater preload list ${UPDATE_PRELOAD_IMPORTS_FILE}`);
-  }
-  for (const chunk of chunks) {
-    await import(pathToFileURL(path.join(distDir, chunk)).href);
-  }
+    const moved = relocateRuntimePath(file, forward);
+    return moved === file ? undefined : moved;
+  };
+  // Modules loaded after replacement already report their retained path.
+  const retainedParent = (importer: string | undefined) =>
+    importer && relocateRuntimePath(importer, reverse) !== importer ? importer : retained(importer);
+  registerCapturedPluginModuleResolver({
+    // Node serves the updater through module hooks; only Bun reaches prepare.
+    resolve: () => undefined,
+    prepare(request, importer) {
+      if (Module.isBuiltin(request)) {
+        return undefined;
+      }
+      const parent = retainedParent(importer);
+      const target = retained(specifierPath(request));
+      const base = parent ?? target;
+      if (!base) {
+        return undefined;
+      }
+      try {
+        const resolved = target ?? resolveSync(request, path.dirname(base));
+        const installed = relocateRuntimePath(resolved, reverse);
+        return installed !== resolved && loaded[installed] !== undefined ? installed : resolved;
+      } catch {
+        // Files outside the retained roots keep their installed resolution.
+        return undefined;
+      }
+    },
+  });
   return true;
 }

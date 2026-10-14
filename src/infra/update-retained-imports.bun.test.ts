@@ -3,7 +3,6 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterAll, expect, it } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
-import { UPDATE_PRELOAD_IMPORTS_FILE } from "./update-retained-imports-contract.js";
 
 const tempDirs = useAutoCleanupTempDirTracker(afterAll);
 
@@ -14,14 +13,15 @@ async function writeFiles(root: string, files: Record<string, string>): Promise<
   }
 }
 
-// Bun has no module hooks: its updater preloads the build-listed chunks before
-// replacement. Without the list, the same lazy import reaches the replaced tree.
-// CI runs this in the Bun launcher task, where a missing Bun fails the test.
+// Bun has no module hooks: its updater redirects resolution to the retained copy
+// through the runtime plugin owner. Without retention, the same lazy import
+// reaches the replaced tree. CI runs this in the Bun launcher task, where a
+// missing Bun fails the test.
 it.runIf(process.env.OPENCLAW_TEST_BUN_LAUNCHER === "1").each([
-  { listed: true, expected: "old:old-dep:1" },
-  { listed: false, expected: "ENOENT" },
-])("Bun updater preloads its later imports (listed=$listed)", async ({ listed, expected }) => {
-  const base = tempDirs.make("openclaw-retained-preload-");
+  { retained: true, expected: "old:old-dep:1" },
+  { retained: false, expected: "ENOENT" },
+])("Bun updater serves its later imports (retained=$retained)", async ({ retained, expected }) => {
+  const base = tempDirs.make("openclaw-retained-imports-");
   const install = path.join(base, "openclaw");
   await fs.mkdir(path.join(install, ".git"), { recursive: true });
   await writeFiles(install, {
@@ -39,9 +39,6 @@ it.runIf(process.env.OPENCLAW_TEST_BUN_LAUNCHER === "1").each([
     ].join("\n"),
     "node_modules/esm-dep/package.json": '{"name":"esm-dep","type":"module","exports":"./i.js"}',
     "node_modules/esm-dep/i.js": 'export default "old-dep";',
-    ...(listed
-      ? { [`dist/${UPDATE_PRELOAD_IMPORTS_FILE}`]: '{"chunks":["chunk-OLD1234.mjs"]}' }
-      : {}),
   });
   const script = `
     import fs from "node:fs";
@@ -52,8 +49,10 @@ it.runIf(process.env.OPENCLAW_TEST_BUN_LAUNCHER === "1").each([
     const updaterUrl = pathToFileURL(path.join(install, "dist/updater.mjs")).href;
     const { later } = await import(updaterUrl);
     await withRetainedUpdateRuntime(updaterUrl, async (retain) => {
-      const metrics = await retain({ mutationRoots: [install], timeoutMs: 30000, assertCurrent() {} });
-      console.log("retainedImports=" + metrics.retainedImports);
+      if (${retained}) {
+        const metrics = await retain({ mutationRoots: [install], timeoutMs: 30000, assertCurrent() {} });
+        console.log("retainedImports=" + metrics.retainedImports);
+      }
       // Replacement removes the old hashed chunk and its dependency.
       fs.rmSync(path.join(install, "dist"), { recursive: true });
       fs.rmSync(path.join(install, "node_modules"), { recursive: true });
@@ -82,6 +81,8 @@ it.runIf(process.env.OPENCLAW_TEST_BUN_LAUNCHER === "1").each([
   });
   expect(result.error).toBeUndefined();
   expect(result.status, result.stderr).toBe(0);
-  expect(result.stdout).toContain(`retainedImports=${listed}`);
+  if (retained) {
+    expect(result.stdout).toContain("retainedImports=true");
+  }
   expect(result.stdout).toContain(`result=${expected}`);
 });

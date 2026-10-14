@@ -2902,7 +2902,7 @@ jobs:
               if [[ -f src/infra/sqlite-existing-database.bun.test.ts ]]; then
                 OPENCLAW_TEST_BUN_LAUNCHER=1 pnpm test src/infra/sqlite-existing-database.bun.test.ts
               fi
-              # Older frozen targets predate the Bun updater preload.
+              # Older frozen targets predate the Bun updater import redirect.
               if [[ -f src/infra/update-retained-imports.bun.test.ts ]]; then
                 OPENCLAW_TEST_BUN_LAUNCHER=1 pnpm test src/infra/update-retained-imports.bun.test.ts
               fi

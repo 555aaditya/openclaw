@@ -39,7 +39,7 @@ export function resolveCiCheckFamilyScope(changedPaths: readonly string[]): CiCh
       file === "test/openclaw-launcher.e2e.test.ts" ||
       /^src\/plugins\/plugin-module-generation(?:\.|-)/u.test(file) ||
       file.startsWith("src/infra/sqlite-existing-database.") ||
-      // The Bun updater preloads its later imports instead of using module hooks.
+      // The Bun updater redirects its later imports through a runtime plugin, not module hooks.
       /^src\/infra\/update-retained-(?:imports|runtime)(?:\.|-)/u.test(file),
   );
   // Configuration and shared fixtures can change scanner inputs or arbitrary
