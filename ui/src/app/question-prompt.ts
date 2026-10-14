@@ -292,6 +292,10 @@ function applyQuestionResolution(
   prompt: QuestionPrompt,
   resolved: QuestionResolvedEvent,
 ): void {
+  const outcomeChanged =
+    prompt.locallyExpired ||
+    prompt.status !== resolved.status ||
+    (resolved.status === "answered" && !questionAnswersEqual(prompt.answers, resolved.answers));
   prompt.status = resolved.status;
   clearSecretQuestionDrafts(prompt.questions, prompt.drafts);
   prompt.answers = resolved.status === "answered" ? resolved.answers : undefined;
@@ -308,7 +312,11 @@ function applyQuestionResolution(
     prompt.submitting = false;
   }
   prompt.error = null;
-  prompt.revision = ++state.revision;
+  const revision = ++state.revision;
+  // Matching confirmations update presentation without invalidating reads of the same outcome.
+  if (outcomeChanged) {
+    prompt.revision = revision;
+  }
 }
 
 function recordQuestionResolution(
@@ -390,7 +398,7 @@ function parseQuestionListResult(value: unknown): QuestionRecord[] | null {
   return questions.every((question) => question !== null) ? questions : null;
 }
 
-function isQuestionNotFoundError(error: unknown): boolean {
+export function isQuestionNotFoundError(error: unknown): boolean {
   return (
     error instanceof GatewayRequestError &&
     isRecord(error.details) &&

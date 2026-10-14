@@ -104,6 +104,7 @@ export function copyBeforeToolCallWrapperMetadata(
   copyChannelAgentToolMeta(source as never, target as never);
   copyToolTerminalPresentation(source, target);
   copyToolInvocationMetadata(source, target);
+  copyCodeModeControlToolIdentity(source, target);
   const state = ToolActionMetadata.get(source);
   if (state) {
     ToolActionMetadata.set(target, state);
@@ -135,7 +136,6 @@ export function copyAgentToolMetadata<T extends AnyAgentTool>(
   }
   copyBeforeToolCallWrapperMetadata(source, target);
   copyBeforeToolCallMetadata(source, target, wrapExecution);
-  copyCodeModeControlToolIdentity(source, target);
   copyCronScheduledToolProjection(source, target);
   copyInternalToolExecutionPreparer(source, target);
   return target;

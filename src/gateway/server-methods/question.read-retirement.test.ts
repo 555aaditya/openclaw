@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import { expect, it, vi } from "vitest";
+import { setRuntimeConfigSnapshot } from "../../config/runtime-snapshot.js";
 import { upsertSessionEntryCore } from "../../config/sessions/session-accessor.js";
 import { prepareSqliteScope } from "../../config/sessions/session-accessor.sqlite-scope.js";
 import { executeSessionQuestionOperation } from "../../config/sessions/session-questions.js";
@@ -26,6 +27,9 @@ it.each(["before canonical read", "during preparation"] as const)(
   async (stage) => {
     vi.useRealTimers();
     await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
+      const cfg = { agents: { entries: { main: {}, healthy: {} } } };
+      await state.writeConfig(cfg);
+      setRuntimeConfigSnapshot(cfg);
       const staleScope = { agentId: "main", sessionKey: "agent:main:main" };
       const healthyScope = { agentId: "healthy", sessionKey: "agent:healthy:main" };
       const staleEntry = {
@@ -119,7 +123,7 @@ it.each(["before canonical read", "during preparation"] as const)(
         { includeContinuation: true },
         {
           client: adminRequestClient,
-          cfg: { agents: { entries: { main: {}, healthy: {} } } },
+          cfg,
         },
       );
       expect(result[0], JSON.stringify(result[2])).toBe(true);

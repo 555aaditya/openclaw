@@ -7,7 +7,6 @@ import {
 } from "../../packages/gateway-protocol/src/index.js";
 import { retainSessionHistoryWorkerDatabase } from "../config/sessions/session-transcript-worker-runtime.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { readDatabasePathIdentitySync } from "../infra/sqlite-worker-identity.js";
 import { isIncognitoSessionKey } from "../routing/session-key.js";
 import { readGatewayAccessRevision } from "./gateway-access-revision.js";
 import { hasOperatorBoundary, resolveGatewayOperatorRoleActor } from "./operator-role-policy.js";
@@ -346,7 +345,7 @@ export async function prepareQuestionCommitAuthority(
     | ReturnType<
         NonNullable<
           ReturnType<typeof readGatewayRequestMutationAuthority>["questionCallerRead"]
-        >["retainNative"]
+        >["retainCurrent"]
       >
     | undefined;
   const assertCurrent = () => {
@@ -369,14 +368,12 @@ export async function prepareQuestionCommitAuthority(
     const narrow = usesOwnRunQuestionAccess(options.client);
     const binding = observation?.sessionAccess?.durableBinding;
     if (observation?.sessionAccess?.durableCustody && binding) {
-      const identity = current?.sourcePath
-        ? readDatabasePathIdentitySync(current.sourcePath)
-        : undefined;
+      const source = current?.readSource;
       const currentTarget = current?.target;
       if (
-        !identity ||
-        identity.key !== `file:${binding.databaseIdentity.identity}` ||
-        identity.birthtime !== binding.databaseIdentity.birthtime ||
+        !source ||
+        source.databaseIdentity !== binding.databaseIdentity.identity ||
+        source.databaseBirthtime !== binding.databaseIdentity.birthtime ||
         current?.sourcePath !== binding.databasePath ||
         currentTarget?.agentId !== binding.agentId ||
         currentTarget.canonicalKey !== binding.sessionKey ||
@@ -425,7 +422,7 @@ export async function prepareQuestionCommitAuthority(
     }
   };
   try {
-    callerCommit = readGatewayRequestMutationAuthority(options).questionCallerRead?.retainNative();
+    callerCommit = readGatewayRequestMutationAuthority(options).questionCallerRead?.retainCurrent();
     assertCurrent();
     return {
       assertCurrent,

@@ -30,6 +30,7 @@ import {
   CANONICAL_SESSION_VALIDATION_SCHEMA_VERSION,
   CANONICAL_SESSION_WRITER_VALIDATION_SCHEMA_VERSION,
   AGENT_STORAGE_SCHEMA_VERSION,
+  AGENT_JSON_PREDICATE_SCHEMA_VERSION,
 } from "./openclaw-agent-db-contract.js";
 import { AGENT_SCHEMA_COMPATIBILITY } from "./openclaw-agent-db-schema-compatibility.js";
 import {
@@ -42,9 +43,11 @@ import {
   readSqliteTableColumns,
   hasPendingSessionConversationRouteContextColumn,
   hasPendingSessionProjectColumn,
+  hasPendingSessionRowTranscriptColumns,
   hasPendingSessionTranscriptContextEligibilityColumn,
   ensureSessionEntryValidityProjection,
 } from "./openclaw-agent-db-session-migrations.js";
+import { withoutAgentJsonPredicateColumns } from "./openclaw-agent-json-predicate-schema.js";
 import {
   LEGACY_PARTICIPANT_OPTIONAL_COLUMNS,
   withLegacySessionParticipantsSchema,
@@ -85,10 +88,14 @@ export function getOpenClawAgentMigrationSchema(targetVersion: number): string {
     targetVersion < DURABLE_QUESTIONS_SCHEMA_VERSION
       ? withoutSessionQuestionsSchema(OPENCLAW_AGENT_SCHEMA_SQL)
       : OPENCLAW_AGENT_SCHEMA_SQL;
+  const predicateSchemaSql =
+    targetVersion < AGENT_JSON_PREDICATE_SCHEMA_VERSION
+      ? withoutAgentJsonPredicateColumns(versionedSchemaSql)
+      : versionedSchemaSql;
   const canonicalSchemaSql =
     targetVersion < CANONICAL_SESSION_WRITER_VALIDATION_SCHEMA_VERSION
-      ? withLegacyCanonicalSessionValidationTriggers(versionedSchemaSql)
-      : versionedSchemaSql;
+      ? withLegacyCanonicalSessionValidationTriggers(predicateSchemaSql)
+      : predicateSchemaSql;
   const sessionSchemaSql =
     targetVersion < SESSION_ENTRY_SNAPSHOTS_SCHEMA_VERSION
       ? withoutSessionEntrySnapshotsSchema(canonicalSchemaSql)
@@ -370,6 +377,7 @@ export function hasPendingCurrentVersionAgentDatabaseMigration(database: Databas
     hasPendingSessionConversationRouteContextColumn(database) ||
     hasPendingSessionTranscriptContextEligibilityColumn(database) ||
     hasPendingInputConsumptionColumnMigration(database) ||
-    hasPendingSessionProjectColumn(database)
+    hasPendingSessionProjectColumn(database) ||
+    hasPendingSessionRowTranscriptColumns(database)
   );
 }

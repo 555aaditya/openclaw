@@ -1,4 +1,6 @@
+import path from "node:path";
 import { expect, it } from "vitest";
+import { createControlUiE2eArtifactDir } from "../test-helpers/control-ui-e2e-artifacts.ts";
 import { installMockGateway } from "../test-helpers/control-ui-e2e.ts";
 import { createControlUiE2eSuite } from "./control-ui-e2e-suite.test-support.ts";
 
@@ -87,6 +89,10 @@ suite.define(() => {
       await suite.withPage(
         { locale: "en-US", serviceWorkers: "block", viewport: { height: 900, width: 1440 } },
         async ({ page }) => {
+          const proofDir =
+            process.env.OPENCLAW_CAPTURE_UI_PROOF === "1"
+              ? createControlUiE2eArtifactDir(`question-document-${status}`)
+              : undefined;
           const id = `question-document-${status}`;
           const createdAtMs = Date.now();
           const question = {
@@ -112,20 +118,37 @@ suite.define(() => {
           const gateway = await installMockGateway(page, {
             basePath: "/operator",
             featureMethods: ["question.get", "question.list"],
+            deferredRequests: [
+              { method: "question.list", match: { includeContinuation: true }, exactParams: true },
+            ],
             methodResponses: {
-              "question.get": { question, continuation },
+              "question.get": { question },
               "question.list": { questions: [question], continuations: [continuation] },
             },
           });
           const url = new URL(`operator/ask/${encodeURIComponent(id)}`, suite.server.baseUrl);
           await page.goto(url.toString());
+          const document = page.locator("openclaw-question-page");
+          await document.getByRole("heading", { name: "Answered", exact: true }).waitFor();
+          if (proofDir) {
+            await page.screenshot({
+              path: path.join(proofDir, "late-receipt-before.png"),
+              animations: "disabled",
+              fullPage: true,
+            });
+          }
+          await gateway.resolveDeferred(
+            "question.list",
+            { questions: [question], continuations: [continuation] },
+            { match: { includeContinuation: true }, exactParams: true },
+          );
+          await gateway.setMethodResponse("question.get", { question, continuation });
           for (const reload of [false, true]) {
             if (reload) {
               await page.reload();
             }
             const request = await gateway.waitForRequest("question.get");
             expect(request.params).toEqual({ id, includeContinuation: true });
-            const document = page.locator("openclaw-question-page");
             await document.getByRole("heading", { name: "Answered", exact: true }).waitFor();
             const summary = document.locator(".chat-question-summary");
             await expect
@@ -138,6 +161,13 @@ suite.define(() => {
               "Staging",
             );
             expect(await document.locator("openclaw-chat-question-panel").count()).toBe(0);
+            if (proofDir && !reload) {
+              await page.screenshot({
+                path: path.join(proofDir, "late-receipt-after.png"),
+                animations: "disabled",
+                fullPage: true,
+              });
+            }
             expect(new URL(page.url()).pathname).toBe(`/operator/ask/${id}`);
           }
         },

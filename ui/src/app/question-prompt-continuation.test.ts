@@ -1,10 +1,12 @@
 // @vitest-environment node
 import { afterEach, expect, it, vi } from "vitest";
+import { createDeferred } from "../../../test/helpers/promise.js";
 import {
   createQuestionPromptState,
   disposeQuestionPromptState,
   handleQuestionPromptEvent,
   setQuestionPromptClient,
+  submitQuestionPrompt,
 } from "./question-prompt.ts";
 
 const states: ReturnType<typeof createQuestionPromptState>[] = [];
@@ -117,4 +119,41 @@ it("leaves unmatched outcomes to reconnect recovery without reading or schedulin
   expect(state.unmatchedResolutions.has(question.id)).toBe(true);
   expect(request).not.toHaveBeenCalled();
   expect(state.refreshRetryTimer).toBeNull();
+});
+
+it("retains delayed receipts in sibling projections after the local RPC confirms an answer broadcast", async () => {
+  const answer = createDeferred<unknown>();
+  const receipt = createDeferred<unknown>();
+  const request = vi.fn((method: string) =>
+    method === "question.resolve" ? answer.promise : receipt.promise,
+  );
+  const state = createQuestionPromptState(vi.fn());
+  const sibling = createQuestionPromptState(vi.fn());
+  const client = { request };
+  states.push(state, sibling);
+  for (const owner of [state, sibling]) {
+    setQuestionPromptClient(owner, client);
+    handleQuestionPromptEvent(owner, { event: "question.requested", payload: question });
+  }
+  const submitted = submitQuestionPrompt(state, question.id, { environment: ["Staging"] });
+  handleQuestionPromptEvent(state, resolution);
+  handleQuestionPromptEvent(sibling, resolution);
+  answer.resolve(resolution.payload);
+  await submitted;
+  receipt.resolve(receiptResponse);
+  await vi.waitFor(() =>
+    expect(state.prompts.get(question.id)?.continuationMessage).toBe(
+      "Original caller is unavailable. Start a new user turn.",
+    ),
+  );
+  await vi.waitFor(() =>
+    expect(sibling.prompts.get(question.id)?.continuationMessage).toBe(
+      "Original caller is unavailable. Start a new user turn.",
+    ),
+  );
+  expect(state.prompts.get(question.id)).toMatchObject({
+    status: "answered",
+    answers: resolution.payload.answers,
+    localResolutionConfirmed: true,
+  });
 });
