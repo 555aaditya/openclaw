@@ -1,7 +1,7 @@
 import { copyFileSync, renameSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
-import { recoverDurableQuestions } from "../../gateway/durable-question-runtime.js";
+import { installDurableQuestion } from "../../gateway/durable-question-runtime.js";
 import { QuestionManager } from "../../gateway/question-manager.js";
 import { readDatabasePathIdentitySync } from "../../infra/sqlite-worker-identity.js";
 import {
@@ -198,15 +198,12 @@ describe("durable question custody", () => {
     const manager = new QuestionManager(scheduler);
     const offered: DurableQuestion[] = [];
     try {
-      const recover = () =>
-        recoverDurableQuestions(
-          manager,
-          [scope()],
-          (current) => offered.push(current),
-          () => {},
-        );
-      await recover();
-      await recover();
+      const receipt = await operate({ kind: "get", id: question.record.id });
+      if (!receipt || Array.isArray(receipt)) {
+        throw new Error("Expected the persisted answer receipt");
+      }
+      installDurableQuestion(manager, receipt, (current) => offered.push(current));
+      installDurableQuestion(manager, receipt, (current) => offered.push(current));
       expect(offered).toEqual([settled]);
       expect(manager.get(question.record.id)?.answers).toEqual(answer.answers);
     } finally {
@@ -732,20 +729,17 @@ describe("durable question custody", () => {
     expect(await operate({ kind: "get", id: question.record.id })).toEqual(question);
   });
 
-  it("recovers a committed answer into an existing pending observation and offers its work once", async () => {
+  it("installs a committed answer into an existing pending observation and offers its work once", async () => {
     const question = await register();
     const scheduler = createTestGatewayScheduler();
     const manager = new QuestionManager(scheduler);
     const offered: DurableQuestion[] = [];
-    const recover = () =>
-      recoverDurableQuestions(
-        manager,
-        [scope()],
-        (receipt) => offered.push(receipt),
-        () => {},
-      );
     try {
-      await recover();
+      const pending = await operate({ kind: "get", id: question.record.id });
+      if (!pending || Array.isArray(pending)) {
+        throw new Error("Expected the persisted pending receipt");
+      }
+      installDurableQuestion(manager, pending, (receipt) => offered.push(receipt));
       const waiting = manager.waitAnswer(question.record.id, undefined, true);
       const answers = { answers: { choice: ["A"] } };
       // The canonical write completed, but the process observation has not received its ACK.
@@ -755,7 +749,11 @@ describe("durable question custody", () => {
         outcome: { id: question.record.id, status: "answered", answers },
         resolutionId: "recovered-answer",
       });
-      await recover();
+      const answered = await operate({ kind: "get", id: question.record.id });
+      if (!answered || Array.isArray(answered)) {
+        throw new Error("Expected the persisted answer receipt");
+      }
+      installDurableQuestion(manager, answered, (receipt) => offered.push(receipt));
       expect(manager.get(question.record.id)?.status).toBe("answered");
       expect(await waiting).toEqual({
         status: "answered",
@@ -766,7 +764,7 @@ describe("durable question custody", () => {
       expect(offered).toMatchObject([
         { record: { status: "answered", answers }, continuation: { status: "owed" } },
       ]);
-      await recover();
+      installDurableQuestion(manager, answered, (receipt) => offered.push(receipt));
       expect(offered).toHaveLength(1);
     } finally {
       manager.close();
