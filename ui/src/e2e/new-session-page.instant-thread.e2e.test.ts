@@ -400,7 +400,7 @@ suite.define(() => {
         await navigateInApp(page, "new-session", "?agent=main");
         const composer = page.locator(".new-session-page__message");
         if (readiness) {
-          // Acceptance retires the submitted draft before preview readiness.
+          // Accepted input retires even while preview readiness is pending.
           await expect.poll(() => composer.inputValue()).toBe("");
         }
         await composer.fill(message);
