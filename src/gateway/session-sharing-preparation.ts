@@ -326,7 +326,6 @@ export async function prepareSessionMutationFacts(
       const captured = await prepareCapturedSessionSharingSource({
         source: preparedSource,
         assertCurrent: assertActive,
-        candidates: candidateIdentities.map(({ candidate }) => candidate),
         retainedReads: acquiringReads,
       });
       storageTarget = captured.storageTarget;
