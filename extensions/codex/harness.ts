@@ -149,6 +149,7 @@ export function createCodexAppServerAgentHarness(
     },
     authBootstrap: "harness",
     resolveIsolatedCompletionRuntime,
+    isolatedCompletionCapabilities: { noExternalCapabilities: true },
     // Retained only for final synchronous authority checks until the next Plugin SDK major.
     resolveSessionRuntimeOwnership: (params) => {
       assertOwnershipCurrent(params);

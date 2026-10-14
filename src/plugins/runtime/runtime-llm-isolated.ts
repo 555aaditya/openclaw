@@ -79,6 +79,14 @@ export function assertSupportedExecutionMode(params: LlmCompleteParams): void {
       "Isolated agent-runtime completion does not support requiredAuthMode or responseFormat; use direct completion for provider controls.",
     );
   }
+  const requirement = (execution as { requireNoExternalCapabilities?: unknown })
+    .requireNoExternalCapabilities;
+  if (requirement !== undefined && requirement !== true) {
+    throw completionError(
+      "LLM_ISOLATED_INPUT_REJECTED",
+      "execution.requireNoExternalCapabilities must be true when provided.",
+    );
+  }
 }
 
 function resolveIsolatedTimeoutMs(value: number | undefined): number {
@@ -181,6 +189,7 @@ export async function runIsolatedAgentRuntimeCompletion(params: {
         timeoutMs,
         abortSignal: controller.signal,
         thinkLevel: params.request.reasoning,
+        requireNoExternalCapabilities: params.request.execution.requireNoExternalCapabilities,
         streamParams: {
           maxTokens: asFiniteNumber(params.request.maxTokens),
           temperature: asFiniteNumber(params.request.temperature),

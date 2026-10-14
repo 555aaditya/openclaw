@@ -214,6 +214,8 @@ export type AgentHarnessIsolatedCompletionParamsV2 = Omit<
   "model" | "auth" | "sourceAuthFingerprint"
 > & {
   authorization: AgentHarnessIsolatedCompletionAuthorization;
+  /** Host-admitted restriction; owners must enforce it before starting inference. */
+  requireNoExternalCapabilities?: true;
 };
 export type AgentHarnessIsolatedCompletionResult = {
   /** The single assistant completion. Core rejects tool-shaped or failed results. */
@@ -588,14 +590,17 @@ type AgentHarnessContract<
     params: AgentHarnessIsolatedCompletionParams,
   ): Promise<AgentHarnessIsolatedCompletionResult>;
   /**
-   * Runs one fresh prompt-only completion with a literal zero-tool model surface.
-   * The harness must fail closed when it cannot enforce that native boundary.
-   * Agents API is the documented exception: its restricted sessions may retain
-   * service-owned helpers. Callers requiring zero tools must use another runtime.
+   * Runs one fresh prompt-only completion without caller-supplied tools.
+   * Owners may retain internal helpers. Advertise the restriction below only
+   * when every authorization route enforces it before inference.
    */
   runIsolatedCompletionV2?(
     params: AgentHarnessIsolatedCompletionParamsV2,
   ): Promise<AgentHarnessIsolatedCompletionResult>;
+  isolatedCompletionCapabilities?: {
+    /** No model-invocable repository or external effects; internal planning is permitted. */
+    noExternalCapabilities: true;
+  };
   /** Side-effect-free engine selection, shared with this harness's isolated dispatch. */
   resolveIsolatedCompletionRuntime?(params: {
     authorizationOwner: AgentHarnessIsolatedCompletionAuthorization["owner"];

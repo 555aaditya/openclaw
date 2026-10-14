@@ -72,6 +72,8 @@ export type SandboxBackendHandle = {
   capabilities?: {
     browser?: boolean;
     readOnlyResourceMounts?: boolean;
+    /** Daemon-proven read-only image system roots with no overlaid executable/library/config mounts. */
+    immutableSystemImage?: boolean;
   };
   buildExecSpec(params: {
     command: string;
@@ -79,6 +81,11 @@ export type SandboxBackendHandle = {
     env: Record<string, string>;
     usePty: boolean;
   }): Promise<SandboxBackendExecSpec>;
+  /** Direct program in this prepared runtime; no shell or managed identity hydration. */
+  buildProgramSpec?: (params: {
+    argv: readonly string[];
+    env: Record<string, string>;
+  }) => Promise<SandboxBackendExecSpec>;
   finalizeExec?: (params: {
     status: "completed" | "failed";
     exitCode: number | null;

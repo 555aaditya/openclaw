@@ -30,13 +30,15 @@ import {
 } from "./docker.js";
 import { resolveSandboxContainerOnlyMounts } from "./mount-plan.js";
 import { createSandboxProcessCleanup } from "./process-cleanup.js";
+import { inspectSandboxProgramImage, type SandboxProgramImage } from "./program-image.js";
 import type { SandboxRegistryEntry } from "./registry.js";
 
 type ContainerExecFinalizeToken = () => Promise<void>;
 
 function buildContainerExecArgs(params: {
   containerName: string;
-  command: string;
+  command?: string;
+  program?: readonly string[];
   workdir?: string;
   env: Record<string, string>;
   envFile: string;
@@ -54,6 +56,10 @@ function buildContainerExecArgs(params: {
   if (params.managedGitHubIdentity) {
     // The host launcher supplies values privately; the engine reads them by name.
     args.push("--env", "GH_TOKEN", "--env", "GITHUB_TOKEN");
+  }
+  if (params.program) {
+    args.push(params.containerName, ...params.program);
+    return args;
   }
   // Apply the staged prepend only after login profile sourcing; direct PATH
   // injection can break the container engine's initial executable lookup.
@@ -111,6 +117,8 @@ async function createContainerSandboxBackend(
   assertCurrent();
   const { createSandboxFsBridge } = await import("./fs-bridge.js");
   assertCurrent();
+  const programImage = await inspectSandboxProgramImage(boundEngine, containerId);
+  assertCurrent();
   const handle = createContainerSandboxBackendHandle({
     engine: boundEngine,
     containerName,
@@ -121,6 +129,7 @@ async function createContainerSandboxBackend(
     podmanTarget,
     assertCurrent,
     githubIdentity,
+    programImage,
   });
   handle.createFsBridge = ({ sandbox }) =>
     createSandboxFsBridge({
@@ -166,6 +175,7 @@ function createContainerSandboxBackendHandle(params: {
   podmanTarget?: SandboxContainerEngineTarget;
   assertCurrent?: () => void;
   githubIdentity?: PreparedGitHubToolEnvironment;
+  programImage?: SandboxProgramImage;
 }): SandboxBackendHandle {
   const run = (command: SandboxBackendCommandParams, assertCurrent?: () => void) =>
     runContainerSandboxShellCommand({
@@ -186,7 +196,54 @@ function createContainerSandboxBackendHandle(params: {
     capabilities: {
       browser: params.engine.id === "docker",
       readOnlyResourceMounts: true,
+      immutableSystemImage: params.programImage?.immutableSystemImage,
     },
+    buildProgramSpec: params.programImage
+      ? async ({ argv: program, env }) => {
+          params.assertCurrent?.();
+          if (!program[0]?.startsWith("/") || program.some((arg) => arg.includes("\0"))) {
+            throw new Error("Sandbox programs require an absolute executable and valid arguments.");
+          }
+          await validateSandboxContainerEngineTarget(params.engine, params.podmanTarget);
+          params.assertCurrent?.();
+          // Docker inherits Config.Env before the first guest executable starts. Clear
+          // every daemon-recorded key, including dynamic-loader overrides, before env -i.
+          const envFile = await createContainerEnvFile({
+            ...Object.fromEntries(params.programImage!.environmentKeys.map((key) => [key, ""])),
+            ...env,
+          });
+          try {
+            params.assertCurrent?.();
+            return {
+              argv: [
+                params.engine.command,
+                ...(params.engine.globalArgs ?? []),
+                ...buildContainerExecArgs({
+                  containerName: params.containerId,
+                  program: [
+                    "/usr/bin/env",
+                    "-i",
+                    ...Object.entries(env).map(([key, value]) => `${key}=${value}`),
+                    ...program,
+                  ],
+                  workdir: params.workdir,
+                  env,
+                  envFile: envFile.path,
+                  tty: false,
+                  managedGitHubIdentity: false,
+                }),
+              ],
+              env: process.env,
+              stdinMode: "pipe-open",
+              assertCurrent: params.assertCurrent,
+              finalizeToken: envFile.cleanup satisfies ContainerExecFinalizeToken,
+            };
+          } catch (error) {
+            await envFile.cleanup();
+            throw error;
+          }
+        }
+      : undefined,
     async buildExecSpec({ command, workdir, env: requestedEnv, usePty }) {
       await validateSandboxContainerEngineTarget(params.engine, params.podmanTarget);
       const identity = params.githubIdentity;

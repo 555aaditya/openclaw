@@ -91,6 +91,7 @@ export function createOpenClawAgentHarness(): AgentHarnessV2 {
         supportsTurnScopedToolRestrictions: harnessSupportsTurnScopedToolRestrictions(harness),
       }),
     runIsolatedCompletionV2: runHostPreparedIsolatedCompletion,
+    isolatedCompletionCapabilities: { noExternalCapabilities: true },
     finalizeSettledTurn: async ({ attempt }) => {
       // Preserve only transcript/model transport state. The operation-specific
       // runner path suppresses every ambient prompt and capability contributor.

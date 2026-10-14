@@ -149,6 +149,71 @@ it.each([false, true])(
 );
 
 describe("runIsolatedCompletion", () => {
+  it.each(["cli", "v1", "undeclared-v2", "restricted-v2"] as const)(
+    "requires an admitted no-external-capabilities contract for %s only when requested",
+    async (route) => {
+      const dispatch = vi.fn(async () => ({
+        assistant: isolatedAssistant([{ type: "text", text: "review" }]),
+      }));
+      if (route === "cli") {
+        mocks.isCliRuntimeAliasForProvider.mockReturnValue(true);
+        mocks.runCliAgent.mockResolvedValue({ payloads: [{ text: "review" }] });
+      } else {
+        registerIsolatedHarness({
+          ...(route === "v1"
+            ? { runIsolatedCompletion: dispatch }
+            : { runIsolatedCompletionV2: dispatch }),
+          ...(route === "restricted-v2"
+            ? { isolatedCompletionCapabilities: { noExternalCapabilities: true } }
+            : {}),
+        });
+      }
+      const restricted = runIsolatedCompletion({
+        ...isolatedRequest(),
+        requireNoExternalCapabilities: true,
+      });
+      if (route === "restricted-v2") {
+        await expect(restricted).resolves.toMatchObject({ text: "review" });
+      } else {
+        await expect(restricted).rejects.toMatchObject({ code: "unsupported" });
+        expect(dispatch).not.toHaveBeenCalled();
+        expect(mocks.runCliAgent).not.toHaveBeenCalled();
+        expect(mocks.prepareSimpleCompletionModel).not.toHaveBeenCalled();
+      }
+      // Existing callers retain the selected runtime, including legacy owners.
+      await expect(runIsolatedCompletion(isolatedRequest())).resolves.toMatchObject({
+        text: "review",
+      });
+    },
+  );
+
+  it("rejects a retired invocation after owner preparation before restricted inference", async () => {
+    let active = true;
+    const dispatch = vi.fn();
+    registerIsolatedHarness({
+      isolatedCompletionCapabilities: { noExternalCapabilities: true },
+      runIsolatedCompletionV2: dispatch,
+    });
+    const prepared = mocks.prepareSimpleCompletionModel.getMockImplementation()!;
+    mocks.prepareSimpleCompletionModel.mockImplementationOnce(async (...args) => {
+      const result = await prepared(...args);
+      active = false;
+      return result;
+    });
+    await expect(
+      runIsolatedCompletion({
+        ...isolatedRequest(),
+        requireNoExternalCapabilities: true,
+        assertCurrent: () => {
+          if (!active) {
+            throw new Error("invocation closed");
+          }
+        },
+      }),
+    ).rejects.toThrow("invocation closed");
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
   it.each(["cli", "host-v2", "harness-v2", "v1"] as const)(
     "blocks required worker policy before isolated %s execution using the admitted config",
     async (route) => {

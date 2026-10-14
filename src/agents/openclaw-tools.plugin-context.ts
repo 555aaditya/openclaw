@@ -43,6 +43,7 @@ export type OpenClawPluginToolOptions = Pick<
   | "sandboxBrowserBridgeUrl"
   | "allowHostBrowserControl"
   | "sandboxed"
+  | "sandboxContext"
   | "allowGatewaySubagentBinding"
   | "toolBindings"
 > & { activeProjectKeys?: readonly string[] };

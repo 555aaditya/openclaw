@@ -455,6 +455,11 @@
   - changed-files:
       - any-glob-to-any-file:
           - "extensions/llm-task/**"
+"extensions: autoreview":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "extensions/autoreview/**"
+          - "docs/tools/autoreview.md"
 "extensions: lobster":
   - changed-files:
       - any-glob-to-any-file:

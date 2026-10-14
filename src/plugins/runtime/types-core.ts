@@ -280,6 +280,8 @@ export type LlmIsolatedAgentRuntimeCompleteParams = LlmCompleteCommonParams & {
      * Agents API may retain service-owned helpers; it cannot guarantee zero tools.
      */
     mode: "isolated-agent-runtime";
+    /** Fail before inference unless the selected owner enforces no external or repository capabilities. */
+    requireNoExternalCapabilities?: true;
     /** Exact credential owner. Requires host-granted plugin policy. */
     authProfileId?: string;
     timeoutMs?: number;

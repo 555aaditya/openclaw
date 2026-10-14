@@ -6,6 +6,39 @@ import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { HookEntry } from "../hooks/types.js";
 import type { DeliveryContext } from "../utils/delivery-context.types.js";
 import type { MemoryAudience } from "./memory-provider-types.js";
+import type {
+  LlmCompleteParams,
+  LlmCompleteResult,
+  LlmIsolatedAgentRuntimeCompleteParams,
+} from "./runtime/types-core.js";
+
+type BoundToolCompletionParams =
+  | Omit<Extract<LlmCompleteParams, { execution?: undefined }>, "agentId" | "model">
+  | (Omit<LlmIsolatedAgentRuntimeCompleteParams, "agentId" | "model" | "execution"> & {
+      execution: Omit<LlmIsolatedAgentRuntimeCompleteParams["execution"], "authProfileId">;
+    });
+
+export type PluginSandboxProgram = {
+  /** Exact prepared guest cwd; no host projection or caller-selected placement. */
+  readonly workdir: string;
+  /** Image trust remains operator-owned; these immutable system roots cannot be replaced by the guest. */
+  readonly immutableSystemImage: boolean;
+  run<T>(params: {
+    argv: readonly string[];
+    timeoutMs: number;
+    signal?: AbortSignal;
+    onStdout: (chunk: Uint8Array) => void;
+    onStderr: (chunk: Uint8Array) => void;
+    onEnd: () => void;
+    communicate: (
+      input: {
+        write: (chunk: Uint8Array) => Promise<void>;
+        end: () => void;
+      },
+      signal: AbortSignal,
+    ) => Promise<T>;
+  }): Promise<{ value: T; exitCode: number | null }>;
+};
 
 export type OpenClawPluginActiveModelContext = {
   provider?: string;
@@ -94,7 +127,13 @@ type OpenClawPluginToolContextBase = {
 
 /** Version 1 is the source-compatible direct-turn context; version 2 requires final-effect authority. */
 export type OpenClawPluginToolContext<Version extends 1 | 2 = 1> = Version extends 2
-  ? OpenClawPluginToolContextBase & { assertInvocationCurrent: () => void }
+  ? OpenClawPluginToolContextBase & {
+      assertInvocationCurrent: () => void;
+      /** Configured current-agent completion; no caller-selected agent, model, or credential. */
+      llm: { complete: (params: BoundToolCompletionParams) => Promise<LlmCompleteResult> };
+      /** Available only when this invocation already owns a duplex sandbox program runtime. */
+      sandboxProgram?: PluginSandboxProgram;
+    }
   : OpenClawPluginToolContextBase;
 
 /** A version 2 descriptor explicitly opts into owner-authorized continuations. */

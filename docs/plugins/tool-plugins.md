@@ -244,6 +244,25 @@ api.registerTool(
 
 The `OpenClawPluginToolContext<2>` type requires `assertInvocationCurrent` and
 may provide `memoryAudience` with `assertMemoryAudienceCurrent`.
+It also provides `llm.complete`, bound to this admitted invocation's agent,
+session, original requester restrictions, and lifetime. It uses that agent's
+configured model, not an ambient system agent or the active session's model
+override. Requests cannot override agent, model, or auth profile. Pass the tool's
+execution signal to narrow cancellation further. Retained calls cannot replace
+the original requester with the caller's current async context.
+
+An already prepared supported sandbox may also provide `sandboxProgram`. It
+binds execution to that exact backend and guest workdir; it cannot allocate or
+select another workspace. Its duplex `run` operation accepts fixed program
+arguments, bounded timeout, byte callbacks, and a communication callback.
+The host supplies a minimal environment and joins guest termination, transport
+extinction, and workspace finalization on every outcome. Calls and input writes
+expire with the original invocation. No host process fallback is available.
+`immutableSystemImage` records daemon-confirmed read-only system paths for this
+container; operators still own image provenance and toolchain qualification.
+Register tools that only consume this prepared capability with
+`workspaceAccess: false`, and hide them when the capability is absent.
+
 Carry `assertInvocationCurrent` through awaited work and invoke it in the final
 synchronous write or request guard, before effects—not only before starting work
 or after returning. It checks the captured plugin lifetime and admitted

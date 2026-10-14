@@ -130,6 +130,15 @@ Backend adapters retain protocol validation and special-mode handling.
     To require fresh inference through the configured agent runtime, select
     isolated execution explicitly:
 
+    Add `execution.requireNoExternalCapabilities: true` when the caller needs
+    an enforced boundary without model-invocable external or repository effects.
+    The actual prepared V2 owner must declare this capability before inference;
+    unknown, legacy, CLI, and unsupported owners fail closed for this request.
+    Omitting the requirement preserves existing runtime behavior. Internal
+    planning helpers are permitted; this is not a literal zero-internal-tools
+    guarantee. Session tools should use their V2 `ctx.llm.complete` binding
+    instead of this ambient facade when they need the current named agent.
+
     ```typescript
     const result = await api.runtime.llm.complete({
       messages: [{ role: "user", content: "Return one JSON value." }],

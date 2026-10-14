@@ -1,0 +1,20 @@
+{
+  "id": "autoreview",
+  "name": "AutoReview",
+  "description": "Review the current Git candidate through the configured agent runtime using the installed canonical helper.",
+  "categories": ["developer-tools"],
+  "activation": { "onStartup": true },
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "helperPath": { "type": "string", "minLength": 1 }
+    },
+    "required": ["helperPath"],
+    "additionalProperties": false
+  },
+  "uiHints": {
+    "helperPath": { "label": "Installed canonical helper", "help": "Absolute host path to the shared AutoReview scripts/autoreview. Its bytes must match this plugin's pinned source revision." }
+  },
+  "contracts": { "tools": ["autoreview"] },
+  "toolMetadata": { "autoreview": { "optional": true } }
+}

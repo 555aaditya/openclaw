@@ -6,6 +6,7 @@ import { resolveCommandConversationResolution } from "../channels/conversation-r
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { ADMIN_SCOPE, isOperatorScope } from "../gateway/operator-scopes.js";
 import { logVerbose } from "../globals.js";
+import { createBoundPluginLlm } from "./bound-llm.js";
 import { withPluginCommandExecution } from "./command-execution-lock.js";
 import { isReservedCommandName } from "./command-registration.js";
 import {
@@ -95,29 +96,16 @@ function buildRuntimeContext(
     return undefined;
   }
   return {
-    llm: {
-      complete: async (request) => {
-        const { createRuntimeLlm } = await import("./runtime/runtime-llm.runtime.js");
-        return await createRuntimeLlm({
-          getConfig: () => params.config,
-          authority: {
-            caller: {
-              kind: "plugin",
-              id: command.pluginId,
-              name: command.pluginName,
-            },
-            pluginIdForPolicy: command.pluginId,
-            requiresBoundAgent: true,
-            ...(sessionKey ? { sessionKey } : {}),
-            ...(agentId ? { agentId } : {}),
-            ...(params.authProfileId ? { preferredProfile: params.authProfileId } : {}),
-            allowAgentIdOverride: false,
-            allowModelOverride: false,
-            allowComplete: true,
-          },
-        }).complete(request);
-      },
-    },
+    llm: createBoundPluginLlm({
+      pluginId: command.pluginId,
+      pluginName: command.pluginName,
+      getConfig: () => params.config,
+      agentId,
+      sessionKey,
+      preferredProfile: params.authProfileId,
+      signal: invocationSignal,
+      assertCurrent: () => assertOwnerCurrent?.(),
+    }),
     ...(compactCurrent && params.sessionTarget
       ? {
           // Command capabilities require this live invocation; retained references fail closed.

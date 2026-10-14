@@ -10,6 +10,7 @@ import {
   setWorktreePreparationTemplate,
   startWorktreePreparationPhase,
 } from "../worktrees/preparation-timing.js";
+import type { SandboxBackendExecSpec } from "./backend-handle.types.js";
 import type { SandboxConfig, SandboxContext } from "./types.js";
 
 /** A writable project is an exact managed projection, never a role-policy override. */
@@ -114,31 +115,36 @@ export function bindLocalSandboxWorkspace(
     projection.assertCurrent();
     return await shell(params);
   };
-  const build = backend.buildExecSpec.bind(backend);
   const finalize = backend.finalizeExec?.bind(backend);
-  backend.buildExecSpec = async (params) => {
-    projection.assertCurrent();
-    const spec = await build(params);
-    try {
+  const bindBuild =
+    <Params>(build: (params: Params) => Promise<SandboxBackendExecSpec>) =>
+    async (params: Params) => {
       projection.assertCurrent();
-    } catch (error) {
-      await finalize?.({
-        status: "failed",
-        exitCode: null,
-        timedOut: false,
-        token: spec.finalizeToken,
-      });
-      throw error;
-    }
-    const assertCurrent = spec.assertCurrent;
-    return {
-      ...spec,
-      assertCurrent: () => {
+      const spec = await build(params);
+      try {
         projection.assertCurrent();
-        assertCurrent?.();
-      },
+      } catch (error) {
+        await finalize?.({
+          status: "failed",
+          exitCode: null,
+          timedOut: false,
+          token: spec.finalizeToken,
+        });
+        throw error;
+      }
+      const assertCurrent = spec.assertCurrent;
+      return {
+        ...spec,
+        assertCurrent: () => {
+          projection.assertCurrent();
+          assertCurrent?.();
+        },
+      };
     };
-  };
+  backend.buildExecSpec = bindBuild(backend.buildExecSpec.bind(backend));
+  if (backend.buildProgramSpec) {
+    backend.buildProgramSpec = bindBuild(backend.buildProgramSpec.bind(backend));
+  }
   backend.finalizeExec = async (params) => {
     await finalize?.(params);
     await projection.checkpoint();

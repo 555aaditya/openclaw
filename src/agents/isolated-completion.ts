@@ -7,9 +7,8 @@ import type { ThinkLevel } from "../auto-reply/thinking.js";
  * Fresh, prompt-only inference through the selected runtime.
  *
  * This operation deliberately bypasses the ordinary agent attempt, retry,
- * transcript, hook, and delivery lifecycle. Execution owners either prove a
- * literal empty native tool surface or fail before inference starts, except
- * Agents API: its restricted sessions may retain service-owned helpers.
+ * transcript, hook, and delivery lifecycle. Owners may retain internal helpers;
+ * callers can require an attested boundary without external or repository effects.
  */
 import { requiredWorkerHelperError } from "../config/required-worker-profile.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
@@ -109,6 +108,7 @@ type RunIsolatedCompletionParams = {
   mapOperatorAuthorizationError?: (error: unknown) => Error;
   thinkLevel?: ThinkLevel;
   outputTextPolicy?: AgentHarnessIsolatedCompletionParamsV2["outputTextPolicy"];
+  requireNoExternalCapabilities?: true;
   /** Internal answer budget; reasoning reserves still obey model and explicit stream limits. */
   answerTokenBudget?: number;
   streamParams?: AgentHarnessIsolatedCompletionParamsV2["streamParams"];
@@ -453,7 +453,14 @@ async function runIsolatedCompletionOwned(
         explicitRuntimeOverride: request.agentHarnessRuntimeOverride,
         ...context,
       });
+      assertCurrent();
       if (cliOwner) {
+        if (request.requireNoExternalCapabilities) {
+          throw new IsolatedCompletionError(
+            "unsupported",
+            "The selected CLI runtime cannot attest no external capabilities.",
+          );
+        }
         return await runCliIsolatedCompletion(request, cliOwner, provider);
       }
 
@@ -462,6 +469,16 @@ async function runIsolatedCompletionOwned(
         ? (await import("./harness/builtin-openclaw.js")).createOpenClawAgentHarness()
         : selection.harness;
       assertCurrent();
+      if (
+        request.requireNoExternalCapabilities &&
+        (!harness.runIsolatedCompletionV2 ||
+          harness.isolatedCompletionCapabilities?.noExternalCapabilities !== true)
+      ) {
+        throw new IsolatedCompletionError(
+          "unsupported",
+          `Agent harness ${harness.id} cannot attest no external capabilities.`,
+        );
+      }
       if (!harness.runIsolatedCompletionV2 && !harness.runIsolatedCompletion) {
         throw new IsolatedCompletionError(
           "unsupported",
@@ -480,6 +497,7 @@ async function runIsolatedCompletionOwned(
         thinkLevel: request.thinkLevel,
         outputTextPolicy: request.outputTextPolicy,
         onRequestComplete: request.onRequestComplete,
+        requireNoExternalCapabilities: request.requireNoExternalCapabilities,
       };
       const prepareHostAuthorization = async (
         authProfileId: string | undefined,

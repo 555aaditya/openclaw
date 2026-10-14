@@ -62,6 +62,8 @@ export type RuntimeLlmAuthority = {
 
 export type CreateRuntimeLlmOptions = {
   getConfig?: () => OpenClawConfig | undefined;
+  /** Host-owned invocation currency; checked at every preparation and dispatch boundary. */
+  assertCurrent?: () => void;
   authority?: RuntimeLlmAuthority;
   logger?: RuntimeLogger;
 };
@@ -385,7 +387,11 @@ export function createRuntimeLlm(
         );
       }
       assertSupportedExecutionMode(params);
-      const { operatorAuthority, signal: requestSignal, assertCurrent } = source;
+      const { operatorAuthority, signal: requestSignal } = source;
+      const assertCurrent = () => {
+        options.assertCurrent?.();
+        source.assertCurrent();
+      };
       assertCurrent();
 
       const [

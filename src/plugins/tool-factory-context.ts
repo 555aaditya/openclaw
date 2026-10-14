@@ -1,7 +1,9 @@
+import { createBoundPluginLlm } from "./bound-llm.js";
 import { assertMemoryAudienceSession } from "./memory-audience.js";
 import { resolveMemoryCapabilityRegistration } from "./memory-state.js";
 import { capturePluginLifecycleAuthority } from "./registry-lifecycle.js";
 import type { PluginRegistry, PluginToolRegistration } from "./registry-types.js";
+import { preparePluginSandboxProgram } from "./tool-sandbox-program.js";
 import type { OpenClawPluginToolContext } from "./tool-types.js";
 
 /** Host-only identity binding; registration opt-in never creates this authority. */
@@ -47,8 +49,14 @@ export function createPluginToolFactoryContext(params: {
     continuation?.assertCurrent();
     assertMemoryAudienceCurrent?.();
   };
+  const { publicContext, sandboxProgram } = preparePluginSandboxProgram(
+    context,
+    assertInvocationCurrent,
+    entry.contextVersion === 2,
+  );
   return {
-    ...context,
+    ...publicContext,
+    sandboxProgram,
     ...(continuation
       ? {
           requesterSenderId: continuation.senderId,
@@ -60,5 +68,19 @@ export function createPluginToolFactoryContext(params: {
       return continuation ? continuation.isCurrent() : context.senderIsOwner;
     },
     assertInvocationCurrent,
+    llm: createBoundPluginLlm({
+      pluginId: entry.pluginId,
+      getConfig: () => context.getRuntimeConfig?.() ?? context.runtimeConfig ?? context.config,
+      agentId: context.agentId,
+      sessionKey: context.sessionKey,
+      rejectOverrides: true,
+      requireInvocationOrigin: true,
+      assertCurrent: () => {
+        if (entry.contextVersion !== 2) {
+          throw new Error("Bound tool completion requires a version 2 factory.");
+        }
+        assertInvocationCurrent();
+      },
+    }),
   };
 }

@@ -106,13 +106,25 @@ describe("docker sandbox backend manager", () => {
     });
     dockerMocks.execContainer.mockImplementation(async (_engine, args: string[]) => ({
       code: 0,
-      stdout: args.includes('{"Mounts":{{json .Mounts}},"Tmpfs":{{json .HostConfig.Tmpfs}}}')
-        ? JSON.stringify({ Mounts: [], Tmpfs: null })
-        : args.includes("{{.Id}}")
-          ? "a".repeat(64)
-          : args.includes("/proc/self/mountinfo")
-            ? "1 1 0:1 / / rw - overlay overlay rw\n2 1 8:1 /workspace /workspace rw - ext4 /dev/root rw\n"
-            : "unused-image",
+      stdout: args.some((arg) => arg.includes("ReadonlyRootfs"))
+        ? JSON.stringify({
+            Id: args.at(-1),
+            ReadonlyRootfs: true,
+            Mounts: [],
+            Tmpfs: null,
+            Env: [
+              "LD_PRELOAD=synthetic-loader",
+              "GLIBC_TUNABLES=synthetic",
+              "GH_TOKEN=synthetic-token",
+            ],
+          })
+        : args.includes('{"Mounts":{{json .Mounts}},"Tmpfs":{{json .HostConfig.Tmpfs}}}')
+          ? JSON.stringify({ Mounts: [], Tmpfs: null })
+          : args.includes("{{.Id}}")
+            ? "a".repeat(64)
+            : args.includes("/proc/self/mountinfo")
+              ? "1 1 0:1 / / rw - overlay overlay rw\n2 1 8:1 /workspace /workspace rw - ext4 /dev/root rw\n"
+              : "unused-image",
       stderr: "",
     }));
     dockerMocks.resolvePodmanSandboxRuntimeInfo.mockResolvedValue({
@@ -581,6 +593,83 @@ describe("docker sandbox backend manager", () => {
     expect(fs.existsSync(envFile!)).toBe(false);
     await expect(backend.finalizeExec?.(finalization)).resolves.toBeUndefined();
   });
+
+  it.each(["docker", "podman"] as const)(
+    "launches a raw %s program without shell or managed identity",
+    async (kind) => {
+      dockerMocks.ensureSandboxContainer.mockResolvedValueOnce({
+        containerName: "raw-sandbox",
+        containerId: "b".repeat(64),
+      });
+      const config = createConfig();
+      config.agents!.defaults!.sandbox!.browser!.enabled = false;
+      config.agents!.defaults!.sandbox!.backend = kind;
+      const readIdentity = vi.fn((): never => {
+        throw new Error("identity must not be read");
+      });
+      let current = true;
+      const create = kind === "docker" ? createDockerSandboxBackend : createPodmanSandboxBackend;
+      const backend = await create(
+        {
+          sessionKey: "agent:reviewer:fixture",
+          scopeKey: "agent:reviewer:fixture",
+          workspaceDir: "/workspace",
+          agentWorkspaceDir: "/workspace",
+          cfg: resolveSandboxConfigForAgent(config),
+          assertRuntimeCurrent: () => {
+            if (!current) throw new Error("retired");
+          },
+        },
+        undefined,
+        {
+          managedLocalIdentity: true,
+          credentialScrubEnv: {},
+          excludedStoreNames: [],
+          get localIdentityEnv() {
+            return readIdentity();
+          },
+        },
+      );
+      const spec = await backend.buildProgramSpec!({
+        argv: ["/usr/bin/python3", "-I", "-S", "-c", "print('fixture')"],
+        env: { PATH: "/usr/bin:/bin", CODEX_SANDBOX_EXEC_ID: "fixture-marker" },
+      });
+      const envFile = spec.argv[spec.argv.indexOf("--env-file") + 1]!;
+      try {
+        expect(spec.argv[0]).toBe(kind);
+        expect(spec.argv.slice(spec.argv.indexOf("b".repeat(64)))).toEqual([
+          "b".repeat(64),
+          "/usr/bin/env",
+          "-i",
+          "PATH=/usr/bin:/bin",
+          "CODEX_SANDBOX_EXEC_ID=fixture-marker",
+          "/usr/bin/python3",
+          "-I",
+          "-S",
+          "-c",
+          "print('fixture')",
+        ]);
+        for (const denied of ["-t", "/bin/sh", "-lc", "GH_TOKEN", "GITHUB_TOKEN"])
+          expect(spec.argv).not.toContain(denied);
+        expect(spec.stdinMode).toBe("pipe-open");
+        expect(fs.readFileSync(envFile, "utf8")).toBe(
+          "CODEX_SANDBOX_EXEC_ID=fixture-marker\nGH_TOKEN=\nGLIBC_TUNABLES=\nLD_PRELOAD=\nPATH=/usr/bin:/bin\n",
+        );
+        expect(backend.capabilities?.immutableSystemImage).toBe(true);
+        expect(readIdentity).not.toHaveBeenCalled();
+        current = false;
+        expect(spec.assertCurrent).toThrow("retired");
+      } finally {
+        await backend.finalizeExec!({
+          status: "completed",
+          exitCode: 0,
+          timedOut: false,
+          token: spec.finalizeToken,
+        });
+      }
+      expect(fs.existsSync(envFile)).toBe(false);
+    },
+  );
 
   it.skipIf(process.platform === "win32").each(["docker", "podman"] as const)(
     "%s binds the current managed identity at launch without staging its token",

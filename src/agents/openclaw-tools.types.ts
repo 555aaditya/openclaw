@@ -147,6 +147,8 @@ export type OpenClawToolsOptions = {
   /** Private factory admission for a new scheduled message invocation. */
   admitScheduledMessageInvocation?: () => OpenClawConfig;
   sandboxRoot?: string;
+  /** Private prepared execution owner; never resolved or allocated by plugin tools. */
+  sandboxContext?: import("./sandbox/types.js").SandboxContext;
   /** Admitted sandbox policy owner; task and delivery ownership remain with the requester. */
   sandboxAgentId?: string;
   sandboxContainerWorkdir?: string;

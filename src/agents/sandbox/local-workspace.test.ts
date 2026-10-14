@@ -3,30 +3,30 @@ import os from "node:os";
 import path from "node:path";
 import { expect, it, vi } from "vitest";
 import { runCommandBuffered } from "../../process/exec.js";
-import type { SandboxBackendHandle } from "./backend-handle.types.js";
+import type { SandboxBackendHandle, SandboxBackendExecSpec } from "./backend-handle.types.js";
 import { createSandboxFsBridge } from "./fs-bridge.js";
 import { bindLocalSandboxWorkspace } from "./local-workspace.js";
 import { createSandboxTestContext } from "./test-fixtures.js";
 
-it.runIf(process.platform !== "win32")(
-  "keeps real bridge reads, path identity, and writes while checkpointing mutations",
-  async () => {
+it.runIf(process.platform !== "win32").each(["shell", "program"] as const)(
+  "keeps real bridge reads, path identity, and writes while checkpointing %s mutations",
+  async (kind) => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-bound-local-bridge-"));
     let revoked = false;
     let revokeDuringBuild = false;
     const checkpoint = vi.fn(async () => {});
     const finalized = vi.fn(async () => {});
+    const build = async (): Promise<SandboxBackendExecSpec> => {
+      if (revokeDuringBuild) revoked = true;
+      return { argv: ["true"], env: {}, stdinMode: "pipe-closed", finalizeToken: "prepared" };
+    };
     const backend: SandboxBackendHandle = {
       id: "local-test",
       runtimeId: "local-test",
       runtimeLabel: "local-test",
       workdir: root,
-      buildExecSpec: async () => {
-        if (revokeDuringBuild) {
-          revoked = true;
-        }
-        return { argv: ["true"], env: {}, stdinMode: "pipe-closed", finalizeToken: "prepared" };
-      },
+      buildExecSpec: build,
+      buildProgramSpec: build,
       finalizeExec: finalized,
       runShellCommand: async (params) => {
         const result = await runCommandBuffered(
@@ -70,7 +70,11 @@ it.runIf(process.platform !== "win32")(
         "bound write",
       );
       expect(sandbox.fsBridge.pathMappings?.length).toBeGreaterThan(0);
-      const spec = await backend.buildExecSpec({ command: "true", env: {}, usePty: false });
+      const prepare = () =>
+        kind === "shell"
+          ? backend.buildExecSpec({ command: "true", env: {}, usePty: false })
+          : backend.buildProgramSpec!({ argv: ["/usr/bin/true"], env: {} });
+      const spec = await prepare();
       revoked = true;
       expect(() => spec.assertCurrent?.()).toThrow("revoked");
       await expect(
@@ -84,9 +88,7 @@ it.runIf(process.platform !== "win32")(
       expect(finalized).toHaveBeenCalledOnce();
       expect(checkpoint).toHaveBeenCalledTimes(2);
       revokeDuringBuild = true;
-      await expect(
-        backend.buildExecSpec({ command: "true", env: {}, usePty: false }),
-      ).rejects.toThrow("revoked");
+      await expect(prepare()).rejects.toThrow("revoked");
       expect(finalized).toHaveBeenLastCalledWith({
         status: "failed",
         exitCode: null,
