@@ -85,9 +85,43 @@ it("tabs into a nested inspection, dismisses only the flyout with Escape, and re
   await userEvent.click(anchor);
   await opened;
   await vi.waitFor(() => expect(tooltip.hasAttribute("open")).toBe(true));
-  anchor.focus();
-  await userEvent.tab();
   const summary = card.querySelector("summary")!;
+  const observations: Array<Record<string, string | number | boolean | null>> = [];
+  const nodeLabel = (node: EventTarget | null) =>
+    node instanceof Element ? `${node.tagName}.${node.getAttribute("class") ?? ""}` : null;
+  const observe = (point: string, event?: Event) => {
+    if (observations.length >= 20) {
+      return;
+    }
+    const surface = tooltip.shadowRoot?.querySelector<HTMLElement>(".tooltip-surface");
+    observations.push({
+      point,
+      target: nodeLabel(event?.target ?? null),
+      related: nodeLabel(event instanceof FocusEvent ? event.relatedTarget : null),
+      active: nodeLabel(document.activeElement),
+      shadowActive: nodeLabel(tooltip.shadowRoot?.activeElement ?? null),
+      documentFocused: document.hasFocus(),
+      key: event instanceof KeyboardEvent ? event.key : null,
+      prevented: event?.defaultPrevented ?? false,
+      open: tooltip.hasAttribute("open"),
+      phase: surface?.dataset.phase ?? null,
+      surfaceInert: surface?.inert ?? false,
+      richInert:
+        tooltip.shadowRoot?.querySelector(".tooltip-rich-content")?.hasAttribute("inert") ?? false,
+      summaryTabIndex: summary.tabIndex,
+    });
+  };
+  const record = (event: Event) => observe(event.type, event);
+  for (const type of ["keydown", "keyup", "focusin", "focusout"]) {
+    window.addEventListener(type, record);
+    onTestFinished(() => window.removeEventListener(type, record));
+  }
+  observe("before-focus");
+  anchor.focus();
+  observe("after-focus");
+  await userEvent.tab();
+  observe("after-tab");
+  console.log("hovercard-focus-diagnostic", JSON.stringify(observations));
   expect(document.activeElement).toBe(summary);
   await userEvent.keyboard("{Enter}");
   expect(card.querySelector("details")!.open).toBe(true);
