@@ -122,145 +122,141 @@ export function createPluginsTool(options?: {
     runId: options?.runId,
     sessionId: options?.sessionId,
   });
-  return bindToolInvocationResolver(
-    {
-      name: "plugins",
-      label: "Plugins",
-      async: false,
-      description:
-        "Inspect, search, install from the official catalog or ClawHub, enable, disable, uninstall, or reload plugins. After editing local plugin files, use reloadAndResume to end this turn, finish cleanup, reload, and resume this same conversation with success or failure. Never wait for a CLI reload from a turn holding that plugin. reload is synchronous for callers not holding it. Check restartRequired: compiled bundled code needs a Gateway restart. Cleanup is best effort; read warnings in the result. Supported conversations refresh their tools at the next model step after running programs settle; finish the current program before using changed tools. Other runtimes may require a new conversation for changed tool names or schemas. Do not repeat completed mutations.",
-      parameters: PluginsToolSchema,
-      execute: async (_toolCallId, args, signal) => {
-        runtimeRefresh.assertCurrent();
-        const params = asNonArrayRecord(args);
-        const action = readToolStringParam(params, "action", { required: true });
-        const required = (key: string) => readToolStringParam(params, key, { required: true });
-        const reviewToken = readToolStringParam(params, "reviewToken");
-        const consent = reviewToken ? { acknowledgeCapabilities: { reviewToken } } : {};
-        let method: string;
-        let request: Record<string, unknown>;
-        switch (action) {
-          case "list":
-            method = "plugins.list";
-            request = {};
-            break;
-          case "reloadAndResume": {
-            const { handoffPluginReload } = await import("./plugins-reload-handoff.js");
-            return await handoffPluginReload({
-              ...options,
-              requestOwners,
-              signal,
-              request: { plugins: [{ pluginId: required("pluginId") }], ...consent },
-              formatResult: (payload) => JSON.stringify(pluginsToolResult(payload).details),
-            });
-          }
-          case "inspect":
-          case "uninstall":
-          case "reload":
-            method = `plugins.${action}`;
-            request =
-              action === "reload"
-                ? { plugins: [{ pluginId: required("pluginId") }], ...consent }
-                : { pluginId: required("pluginId") };
-            break;
-          case "search":
-            method = "plugins.search";
-            request = { query: required("query"), limit: 10 };
-            break;
-          case "enable":
-          case "disable":
-            method = "plugins.setEnabled";
-            request = { pluginId: required("pluginId"), enabled: action === "enable", ...consent };
-            break;
-          case "install": {
-            const source = required("source");
-            if (!["official", "clawhub"].includes(source)) {
-              throw new ToolInputError(`Unknown plugin installation source: ${source}`);
-            }
-            if (source === "official" && params.version !== undefined) {
-              throw new ToolInputError(
-                "Official catalog installs do not accept a version. Use the CLI for a version-constrained install, or omit version to use the catalog selection.",
-              );
-            }
-            const version = readToolStringParam(params, "version");
-            method = "plugins.install";
-            request = {
-              source,
-              ...(source === "official"
-                ? { pluginId: required("pluginId") }
-                : { packageName: required("packageName"), ...(version ? { version } : {}) }),
-              ...(params.acknowledgeInstallPolicyWarning === true
-                ? { acknowledgeInstallPolicyWarning: true }
-                : {}),
-              ...consent,
-            };
-            break;
-          }
-          default:
-            throw new ToolInputError(`Unknown plugin action: ${action}`);
-        }
-        let result: Record<string, unknown> & { runtime?: PluginRuntimeApplication };
-        try {
-          result = await callAgentToolGatewayRequest({
-            method,
-            params: request,
+  const tool: AnyAgentTool = {
+    name: "plugins",
+    label: "Plugins",
+    async: false,
+    description:
+      "Inspect, search, install from the official catalog or ClawHub, enable, disable, uninstall, or reload plugins. After editing local plugin files, use reloadAndResume to end this turn, finish cleanup, reload, and resume this same conversation with success or failure. Never wait for a CLI reload from a turn holding that plugin. reload is synchronous for callers not holding it. Check restartRequired: compiled bundled code needs a Gateway restart. Cleanup is best effort; read warnings in the result. Supported conversations refresh their tools at the next model step after running programs settle; finish the current program before using changed tools. Other runtimes may require a new conversation for changed tool names or schemas. Do not repeat completed mutations.",
+    parameters: PluginsToolSchema,
+    execute: async (_toolCallId, args, signal) => {
+      runtimeRefresh.assertCurrent();
+      const params = asNonArrayRecord(args);
+      const action = readToolStringParam(params, "action", { required: true });
+      const required = (key: string) => readToolStringParam(params, key, { required: true });
+      const reviewToken = readToolStringParam(params, "reviewToken");
+      const consent = reviewToken ? { acknowledgeCapabilities: { reviewToken } } : {};
+      let method: string;
+      let request: Record<string, unknown>;
+      switch (action) {
+        case "list":
+          method = "plugins.list";
+          request = {};
+          break;
+        case "reloadAndResume": {
+          const { handoffPluginReload } = await import("./plugins-reload-handoff.js");
+          return await handoffPluginReload({
+            ...options,
+            requestOwners,
             signal,
-            timeoutMs: null,
+            request: { plugins: [{ pluginId: required("pluginId") }], ...consent },
+            formatResult: (payload) => JSON.stringify(pluginsToolResult(payload).details),
           });
-        } catch (error) {
-          if (!(error instanceof GatewayClientRequestError)) {
-            throw error;
+        }
+        case "inspect":
+        case "uninstall":
+        case "reload":
+          method = `plugins.${action}`;
+          request =
+            action === "reload"
+              ? { plugins: [{ pluginId: required("pluginId") }], ...consent }
+              : { pluginId: required("pluginId") };
+          break;
+        case "search":
+          method = "plugins.search";
+          request = { query: required("query"), limit: 10 };
+          break;
+        case "enable":
+        case "disable":
+          method = "plugins.setEnabled";
+          request = { pluginId: required("pluginId"), enabled: action === "enable", ...consent };
+          break;
+        case "install": {
+          const source = required("source");
+          if (!["official", "clawhub"].includes(source)) {
+            throw new ToolInputError(`Unknown plugin installation source: ${source}`);
           }
-          const runtime =
-            isRecord(error.details) && isRecord(error.details.runtime)
-              ? error.details.runtime
-              : undefined;
-          const committed =
-            runtime?.committed === true &&
-            typeof runtime.operationId === "string" &&
-            typeof runtime.generation === "number" &&
-            Array.isArray(runtime.pluginIds) &&
-            runtime.pluginIds.every((id) => typeof id === "string");
-          const refresh = committed && runtimeRefresh.request();
-          return {
-            ...pluginsToolResult(
-              { ok: false, code: error.gatewayCode, error: error.message, details: error.details },
-              committed && !refresh,
-            ),
-            isError: true,
-            ...(refresh ? { terminate: true } : {}),
+          if (source === "official" && params.version !== undefined) {
+            throw new ToolInputError(
+              "Official catalog installs do not accept a version. Use the CLI for a version-constrained install, or omit version to use the catalog selection.",
+            );
+          }
+          const version = readToolStringParam(params, "version");
+          method = "plugins.install";
+          request = {
+            source,
+            ...(source === "official"
+              ? { pluginId: required("pluginId") }
+              : { packageName: required("packageName"), ...(version ? { version } : {}) }),
+            ...(params.acknowledgeInstallPolicyWarning === true
+              ? { acknowledgeInstallPolicyWarning: true }
+              : {}),
+            ...consent,
           };
+          break;
         }
-        if (action === "list") {
-          // SAFETY: The list action dispatches only plugins.list, whose handler returns listManagedPlugins.
-          const inventory = result as Awaited<ReturnType<typeof listManagedPlugins>>;
-          const query = readToolStringParam(params, "query")?.toLowerCase();
-          const matching = inventory.plugins.filter(
-            (plugin) =>
-              !query ||
-              [plugin.id, plugin.name, plugin.description].some((value) =>
-                value?.toLowerCase().includes(query),
-              ),
-          );
-          return pluginsToolResult({
-            plugins: matching
-              .slice(0, 20)
-              .map(({ id, state, version }) => ({ id, state, version })),
-            matching: matching.length,
-            omitted: Math.max(0, matching.length - 20),
-            mutationAllowed: inventory.mutationAllowed,
-            next: "Use query to narrow this inventory or inspect a pluginId for details.",
-          });
+        default:
+          throw new ToolInputError(`Unknown plugin action: ${action}`);
+      }
+      let result: Record<string, unknown> & { runtime?: PluginRuntimeApplication };
+      try {
+        result = await callAgentToolGatewayRequest({
+          method,
+          params: request,
+          signal,
+          timeoutMs: null,
+        });
+      } catch (error) {
+        if (!(error instanceof GatewayClientRequestError)) {
+          throw error;
         }
-        const refresh = result.runtime && runtimeRefresh.request();
+        const runtime =
+          isRecord(error.details) && isRecord(error.details.runtime)
+            ? error.details.runtime
+            : undefined;
+        const committed =
+          runtime?.committed === true &&
+          typeof runtime.operationId === "string" &&
+          typeof runtime.generation === "number" &&
+          Array.isArray(runtime.pluginIds) &&
+          runtime.pluginIds.every((id) => typeof id === "string");
+        const refresh = committed && runtimeRefresh.request();
         return {
-          ...pluginsToolResult(result, Boolean(result.runtime && !refresh)),
+          ...pluginsToolResult(
+            { ok: false, code: error.gatewayCode, error: error.message, details: error.details },
+            committed && !refresh,
+          ),
+          isError: true,
           ...(refresh ? { terminate: true } : {}),
         };
-      },
+      }
+      if (action === "list") {
+        // SAFETY: The list action dispatches only plugins.list, whose handler returns listManagedPlugins.
+        const inventory = result as Awaited<ReturnType<typeof listManagedPlugins>>;
+        const query = readToolStringParam(params, "query")?.toLowerCase();
+        const matching = inventory.plugins.filter(
+          (plugin) =>
+            !query ||
+            [plugin.id, plugin.name, plugin.description].some((value) =>
+              value?.toLowerCase().includes(query),
+            ),
+        );
+        return pluginsToolResult({
+          plugins: matching.slice(0, 20).map(({ id, state, version }) => ({ id, state, version })),
+          matching: matching.length,
+          omitted: Math.max(0, matching.length - 20),
+          mutationAllowed: inventory.mutationAllowed,
+          next: "Use query to narrow this inventory or inspect a pluginId for details.",
+        });
+      }
+      const refresh = result.runtime && runtimeRefresh.request();
+      return {
+        ...pluginsToolResult(result, Boolean(result.runtime && !refresh)),
+        ...(refresh ? { terminate: true } : {}),
+      };
     },
-    (args) => ({
-      ownsTurnHandoff: isRecord(args) && args.action === "reloadAndResume",
-    }),
-  );
+  };
+  return bindToolInvocationResolver(tool, (args) => ({
+    ownsTurnHandoff: isRecord(args) && args.action === "reloadAndResume",
+  }));
 }
