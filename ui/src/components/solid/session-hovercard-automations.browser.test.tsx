@@ -121,13 +121,18 @@ it("tabs into a nested inspection, dismisses only the flyout with Escape, and re
     };
     try {
       record("original-failure", summary, surface);
-      summary.focus();
-      record("direct-summary-focus", summary, surface);
+      await userEvent.tab();
+      record("unmodified-second-tab", summary, surface);
       summary.tabIndex = 0;
       anchor.focus();
       await userEvent.tab();
       record("explicit-summary-tabindex", summary, surface);
       restoreTabIndex();
+      summary.focus();
+      record("direct-summary-focus", summary, surface);
+      anchor.focus();
+      await userEvent.tab();
+      record("after-focus-reset", summary, surface);
       summary.closest('[slot="content"]')!.prepend(input);
       anchor.focus();
       await userEvent.tab();
@@ -137,7 +142,9 @@ it("tabs into a nested inspection, dismisses only the flyout with Escape, and re
         const specimen = document.createElement("div");
         const link = document.createElement("a");
         link.href = "#native-inspection";
-        link.textContent = "Native inspection";
+        const label = document.createElement("span");
+        label.textContent = "Native inspection";
+        link.append(label);
         const content = document.createElement("div");
         content.slot = "content";
         content.innerHTML = "<details><summary>Instructions</summary><p>Details</p></details>";
@@ -158,9 +165,12 @@ it("tabs into a nested inspection, dismisses only the flyout with Escape, and re
               '<slot></slot><div popover="manual"><span><slot name="content"></slot></span></div>';
             popup = shadow.querySelector("div")!;
             specimen.showPopover();
-            popup.showPopover(withSource ? { source: link } : undefined);
           }
-          link.focus();
+          link.addEventListener("click", (event) => {
+            event.preventDefault();
+            popup?.showPopover(withSource ? { source: link } : undefined);
+          });
+          await userEvent.click(label);
           await userEvent.tab();
           record(
             withSource === null ? "plain-summary" : `slotted-summary-source-${withSource}`,
