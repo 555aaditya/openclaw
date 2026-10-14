@@ -108,6 +108,8 @@ function canAutomaticallyResend(host: ChatHost, item: ChatQueueItem): boolean {
   const epochs = host.client ? sendConnectionEpochs.get(host.client) : undefined;
   const age = Date.now() - (item.sendFirstAttemptAtMs ?? Number.NEGATIVE_INFINITY);
   return Boolean(
+    // Only transport-uncertain sends; a Gateway rejection stays failed for review.
+    (item.sendState === "waiting-reconnect" || item.sendState === "unconfirmed") &&
     item.sendRunId &&
     !item.localCommandName &&
     !item.pendingRunId &&

@@ -146,6 +146,27 @@ describe("automatic reconnect resend", () => {
     },
   );
 
+  it("does not automatically resend a send the Gateway rejected", async () => {
+    let attempts = 0;
+    const host = makeChatHost({
+      chatMessage: "rejected first",
+      requestHandlers: {
+        "chat.history": () => idleChatHistory(),
+        "chat.send": () => {
+          attempts += 1;
+          throw new GatewayRequestError({ code: "INVALID_REQUEST", message: "message rejected" });
+        },
+      },
+    });
+    await handleSendChat(host);
+    expect(listStoredChatOutboxes(host)[0]?.queue[0]).toMatchObject({ sendState: "failed" });
+
+    host.connectionEpoch = 1;
+    await resumeStoredChatOutboxes(host);
+    expect(attempts).toBe(1);
+    expect(host.chatQueue[0]).toMatchObject({ sendState: "failed" });
+  });
+
   it("parks without transport when attachment preparation outlasts the retry window", async () => {
     const { attachments } = createDeliveryAttachmentBatch();
     let sends = 0;
