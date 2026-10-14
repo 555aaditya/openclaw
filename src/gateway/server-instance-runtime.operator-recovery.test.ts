@@ -1,6 +1,7 @@
 import { expectDefined } from "@openclaw/normalization-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { awaitGateBeforeSettlement, createDeferred } from "../../test/helpers/promise.js";
+import { acceptCompactionSuccessor } from "../agents/embedded-agent-runner/compaction-successor.js";
 import { markRestartAbortedMainSessions } from "../agents/main-session-recovery/main-session-restart-recovery-marking.js";
 import { recoverStore } from "../agents/main-session-recovery/main-session-restart-recovery-store.js";
 import { createRestartRecoveryRequesterSource } from "../agents/requester-run-recovery-source.js";
@@ -353,22 +354,43 @@ describe("typed restart recovery operator admission", () => {
     "Gateway closed",
     "Gateway context replaced",
   ] as const)("refuses retained operator work after its exact %s", async (boundary) => {
-    await withRecovery(async ({ target, context }) => {
+    await withRecovery(async ({ target, context, entry }) => {
       let activeContext = context;
       const registration = registerRecovery(context, target);
       using runtime = createRuntime(() => activeContext);
       const entered = createDeferred<AgentTurnPrincipal>();
       const finish = createDeferred();
+      let admissionCurrent = true;
+      let executionStarted = false;
       startTurn.mockImplementation(async ({ principal, io }) => {
         const currentPrincipal = expectDefined(principal, "typed recovery principal");
         const runId = target.recoveryRunId;
         io.emitStartOwner?.(runId, registration.entry);
         io.emitAcceptance([true, { runId, status: "accepted" }, undefined], { runId });
+        if (boundary === "registration replaced") {
+          expect(registration.markExecutionStarted()).toBe(true);
+          io.emitExecutionStarted?.();
+        }
         entered.resolve(currentPrincipal);
         await finish.promise;
         io.emitFinal([true, { runId, status: "ok" }, undefined]);
       });
-      const options = { restartRecoveryOperatorTarget: target, expectFinal: true };
+      const options = {
+        restartRecoveryOperatorTarget: target,
+        expectFinal: true,
+        ...(boundary === "registration replaced"
+          ? {
+              assertAdmissionCurrent: () => {
+                if (!admissionCurrent) {
+                  throw new Error("Recovery admission ended after execution started");
+                }
+              },
+              onExecutionStarted: () => {
+                executionStarted = true;
+              },
+            }
+          : {}),
+      };
       const pending = runtime.recovery.dispatchAgent(recoveryRequest(target), undefined, options);
       try {
         const principal = await awaitGateBeforeSettlement(
@@ -382,6 +404,23 @@ describe("typed restart recovery operator admission", () => {
         );
         expect(authority.assertCurrent).not.toThrow();
         if (boundary === "registration replaced") {
+          expect(executionStarted).toBe(true);
+          expect(registration.entry.executionStarted).toBe(true);
+          const accepted = await acceptCompactionSuccessor({
+            currentTarget: target,
+            expectedEntry: entry,
+            assertActive: authority.assertCurrent,
+            result: {
+              ok: true,
+              compacted: true,
+              result: { sessionId: "runtime-successor", tokensBefore: 120, tokensAfter: 42 },
+            },
+          });
+          // Match the execution owner's onSessionIdChanged on this same registration.
+          registration.entry.sessionId = accepted.entry.sessionId;
+          expect(authority.assertCurrent).not.toThrow();
+          admissionCurrent = false;
+          expect(authority.assertCurrent).not.toThrow();
           // Same correlation identity cannot transfer the old registration's authority.
           context.chatAbortControllers.set(target.recoveryRunId, {
             ...registration.entry,
@@ -404,9 +443,12 @@ describe("typed restart recovery operator admission", () => {
         }
       } finally {
         finish.resolve();
-        await pending.catch(() => undefined);
-        await startTurn.mock.results.at(-1)?.value;
-        registration.cleanup();
+        try {
+          await pending.catch(() => undefined);
+          await startTurn.mock.results.at(-1)?.value;
+        } finally {
+          registration.cleanup();
+        }
       }
     });
   });
