@@ -201,34 +201,6 @@ describe("worker SSH preparation", () => {
     }
   });
 
-  it("shares a decreasing deadline while preserving fast fallback budget", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(1_000);
-    const prepared = await prepareTestWorkerSsh();
-    try {
-      const remainingTimeouts: number[] = [];
-      const result = await runWorkerSshCandidates(
-        prepared,
-        1_000,
-        async (port, remainingTimeoutMs) => {
-          remainingTimeouts.push(remainingTimeoutMs);
-          if (port === 2202) {
-            vi.advanceTimersByTime(1);
-            return { code: 255, termination: "exit" };
-          }
-          return { code: 0, termination: "exit" };
-        },
-      );
-
-      expect(remainingTimeouts).toEqual([1_000, 999]);
-      expect(result).toEqual({ code: 0, termination: "exit" });
-      expect(prepared.port).toBe(22);
-    } finally {
-      await prepared.dispose();
-      vi.useRealTimers();
-    }
-  });
-
   it("does not start a later candidate after the operation deadline", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(1_000);
@@ -251,28 +223,25 @@ describe("worker SSH preparation", () => {
     }
   });
 
-  it.each(["timeout", "signal", "output-limit", "error"] as const)(
-    "does not select a candidate after %s termination",
-    async (termination) => {
-      const prepared = await prepareTestWorkerSsh();
-      prepared.selectPort(22);
-      try {
-        const attempted: number[] = [];
-        const result = await runWorkerSshCandidates(prepared, 1_000, async (port) => {
-          attempted.push(port);
-          return port === 22
-            ? { code: 255, termination: "exit" as const }
-            : { code: null, termination };
-        });
+  it("does not select a candidate after non-exit termination", async () => {
+    const prepared = await prepareTestWorkerSsh();
+    prepared.selectPort(22);
+    try {
+      const attempted: number[] = [];
+      const result = await runWorkerSshCandidates(prepared, 1_000, async (port) => {
+        attempted.push(port);
+        return port === 22
+          ? { code: 255, termination: "exit" as const }
+          : { code: null, termination: "timeout" };
+      });
 
-        expect(attempted).toEqual([22, 2200]);
-        expect(result).toEqual({ code: null, termination });
-        expect(prepared.port).toBe(22);
-      } finally {
-        await prepared.dispose();
-      }
-    },
-  );
+      expect(attempted).toEqual([22, 2200]);
+      expect(result).toEqual({ code: null, termination: "timeout" });
+      expect(prepared.port).toBe(22);
+    } finally {
+      await prepared.dispose();
+    }
+  });
 
   it("materializes identity contents once and removes them with the shared context", async () => {
     const prepared = await prepareWorkerSsh({

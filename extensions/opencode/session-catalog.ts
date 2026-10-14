@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import { pruneMapToMaxSize } from "openclaw/plugin-sdk/collection-runtime";
 import { createSubsystemLogger } from "openclaw/plugin-sdk/logging-core";
 import { runCommandBuffered } from "openclaw/plugin-sdk/process-runtime";
 import type {
@@ -65,12 +66,9 @@ type OpenCodeQueryCacheOptions = {
   forceRefresh?: boolean;
 };
 
-const openCodeConfigIdentities = new WeakMap<object, number>();
-// Query results are valid for one immutable OpenClaw config identity, CLI environment, and SQL text.
-// Config/env changes or 32s expiry invalidate them; failures are removed so recovery retries at once.
-// The bounded map prevents pagination variants from growing while avoiding a subprocess every poll.
+// Queries depend on the CLI environment and SQL, not the OpenClaw config object.
+// Retain results across sidebar polls; expiry and explicit refresh control freshness.
 const openCodeQueryCache = new Map<string, OpenCodeQueryCacheEntry>();
-let nextOpenCodeConfigIdentity = 1;
 const log = createSubsystemLogger("opencode/session-catalog");
 let cliVersion: { key: string; expiresAt: number; result: Promise<boolean> } | undefined;
 
@@ -94,14 +92,9 @@ export async function isOpenCodeV2(): Promise<boolean> {
   return cliVersion.result;
 }
 
-function openCodeQueryCacheKey(query: string, configIdentity: object): string {
-  let identity = openCodeConfigIdentities.get(configIdentity);
-  if (identity === undefined) {
-    identity = nextOpenCodeConfigIdentity++;
-    openCodeConfigIdentities.set(configIdentity, identity);
-  }
+function openCodeQueryCacheKey(query: string): string {
   const environment = SAFE_ENV_KEYS.map((key) => `${key}=${process.env[key] ?? ""}`).join("\0");
-  return `${String(identity)}\0${environment}\0${query}`;
+  return `${environment}\0${query}`;
 }
 
 type OpenCodeSessionPage = {
@@ -266,7 +259,7 @@ async function queryCachedOpenCodeSessions(
   count: number,
   options: OpenCodeQueryCacheOptions,
 ): Promise<unknown> {
-  const key = openCodeQueryCacheKey(query, options.configIdentity ?? process.env);
+  const key = openCodeQueryCacheKey(query);
   const cached = openCodeQueryCache.get(key);
   if (options.forceRefresh !== true && cached && cached.expiresAt > Date.now()) {
     openCodeQueryCache.delete(key);
@@ -282,13 +275,7 @@ async function queryCachedOpenCodeSessions(
     result,
   };
   openCodeQueryCache.set(key, entry);
-  while (openCodeQueryCache.size > OPENCODE_QUERY_CACHE_MAX_ENTRIES) {
-    const oldest = openCodeQueryCache.keys().next();
-    if (oldest.done) {
-      break;
-    }
-    openCodeQueryCache.delete(oldest.value);
-  }
+  pruneMapToMaxSize(openCodeQueryCache, OPENCODE_QUERY_CACHE_MAX_ENTRIES);
   try {
     const value = await result;
     entry.resolved = true;

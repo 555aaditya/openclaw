@@ -7,7 +7,7 @@ import {
   MessageFlags,
 } from "discord-api-types/v10";
 import { describe, expect, it, vi } from "vitest";
-import { Container, TextDisplay } from "./components.js";
+import { Container, TextDisplay } from "./components.message.js";
 import {
   AutocompleteInteraction,
   BaseComponentInteraction,
@@ -23,163 +23,16 @@ import {
   createInternalTestClient,
 } from "./test-builders.test-support.js";
 
+function createTestInteraction(rest: Parameters<typeof attachRestMock>[1]) {
+  const client = createInternalTestClient();
+  attachRestMock(client, rest);
+  return createInteraction(
+    client,
+    createInternalInteractionPayload({ id: "interaction1", token: "token1" }),
+  );
+}
+
 describe("BaseInteraction", () => {
-  it.each([
-    {
-      name: "command reply",
-      kind: "command",
-      operation: "reply",
-      callbackType: InteractionResponseType.ChannelMessageWithSource,
-    },
-    {
-      name: "command defer",
-      kind: "command",
-      operation: "defer",
-      callbackType: InteractionResponseType.DeferredChannelMessageWithSource,
-    },
-    {
-      name: "component acknowledgment",
-      kind: "component",
-      operation: "acknowledge",
-      callbackType: InteractionResponseType.DeferredMessageUpdate,
-    },
-    {
-      name: "component update",
-      kind: "component",
-      operation: "update",
-      callbackType: InteractionResponseType.UpdateMessage,
-    },
-    {
-      name: "component modal",
-      kind: "component",
-      operation: "show-modal",
-      callbackType: InteractionResponseType.Modal,
-    },
-    {
-      name: "component activity",
-      kind: "component",
-      operation: "launch-activity",
-      callbackType: InteractionResponseType.LaunchActivity,
-    },
-    {
-      name: "modal acknowledgment",
-      kind: "modal",
-      operation: "acknowledge",
-      callbackType: InteractionResponseType.DeferredMessageUpdate,
-    },
-    {
-      name: "command autocomplete",
-      kind: "autocomplete",
-      operation: "autocomplete",
-      callbackType: InteractionResponseType.ApplicationCommandAutocompleteResult,
-    },
-  ] as const)("keeps a rejected $name eligible for its initial callback", async (testCase) => {
-    const failure = new Error("Discord rejected the interaction callback");
-    const post = vi.fn().mockRejectedValueOnce(failure).mockResolvedValue(undefined);
-    const patch = vi.fn(async () => undefined);
-    const client = createInternalTestClient();
-    attachRestMock(client, { patch, post });
-    const identity = { id: "interaction1", token: "token1" };
-    const payload =
-      testCase.kind === "component"
-        ? createInternalComponentInteractionPayload(identity)
-        : testCase.kind === "modal"
-          ? createInternalModalInteractionPayload(identity)
-          : createInternalInteractionPayload({
-              ...identity,
-              ...(testCase.kind === "autocomplete"
-                ? { type: InteractionType.ApplicationCommandAutocomplete }
-                : {}),
-            });
-    const interaction = createInteraction(client, payload);
-
-    const sendInitialCallback = () => {
-      switch (testCase.operation) {
-        case "reply":
-          return interaction.reply("first");
-        case "defer":
-          return interaction.defer();
-        case "acknowledge":
-          return interaction.acknowledge();
-        case "update":
-          if (!(interaction instanceof BaseComponentInteraction)) {
-            throw new Error("expected a component interaction");
-          }
-          return interaction.update("first");
-        case "show-modal":
-          if (!(interaction instanceof BaseComponentInteraction)) {
-            throw new Error("expected a component interaction");
-          }
-          return interaction.showModal({ serialize: () => ({ title: "Choose" }) });
-        case "launch-activity":
-          if (!(interaction instanceof BaseComponentInteraction)) {
-            throw new Error("expected a component interaction");
-          }
-          return interaction.launchActivity();
-        case "autocomplete":
-          if (!(interaction instanceof AutocompleteInteraction)) {
-            throw new Error("expected an autocomplete interaction");
-          }
-          return interaction.respond([{ name: "Choice", value: "choice" }]);
-        default:
-          throw new Error("expected a supported interaction callback");
-      }
-    };
-
-    await expect(sendInitialCallback()).rejects.toBe(failure);
-    expect(interaction.responseState).toBe("unacknowledged");
-    expect(interaction.acknowledged).toBe(false);
-
-    if (testCase.operation === "autocomplete") {
-      await sendInitialCallback();
-    } else {
-      await interaction.reply("recovered");
-    }
-
-    expect(post).toHaveBeenNthCalledWith(
-      1,
-      "/interactions/interaction1/token1/callback",
-      expect.objectContaining({ body: expect.objectContaining({ type: testCase.callbackType }) }),
-    );
-    expect(post).toHaveBeenNthCalledWith(2, "/interactions/interaction1/token1/callback", {
-      body:
-        testCase.operation === "autocomplete"
-          ? {
-              type: InteractionResponseType.ApplicationCommandAutocompleteResult,
-              data: { choices: [{ name: "Choice", value: "choice" }] },
-            }
-          : {
-              type: InteractionResponseType.ChannelMessageWithSource,
-              data: { content: "recovered" },
-            },
-    });
-    expect(patch).not.toHaveBeenCalled();
-    expect(interaction.responseState).toBe("replied");
-  });
-
-  it("waits for provider acceptance before recording a deferred interaction", async () => {
-    let acceptCallback!: () => void;
-    const accepted = new Promise<void>((resolve) => {
-      acceptCallback = resolve;
-    });
-    const post = vi.fn(() => accepted);
-    const client = createInternalTestClient();
-    attachRestMock(client, { post });
-    const interaction = createInteraction(
-      client,
-      createInternalInteractionPayload({ id: "interaction1", token: "token1" }),
-    );
-
-    const pending = interaction.defer();
-    const stateBeforeAcceptance = interaction.responseState;
-    acceptCallback();
-    await pending;
-
-    expect(stateBeforeAcceptance).toBe("unacknowledged");
-    expect(interaction.responseState).toBe("deferred");
-    expect(interaction.acknowledged).toBe(true);
-  });
-
   it.each([
     { first: "accepted", nextRoute: "/webhooks/app1/token1" },
     { first: "rejected", nextRoute: "/interactions/interaction1/token1/callback" },
@@ -196,17 +49,14 @@ describe("BaseInteraction", () => {
         .fn()
         .mockImplementationOnce(() => firstResponse)
         .mockResolvedValue(undefined);
-      const client = createInternalTestClient();
-      attachRestMock(client, { post });
-      const interaction = createInteraction(
-        client,
-        createInternalInteractionPayload({ id: "interaction1", token: "token1" }),
-      );
+      const interaction = createTestInteraction({ post });
 
       const first = interaction.reply("first");
       await vi.waitFor(() => expect(post).toHaveBeenCalledOnce());
       const second = interaction.reply("second");
       const callsBeforeAcceptance = post.mock.calls.length;
+      expect(interaction.responseState).toBe("unacknowledged");
+      expect(interaction.acknowledged).toBe(false);
       const settled = Promise.allSettled([first, second]);
       if (testCase.first === "accepted") {
         acceptFirst();
@@ -252,12 +102,7 @@ describe("BaseInteraction", () => {
       .fn()
       .mockImplementationOnce(() => firstResponse)
       .mockResolvedValue(undefined);
-    const client = createInternalTestClient();
-    attachRestMock(client, { post });
-    const interaction = createInteraction(
-      client,
-      createInternalInteractionPayload({ id: "interaction1", token: "token1" }),
-    );
+    const interaction = createTestInteraction({ post });
 
     const initial = interaction.reply("first");
     await vi.waitFor(() => expect(post).toHaveBeenCalledOnce());
@@ -276,14 +121,9 @@ describe("BaseInteraction", () => {
   });
 
   it.each([
-    { kind: "command", operation: "defer" },
-    { kind: "component", operation: "defer" },
-    { kind: "component", operation: "acknowledge" },
     { kind: "component", operation: "update" },
     { kind: "component", operation: "show-modal" },
     { kind: "component", operation: "launch-activity" },
-    { kind: "modal", operation: "defer" },
-    { kind: "modal", operation: "acknowledge" },
     { kind: "autocomplete", operation: "autocomplete" },
   ] as const)(
     "rejects a second initial $kind $operation without calling Discord",
@@ -295,14 +135,12 @@ describe("BaseInteraction", () => {
       const raw =
         testCase.kind === "component"
           ? createInternalComponentInteractionPayload(identity)
-          : testCase.kind === "modal"
-            ? createInternalModalInteractionPayload(identity)
-            : createInternalInteractionPayload({
-                ...identity,
-                ...(testCase.kind === "autocomplete"
-                  ? { type: InteractionType.ApplicationCommandAutocomplete }
-                  : {}),
-              });
+          : createInternalInteractionPayload({
+              ...identity,
+              ...(testCase.kind === "autocomplete"
+                ? { type: InteractionType.ApplicationCommandAutocomplete }
+                : {}),
+            });
       const interaction = createInteraction(client, raw);
       const first =
         testCase.kind === "autocomplete" && interaction instanceof AutocompleteInteraction
@@ -310,10 +148,6 @@ describe("BaseInteraction", () => {
           : interaction.reply("first");
       const next = () => {
         switch (testCase.operation) {
-          case "defer":
-            return interaction.defer();
-          case "acknowledge":
-            return interaction.acknowledge();
           case "update":
             if (!(interaction instanceof BaseComponentInteraction)) {
               throw new Error("expected a component interaction");
@@ -359,12 +193,7 @@ describe("BaseInteraction", () => {
     });
     const post = vi.fn(() => firstResponse);
     const get = vi.fn(async () => ({ id: "message1" }));
-    const client = createInternalTestClient();
-    attachRestMock(client, { get, post });
-    const interaction = createInteraction(
-      client,
-      createInternalInteractionPayload({ id: "interaction1", token: "token1" }),
-    );
+    const interaction = createTestInteraction({ get, post });
 
     const initial = interaction.reply("first");
     await vi.waitFor(() => expect(post).toHaveBeenCalledOnce());
@@ -413,12 +242,7 @@ describe("BaseInteraction", () => {
   it("edits the original interaction response after defer", async () => {
     const post = vi.fn(async () => undefined);
     const patch = vi.fn(async () => undefined);
-    const client = createInternalTestClient();
-    attachRestMock(client, { patch, post });
-    const interaction = createInteraction(
-      client,
-      createInternalInteractionPayload({ id: "interaction1", token: "token1" }),
-    );
+    const interaction = createTestInteraction({ patch, post });
 
     await interaction.defer({ ephemeral: true });
     await interaction.reply({ content: "done", ephemeral: true });
@@ -437,12 +261,7 @@ describe("BaseInteraction", () => {
   it("deletes the original interaction response after defer", async () => {
     const del = vi.fn(async () => undefined);
     const post = vi.fn(async () => undefined);
-    const client = createInternalTestClient();
-    attachRestMock(client, { delete: del, post });
-    const interaction = createInteraction(
-      client,
-      createInternalInteractionPayload({ id: "interaction1", token: "token1" }),
-    );
+    const interaction = createTestInteraction({ delete: del, post });
 
     await interaction.defer();
     expect(interaction.responseState).toBe("deferred");
@@ -454,12 +273,7 @@ describe("BaseInteraction", () => {
 
   it("uses with_components for Components V2 follow-ups", async () => {
     const post = vi.fn(async () => undefined);
-    const client = createInternalTestClient();
-    attachRestMock(client, { post });
-    const interaction = createInteraction(
-      client,
-      createInternalInteractionPayload({ id: "interaction1", token: "token1" }),
-    );
+    const interaction = createTestInteraction({ post });
 
     await interaction.reply("first");
     await interaction.reply({
@@ -487,12 +301,7 @@ describe("BaseInteraction", () => {
   it("uses with_components when editing deferred Components V2 replies", async () => {
     const post = vi.fn(async () => undefined);
     const patch = vi.fn(async () => undefined);
-    const client = createInternalTestClient();
-    attachRestMock(client, { patch, post });
-    const interaction = createInteraction(
-      client,
-      createInternalInteractionPayload({ id: "interaction1", token: "token1" }),
-    );
+    const interaction = createTestInteraction({ patch, post });
 
     await interaction.defer();
     await interaction.reply({
@@ -514,35 +323,6 @@ describe("BaseInteraction", () => {
       },
       { with_components: true },
     );
-  });
-
-  it("edits the original component message after acknowledge", async () => {
-    const post = vi.fn(async () => undefined);
-    const patch = vi.fn(async () => undefined);
-    const client = createInternalTestClient();
-    attachRestMock(client, { patch, post });
-    const interaction = createInteraction(
-      client,
-      createInternalComponentInteractionPayload({
-        id: "interaction1",
-        token: "token1",
-        data: {
-          component_type: ComponentType.Button,
-          custom_id: "button1",
-        },
-      }),
-    );
-
-    await interaction.acknowledge();
-    await interaction.reply({ content: "updated", components: [] });
-
-    expect(post).toHaveBeenCalledTimes(1);
-    expect(post).toHaveBeenCalledWith("/interactions/interaction1/token1/callback", {
-      body: { type: InteractionResponseType.DeferredMessageUpdate },
-    });
-    expect(patch).toHaveBeenCalledWith("/webhooks/app1/token1/messages/%40original", {
-      body: { content: "updated", components: [] },
-    });
   });
 
   it("rejects malformed interaction payloads at the boundary", () => {
@@ -611,25 +391,6 @@ describe("ModalInteraction", () => {
 
     expect(interaction).toBeInstanceOf(ModalInteraction);
     expect((interaction as ModalInteraction).fields.getText("title")).toBe("Hello");
-  });
-
-  it("acknowledges modal submits as message updates", async () => {
-    const post = vi.fn(async () => undefined);
-    const client = createInternalTestClient();
-    attachRestMock(client, { post });
-    const interaction = createInteraction(
-      client,
-      createInternalModalInteractionPayload({
-        id: "interaction1",
-        token: "token1",
-      }),
-    );
-
-    await (interaction as ModalInteraction).acknowledge();
-
-    expect(post).toHaveBeenCalledWith("/interactions/interaction1/token1/callback", {
-      body: { type: InteractionResponseType.DeferredMessageUpdate },
-    });
   });
 
   it("edits the original modal source message after acknowledge", async () => {

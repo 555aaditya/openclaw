@@ -7,6 +7,7 @@ import {
 } from "../../../packages/gateway-protocol/src/index.js";
 import type { SessionTranscriptReadScope } from "../../config/sessions/session-accessor.js";
 import { isSessionTranscriptProjectionUnavailableError } from "../../config/sessions/session-accessor.sqlite-active-events.js";
+import { pruneMapToMaxSize } from "../../infra/map-size.js";
 import type { TranscriptReadWindow } from "../../sessions/transcript-read-window.js";
 import { readSessionArtifacts } from "../session-transcript-readers.js";
 import { ArtifactSessionResolutionError } from "./artifacts-session-resolution.js";
@@ -25,6 +26,14 @@ type ImageCursor = {
 const cursors = new WeakMap<object, Map<string, ImageCursor>>();
 const internalCaller = {};
 
+function invalidImageCursor(message: string) {
+  return new ArtifactSessionResolutionError(
+    errorShape(ErrorCodes.INVALID_REQUEST, message, {
+      details: { type: "artifact_cursor_invalid" },
+    }),
+  );
+}
+
 export async function readArtifactImagePage(params: {
   scope: SessionTranscriptReadScope;
   binding: string;
@@ -32,7 +41,7 @@ export async function readArtifactImagePage(params: {
   cursor?: string;
   limit: number;
   sessionKey: string;
-  filters: Pick<ArtifactsListParams, "runId" | "taskId" | "messageRole">;
+  filters: Pick<ArtifactsListParams, "runId" | "messageRole">;
 }): Promise<{ artifacts: ArtifactSummary[]; nextCursor?: string; omittedOversized?: boolean }> {
   const owner = params.client ?? internalCaller;
   let state = cursors.get(owner);
@@ -48,14 +57,8 @@ export async function readArtifactImagePage(params: {
   }
   const cursor = params.cursor ? state.get(params.cursor) : undefined;
   if (params.cursor && (!cursor || cursor.binding !== params.binding)) {
-    throw new ArtifactSessionResolutionError(
-      errorShape(
-        ErrorCodes.INVALID_REQUEST,
-        "Image cursor expired or belongs to another session; restart artifacts.list",
-        {
-          details: { type: "artifact_cursor_invalid" },
-        },
-      ),
+    throw invalidImageCursor(
+      "Image cursor expired or belongs to another session; restart artifacts.list",
     );
   }
   const page = await readSessionArtifacts(params.scope, {
@@ -68,11 +71,7 @@ export async function readArtifactImagePage(params: {
     readWindow: cursor?.readWindow,
   }).catch((error: unknown) => {
     if (cursor && isSessionTranscriptProjectionUnavailableError(error)) {
-      throw new ArtifactSessionResolutionError(
-        errorShape(ErrorCodes.INVALID_REQUEST, "Transcript changed; restart artifacts.list", {
-          details: { type: "artifact_cursor_invalid" },
-        }),
-      );
+      throw invalidImageCursor("Transcript changed; restart artifacts.list");
     }
     throw error;
   });
@@ -84,12 +83,7 @@ export async function readArtifactImagePage(params: {
       binding: params.binding,
       expiresAt: now + CURSOR_TTL_MS,
     });
-    while (state.size > 128) {
-      const oldest = state.keys().next().value;
-      if (oldest) {
-        state.delete(oldest);
-      }
-    }
+    pruneMapToMaxSize(state, 128);
   }
   return {
     artifacts: page.artifacts,

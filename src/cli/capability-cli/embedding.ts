@@ -1,91 +1,17 @@
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import type { Command } from "commander";
-import { defaultRuntime } from "../../runtime.js";
-import { runCommandWithRuntime } from "../cli-utils.js";
 import { collectOption } from "../program/helpers.js";
 import type { CapabilityEnvelope } from "./metadata.js";
-import { emitJsonOrText, formatEnvelopeForText, providerSummaryText } from "./output.js";
-import { registerLocalProvidersCommand } from "./providers-command.js";
-
-async function closeEmbeddingProviderWithRetry(provider: {
-  close?: () => Promise<void> | void;
-}): Promise<void> {
-  try {
-    await provider.close?.();
-  } catch {
-    await provider.close?.();
-  }
-}
-
-async function runMemoryEmbeddingCreate(params: {
-  texts: string[];
-  provider?: string;
-  model?: string;
-  agent?: string;
-}) {
-  const {
-    requireProviderModelOverride,
-    resolveCapabilityProviderAgentId,
-    resolveLocalCapabilityRuntimeConfig,
-  } = await import("./shared.js");
-  const { getMemoryEmbeddingCommandSecretTargetIds } = await import("../command-secret-targets.js");
-  const { resolveAgentDir } = await import("../../agents/agent-scope.js");
-  const { createEmbeddingProvider } =
-    await import("../../plugin-sdk/memory-core-bundled-runtime.js");
-  const modelRef = requireProviderModelOverride(params.model);
-  const cfg = await resolveLocalCapabilityRuntimeConfig({
-    commandName: "infer embedding create",
-    targetIds: getMemoryEmbeddingCommandSecretTargetIds(),
-  });
-  const requestedProvider =
-    normalizeOptionalString(params.provider) || modelRef?.provider || "auto";
-  const agentId = resolveCapabilityProviderAgentId(cfg, params.agent, "infer embedding create");
-  const { prepareLocalCapabilityAccountSecrets } = await import("./local-account-secrets.js");
-  await prepareLocalCapabilityAccountSecrets({ cfg, agentId });
-  const result = await createEmbeddingProvider({
-    config: cfg,
-    agentDir: resolveAgentDir(cfg, agentId),
-    provider: requestedProvider,
-    fallback: "none",
-    model: modelRef?.model ?? "",
-  });
-  if (!result.provider) {
-    throw new Error(result.providerUnavailableReason ?? "No embedding provider available.");
-  }
-  const provider = result.provider;
-  let embeddings: number[][];
-  try {
-    embeddings = await provider.embedBatch(params.texts, { inputType: "document" });
-  } catch (err) {
-    // Cleanup failure must not replace the embedding error.
-    await closeEmbeddingProviderWithRetry(provider).catch(() => {});
-    throw err;
-  }
-  await closeEmbeddingProviderWithRetry(provider);
-  return {
-    ok: true,
-    capability: "embedding.create",
-    transport: "local" as const,
-    provider: provider.id,
-    model: provider.model,
-    attempts: result.fallbackFrom
-      ? [{ provider: result.fallbackFrom, outcome: "failed", error: result.fallbackReason }]
-      : [],
-    outputs: embeddings.map((embedding, index) => ({
-      text: params.texts[index],
-      embedding,
-      dimensions: embedding.length,
-    })),
-  } satisfies CapabilityEnvelope;
-}
+import { formatEnvelopeForText, providerSummaryText } from "./output.js";
+import { registerLocalProvidersCommand, runCapabilityCommand } from "./providers-command.js";
 
 export function registerEmbeddingCapabilityCommands(capability: Command): void {
-  const embedding = capability
+  const embeddingCommand = capability
     .command("embedding")
     .description("Embedding providers")
     .option("--agent <id>", "Agent whose model and auth state should be used");
 
-  embedding
+  embeddingCommand
     .command("create")
     .description("Create embeddings")
     .requiredOption("--text <text>", "Input text", collectOption)
@@ -96,21 +22,69 @@ export function registerEmbeddingCapabilityCommands(capability: Command): void {
       "Agent whose saved provider auth is used (default: agents.defaults.systemAgent.agentId, then the sole agent)",
     )
     .option("--json", "Output JSON", false)
-    .action(async (opts, command) => {
-      await runCommandWithRuntime(defaultRuntime, async () => {
-        const { resolveCapabilityAgentOption } = await import("./shared.js");
-        const result = await runMemoryEmbeddingCreate({
-          texts: opts.text as string[],
-          agent: resolveCapabilityAgentOption(command, opts.agent),
-          provider: opts.provider as string | undefined,
-          model: opts.model as string | undefined,
+    .action((opts, command) =>
+      runCapabilityCommand(opts.json, formatEnvelopeForText, async () => {
+        const {
+          requireProviderModelOverride,
+          resolveLocalCapabilityAgent,
+          resolveCapabilityAgentOption,
+        } = await import("./shared.js");
+        const texts = opts.text as string[];
+        const agent = resolveCapabilityAgentOption(command, opts.agent);
+        const { getMemoryEmbeddingCommandSecretTargetIds } =
+          await import("../command-secret-targets.js");
+        const { createEmbeddingProvider } =
+          await import("../../plugin-sdk/memory-core-bundled-runtime.js");
+        const modelRef = requireProviderModelOverride(opts.model as string | undefined);
+        const { cfg, agentDir } = await resolveLocalCapabilityAgent({
+          commandName: "infer embedding create",
+          targetIds: getMemoryEmbeddingCommandSecretTargetIds(),
+          agent,
         });
-        emitJsonOrText(defaultRuntime, Boolean(opts.json), result, formatEnvelopeForText);
-      });
-    });
+        const requestedProvider =
+          normalizeOptionalString(opts.provider) || modelRef?.provider || "auto";
+        const result = await createEmbeddingProvider({
+          config: cfg,
+          agentDir,
+          provider: requestedProvider,
+          fallback: "none",
+          model: modelRef?.model ?? "",
+        });
+        if (!result.provider) {
+          throw new Error(result.providerUnavailableReason ?? "No embedding provider available.");
+        }
+        const provider = result.provider;
+        let embeddings: number[][];
+        try {
+          embeddings = await provider.embedBatch(texts, { inputType: "document" });
+        } catch (err) {
+          // Cleanup failure must not replace the embedding error.
+          await Promise.resolve()
+            .then(() => provider.close?.())
+            .catch(() => {});
+          throw err;
+        }
+        await provider.close?.();
+        return {
+          ok: true,
+          capability: "embedding.create",
+          transport: "local" as const,
+          provider: provider.id,
+          model: provider.model,
+          attempts: result.fallbackFrom
+            ? [{ provider: result.fallbackFrom, outcome: "failed", error: result.fallbackReason }]
+            : [],
+          outputs: embeddings.map((embedding, index) => ({
+            text: texts[index],
+            embedding,
+            dimensions: embedding.length,
+          })),
+        } satisfies CapabilityEnvelope;
+      }),
+    );
 
   registerLocalProvidersCommand(
-    embedding,
+    embeddingCommand,
     "List embedding providers",
     async (cfg, agentId) => {
       const { providerHasGenericConfig } = await import("./shared.js");

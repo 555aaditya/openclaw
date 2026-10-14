@@ -8,11 +8,16 @@ import {
 } from "../config/sessions/session-accessor.js";
 import type { SessionEntry } from "../config/sessions/types.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { ensureProfileForEmail, linkEmail, setUserProfileRole } from "../state/user-profiles.js";
-import { createTestGatewayScheduler } from "../test-utils/gateway-scheduler-clock.js";
+import { linkEmail, setUserProfileRole } from "../state/user-profile-writes.worker.js";
+import { ensureProfileForEmail } from "../state/user-profiles.js";
+import {
+  createGatewaySchedulerClock,
+  createTestGatewayScheduler,
+} from "../test-utils/gateway-scheduler-clock.js";
 import type { ControlUiSessionPullRequests } from "./control-ui-contract.js";
 import { prepareControlUiSessionPrRead } from "./control-ui-session-pr-read.js";
 import { createControlUiSessionPullRequestSubscriptions } from "./control-ui-session-pr-subscriptions.js";
+import { prepareGatewayRecipientProfile } from "./expected-profile.js";
 import type { OperatorScope } from "./operator-scopes.js";
 import { createGatewayConnectionState } from "./server-connection-state.js";
 import { handleGatewayRequest } from "./server-methods.js";
@@ -25,7 +30,7 @@ import { makeContextParams } from "./server-request-context.test-support.js";
 import { createGatewayWsTestSocket } from "./server/ws-connection.test-helpers.js";
 import { createOperatorWsClient } from "./server/ws-connection/authenticated-request-dispatch.test-support.js";
 import { getSessionRowProjection } from "./session-row-projection-access.js";
-import { loadGatewaySessionEntryReadOnly } from "./session-utils-store.js";
+import { loadGatewaySessionEntryReadOnlyAsync } from "./session-utils-store.js";
 
 const METHOD = "controlUi.sessionPullRequests.subscribe";
 export const sessionKey = "agent:main:guest-publication";
@@ -55,6 +60,8 @@ export async function createFixture(
   useDefaultLoader = false,
   initialSessionPatch: Partial<SessionEntry> = {},
 ) {
+  const clock = createGatewaySchedulerClock(Date.now());
+  const scheduler = createTestGatewayScheduler(clock.clock);
   const fixtureId = ++fixtureSequence;
   const readerEmail = `guest-publication-reader-${fixtureId}@example.test`;
   const profile = ensureProfileForEmail(readerEmail);
@@ -95,7 +102,7 @@ export async function createFixture(
   };
   await seed(sessionKey, profile.id, initialSessionPatch);
   const connections = createGatewayConnectionState({
-    scheduler: createTestGatewayScheduler(),
+    scheduler,
     bootId: "publication-read",
     cfg,
     getRuntimeConfig,
@@ -118,12 +125,14 @@ export async function createFixture(
       hasAvatar: false,
       updatedAt: 1,
     };
+    prepareGatewayRecipientProfile(client);
     connections.clients.add(client);
     return { client, socket, access };
   };
-  const reader = addReader("guest-publication-reader");
   const load = vi.fn<Load>(async () => snapshot);
   const subscriptions = createControlUiSessionPullRequestSubscriptions({
+    scheduler,
+    getSessionRowProjection: () => getSessionRowProjection(context),
     broadcastToConnIds: connections.broadcastToConnIds,
     isConnectionActive: connections.isConnectionActive,
     prepareRead: async (connId, session) => {
@@ -144,8 +153,15 @@ export async function createFixture(
   context.getRuntimeConfig = getRuntimeConfig;
   context.controlUiSessionPullRequests = subscriptions;
   await initializeSessionReadContext(context);
+  const reader = addReader("guest-publication-reader");
+  const projection = getSessionRowProjection(context);
+  if (!projection) {
+    throw new Error("Missing fixture session projection");
+  }
+  const detachProjection = connections.attachSessionRowProjection(projection);
   return {
     ...reader,
+    clock,
     addReader,
     profile,
     other,
@@ -208,7 +224,9 @@ export async function createFixture(
     },
     async close() {
       await subscriptions.stop();
+      await scheduler.stop();
       connections.clients.clear();
+      detachProjection();
       await disposeSessionReadContexts();
     },
     async removeSessions() {
@@ -217,7 +235,8 @@ export async function createFixture(
         if (original) {
           await deleteSessionEntryLifecycle({
             agentId: "main",
-            storePath: loadGatewaySessionEntryReadOnly(key, { agentId: "main" }).storePath,
+            storePath: (await loadGatewaySessionEntryReadOnlyAsync(key, { agentId: "main" }))
+              .storePath,
             target: { canonicalKey: key, storeKeys: [key] },
             expectedSessionId: original.sessionId,
             archiveTranscript: false,

@@ -1,4 +1,3 @@
-// Diagnostic session recovery types describe session recovery diagnostic payloads.
 import type {
   DiagnosticSessionActiveWorkKind,
   DiagnosticSessionState,
@@ -6,6 +5,7 @@ import type {
 
 type DiagnosticSessionRecoverySkipReason =
   | "active_embedded_run"
+  | "model_attempt_recovery"
   | "active_reply_work"
   | "human_input_wait"
   | "runtime_owned_wait"

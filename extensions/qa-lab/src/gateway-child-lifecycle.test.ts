@@ -2,8 +2,10 @@ import { readFileSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { extractErrorCode } from "openclaw/plugin-sdk/error-runtime";
+import { withinTest } from "openclaw/plugin-sdk/test-fixtures";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resolveQaStagedBundledPluginsRoot } from "./bundled-plugin-staging.js";
+import * as gatewaySetup from "./gateway-child-setup.js";
 import { createQaGatewayChild } from "./gateway-child.js";
 import { isQaPosixProcessGroupAlive, signalQaPosixProcessGroup } from "./posix-process-group.js";
 import { createTempDirHarness } from "./temp-dir.test-helper.js";
@@ -118,7 +120,10 @@ if (previous.length && failReplacement !== "false") {
   }
   process.exit(17);
 }
-http.createServer((_request, response) => response.end("ok")).listen(Number(args[args.indexOf("--port") + 1]), "127.0.0.1");
+http.createServer((request, response) => {
+  response.setHeader("content-type", "application/json");
+  response.end(JSON.stringify(request.url === "/readyz" ? { ready: true, agentDatabases: [] } : { ok: true }));
+}).listen(Number(args[args.indexOf("--port") + 1]), "127.0.0.1");
 }
 `,
   );
@@ -225,21 +230,6 @@ describe.skipIf(process.platform === "win32")("QA gateway lifetime ownership", (
     expect(await fs.readdir(root)).toEqual(["gateway.mjs"]);
   });
 
-  it("retains the startup error and confirms teardown after listening fails", async () => {
-    const { params, pids } = await fixture();
-    const failure = new Error("listening callback failed");
-    const owner = own({
-      ...params,
-      onListening: () => {
-        pids();
-        throw failure;
-      },
-    });
-    await expect(owner.start()).rejects.toMatchObject({ cause: failure });
-    await expect(owner.stop()).resolves.toEqual({ process: "confirmed-stopped", errors: [] });
-    expect(pids().every((pid) => !isQaPosixProcessGroupAlive(pid))).toBe(true);
-  });
-
   it.each([
     { failedWork: false, label: "successful" },
     { failedWork: true, label: "failed" },
@@ -325,38 +315,35 @@ describe.skipIf(process.platform === "win32")("QA gateway lifetime ownership", (
     expect(groups.every((pid) => !isQaPosixProcessGroupAlive(pid))).toBe(true);
   });
 
-  it("settles a failed replacement, not only its stopped predecessor", async () => {
-    const { params, pids } = await fixture(true);
-    const owner = own(params);
-    const gateway = await owner.start();
-    pids();
-    await expect(gateway.restartAfterStateMutation(async () => {})).rejects.toThrow("exitCode=17");
-    await expect(owner.stop()).resolves.toEqual({ process: "confirmed-stopped", errors: [] });
-    expect(pids()).toHaveLength(2);
-    expect(pids().every((pid) => !isQaPosixProcessGroupAlive(pid))).toBe(true);
-  });
-
   it.each(["startup", "replacement"] as const)(
     "preserves sanitized log evidence when explicit stop follows %s failure",
     async (phase) => {
       const { params, pids } = await fixture(phase === "replacement");
+      const failure = new Error("fixture listening failed");
+      let listeningLogs: (() => string) | undefined;
       const owner = own({
         ...params,
-        onListening: () => {
+        onListening: ({ logs }) => {
+          listeningLogs = logs;
           pids();
           if (phase === "startup") {
-            throw new Error("fixture listening failed");
+            throw failure;
           }
         },
       });
       if (phase === "startup") {
-        await expect(owner.start()).rejects.toThrow("fixture listening failed");
+        const started = owner.start();
+        await expect(started).rejects.toThrow("fixture listening failed");
+        await expect(started).rejects.toMatchObject({ cause: failure });
       } else {
         const gateway = await owner.start();
         await expect(gateway.restartAfterStateMutation(async () => {})).rejects.toThrow(
           "exitCode=17",
         );
       }
+      expect(listeningLogs?.()).toContain("QA_GATEWAY_ATTEMPT_1");
+      expect(listeningLogs?.()).toContain("apiKey=<redacted>");
+      expect(listeningLogs?.()).not.toContain("synthetic-fixture-secret");
       const artifactRoot = path.join(process.cwd(), ".artifacts/qa-e2e/startup-lease-fix");
       await fs.mkdir(artifactRoot, { recursive: true });
       const preserveToDir = await fs.mkdtemp(path.join(artifactRoot, "preserved-log-"));
@@ -369,6 +356,7 @@ describe.skipIf(process.platform === "win32")("QA gateway lifetime ownership", (
         expect(log).toContain(`QA_GATEWAY_ATTEMPT_${phase === "startup" ? 1 : 2}`);
         expect(log).toContain("apiKey=<redacted>");
         expect(log).not.toContain("synthetic-fixture-secret");
+        expect(pids()).toHaveLength(phase === "startup" ? 1 : 2);
         expect(pids().every((pid) => !isQaPosixProcessGroupAlive(pid))).toBe(true);
       } finally {
         await fs.rm(preserveToDir, { recursive: true, force: true });
@@ -480,7 +468,40 @@ describe.skipIf(process.platform === "win32")("QA gateway lifetime ownership", (
     },
   );
 
-  it("refreshes artifacts while a failed replacement group awaits confirmed termination", async () => {
+  it("refreshes artifacts while a failed replacement group awaits confirmed termination", async ({
+    signal: testSignal,
+  }) => {
+    const outputFlushed = new Map(
+      ["STILL_OWNED", "FINAL_OUTPUT"].map((text) => [text, Promise.withResolvers<void>()] as const),
+    );
+    for (const gate of outputFlushed.values()) {
+      void gate.promise.catch(() => undefined);
+    }
+    const prepare = gatewaySetup.prepareQaGatewayChild;
+    vi.spyOn(gatewaySetup, "prepareQaGatewayChild").mockImplementation(async (...args) => {
+      const setup = await prepare(...args);
+      const write = setup.stdoutLog.write.bind(setup.stdoutLog);
+      let flushed = "";
+      // The owner writes Buffers without callbacks. Observe its real write callback,
+      // so readiness means the forwarded output has reached the file, not just stdout.
+      vi.spyOn(setup.stdoutLog, "write").mockImplementation((chunk: Buffer) =>
+        write(chunk, (error) => {
+          if (error) {
+            for (const gate of outputFlushed.values()) {
+              gate.reject(error);
+            }
+            return;
+          }
+          flushed += chunk.toString("utf8");
+          for (const [text, gate] of outputFlushed) {
+            if (flushed.includes(`QA_DESCENDANT_${text}`)) {
+              gate.resolve();
+            }
+          }
+        }),
+      );
+      return setup;
+    });
     const { params, pids, emitOutput } = await fixture("descendant");
     const owner = own(params);
     const gateway = await owner.start();
@@ -518,19 +539,17 @@ describe.skipIf(process.platform === "win32")("QA gateway lifetime ownership", (
       await expect(fs.stat(gateway.tempRoot)).resolves.toBeDefined();
       expect((await readArtifacts(preserveToDir))[0]).not.toContain("QA_DESCENDANT_STILL_OWNED");
       await emitOutput();
-      await vi.waitFor(async () =>
-        expect(
-          await fs.readFile(path.join(gateway.tempRoot, "gateway.stdout.log"), "utf8"),
-        ).toContain("QA_DESCENDANT_STILL_OWNED"),
-      );
+      await withinTest(outputFlushed.get("STILL_OWNED")!.promise, testSignal);
+      expect(
+        await fs.readFile(path.join(gateway.tempRoot, "gateway.stdout.log"), "utf8"),
+      ).toContain("QA_DESCENDANT_STILL_OWNED");
       expect((await owner.stop({ preserveToDir })).process).toBe("unconfirmed");
       expect((await readArtifacts(preserveToDir))[0]).toContain("QA_DESCENDANT_STILL_OWNED");
       await emitOutput("FINAL_OUTPUT");
-      await vi.waitFor(async () =>
-        expect(
-          await fs.readFile(path.join(gateway.tempRoot, "gateway.stdout.log"), "utf8"),
-        ).toContain("QA_DESCENDANT_FINAL_OUTPUT"),
-      );
+      await withinTest(outputFlushed.get("FINAL_OUTPUT")!.promise, testSignal);
+      expect(
+        await fs.readFile(path.join(gateway.tempRoot, "gateway.stdout.log"), "utf8"),
+      ).toContain("QA_DESCENDANT_FINAL_OUTPUT");
     } finally {
       signalFault.mockRestore();
     }

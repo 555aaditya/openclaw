@@ -1,3 +1,4 @@
+import "../test-utils/prepare-compiled-subprocesses.js";
 import fs, { type FileHandle } from "node:fs/promises";
 import path from "node:path";
 import type { Root } from "@openclaw/fs-safe";
@@ -34,7 +35,8 @@ vi.mock("@openclaw/fs-safe/temp", async (importOriginal) => {
   };
 });
 vi.mock("./ffmpeg-exec.js", () => ({ runFfmpeg }));
-vi.mock("./media-probe.js", () => ({
+vi.mock("./media-probe.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./media-probe.js")>()),
   probePlaybackMediaFileDescriptor: vi.fn(async () => ({
     durationMs: 1000,
     audioCodec: "pcm_s16le",
@@ -71,7 +73,16 @@ async function createSource(fileName: string, contents: string | Buffer) {
   const fixturePath = path.join(tempHome.home, fileName);
   await fs.writeFile(fixturePath, contents);
   const sourcePath = await fs.realpath(fixturePath);
-  return { sourcePath, sourceStat: await fs.stat(sourcePath) };
+  const sourceStat = await fs.stat(sourcePath);
+  return {
+    sourcePath,
+    sourceStat: {
+      size: sourceStat.size,
+      mtimeMs: sourceStat.mtimeMs,
+      ctimeMs: sourceStat.ctimeMs,
+      exactIdentity: await fs.stat(sourcePath, { bigint: true }),
+    },
+  };
 }
 
 describe("playback input staging", () => {
@@ -85,7 +96,9 @@ describe("playback input staging", () => {
     runFfmpeg.mockImplementationOnce(async (args: string[]) => {
       inputPath = args[args.indexOf("-i") + 1];
       expect(inputPath).toBeDefined();
-      expect(await fs.readFile(inputPath!)).toEqual(contents);
+      const stagedInput = await fs.readFile(inputPath!);
+      expect(stagedInput).toHaveLength(contents.length);
+      expect(stagedInput.equals(contents), "complete staged ffmpeg input").toBe(true);
       await fs.writeFile(args.at(-1) ?? "", "normalized-audio");
       return "";
     });
@@ -94,7 +107,6 @@ describe("playback input staging", () => {
         ...source,
         mimeType: "audio/x-caf",
         kind: "audio" as const,
-        probe: { durationMs: 1000, audioStreamIndex: 0 },
       };
       expect(await playback.resolvePlaybackTranscode(params)).toEqual({ kind: "preparing" });
       await waitForPlaybackTranscodeJobsForTest("all");
@@ -113,6 +125,14 @@ describe("playback input staging", () => {
     "rejects a source that changes after open via %s before starting ffmpeg",
     async (change) => {
       const source = await createSource(`changed-${change}.caf`, "stable-source");
+      const params = {
+        ...source,
+        mimeType: "audio/x-caf",
+        kind: "audio" as const,
+      };
+      await expect(playback.resolvePlaybackMetadataForSource(params)).resolves.toMatchObject({
+        playback: "transcode",
+      });
       let changed = false;
       __setFsSafeTestHooksForTest({
         afterOpenedPathIdentityCheck: async (filePath) => {
@@ -125,10 +145,11 @@ describe("playback input staging", () => {
           } else if (change === "truncate") {
             await fs.truncate(filePath, 1);
           } else if (change === "rewrite") {
+            const beforeRewrite = await fs.stat(filePath);
             await fs.writeFile(filePath, "edited-source");
             await fs.utimes(
               filePath,
-              source.sourceStat.atime,
+              beforeRewrite.atime,
               new Date(source.sourceStat.mtimeMs + 2000),
             );
             expect((await fs.stat(filePath)).mtimeMs).not.toBe(source.sourceStat.mtimeMs);
@@ -139,12 +160,6 @@ describe("playback input staging", () => {
         },
       });
       try {
-        const params = {
-          ...source,
-          mimeType: "audio/x-caf",
-          kind: "audio" as const,
-          probe: { durationMs: 1000, audioStreamIndex: 0 },
-        };
         expect(await playback.resolvePlaybackTranscode(params)).toEqual({ kind: "preparing" });
         await expect(waitForPlaybackTranscodeJobsForTest("all")).rejects.toThrow(
           change === "grow" ? /exceeds limit/ : /changed|mismatch/,
@@ -194,7 +209,6 @@ describe("playback input staging", () => {
           ...source,
           mimeType: "audio/x-caf",
           kind: "audio",
-          probe: { durationMs: 1000, audioStreamIndex: 0 },
         }),
       ).toEqual({ kind: "preparing" });
       const outcome = await waitForPlaybackTranscodeJobsForTest("all").then(
@@ -234,7 +248,6 @@ describe("playback input staging", () => {
         ...source,
         mimeType: "audio/x-caf",
         kind: "audio" as const,
-        probe: { durationMs: 1000, audioStreamIndex: 0 },
       };
       expect(await playback.resolvePlaybackTranscode(params)).toEqual({ kind: "preparing" });
       await expect(waitForPlaybackTranscodeJobsForTest("all")).rejects.toBe(cleanupError);

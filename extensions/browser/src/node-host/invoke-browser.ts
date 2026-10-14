@@ -1,9 +1,4 @@
-/**
- * Node-host browser.proxy command implementation for delegated Browser control
- * requests.
- */
 import fsPromises from "node:fs/promises";
-import { toUSVString } from "node:util";
 import { detectMime } from "openclaw/plugin-sdk/media-mime";
 import {
   asNullableRecord,
@@ -93,7 +88,7 @@ const BROWSER_PROXY_STATUS_TIMEOUT_MS = 750;
 const BROWSER_PROXY_MAX_ENCODED_PAYLOAD_BYTES = 24 * 1024 * 1024;
 
 function countBrowserProxyEncodedPayloadBytes(serialized: string): number {
-  // Native JSON serialization has already escaped C0 units; raw JSON cannot contain them.
+  // Native JSON serialization has already escaped C0 units and lone surrogates.
   let bytes = Buffer.byteLength(serialized, "utf8") + 2;
   for (const character of '"\\') {
     const code = character.charCodeAt(0);
@@ -107,19 +102,6 @@ function countBrowserProxyEncodedPayloadBytes(serialized: string): number {
         }
       }
       index = serialized.indexOf(character, index);
-    }
-  }
-  const wellFormed = toUSVString(serialized);
-  if (wellFormed !== serialized) {
-    // Raw JSON may preserve lone surrogates. Replacement keeps UTF-16 positions intact.
-    for (
-      let index = wellFormed.indexOf("\ufffd");
-      index !== -1;
-      index = wellFormed.indexOf("\ufffd", index + 1)
-    ) {
-      if (serialized.charCodeAt(index) !== 0xfffd) {
-        bytes += 3;
-      }
     }
   }
   return bytes;
@@ -165,25 +147,11 @@ async function ensureBrowserControlService(): Promise<void> {
     }
     admittedBrowserControlState = started;
   })();
-  const sharedStartup = startup.finally(() => {
+  browserControlReady = startup.finally(() => {
     // Share pending failures, but never keep settled startup as runtime authority.
-    if (browserControlReady === sharedStartup) {
-      browserControlReady = null;
-    }
+    browserControlReady = null;
   });
-  browserControlReady = sharedStartup;
-  return sharedStartup;
-}
-
-function isProfileAllowed(params: { allowProfiles: string[]; profile?: string | null }) {
-  const { allowProfiles, profile } = params;
-  if (!allowProfiles.length) {
-    return true;
-  }
-  if (!profile) {
-    return false;
-  }
-  return allowProfiles.includes(profile.trim());
+  return browserControlReady;
 }
 
 function collectBrowserProxyPaths(payload: unknown): string[] {
@@ -311,7 +279,6 @@ function formatBrowserProxyTimeoutMessage(params: {
   return parts.join("; ");
 }
 
-/** Executes a serialized browser.proxy command and returns a serialized result payload. */
 export async function runBrowserProxyCommand(
   paramsJSON?: string | null,
   command = BROWSER_PROXY_COMMAND,
@@ -385,7 +352,8 @@ export async function runBrowserProxyCommand(
     const selected = profile?.name || effectiveProfile || requestedProfile;
     if (
       (path !== "/profiles" || selected) &&
-      !isProfileAllowed({ allowProfiles: current.allowProfiles, profile: selected })
+      current.allowProfiles.length > 0 &&
+      (!selected || !current.allowProfiles.includes(selected.trim()))
     ) {
       throw new Error("INVALID_REQUEST: browser profile not allowed");
     }
@@ -430,9 +398,9 @@ export async function runBrowserProxyCommand(
             timeoutMs: liveResolved.remoteCdpTimeoutMs,
             ssrfPolicy: resolveCdpControlPolicy(profile, liveResolved.ssrfPolicy),
             signal: invocationSignal,
-            shouldClose: () => {
+            closeIfCurrent: async (dispatch) => {
               assertCurrent(profile);
-              return true;
+              return await dispatch();
             },
           })
         : { status: "ownership-mismatch" as const };

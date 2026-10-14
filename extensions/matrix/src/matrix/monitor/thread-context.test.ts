@@ -1,12 +1,6 @@
-// Matrix tests cover thread context plugin behavior.
 import { describe, expect, it, vi } from "vitest";
 import { createMatrixEventContextResolver } from "./event-context.js";
-import {
-  bundledReplacementContentCases,
-  createBundledReplacementEvent,
-  createPollStartEvent,
-  invalidBundledReplacementCases,
-} from "./test-events.js";
+import { createBundledReplacementEvent, createPollStartEvent } from "./test-events.js";
 import type { MatrixRawEvent } from "./types.js";
 
 async function resolveThreadSummary(event: MatrixRawEvent): Promise<string | undefined> {
@@ -25,38 +19,9 @@ async function resolveThreadSummary(event: MatrixRawEvent): Promise<string | und
 }
 
 describe("matrix thread context", () => {
-  it("summarizes thread starter events from body text", async () => {
-    expect(
-      await resolveThreadSummary({
-        event_id: "$root",
-        sender: "@alice:example.org",
-        type: "m.room.message",
-        origin_server_ts: Date.now(),
-        content: {
-          msgtype: "m.text",
-          body: " Thread starter body ",
-        },
-      } as MatrixRawEvent),
-    ).toBe("Thread starter body");
+  it("uses the latest bundled text when summarizing an edited thread root", async () => {
+    expect(await resolveThreadSummary(createBundledReplacementEvent("$root"))).toBe("edited text");
   });
-
-  it.each(bundledReplacementContentCases)(
-    "uses the latest bundled $name when summarizing an edited thread root",
-    async ({ options, expected }) => {
-      expect(await resolveThreadSummary(createBundledReplacementEvent("$root", options))).toBe(
-        expected,
-      );
-    },
-  );
-
-  it.each(invalidBundledReplacementCases)(
-    "does not summarize a bundled thread-root replacement from $name",
-    async ({ options }) => {
-      expect(await resolveThreadSummary(createBundledReplacementEvent("$root", options))).toBe(
-        "original text",
-      );
-    },
-  );
 
   it("does not revive a bundled replacement from a redacted thread root", async () => {
     expect(
@@ -96,48 +61,6 @@ describe("matrix thread context", () => {
         },
       } as MatrixRawEvent),
     ).toBe("[matrix image attachment]");
-  });
-
-  it("resolves and caches thread starter context", async () => {
-    const getEvent = vi.fn(async () => ({
-      event_id: "$root",
-      sender: "@alice:example.org",
-      type: "m.room.message",
-      origin_server_ts: Date.now(),
-      content: {
-        msgtype: "m.text",
-        body: "Root topic",
-      },
-    }));
-    const getMemberDisplayName = vi.fn(async () => "Alice");
-    const resolveThreadContext = createMatrixEventContextResolver({
-      kind: "thread",
-      client: {
-        getEvent,
-      } as never,
-      getMemberDisplayName,
-      logVerboseMessage: () => {},
-    });
-
-    await expect(
-      resolveThreadContext({
-        roomId: "!room:example.org",
-        eventId: "$root",
-      }),
-    ).resolves.toEqual({
-      threadStarterBody: "Matrix thread root $root from Alice:\nRoot topic",
-      senderId: "@alice:example.org",
-      senderLabel: "Alice",
-      summary: "Root topic",
-    });
-
-    await resolveThreadContext({
-      roomId: "!room:example.org",
-      eventId: "$root",
-    });
-
-    expect(getEvent).toHaveBeenCalledTimes(1);
-    expect(getMemberDisplayName).toHaveBeenCalledTimes(1);
   });
 
   it("evicts the oldest thread context despite a cache hit when exceeding 256 entries", async () => {

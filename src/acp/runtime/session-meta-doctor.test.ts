@@ -10,10 +10,11 @@ import {
   coercePluginDoctorContractModule,
   type PluginDoctorContractModule,
 } from "../../plugins/doctor-contract-module.js";
-import { getCachedPluginModuleLoader } from "../../plugins/plugin-module-loader-cache.js";
 import { sessionChanges } from "../../sessions/session-row-changes.js";
+import { runOpenClawStateWriteTransaction } from "../../state/openclaw-state-db.js";
 import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
-import { readAcpSessionMeta, upsertAcpSessionMeta } from "./session-meta.js";
+import { buildAcpDatabaseSessionKey } from "./session-meta-keys.js";
+import { readAcpSessionEntry, upsertAcpSessionMeta } from "./session-meta.js";
 
 it("inspects without creating state and conditionally updates only the proven current owner", async () => {
   await withOpenClawTestState({ label: "acp-doctor-owner" }, async ({ env, stateDir }) => {
@@ -49,6 +50,16 @@ it("inspects without creating state and conditionally updates only the proven cu
         }),
       });
     }
+    // Legacy JSON retains the first duplicate in its promoted column until rewritten.
+    runOpenClawStateWriteTransaction(
+      ({ db }) => {
+        db.prepare("UPDATE acp_sessions SET identity_json = ? WHERE session_key = ?").run(
+          '{"state":"resolved","source":"ensure","lastUpdatedAt":10,"acpxRecordId":"record-work","acpxSessionId":"upstream-work","acpxSessionId":"normalized-work"}',
+          buildAcpDatabaseSessionKey("global", "work"),
+        );
+      },
+      { env },
+    );
     const evidence = await readOnly.inspectAcpSessionClaims!();
     expect(evidence.incomplete).toEqual([]);
     expect(evidence.claims.map((claim) => claim.agentId).toSorted()).toEqual([
@@ -76,13 +87,25 @@ it("inspects without creating state and conditionally updates only the proven cu
       unsubscribe();
     }
     expect(changes).toEqual([{ agentId: "work", sessionKey: "global" }]);
-    expect(readAcpSessionMeta({ cfg, env, agentId: "work", sessionKey: "global" })).toEqual({
+    expect(readAcpSessionEntry({ cfg, env, agentId: "work", sessionKey: "global" })?.acp).toEqual({
       ...claim.meta,
       runtimeSessionName: "owned-work",
       identity: { ...claim.meta.identity, acpxRecordId: "owned-record-work" },
     });
     expect(
-      readAcpSessionMeta({ cfg, env, agentId: "main", sessionKey: "global" })?.runtimeSessionName,
+      runOpenClawStateWriteTransaction(
+        ({ db }) =>
+          db
+            .prepare("SELECT resume_acpx_session_id FROM acp_sessions WHERE session_key = ?")
+            .get(buildAcpDatabaseSessionKey("global", "work")),
+        { env },
+      ),
+    ).toEqual({
+      resume_acpx_session_id: "normalized-work",
+    });
+    expect(
+      readAcpSessionEntry({ cfg, env, agentId: "main", sessionKey: "global" })?.acp
+        ?.runtimeSessionName,
     ).toBe("old-main");
     expect(() => repair.updateAcpSessionIdentity!(update)).toThrow("metadata changed");
     const latest = (await repair.inspectAcpSessionClaims!()).claims.find(
@@ -155,7 +178,13 @@ it.each(["global", "shared-project"])(
           acpxSessionId: handle.backendSessionId,
         },
       };
-      await upsertAcpSessionMeta({ cfg, agentId: "work", sessionKey, mutate: () => meta });
+      await upsertAcpSessionMeta({
+        cfg,
+        env: state.env,
+        agentId: "work",
+        sessionKey,
+        mutate: () => meta,
+      });
       const freeHandle = await runtime.ensureSession({
         sessionKey: "agent:free-harness:acp:unrelated",
         agent: "fixture",
@@ -164,6 +193,7 @@ it.each(["global", "shared-project"])(
       await runtime.close({ handle: freeHandle, reason: "offline-doctor" });
       const freeTarget = {
         cfg,
+        env: state.env,
         agentId: "free-harness",
         sessionKey: "agent:free-harness:acp:unrelated",
       };
@@ -190,12 +220,9 @@ it.each(["global", "shared-project"])(
         origin: "bundled",
         sourcePreferred: true,
       })!.modulePath;
-      const load = getCachedPluginModuleLoader({
-        modulePath,
-        importerUrl: import.meta.url,
-      });
+      // Reuse Vitest's module graph; a second Jiti graph blocks test timers during cold loading.
       const { stateMigrations } = coercePluginDoctorContractModule(
-        load(modulePath) as PluginDoctorContractModule,
+        (await import(modulePath)) as PluginDoctorContractModule,
       );
       const migration = stateMigrations.find((item) => item.id === "acpx-session-owner-resources")!;
       const context = createPluginDoctorStateMigrationContext({
@@ -212,8 +239,17 @@ it.each(["global", "shared-project"])(
       });
       expect(result.warnings).toEqual([]);
       expect(result.changes.length).toBeGreaterThan(0);
-      const migrated = readAcpSessionMeta({ cfg, agentId: "work", sessionKey });
-      expect(migrated?.identity?.acpxRecordId).toMatch(/^openclaw-owner-v1-/);
+      const migrated = readAcpSessionEntry({
+        cfg,
+        env: state.env,
+        agentId: "work",
+        sessionKey,
+      })?.acp;
+      if (explicit) {
+        expect(migrated?.identity?.acpxRecordId).toBe("agent:work:shared-project");
+      } else {
+        expect(migrated?.identity?.acpxRecordId).toMatch(/^openclaw-owner-v1-/);
+      }
       expect(
         (await readOnly.inspectAcpSessionClaims!()).claims.find(
           (claim) => claim.agentId === "free-harness",
