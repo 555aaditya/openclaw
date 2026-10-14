@@ -125,6 +125,7 @@ it.each([
     provider.append(host);
     document.body.append(provider);
     await host.updateComplete;
+    await provider.querySelector<LitElement>("openclaw-plugin-view")?.updateComplete;
     await questionPanelIn(provider);
     await vi.waitFor(() => {
       expect(provider.querySelectorAll("openclaw-chat-question-panel")).toHaveLength(1);
