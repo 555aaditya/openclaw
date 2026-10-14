@@ -142,10 +142,11 @@ function BoardWidgetCellContent(
     };
   });
   const activeKinds = () => gateway.read()?.hello?.controlUiWidgetKinds ?? [];
-  const contribution = () =>
+  const contribution = createMemo(() =>
     props.widget?.contentKind === "plugin" && !props.widget.frameUrl
       ? getPluginWidgetKindContribution(props.widget.pluginKind, activeKinds())
-      : null;
+      : null,
+  );
 
   async function runAction(action: () => Promise<void>, failureMessage?: string) {
     if (actionPending || props.busy) {
