@@ -10,14 +10,18 @@ let collecting = false;
 let idle = false;
 let generation = 0;
 
-async function collectWorkerIdleGarbage(): Promise<void> {
-  pending = undefined;
+function hasIdleGarbageGrowth(): boolean {
   // These isolate-local counters avoid heap walks; external already includes ArrayBuffers.
   const memory = process.memoryUsage();
-  if (
-    memory.heapUsed <= collectedMemory.heapUsed + IDLE_GC_GROWTH_BYTES &&
-    memory.external <= collectedMemory.external + IDLE_GC_GROWTH_BYTES
-  ) {
+  return (
+    memory.heapUsed > collectedMemory.heapUsed + IDLE_GC_GROWTH_BYTES ||
+    memory.external > collectedMemory.external + IDLE_GC_GROWTH_BYTES
+  );
+}
+
+async function collectWorkerIdleGarbage(): Promise<void> {
+  pending = undefined;
+  if (!hasIdleGarbageGrowth()) {
     return;
   }
   const collectingGeneration = generation;
@@ -55,6 +59,9 @@ export function scheduleWorkerIdleGc(): void {
   }
   idle = true;
   if (pending || collecting) {
+    return;
+  }
+  if (!hasIdleGarbageGrowth()) {
     return;
   }
   // A reply can immediately trigger another task; allow that burst to finish first.

@@ -566,10 +566,10 @@ describe("personal publication authority and recovery", () => {
           }
           if (race === "session") {
             const original = mocks.loadSession.getMockImplementation()!;
-            mocks.loadSession.mockImplementation((key: string) => ({
-              ...original(key),
-              entry: { sessionId: "replacement-session" },
-            }));
+            await upsertSessionEntryCore(
+              { agentId: "main", sessionKey: SESSION_KEY },
+              { ...original(SESSION_KEY).entry, sessionId: "replacement-session" },
+            );
           }
         }
         return await fallback(argv, options);

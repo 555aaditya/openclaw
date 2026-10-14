@@ -17,7 +17,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-it("lets task bursts finish before collecting heap or external memory growth", async () => {
+it("lets task bursts finish and only schedules collection after heap or external growth", async () => {
   vi.useFakeTimers();
   const memory = process.memoryUsage();
   let heapUsed = 64 * 1024 * 1024;
@@ -42,12 +42,14 @@ it("lets task bursts finish before collecting heap or external memory growth", a
   cancelWorkerIdleGc();
   heapUsed += 32 * 1024 * 1024;
   scheduleWorkerIdleGc();
+  expect(vi.getTimerCount()).toBe(0);
   await vi.advanceTimersByTimeAsync(1_000);
   expect(collect).toHaveBeenCalledTimes(1);
 
   cancelWorkerIdleGc();
   heapUsed++;
   scheduleWorkerIdleGc();
+  expect(vi.getTimerCount()).toBe(1);
   await vi.advanceTimersByTimeAsync(1_000);
   expect(collect).toHaveBeenCalledTimes(2);
 
@@ -56,18 +58,21 @@ it("lets task bursts finish before collecting heap or external memory growth", a
   heapUsed = 8 * 1024 * 1024;
   external = 64 * 1024 * 1024;
   scheduleWorkerIdleGc();
+  expect(vi.getTimerCount()).toBe(1);
   await vi.advanceTimersByTimeAsync(1_000);
   expect(collect).toHaveBeenCalledTimes(3);
 
   cancelWorkerIdleGc();
   external += 32 * 1024 * 1024;
   scheduleWorkerIdleGc();
+  expect(vi.getTimerCount()).toBe(0);
   await vi.advanceTimersByTimeAsync(1_000);
   expect(collect).toHaveBeenCalledTimes(3);
 
   cancelWorkerIdleGc();
   external++;
   scheduleWorkerIdleGc();
+  expect(vi.getTimerCount()).toBe(1);
   await vi.advanceTimersByTimeAsync(1_000);
   expect(collect).toHaveBeenCalledTimes(4);
 });

@@ -3,12 +3,16 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { clearRuntimeConfigSnapshot, setRuntimeConfigSnapshot } from "../../config/io.js";
+import { resolveSessionStorePathCore } from "../../config/sessions/paths.js";
+import { replaceSessionEntry } from "../../config/sessions/session-accessor.js";
 import { runSqliteImmediateTransactionSync } from "../../infra/sqlite-transaction.js";
 import * as operationAdmission from "../../infra/sqlite-worker-operation-admission.js";
 import { sqliteWorkerOwnerProbe as probe } from "../../infra/sqlite-worker-owner-probe.test-support.js";
 import { createDeferredCore } from "../../shared/deferred.js";
 import { observeMainThreadSql } from "../../test-utils/main-thread-sql-spies.test-support.js";
 import { createGatewayWorkerPlacementReclaimBarriers } from "../server-worker-placement-reclaim.js";
+import { resolveGatewaySessionStoreTargetInWorker } from "../session-utils-store-worker.js";
+import { resolveCanonicalSessionEntryFromStoreKeys } from "../session-utils-store.js";
 import { REQUEST, seedActivePlacement } from "./placement-dispatch-test-fixtures.js";
 import { createHarness } from "./placement-dispatch-test-harness.js";
 import type { createWorkerPlacementDispatchService } from "./placement-dispatch.js";
@@ -278,18 +282,26 @@ describe("worker Gateway move recovery", () => {
       const pending = await placements.listPendingWorkspaceResultsAsync();
       const entry = { sessionId: active.sessionId, updatedAt: 1 };
       const target = {
-        storePath: path.join(support.testState.root, "sessions.sqlite"),
+        storePath: resolveSessionStorePathCore(undefined, { agentId: active.agentId }),
         canonicalKey: active.sessionKey,
         storeKeys: [active.sessionKey],
         agentId: active.agentId,
         store: { [active.sessionKey]: entry },
       };
+      await replaceSessionEntry(
+        { agentId: active.agentId, sessionKey: active.sessionKey, storePath: target.storePath },
+        entry,
+      );
       const barriers = createGatewayWorkerPlacementReclaimBarriers({
         placements,
         loadSessionRuntime: async () => ({
           managedWorktrees: { findLiveByOwner: async () => undefined },
-          resolveGatewaySessionStoreTargetWithStore: () => target,
-          resolveCanonicalSessionEntryFromStoreKeys: () => entry,
+          resolveGatewaySessionStoreTargetInWorker: (params) =>
+            resolveGatewaySessionStoreTargetInWorker({
+              ...params,
+              cfg: { ...params.cfg, session: { ...params.cfg.session, store: target.storePath } },
+            }),
+          resolveCanonicalSessionEntryFromStoreKeys,
         }),
         cancelSessionWork: async ({ assertCurrent }) => assertCurrent(),
         revokeSessionAuthority: vi.fn(),

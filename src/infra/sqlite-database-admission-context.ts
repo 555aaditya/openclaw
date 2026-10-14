@@ -24,6 +24,7 @@ const state = resolveGlobalSingleton(Symbol.for("openclaw.sqliteDatabaseAdmissio
   rolledBack: new WeakSet<DatabaseSync>(),
   dataWriters: new WeakMap<DatabaseSync, Admission | undefined>(),
   localWriteRevisions: new WeakMap<DatabaseSync, number>(),
+  writeListeners: new WeakMap<Admission, Set<() => void>>(),
   ddlRevisions: new WeakMap<DatabaseSync, number>(),
   schemaDirty: new WeakSet<DatabaseSync>(),
   localSchemaRevisions: new Map<string, number>(),

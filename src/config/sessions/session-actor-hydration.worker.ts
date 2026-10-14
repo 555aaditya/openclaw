@@ -1,4 +1,5 @@
 import type { SessionTreeEntry } from "@openclaw/agent-core";
+import { sql } from "kysely";
 import { jsonArrayFrom, jsonObjectFrom } from "kysely/helpers/sqlite";
 import { iterateSessionContextEntries } from "../../../packages/agent-core/src/harness/session/session.js";
 import {
@@ -14,6 +15,7 @@ import {
   readParticipantRecord,
   withProjectedParticipants,
 } from "./session-accessor.sqlite-participant-projection.js";
+import { seedSessionActorContextMetadata } from "./session-actor-context-metadata.js";
 import type {
   SessionActorHotState,
   SessionActorTarget,
@@ -25,6 +27,7 @@ import { sessionColdArchiveMetadataColumns } from "./session-cold-storage-state.
 import { normalizeSessionContextEntryBoundaries } from "./session-entry-navigation.js";
 import { sessionEntrySnapshotColumnsForKeys } from "./session-entry-snapshots.js";
 import { projectSessionTranscriptFacts } from "./session-transcript-projection-facts.js";
+import { transcriptEventReadBytesSql } from "./session-transcript-read-bytes.js";
 import { collectSessionEntryLookupKeys } from "./store-entry.js";
 import { transcriptEventModelNavigationSql } from "./transcript-payload.js";
 import {
@@ -269,7 +272,14 @@ export function hydrateSessionActorState(
         jsonArrayFrom(
           db
             .selectFrom("transcript_events")
-            .select(["seq", transcriptEventModelNavigationSql().as("navigation_json")])
+            .select([
+              "seq",
+              "navigation_type",
+              "navigation_valid",
+              transcriptEventModelNavigationSql().as("navigation_json"),
+              /* kysely-allow-raw: retain exact stored JSONL sizes without loading payloads. */
+              sql<number>`${transcriptEventReadBytesSql()} + 1`.as("serialized_bytes"),
+            ])
             .where("transcript_events.session_id", "=", eb.ref("session_nodes.current_session_id"))
             .orderBy("seq"),
         ).as("actor_navigation"),
@@ -348,7 +358,8 @@ export function hydrateSessionActorState(
       row,
     ]),
   );
-  const navigation = (selected ? decodeJsonProjection(selected.actor_navigation) : []).map((row) =>
+  const storedNavigation = selected ? decodeJsonProjection(selected.actor_navigation) : [];
+  const navigation = storedNavigation.map((row) =>
     Object.assign(
       // SAFETY: The canonical model codec preserves discriminants with readable empty payloads.
       JSON.parse(row.navigation_json) as SessionTreeEntry,
@@ -408,15 +419,37 @@ export function hydrateSessionActorState(
         : undefined,
     },
   };
+  seedSessionActorContextMetadata(state, storedNavigation);
   state.hot = projectSessionActorHotState(state);
   return state;
 }
 
 /** Derives disclosure only from the actor's owned postimage, without touching SQLite. */
 export function projectSessionActorHotState(state: SessionActorStoredState): SessionActorHotState {
-  const hot = structuredClone(state.hot);
+  // Detach retained facts without cloning the derived collections replaced below.
+  const hot: SessionActorHotState = {
+    ...structuredClone({
+      target: state.hot.target,
+      version: state.hot.version,
+      entry: state.hot.entry,
+      participants: state.hot.participants,
+      members: state.hot.members,
+    }),
+    writeToken: state.hot.writeToken,
+    hasBoard: state.hasBoard,
+    dependencySessionIds: [],
+    pendingInputs: [],
+    completionKeys: [],
+    transcript: {
+      version: { ...state.hot.transcript.version },
+      watermark: { ...state.hot.transcript.watermark },
+      anchorsState: "unavailable",
+      anchors: [],
+      idempotency: [],
+      modelContext: { kind: "resident", entries: [] },
+    },
+  };
   hot.transcript.projection = projectSessionTranscriptFacts(state);
-  hot.hasBoard = state.hasBoard;
   hot.dependencySessionIds = [
     ...new Set([
       ...[...state.entryRows.values()].flatMap((row) => (row ? [row.entry.sessionId] : [])),
@@ -433,7 +466,6 @@ export function projectSessionActorHotState(state: SessionActorStoredState): Ses
       ? [{ key: row.message_idempotency_key, eventId: row.event_id, rawSeq: row.seq }]
       : [],
   );
-  hot.transcript.anchors = [];
   hot.transcript.anchorsState =
     !state.transcript.coldArchive && hot.transcript.version.rawSeq === null
       ? "resident"
@@ -472,8 +504,7 @@ export function projectSessionActorHotState(state: SessionActorStoredState): Ses
   if (state.transcript.coldArchive) {
     hot.transcript.modelContext = { kind: "unavailable", reason: "cold", generation };
   } else {
-    const navigation = structuredClone(state.transcript.navigation);
-    const tree = scanSessionTranscriptTree(navigation);
+    const tree = scanSessionTranscriptTree(state.transcript.navigation);
     if (tree.hasInvalidLeafControl) {
       hot.transcript.modelContext = { kind: "unavailable", reason: "projection", generation };
     } else {

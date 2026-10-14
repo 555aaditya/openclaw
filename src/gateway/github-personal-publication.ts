@@ -53,7 +53,11 @@ export type PersonalGitHubSessionAction = PersonalGitHubAction & {
 export type PersonalGitHubSessionActionV2 = PersonalGitHubSessionAction &
   Pick<GitHubPublicationRequesterV2, "version" | "signal" | "prepareSource">;
 type Selection = { generation: string; account: { accountId: number; login: string } };
-type PersonalPublicationWorkspace = { assertCurrent: () => void; assertCustody: () => void };
+type PersonalPublicationWorkspace = {
+  assertCurrent: () => void;
+  assertCustody: () => void;
+  worktree: Awaited<ReturnType<typeof readGitHubPublicationWorktreeOwner>>["worktree"];
+};
 
 export {
   preparePersonalRepositoryPublicationStatus,
@@ -99,12 +103,12 @@ export async function bindPersonalGitHubPublicationSelection(
   let prepared = await prepareUserGitHubConnection(action.owner).catch(rejectRevokedConnection);
   const assertCurrent = () => {
     action.assertCurrent();
+    let record: ReturnType<typeof prepared.read>;
     try {
-      prepared.assertCurrent();
+      record = prepared.read();
     } catch (error) {
       rejectRevokedConnection(error);
     }
-    const record = prepared.connection;
     if (
       record?.generation !== selected.generation ||
       record.selection.kind !== "connected" ||
@@ -142,7 +146,9 @@ export async function preparePersonalGitHubPublicationSelection(
   assertCurrent();
   try {
     await requestCurrentPersonalGitHubRefresh(bound.owner);
+    await bound.refresh();
   } catch {
+    await bound.refresh();
     assertCurrent();
     throw new Error(
       "My GitHub credentials are unavailable; reconnect My GitHub before publishing.",
@@ -196,6 +202,8 @@ export function createPersonalGitHubPublicationCoordinator(
     action.assertCurrent();
     return await placements.withLocalWorkspaceReservation(action, async (assertReservation) => {
       const worktreeOwner = await readGitHubPublicationWorktreeOwner(action);
+      using _ = { [Symbol.dispose]: () => worktreeOwner.release() };
+
       const { worktree } = worktreeOwner;
       action.assertCurrent();
       assertReservation();
@@ -218,7 +226,7 @@ export function createPersonalGitHubPublicationCoordinator(
       };
       try {
         assertCurrent();
-        return await run({ assertCurrent, assertCustody });
+        return await run({ assertCurrent, assertCustody, worktree });
       } finally {
         await lease.release();
       }
@@ -348,7 +356,7 @@ export function createPersonalGitHubPublicationCoordinator(
           workspace.assertCurrent();
           bound.assertCurrent();
         };
-        const { worktree } = await readGitHubPublicationWorktreeOwner(action);
+        const { worktree } = workspace;
         assertCurrent();
         const identity = await preparePersonalGitHubPublicationSelection(
           bound,

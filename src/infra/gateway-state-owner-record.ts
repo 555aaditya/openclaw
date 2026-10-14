@@ -13,7 +13,11 @@ import {
   readGatewayLockProcessNamespace,
   type LockPayload,
 } from "./gateway-lock-payload.js";
-import { StateDatabaseAdmissionPendingError } from "./gateway-state-owner-errors.js";
+import {
+  StateDatabaseAccessError,
+  StateDatabaseAdmissionPendingError,
+  StateDatabaseOfflineMaintenanceError,
+} from "./gateway-state-owner-errors.js";
 import { isLockOwnerDefinitelyStale } from "./stale-lock-file.js";
 
 /** Admission and reclamation use the same namespace-qualified PID evidence. */
@@ -31,7 +35,11 @@ export function isGatewayStateOwnerDefinitelyStale(value: unknown, lockPath: str
   );
 }
 
-export { StateDatabaseAdmissionPendingError } from "./gateway-state-owner-errors.js";
+export {
+  StateDatabaseAccessError,
+  StateDatabaseAdmissionPendingError,
+  StateDatabaseOfflineMaintenanceError,
+} from "./gateway-state-owner-errors.js";
 
 /** Persisted ownership can identify a holder but cannot lend this process maintenance authority. */
 export function assertPersistedStateDatabaseAccessAllowed(params: {
@@ -40,7 +48,7 @@ export function assertPersistedStateDatabaseAccessAllowed(params: {
   assertMaintenance: () => void;
 }): void {
   const { databasePath, ownerPath, assertMaintenance } = params;
-  const unavailable = `OpenClaw state ownership at ${databasePath} could not be verified; retry after maintenance finishes.`;
+  const unavailable = `OpenClaw state ownership at ${databasePath} could not be verified from ${ownerPath}; restart the Gateway.`;
   let raw: string;
   try {
     raw = fs.readFileSync(ownerPath, "utf8");
@@ -48,7 +56,7 @@ export function assertPersistedStateDatabaseAccessAllowed(params: {
     if (extractErrorCode(error) === "ENOENT") {
       return;
     }
-    throw new Error(unavailable, { cause: error });
+    throw new StateDatabaseAccessError(unavailable, { cause: error });
   }
   const owner = parseGatewayLockPayload(raw);
   if (!owner) {
@@ -56,7 +64,7 @@ export function assertPersistedStateDatabaseAccessAllowed(params: {
     throw new StateDatabaseAdmissionPendingError(databasePath, unavailable);
   }
   if (!Number.isSafeInteger(owner.pid) || owner.pid <= 0) {
-    throw new Error(unavailable);
+    throw new StateDatabaseAccessError(unavailable);
   }
   if (isGatewayStateOwnerDefinitelyStale(owner, ownerPath)) {
     return;
@@ -67,7 +75,7 @@ export function assertPersistedStateDatabaseAccessAllowed(params: {
     return;
   }
   if (!isPidAlive(owner.pid)) {
-    throw new Error(unavailable);
+    throw new StateDatabaseAccessError(unavailable);
   }
   const role = owner.role ?? "gateway";
   if (role === "gateway" || role === "agent-embedded") {
@@ -81,7 +89,7 @@ export function assertPersistedStateDatabaseAccessAllowed(params: {
   if (owner.stateOwnerKind === "schema" && owner.role === "sqlite-maintenance") {
     throw new StateDatabaseAdmissionPendingError(databasePath, maintenancePending);
   }
-  throw new Error(maintenancePending);
+  throw new StateDatabaseOfflineMaintenanceError(databasePath, maintenancePending);
 }
 
 export function defaultPayload(databasePath: string): LockPayload {

@@ -136,32 +136,37 @@ describe("worker placement read cache", () => {
       warn,
       now: () => nowMs,
     });
-    await monitor.sweep();
-    const reads = vi.spyOn(stateReads, "executeExistingOpenClawStateRead");
-    await monitor.sweep();
-    expect(reads).not.toHaveBeenCalled();
-    expect(runWorkspaceCommand).not.toHaveBeenCalled();
+    const unsubscribe = reader.subscribeChanges(() => monitor.invalidate());
+    try {
+      await monitor.sweep();
+      const reads = vi.spyOn(stateReads, "executeExistingOpenClawStateRead");
+      await monitor.sweep();
+      expect(reads).not.toHaveBeenCalled();
+      expect(runWorkspaceCommand).not.toHaveBeenCalled();
 
-    const active = await advancePlacementFixtureToActive(writer, database, {
-      sessionId: "disk-cache",
-      sessionKey: "agent:main:disk-cache",
-      agentId: "main",
-    });
-    await monitor.sweep();
-    expect(runWorkspaceCommand).toHaveBeenCalledOnce();
-    expect(monitor.read(active)?.status).toBe("ok");
+      const active = await advancePlacementFixtureToActive(writer, database, {
+        sessionId: "disk-cache",
+        sessionKey: "agent:main:disk-cache",
+        agentId: "main",
+      });
+      await monitor.sweep();
+      expect(runWorkspaceCommand).toHaveBeenCalledOnce();
+      expect(monitor.read(active)?.status).toBe("ok");
 
-    const draining = await writer.transition({
-      sessionId: active.sessionId,
-      from: "active",
-      to: "draining",
-      expectedGeneration: active.generation,
-    });
-    nowMs += 15 * 60_000;
-    await monitor.sweep();
-    expect(monitor.read(draining)).toBeUndefined();
-    expect(runWorkspaceCommand).toHaveBeenCalledOnce();
-    expect(warn).not.toHaveBeenCalled();
+      const draining = await writer.transition({
+        sessionId: active.sessionId,
+        from: "active",
+        to: "draining",
+        expectedGeneration: active.generation,
+      });
+      nowMs += 15 * 60_000;
+      await monitor.sweep();
+      expect(monitor.read(draining)).toBeUndefined();
+      expect(runWorkspaceCommand).toHaveBeenCalledOnce();
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
   });
 
   it("claims and releases an existing worker placement with a NULL execution mode", async () => {
@@ -220,7 +225,7 @@ describe("worker placement read cache", () => {
     },
   );
 
-  it("reuses preservation until a writer adds a non-local placement", async () => {
+  it("updates prepared preservation from non-local writer receipts", async () => {
     vi.stubEnv("OPENCLAW_STATE_DIR", roots.make("placement-preservation-cache-"));
     const database = openOpenClawStateDatabase();
     const reader = createWorkerSessionPlacementStore({ database });
@@ -239,13 +244,15 @@ describe("worker placement read cache", () => {
     await writer.releaseTurnIfOwned(claim);
     const unchanged = await reader.prepareMaintenancePlacements();
     expect(unchanged.placements).toEqual([]);
-    unchanged.release();
     expect(reads).not.toHaveBeenCalled();
     const remote = await writer.startDispatch({
       sessionId: "remote",
       agentId: "main",
       sessionKey: "agent:main:remote",
     });
+    expect(unchanged.placements).toEqual([remote]);
+    unchanged.assertCurrent();
+    unchanged.release();
     const changed = await reader.prepareMaintenancePlacements();
     expect(changed.placements).toEqual([remote]);
     changed.assertCurrent();
