@@ -1,7 +1,13 @@
+import path from "node:path";
+
 // Keep both files in the shared runner's existing child: the regression is the
 // lifetime mismatch between a retired source generation and the native document.
-export const domResourceFixtureFiles: Record<string, string> = {
-  "dependency/node_modules/persistent-dom.cjs": `
+export function domResourceFixtureFiles(repoRoot: string): Record<string, string> {
+  const collectGarbage = JSON.stringify(
+    path.join(repoRoot, "ui/src/test-helpers/garbage-collection.ts"),
+  );
+  return {
+    "dependency/node_modules/persistent-dom.cjs": `
 exports.install = () => {
   window.addEventListener("error", event => {
     event.preventDefault();
@@ -12,10 +18,11 @@ exports.install = () => {
   observer.observe(document, { childList: true, subtree: true });
 };
 `,
-  "11-dom-a-producer.test.ts": `
+    "11-dom-a-producer.test.ts": `
 /* @vitest-environment jsdom */
 import { createRequire } from "node:module";
 import { expect, it, vi } from "vitest";
+import { collectGarbageForTest } from ${collectGarbage};
 it("registers live source and external dependency DOM resources", async () => {
   createRequire(import.meta.url)("./dependency/node_modules/persistent-dom.cjs").install();
   const temporaryErrorListener = () => {};
@@ -37,9 +44,23 @@ it("registers live source and external dependency DOM resources", async () => {
   expect(document.body.dataset.repoEvent).toBe("observed");
   expect(document.body.dataset.repoMutation).toBe("observed");
   expect(document.body.dataset.dependencyMutation).toBe("observed");
+
+  // Explicitly removed callbacks, and their closures, must not stay reachable
+  // until file retirement (usage-page-retention.test.ts depends on this).
+  const removed = [window, document, document.body].map((target) => {
+    const payload = {};
+    const removedListener = () => payload;
+    target.addEventListener("repo-removed-event", removedListener);
+    target.removeEventListener("repo-removed-event", removedListener);
+    return new WeakRef(payload);
+  });
+  const control = new WeakRef({ unowned: true });
+  await collectGarbageForTest();
+  expect(control.deref()).toBeUndefined();
+  expect(removed.map((payload) => payload.deref())).toEqual([undefined, undefined, undefined]);
 });
 `,
-  "11-dom-b-observer.test.ts": `
+    "11-dom-b-observer.test.ts": `
 /* @vitest-environment jsdom */
 import { expect, it } from "vitest";
 it("retires source DOM resources without breaking external dependencies", async () => {
@@ -57,4 +78,5 @@ it("retires source DOM resources without breaking external dependencies", async 
   expect(document.body.dataset.dependencyMutation).toBe("observed");
 });
 `,
-};
+  };
+}

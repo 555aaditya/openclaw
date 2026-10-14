@@ -472,7 +472,7 @@ it("reloads the redirected mock after a real import", () => {
     ...mcpManagerFixtureFiles(repoRoot),
     ...testApiLifecycleFixtureFiles(repoRoot),
     ...documentFocusFixtureFiles(),
-    ...domResourceFixtureFiles,
+    ...domResourceFixtureFiles(repoRoot),
     ...agentReaderFixtureFiles(repoRoot, fixtureRoot),
     ...solidFixtureFiles(repoRoot),
   };
