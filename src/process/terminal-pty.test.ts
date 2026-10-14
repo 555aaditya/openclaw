@@ -1,3 +1,4 @@
+import "../test-utils/prepare-compiled-subprocesses.js";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -151,7 +152,7 @@ describe("terminal PTY spawn diagnostics", () => {
         configurable: true,
         value: backend === "node-pty" ? undefined : "synthetic-bun",
       });
-      vi.spyOn(process, "platform", "get").mockReturnValue("linux");
+      const platform = vi.spyOn(process, "platform", "get").mockReturnValue("linux");
       const pty = fakePty();
       mocks.spawn.mockReturnValueOnce(pty);
       mocks.spawnBunTerminalPty.mockReturnValueOnce(pty);
@@ -164,18 +165,20 @@ describe("terminal PTY spawn diagnostics", () => {
         await withChildProcessOperation("agent.exec", () =>
           spawnTerminalPty({ file: "/bin/bash", args: ["-c", "synthetic"], cols: 80, rows: 24 }),
         );
-        now = 60_000;
-        emitChildProcessSpawnSample();
-        expect(events).toEqual([
-          expect.objectContaining({ family: "bash", operation: "agent.exec", count: 1 }),
-        ]);
       } finally {
+        platform.mockRestore();
         if (bunDescriptor) {
           Object.defineProperty(process.versions, "bun", bunDescriptor);
         } else {
           Reflect.deleteProperty(process.versions, "bun");
         }
       }
+      // Sampling initializes the real logger against the host filesystem.
+      now = 60_000;
+      emitChildProcessSpawnSample();
+      expect(events).toEqual([
+        expect.objectContaining({ family: "bash", operation: "agent.exec", count: 1 }),
+      ]);
     },
   );
 
@@ -220,7 +223,7 @@ describe("terminal PTY spawn diagnostics", () => {
   it.each(["data", "silent-exit", "failed-exit"] as const)(
     "settles deferred Windows PTY attribution once on %s",
     async (outcome) => {
-      vi.spyOn(process, "platform", "get").mockReturnValue("win32");
+      const platform = vi.spyOn(process, "platform", "get").mockReturnValue("win32");
       const pty = fakePty(0);
       const dataSubscription = { dispose: vi.fn() };
       const exitSubscription = { dispose: vi.fn() };
@@ -238,6 +241,7 @@ describe("terminal PTY spawn diagnostics", () => {
       await withChildProcessOperation("agent.exec", () =>
         spawnTerminalPty({ file: "powershell.exe", args: [], cols: 80, rows: 24 }),
       );
+      platform.mockRestore();
       now = 60_000;
       emitChildProcessSpawnSample();
       expect(events).toEqual([]);
