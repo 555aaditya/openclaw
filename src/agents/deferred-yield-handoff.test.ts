@@ -19,6 +19,7 @@ import {
   createToolDefinitionFromAgentTool,
 } from "./sessions/tools/tool-definition-wrapper.js";
 import { createZeroUsageFixture } from "./test-helpers/usage-fixtures.js";
+import { TOOL_CALL_RAW_TOOL_NAME } from "./tool-search-types.js";
 import {
   createToolSearchCatalogRef,
   createToolSearchTools,
@@ -60,7 +61,7 @@ function deferredFixture(
   registerHeadlessToolSearchCatalog({ catalogRef, tools: [registeredTarget, ordinary] });
   const dispatcher = expectDefined(
     createToolSearchTools({ catalogRef, abortSignal: abort.signal }).find(
-      (tool) => tool.name === "tool_call",
+      (tool) => tool.name === TOOL_CALL_RAW_TOOL_NAME,
     ),
     "native dispatcher",
   );
@@ -105,7 +106,7 @@ async function runDeferredBatch(
             {
               type: "toolCall",
               id: "question",
-              name: "tool_call",
+              name: TOOL_CALL_RAW_TOOL_NAME,
               arguments: { id: targetId, args: validArgs },
             },
             { type: "toolCall", id: "effect", name: "exec", arguments: {} },

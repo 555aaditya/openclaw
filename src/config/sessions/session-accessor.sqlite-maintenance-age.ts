@@ -1,4 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
+import { sqlPublicationAnchor } from "../../infra/sql-connection.js";
 import {
   deferSqlitePostCommitPublication,
   stageSqliteTransactionState,
@@ -17,6 +18,7 @@ import type { SessionEntry } from "./types.js";
 
 export type SessionEntryMaintenanceAgeFact = {
   maintenance: ResolvedSessionMaintenanceConfig;
+  entryCount?: number;
   next: { at: number };
   recheckAt: number;
 };
@@ -96,7 +98,7 @@ export function stageSessionEntryMaintenanceAgeFact(
   fact: SessionEntryMaintenanceAgeFact | undefined,
 ): void {
   if (
-    stageSqliteTransactionState(db, {
+    stageSqliteTransactionState(sqlPublicationAnchor(db), {
       stage: () => ageFacts.set(db, { fact }),
       rollback: () => ageFacts.delete(db),
       commit: () => {},
@@ -147,7 +149,10 @@ export function advanceSessionEntryMaintenanceAgeFact(
     if (identity !== undefined && changeObservers.has(identity)) {
       const change = captureSessionEntryMaintenanceAgeChange(update);
       const publish = () => publishSessionEntryMaintenanceAgeChanges(identity, [change]);
-      if (!deferSqlitePostCommitPublication(db, publish) && !db.isTransaction) {
+      if (
+        !deferSqlitePostCommitPublication(sqlPublicationAnchor(db), publish) &&
+        !db.isTransaction
+      ) {
         publish();
       }
     }
@@ -159,19 +164,33 @@ export function applySessionEntryMaintenanceAgeChange(
   db: DatabaseSync,
   update: SessionEntryMaintenanceAgeChange,
 ): void {
-  const fact = ageFacts.get(db)?.fact;
+  const fact = updateSessionEntryMaintenanceAgeFact(ageFacts.get(db)?.fact, update);
+  // Reader handles can receive a coalesced change already applied by their writer.
+  // Only the scheduling replica counts deltas; a database pass takes a fresh count.
+  stageSessionEntryMaintenanceAgeFact(db, fact && { ...fact, entryCount: undefined });
+}
+
+/** The scheduling replica consumes the same acknowledged entry changes as the worker. */
+export function updateSessionEntryMaintenanceAgeFact(
+  fact: SessionEntryMaintenanceAgeFact | undefined,
+  update: SessionEntryMaintenanceAgeChange,
+): SessionEntryMaintenanceAgeFact | undefined {
   if (!fact) {
-    invalidateSessionEntryMaintenanceAgeFact(db);
-    return;
+    return undefined;
   }
   if (update.entry.archivedAt !== undefined) {
-    return;
+    return {
+      ...fact,
+      entryCount:
+        fact.entryCount === undefined || !update.previousEntry
+          ? undefined
+          : fact.entryCount - (update.previousEntry.archivedAt === undefined ? 1 : 0),
+    };
   }
   const { entry, previousEntry } = update;
   if (previousEntry && !isMonotoneSessionEntryMaintenanceAgeChange(update)) {
     // Exact replacement/lifecycle writers also own backdates and archive restores.
-    invalidateSessionEntryMaintenanceAgeFact(db);
-    return;
+    return undefined;
   }
   // A newly inserted historical entry must retain already-due transitions too.
   const at = nextEntryAgeAt(
@@ -180,12 +199,15 @@ export function applySessionEntryMaintenanceAgeChange(
     fact.maintenance,
     previousEntry ? Date.now() : -Infinity,
   );
-  if (!previousEntry || at < fact.next.at) {
-    stageSessionEntryMaintenanceAgeFact(db, { ...fact, next: { at: Math.min(at, fact.next.at) } });
-  }
+  return {
+    ...fact,
+    entryCount:
+      fact.entryCount === undefined ? undefined : fact.entryCount + (previousEntry ? 0 : 1),
+    next: { at: Math.min(at, fact.next.at) },
+  };
 }
 
-export function isMonotoneSessionEntryMaintenanceAgeChange({
+function isMonotoneSessionEntryMaintenanceAgeChange({
   entry,
   previousEntry,
 }: SessionEntryMaintenanceAgeChange): boolean {
@@ -253,10 +275,12 @@ export function recordSessionEntryMaintenanceAgeFact(
   database: Pick<OpenClawAgentDatabase, "db">,
   maintenance: ResolvedSessionMaintenanceConfig,
   plannedAt: number,
+  entryCount?: number,
 ): SessionEntryMaintenanceAgeFact {
   const next = { at: Infinity };
   const fact: SessionEntryMaintenanceAgeFact = {
     maintenance,
+    entryCount,
     next,
     recheckAt: plannedAt + SESSION_ENTRY_MAINTENANCE_INTERVAL_MS,
   };
