@@ -16,6 +16,7 @@ import { canPrepareAgentSessionWorktree } from "../../gateway/agent-turn/agent-h
 import type { GatewayRecoveryRuntime } from "../../gateway/server-instance-runtime.types.js";
 import { readSessionMessagesAsync } from "../../gateway/session-transcript-readers.js";
 import { getAgentEventLifecycleGeneration } from "../../infra/agent-events.js";
+import { isCompetingSessionWorkAdmissionActive } from "../../sessions/session-lifecycle-admission.js";
 import {
   getOwedHarnessCompletionTask,
   createHarnessCompletionSourceAssertion,
@@ -209,7 +210,7 @@ export async function recoverStore(params: {
 
       const dispatchSessionKey =
         params.expectedTarget?.canonicalSessionKey ?? dispatchTarget.sessionKey;
-      if (hasCurrentProcessOwner(entry, sessionKey)) {
+      if (hasCurrentProcessOwner(entry, sessionKey, params.storePath)) {
         skip("live_owner");
         continue;
       }
@@ -245,6 +246,7 @@ export async function recoverStore(params: {
         const completedFinal = pendingAction === "complete";
         const updated = await updateSessionEntry(target, (current) => {
           if (
+            isCompetingSessionWorkAdmissionActive(params.storePath, [current.sessionId]) ||
             current.sessionId !== entry.sessionId ||
             current.lifecycleRevision !== entry.lifecycleRevision ||
             current.restartRecoveryDeliveryRunId !== entry.restartRecoveryDeliveryRunId ||

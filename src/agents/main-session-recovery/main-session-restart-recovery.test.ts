@@ -455,6 +455,7 @@ function getHarnessRecoveryFixture() {
 
 describe("main-session-restart-recovery", () => {
   registerDurableQuestionRecoveryCases(() => ({
+    gatewayRuntime: mockRecoveryRuntime,
     makeMainSessionFixture,
     expectRecovery,
     seedQueuedFinal,
