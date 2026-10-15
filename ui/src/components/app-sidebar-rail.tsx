@@ -59,7 +59,7 @@ export function renderSidebarRail(
   TeamNewSession?: () => JSX.Element,
 ): JSX.Element {
   const newSessionAccess = createMemo(() => host.readNewSessionAccess());
-  const zone = () => host.reconciledSidebarZone();
+  const zone = createMemo(() => host.reconciledSidebarZone());
   const pins = createMemo(() =>
     (normalizeSidebarEntries(host.sidebarSnapshot?.entries ?? host.sidebarEntries) ?? []).map(
       (entry) => parseSidebarEntry(entry)!,

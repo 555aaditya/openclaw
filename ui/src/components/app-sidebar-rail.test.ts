@@ -76,6 +76,46 @@ describe("personal navigation rail", () => {
     expect(sidebar.querySelector(".sidebar-rail__bottom")).toBe(bottom);
   });
 
+  it("bounds projection work for many pins and refreshes their labels in place", async () => {
+    const { sidebar, sessions, result } = await fixture();
+    const rows = Array.from({ length: 30 }, (_, index) => ({
+      ...result.sessions[1]!,
+      key: `agent:main:pin-${index}`,
+      sessionId: `pin-${index}`,
+      label: `Pinned ${index}`,
+    }));
+    sidebar.navigationView = "sessions";
+    sessions.publishList({
+      agentId: "main",
+      result: { ...result, sessions: rows, count: rows.length },
+    });
+    sidebar.sidebarEntries = rows.map((row) => `session:${row.key}`);
+    await sidebar.updateComplete;
+    const reconcile = vi.spyOn(getAppSidebarOwner(sidebar.hostElement)!, "reconciledSidebarZone");
+    const pins = [...sidebar.querySelectorAll(".sidebar-rail__pin")];
+    expect(pins).toHaveLength(rows.length);
+
+    sidebar.requestUpdate();
+    await sidebar.updateComplete;
+    expect(reconcile.mock.calls.length).toBeLessThanOrEqual(10);
+
+    sessions.publishList({
+      agentId: "main",
+      result: {
+        ...result,
+        sessions: rows.map((row) => ({ ...row, label: `${row.label} refreshed` })),
+        count: rows.length,
+      },
+    });
+    await sidebar.sessionData.refreshSidebarSessions();
+    await settleLitElement(sidebar);
+    const refreshedPins = [...sidebar.querySelectorAll(".sidebar-rail__pin")];
+    for (const [index, pin] of pins.entries()) {
+      expect(refreshedPins[index]).toBe(pin);
+      expect(pin.querySelector("a")?.getAttribute("aria-label")).toBe(`Pinned ${index} refreshed`);
+    }
+  });
+
   it("keeps main activity visible on Home when the middle list is collapsed", async () => {
     const { sidebar, result, sessions } = await fixture();
     const mainIndex = result.sessions.findIndex((row) => row.key === "agent:main:main");
