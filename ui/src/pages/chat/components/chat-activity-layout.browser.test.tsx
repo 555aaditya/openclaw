@@ -248,10 +248,11 @@ describe.runIf("__vitest_browser__" in globalThis)("activity group sizing", () =
   it("preserves non-tool text beside a card moved under its parent", async () => {
     container = document.body.appendChild(document.createElement("div"));
     const note = "Keep this explanation visible.";
+    const group = activityFixture(note);
     mountSolid(
       () => (
         <ActivityGroup
-          groups={[activityFixture(note)]}
+          groups={[group]}
           presentation="standalone"
           options={{
             showReasoning: false,
