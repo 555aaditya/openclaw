@@ -2,7 +2,7 @@
 import { createSignal } from "solid-js";
 import { expect, it, onTestFinished, vi } from "vitest";
 import { mountSolid } from "../../../test-helpers/mount-solid.ts";
-import { flush } from "../../../test-helpers/solid-settle.ts";
+import { flush, waitForSolid } from "../../../test-helpers/solid-settle.ts";
 import { ChatComposerPlusMenu } from "./chat-composer-plus-menu.tsx";
 import type {
   ChatComposerPlusMenuProps,
@@ -17,11 +17,11 @@ it.each<ChatComposerPlusMenuView>([
   "library:missing",
 ])(
   "retains %s menu content on unrelated publications and admits in-place display changes",
-  (view) => {
+  async (view) => {
     const menu: ChatComposerPlusMenuProps = {
       attachments: {},
       disabled: false,
-      open: false,
+      open: true,
       view,
       toolOverrides: null,
       onOpenChange: vi.fn(),
@@ -93,6 +93,8 @@ it.each<ChatComposerPlusMenuView>([
     const snapshot = () => ({ ...menu, capabilityMenu: { ...menu.capabilityMenu! } });
     const [props, setProps] = createSignal(snapshot());
     const mounted = mountSolid(() => <ChatComposerPlusMenu menu={props()} />);
+    const content = mounted.container.querySelector(".agent-chat__capability-menu-panel")!;
+    await waitForSolid(() => expect(content.matches(":popover-open")).toBe(true));
     const observer = new MutationObserver(() => {});
     observer.observe(mounted.container, { childList: true, subtree: true });
     onTestFinished(() => observer.disconnect());
@@ -100,7 +102,6 @@ it.each<ChatComposerPlusMenuView>([
       setProps(snapshot());
       flush();
     };
-    const content = mounted.container.querySelector(".agent-chat__capability-menu-panel")!;
     const children = [...content.querySelectorAll("*")];
     refresh();
     expect(observer.takeRecords()).toHaveLength(0);
