@@ -63,7 +63,6 @@ export function LogsPage() {
   let cursorBootId: string | undefined;
   let request: AbortController | null = null;
   let pollTimer: ReturnType<typeof setInterval> | undefined;
-  let connected = false;
   let disposed = false;
   let atBottom = true;
   let stream: HTMLElement | undefined;
@@ -75,7 +74,8 @@ export function LogsPage() {
     setRequestState("idle");
   };
   const updatePolling = () => {
-    const shouldPoll = connected && document.visibilityState !== "hidden";
+    const shouldPoll =
+      gateway.connected && gateway.client !== null && document.visibilityState !== "hidden";
     if (!shouldPoll && pollTimer !== undefined) {
       clearInterval(pollTimer);
       pollTimer = undefined;
@@ -97,10 +97,7 @@ export function LogsPage() {
       atBottom = true;
     },
     invalidateRequests: cancelRequest,
-    onSnapshot: (change) => {
-      connected = change.snapshot.phase === "connected" && change.snapshot.client !== null;
-      updatePolling();
-    },
+    onSnapshot: updatePolling,
     ensureInitialData: (change) => {
       const quiet = !change.identityChanged && untrack(status).hasLoaded;
       const bootId = change.snapshot.hello?.server?.bootId;
