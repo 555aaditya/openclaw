@@ -295,7 +295,9 @@ suite.define(() => {
       await page.goto(`${suite.server.baseUrl}chat`);
       const pane = page.locator('openclaw-chat-pane[aria-hidden="false"]');
       const picker = pane.locator(".chat-controls__model-picker");
-      await picker.locator("[data-chat-model-option]").first().waitFor({ state: "attached" });
+      await expect
+        .poll(() => picker.locator('[data-chat-model-select="true"]').getAttribute("aria-busy"))
+        .toBe("false");
 
       await gateway.deferNext("models.list", { view: "configured" });
       await picker.locator('[data-chat-model-select="true"]').click();
@@ -359,7 +361,9 @@ suite.define(() => {
         'openclaw-chat-pane[aria-hidden="false"] .chat-controls__model-picker',
       );
       const previous = picker.locator('[data-chat-model-option="anthropic/claude-haiku-4-5"]');
-      await previous.waitFor({ state: "attached" });
+      await expect
+        .poll(() => picker.locator('[data-chat-model-select="true"]').getAttribute("aria-busy"))
+        .toBe("false");
       const discoveryCount = (await gateway.getRequests("models.list")).length;
       await gateway.deferNext("models.list", { view: "configured" });
       await picker.locator('[data-chat-model-select="true"]').click();

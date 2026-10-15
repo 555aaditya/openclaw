@@ -3,7 +3,11 @@ import { createDeferred as deferred } from "../../../../test/helpers/promise.js"
 import type { GatewayAgentRow, ModelCatalogEntry } from "../../api/types.ts";
 import { waitForFast } from "../../test-helpers/wait-for.ts";
 import { buildDraftSessionCreateParams } from "./create-params.ts";
-import { contextWith, renderControl } from "./model-control.test-support.ts";
+import {
+  contextWith,
+  renderControl as renderClosedControl,
+  renderOpenControl as renderControl,
+} from "./model-control.test-support.ts";
 import { NewSessionModelControl } from "./model-control.ts";
 import * as modelTarget from "./model-target.ts";
 import { loadNewSessionPreference, replaceBrowserPreference } from "./preferences.ts";
@@ -201,7 +205,9 @@ describe("new-session model controls", () => {
     await vi.waitFor(() => expect(find('[data-chat-model-catalog-state="error"]')).not.toBeNull());
     expect(draw().querySelectorAll("[data-chat-model-option]")).toHaveLength(2);
     expect(find("[data-chat-model-select]")?.textContent).toContain(sol.name);
-    const picker = draw().querySelector<HTMLDetailsElement>(".chat-controls__model-picker")!;
+    const picker = renderClosedControl(control, context).querySelector<HTMLDetailsElement>(
+      ".chat-controls__model-picker",
+    )!;
     picker.open = true;
     picker.dispatchEvent(new Event("toggle"));
     await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(3));

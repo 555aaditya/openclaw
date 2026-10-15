@@ -11,7 +11,11 @@ import { invalidateModelCatalogCache } from "../../lib/model-catalog-cache.ts";
 import { loadModelCatalog } from "../../lib/model-catalog-store.ts";
 import { createTestGatewayClient } from "../../test-helpers/gateway-client.ts";
 import { identityPreferences } from "./draft-worktree-preferences.test-support.ts";
-import { contextWith, renderControl } from "./model-control.test-support.ts";
+import {
+  contextWith,
+  renderControl as renderClosedControl,
+  renderOpenControl as renderControl,
+} from "./model-control.test-support.ts";
 import { NewSessionModelControl } from "./model-control.ts";
 import { loadNewSessionPreference } from "./preferences.ts";
 
@@ -404,7 +408,7 @@ describe("new-session model metadata lifecycle", () => {
         ],
       });
       clock.mockReturnValue(12_000);
-      renderControl(control, context, "main", agent)
+      renderClosedControl(control, context, "main", agent)
         .querySelector<HTMLElement>('[data-chat-model-select="true"]')!
         .click();
       await vi.waitFor(() => expect(option()?.disabled).toBe(false));

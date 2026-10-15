@@ -5,6 +5,7 @@ import type { ApplicationContext, ApplicationGateway } from "../../app/context.t
 import { invalidateChatMetadataStore } from "../../lib/chat/chat-metadata-cache.ts";
 import { modelCatalogEventInvalidation } from "../../lib/model-catalog-cache.ts";
 import { mountSolid } from "../../test-helpers/mount-solid.ts";
+import { ChatModelControls } from "../chat/components/chat-model-controls.tsx";
 import { NewSessionModelControlView } from "./model-control-view.tsx";
 import { NewSessionModelControl } from "./model-control.ts";
 
@@ -91,20 +92,30 @@ export function renderControl(
     model: { primary: "openai/gpt-5.6-luna" },
     thinkingDefault: "medium",
   },
+  presentation: "view" | "open-catalog" = "view",
 ) {
   const container = document.createElement("div");
+  const options = {
+    ...(agent ? { agent } : {}),
+    agentId,
+    context,
+    sending: false,
+  };
   mountSolid(
     () =>
-      createComponent(NewSessionModelControlView, {
-        control,
-        options: {
-          ...(agent ? { agent } : {}),
-          agentId,
-          context,
-          sending: false,
-        },
-      }),
+      presentation === "open-catalog"
+        ? createComponent(ChatModelControls, {
+            ...control.renderProps(options),
+            modelPickerOpen: true,
+            onModelPickerOpen: undefined,
+          })
+        : createComponent(NewSessionModelControlView, { control, options }),
     { container },
   );
   return container;
+}
+
+// Controller snapshots need catalog content without turning each inspection into a reopen/retry.
+export function renderOpenControl(...args: Parameters<typeof renderControl>) {
+  return renderControl(args[0], args[1], args[2], args[3], "open-catalog");
 }

@@ -108,7 +108,6 @@ suite.define(() => {
       const progressRequest = await gateway.waitForRequest("progressCard.get");
       expect(progressRequest.params).toEqual({ sessionKey: "global", agentId: "ops" });
       const progress = page.getByText("Global progress after startup", { exact: true });
-      await progress.waitFor({ state: "attached" });
       expect(await progress.isVisible()).toBe(false);
       const details = await openChatDetails(page);
       await details.getByText("Global progress after startup", { exact: true }).waitFor();
@@ -154,8 +153,12 @@ suite.define(() => {
         timeout: 10_000,
       });
       await expect
-        .poll(() => page.locator('[data-chat-model-option="openai/startup-model"]').count())
-        .toBe(1);
+        .poll(() =>
+          page
+            .locator("[data-chat-model-select] .chat-controls__inline-select-label")
+            .textContent(),
+        )
+        .toContain("Startup Model");
       await gateway.emitChatFinal({ runId, text: "History race stayed visible." });
       await page
         .locator(".chat-thread-inner")

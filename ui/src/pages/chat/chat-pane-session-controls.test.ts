@@ -257,6 +257,7 @@ describe("chat pane composer controls", () => {
     };
     const state = makeChatHost({
       sessionKey: selectedSession.key,
+      chatModelPickerOpenSessionKey: selectedSession.key,
       sessionsResult: { ...createSessionsListResult(), sessions: [selectedSession] },
       chatModelCatalog: [{ id: "gpt-5.6-sol", name: "GPT-5.6 Sol", provider: "openai" }],
       chatModelSwitchPromises: {},
@@ -306,6 +307,7 @@ describe("chat pane composer controls", () => {
       const container = document.createElement("div");
       const state = makeChatHost({
         connected,
+        chatModelPickerOpenSessionKey: "main",
         requestHandlers: {},
         chatModelCatalog: cached
           ? [{ id: "cached-model", name: "Cached Model", provider: "openai", available: false }]

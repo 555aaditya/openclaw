@@ -60,6 +60,7 @@ describe("chat pane composer controls", () => {
       const client = createTestGatewayClient(request);
       const { state } = createRefreshChatPane(client);
       state.sessionKey = "agent:main:main";
+      state.chatModelPickerOpenSessionKey = state.sessionKey;
       state.chatModelCatalogInitialized = false;
       const container = document.createElement("div");
       const draw = () => render(composerControls(state), container);

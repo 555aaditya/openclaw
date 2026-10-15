@@ -131,15 +131,20 @@ suite.define(() => {
           await gateway.waitForRequest("chat.startup");
           const composer = page.locator(".agent-chat__input");
           const trigger = composer.locator('[data-chat-model-select="true"]');
+          const assertSelectedPreference = async () => {
+            await trigger.click();
+            await expect
+              .poll(() =>
+                composer
+                  .locator('[data-chat-model-option="codex/gpt-5.5"]')
+                  .getAttribute("aria-selected"),
+              )
+              .toBe("true");
+            await page.keyboard.press("Escape");
+          };
 
           await expect.poll(() => trigger.textContent()).toContain(selectedModel.name);
-          await expect
-            .poll(() =>
-              composer
-                .locator('[data-chat-model-option="codex/gpt-5.5"]')
-                .getAttribute("aria-selected"),
-            )
-            .toBe("true");
+          await assertSelectedPreference();
           await page.screenshot({ path: `${artifactDir}/active-fallback-model.png` });
           await composer
             .locator(".agent-chat__composer-combobox textarea")
@@ -197,11 +202,7 @@ suite.define(() => {
             await expect.poll(() => trigger.textContent()).toContain(selectedModel.name);
             await expect.poll(() => trigger.getAttribute("aria-busy")).toBe("false");
             expect(await trigger.locator(".btn__spinner").count()).toBe(0);
-            expect(
-              await composer
-                .locator('[data-chat-model-option="codex/gpt-5.5"]')
-                .getAttribute("aria-selected"),
-            ).toBe("true");
+            await assertSelectedPreference();
             await page.screenshot({
               path: `${artifactDir}/running-${index === 0 ? "primary" : "fallback"}-model.png`,
             });
@@ -209,11 +210,7 @@ suite.define(() => {
           await page.reload();
           await gateway.waitForRequest("chat.startup");
           await expect.poll(() => trigger.textContent()).toContain(selectedModel.name);
-          expect(
-            await composer
-              .locator('[data-chat-model-option="codex/gpt-5.5"]')
-              .getAttribute("aria-selected"),
-          ).toBe("true");
+          await assertSelectedPreference();
           await page.screenshot({ path: `${artifactDir}/refreshed-fallback-model.png` });
           const recovered = {
             ...session,
@@ -300,11 +297,7 @@ suite.define(() => {
               .waitFor({ state: "hidden" });
             await page.locator(".chat-text").getByText(message.content, { exact: true }).waitFor();
             await expect.poll(() => trigger.textContent()).toContain(selectedModel.name);
-            expect(
-              await composer
-                .locator('[data-chat-model-option="codex/gpt-5.5"]')
-                .getAttribute("aria-selected"),
-            ).toBe("true");
+            await assertSelectedPreference();
             await page.screenshot({ path: `${artifactDir}/recovered-model.png` });
           } finally {
             await releaseLists.evaluate((release) => release());
@@ -387,6 +380,7 @@ suite.define(() => {
       await gateway.waitForRequest("models.list");
 
       const composer = page.locator(".agent-chat__input");
+      await composer.locator('[data-chat-model-select="true"]').click();
       const providers = composer.locator(
         "[data-chat-model-provider] .chat-controls__provider-label",
       );
@@ -618,10 +612,8 @@ suite.define(() => {
       const activeComposer = () =>
         page.locator('openclaw-chat-pane[aria-hidden="false"] .agent-chat__input');
       await expect
-        .poll(() =>
-          activeComposer().locator('[data-chat-model-option="openai/work-model"]').count(),
-        )
-        .toBe(1);
+        .poll(() => activeComposer().locator('[data-chat-model-select="true"]').textContent())
+        .toContain("Work Model");
       await gateway.waitForRequest("models.list");
 
       await gateway.deferNext("chat.startup", { sessionKey: "agent:other:main" });
@@ -634,6 +626,7 @@ suite.define(() => {
       expect(
         await targetModelTrigger.locator(".chat-controls__model-trigger-skeleton").count(),
       ).toBe(0);
+      await targetModelTrigger.click();
       expect(await activeComposer().locator("[data-chat-model-option]").count()).toBe(0);
       expect(
         await activeComposer()
@@ -839,14 +832,15 @@ suite.define(() => {
       });
       await page.goto(controlUiSessionUrl(suite.server.baseUrl, "agent:main:main"));
       const composer = page.locator(".agent-chat__input");
-      await expect
-        .poll(() => composer.locator('[data-chat-model-option="example/existing"]').count())
-        .toBe(1);
       const picker = composer.locator("details.chat-controls__model-picker");
       const trigger = composer.locator('[data-chat-model-select="true"]');
+      await expect.poll(() => trigger.getAttribute("aria-busy")).toBe("false");
       await gateway.setMethodResponse("models.list", { models: [existing, firstOpen] });
       await gateway.emitGatewayEvent("chat.metadata.changed", {});
       await trigger.click();
+      await expect
+        .poll(() => composer.locator('[data-chat-model-option="example/existing"]').count())
+        .toBe(1);
       await revealChatModelOption(
         composer.locator('[data-chat-model-option="example/first-open"]'),
       );

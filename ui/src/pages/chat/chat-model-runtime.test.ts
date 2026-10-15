@@ -37,6 +37,7 @@ function renderControls(
     gatewayAvailable: true,
     loading: false,
     modelCatalog: models,
+    modelPickerOpen: true,
     modelCatalogState: { hasSnapshot: true, status: "ready" },
     modelSwitching: false,
     sending: false,

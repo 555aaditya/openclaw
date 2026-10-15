@@ -539,7 +539,11 @@ function renderModelControls(
   container = document.createElement("div"),
 ) {
   render(
-    renderChatModelControls({ ...createChatModelControlsProps(state), ...overrides }),
+    renderChatModelControls({
+      ...createChatModelControlsProps(state),
+      modelPickerOpen: true,
+      ...overrides,
+    }),
     container,
   );
   return container;
