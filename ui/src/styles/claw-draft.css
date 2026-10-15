@@ -26,7 +26,7 @@
   gap: 8px;
 }
 
-.claw-draft__editor {
+.claw-draft .claw-draft__editor {
   width: 100%;
   min-height: 340px;
   resize: vertical;
