@@ -117,15 +117,27 @@ suite.define(() => {
       expect(result.code, result.stderr).toBe(0);
       return result.stdout;
     };
-    const publish = (nextModels: typeof models) =>
+    const gatewayCall = (method: string, params: Record<string, unknown>) =>
       cli([
-        "config",
-        "set",
-        "models.providers.fixture.models",
-        JSON.stringify(nextModels),
-        "--strict-json",
-        "--replace",
+        "gateway",
+        "call",
+        method,
+        "--url",
+        owner.url,
+        "--token",
+        owner.gatewayToken,
+        "--params",
+        JSON.stringify(params),
+        "--json",
       ]);
+    const publish = async (nextModels: typeof models) => {
+      const snapshot = record(JSON.parse(await gatewayCall("config.get", {})));
+      await gatewayCall("config.patch", {
+        baseHash: snapshot.hash,
+        raw: JSON.stringify({ models: { providers: { fixture: { models: nextModels } } } }),
+        replacePaths: ["models.providers.fixture.models"],
+      });
+    };
     const handoff = record(JSON.parse(await cli(["dashboard", "--json"])));
     if (typeof handoff.browserUrl !== "string") {
       throw new Error("Dashboard browser handoff missing");
