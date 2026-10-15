@@ -208,9 +208,16 @@ export class ClawDraftPageState {
   async generate() {
     await this.run("generate", async (scope) => {
       const context = this.context;
+      const sourceContext = scope.sourceSessionKey
+        ? {
+            parentSessionKey: scope.sourceSessionKey,
+            fork: true,
+            forkFrom: "last-completed" as const,
+          }
+        : {};
       const access = readSessionMethodAccess(context.gateway.snapshot, {
         method: "sessions.create",
-        params: { agentId: scope.agentId },
+        params: { agentId: scope.agentId, ...sourceContext },
       });
       if (!access.allowed) {
         throw new Error(access.reason);
@@ -235,6 +242,7 @@ export class ClawDraftPageState {
       const result = await context.sessions.createResult(
         {
           agentId: scope.agentId,
+          ...sourceContext,
           displayName: t("clawsDraft.title"),
           message,
           idempotencyKey: generateUUID(),

@@ -135,6 +135,9 @@ describe("Claw draft review", () => {
     expect(context.sessions.createResult).toHaveBeenCalledWith(
       expect.objectContaining({
         agentId: "research",
+        parentSessionKey: "agent:research:source",
+        fork: true,
+        forkFrom: "last-completed",
         message: expect.stringContaining(`/agents/claws?draft=${target.draftId}&agent=research`),
       }),
       { reconciliation: "background" },
