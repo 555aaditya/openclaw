@@ -232,6 +232,7 @@ describe("chat pane composer controls", () => {
     );
     const { state: host } = createRefreshChatPane(client);
     host.sessionKey = "agent:main";
+    host.chatModelPickerOpenSessionKey = host.sessionKey;
     host.hello = gatewayHelloForMethods(["chat.metadata", "chat.startup"], []);
     onTestFinished(() => retireChatMetadataRequests(host));
     const cachedModel = {
