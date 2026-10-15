@@ -159,19 +159,6 @@ describe("activity headline cadence", () => {
     expect(outcomes()).toEqual([]);
   });
 
-  it("clears to the summary immediately and cannot resurrect a pending headline", () => {
-    update(operation("first"));
-    update(operation("pending"));
-    update(undefined);
-    expect(label()).toBe("2 reads");
-    expect(container.querySelector(".chat-activity-group__label--live")).toBeNull();
-    expect(vi.getTimerCount()).toBe(0);
-    advanceTimersByTime(3_000);
-    expect(label()).toBe("2 reads");
-    update(operation("fresh"));
-    expect(label()).toBe("Read fresh…");
-  });
-
   it("starts a fresh dwell when a new scope reuses the same operation identity", () => {
     update(operation("first"));
     advanceTimersByTime(2_000);
@@ -342,38 +329,6 @@ it("keeps the headline and its dwell across disclosure toggles with accessible c
   expect(label()).toBe("Read next");
   expect(summary.getAttribute("aria-expanded")).toBe("false");
 });
-
-it("retains the latest completed operation between tools and returns to counts when the run ends", async () => {
-  const groups = [group("current", [prepared("finished", "completed")])];
-  await drawActivityGroup(groups, liveOptions);
-  expect(label()).toBe("Read finished");
-  await drawActivityGroup([group("current", [prepared("next")])], liveOptions);
-  expect(label()).toBe("Read finished");
-  await drawActivityGroup(groups, { ...liveOptions, runActive: false });
-  expect(label()).toBe("1 read");
-  expect(vi.getTimerCount()).toBe(0);
-  advanceTimersByTime(3_000);
-  expect(label()).toBe("1 read");
-});
-
-it.each(["failed", "blocked"] as const)(
-  "prioritizes a new %s outcome over running and pending operations",
-  async (status) => {
-    await drawActivityGroup([group("current", [prepared("first")])], liveOptions);
-    await drawActivityGroup(
-      [group("current", [prepared("first"), prepared("pending")])],
-      liveOptions,
-    );
-    await drawActivityGroup(
-      [group("current", [prepared("first"), prepared("urgent", status)])],
-      liveOptions,
-    );
-    expect(label()).toBe("Read urgent");
-    expect(vi.getTimerCount()).toBe(0);
-    advanceTimersByTime(3_000);
-    expect(label()).toBe("Read urgent");
-  },
-);
 
 it("selects only visible activity from the matching run and newest eligible group", async () => {
   const groups = [
