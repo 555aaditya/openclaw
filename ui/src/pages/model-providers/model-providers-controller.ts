@@ -259,7 +259,13 @@ export class ModelProvidersController extends ModelPageController {
       () => this.context?.gateway,
       (gateway) => this.installedAgents.subscribe(gateway),
     )
-    .watch(() => this.context?.gateway.snapshot.client, modelCatalog.subscribeModelCatalogCache)
+    .watch(
+      () => this.context?.gateway.snapshot.client,
+      (client, notify) =>
+        modelCatalog.subscribeModelCatalogCache(client, notify, () => ({
+          agentId: this.state.selectedAgentId ?? undefined,
+        })),
+    )
     .watchStore(
       () => this.context?.runtimeConfig,
       (runtimeConfig) => {
