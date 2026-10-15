@@ -40,6 +40,7 @@ function mountControls(catalog: ModelCatalogResult, retired = false) {
           modelSelectionPolicy: catalog.modelSelectionPolicy,
         },
         modelSwitching: false,
+        modelPickerOpen: true,
         sending: false,
         sessionKey: "main",
         selectedSession,

@@ -30,6 +30,7 @@ function controls(overrides: Partial<Props>) {
     gatewayAvailable: true,
     loading: false,
     modelSwitching: false,
+    modelPickerOpen: true,
     modelCatalogState: { hasSnapshot: true, status: "ready" },
     sending: false,
     stream: null,
