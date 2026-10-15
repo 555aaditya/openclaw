@@ -439,7 +439,7 @@ async function markOrphanedMainSessionStore(
         listAgentRunsForSession({ sessionKey, sessionId: entry.sessionId }).some(({ runId }) =>
           hasLiveAgentRunContext(runId),
         ) ||
-        hasCurrentProcessOwner(entry, sessionKey);
+        hasCurrentProcessOwner(entry, sessionKey, params.target.storePath);
       if (hasLiveOwner()) {
         return undefined;
       }

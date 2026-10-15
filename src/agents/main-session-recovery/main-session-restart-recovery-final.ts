@@ -3,6 +3,7 @@ import type { InternalSessionEntry as SessionEntry } from "../../config/sessions
 import { updateSessionEntry } from "../../config/sessions/session-accessor.js";
 import { isTerminalSessionStatus } from "../../config/sessions/types.js";
 import { findDeliveryIntentOwners } from "../../infra/outbound/delivery-queue-storage.js";
+import { isCompetingSessionWorkAdmissionActive } from "../../sessions/session-lifecycle-admission.js";
 import {
   buildDurableQuestionRecoverySettlementPatch,
   isDurableQuestionCurrentSource,
@@ -55,6 +56,7 @@ export async function completePendingFinalRecoveryWithNotice(
     target,
     (current) => {
       if (
+        isCompetingSessionWorkAdmissionActive(target.storePath, [current.sessionId]) ||
         current.sessionId !== entry.sessionId ||
         current.pendingFinalDelivery?.intentId !== entry.pendingFinalDelivery?.intentId ||
         (isDurableQuestionCurrentSource(entry) &&
