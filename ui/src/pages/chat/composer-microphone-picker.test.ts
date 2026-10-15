@@ -47,6 +47,7 @@ describe("composer voice readiness", () => {
     vi.spyOn(realtimeTalkInput, "discoverRealtimeTalkInputs").mockResolvedValue({
       devices: [],
       issue: "none-found",
+      permissionRequired: false,
     });
     const ready = createDeferred<ReturnType<typeof catalog>>();
     const requestUpdate = vi.fn();
