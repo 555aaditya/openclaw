@@ -93,10 +93,10 @@ async function prepareControls(host: HTMLElement) {
 
 async function focusNextOption(select: HTMLElement) {
   const control = select as HTMLElementTagNameMap["wa-select"];
-  const { userEvent } = await import("vitest/browser");
-  // The browser pointer survives test files; palette assertions below exercise keyboard-only state.
-  await userEvent.unhover(control, { force: true });
   await control.show();
+  const { userEvent } = await import("vitest/browser");
+  // Palette checks use idle colors, independent of the previous pointer target.
+  await userEvent.unhover(select);
   control.focus();
   await userEvent.keyboard("{ArrowDown}");
   const current = control.querySelector<HTMLElement>("wa-option:state(current)");
@@ -167,6 +167,9 @@ describe.runIf("__vitest_browser__" in globalThis)("shared control theme inherit
     )!;
     await prepareControls(host);
     const menuTrigger = menu.parentElement!.querySelector<HTMLButtonElement>(".oc-menu-trigger")!;
+    const { userEvent } = await import("vitest/browser");
+    // Exercise the idle-pointer precondition with the clear button initially hovered.
+    await userEvent.hover(select.shadowRoot!.querySelector<HTMLElement>('[part~="clear-button"]')!);
 
     for (const theme of [
       "dark",
@@ -201,12 +204,6 @@ describe.runIf("__vitest_browser__" in globalThis)("shared control theme inherit
       expect(controlStyle(help, "submenu indicator").color, theme).toBe(color("muted"));
       expect(controlStyle(settings, "item description").color, theme).toBe(color("muted"));
       expect(controlStyle(menu, "menu").backgroundColor, theme).toBe(color("bg-elevated"));
-      // Reproduce a pointer left on the clear affordance by a prior browser test. Its hover
-      // color intentionally differs from --muted, so keyboard setup must leave that state.
-      const { userEvent } = await import("vitest/browser");
-      await userEvent.hover(
-        select.shadowRoot!.querySelector<HTMLElement>('[part~="clear-button"]')!,
-      );
       const currentOption = await focusNextOption(select);
       await expect.poll(() => menu.getAttribute("data-phase")).toBe("hidden");
       expect(controlStyle(select, "options").backgroundColor, theme).toBe(color("popover"));
