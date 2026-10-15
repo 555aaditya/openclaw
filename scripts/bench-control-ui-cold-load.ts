@@ -43,6 +43,7 @@ const { values } = parseArgs({
     "bundle-dir": { type: "string" },
     "worker-variants": { type: "string", default: "" },
     "reuse-build": { type: "string" },
+    "observation-ms": { type: "string", default: "15000" },
     tabs: { type: "string", default: "1" },
     untraced: { type: "boolean", default: false },
     runs: { type: "string", default: "3" },
@@ -59,6 +60,7 @@ if (sidebarView !== "sessions" && sidebarView !== "online") {
 const runs = Number(values.runs);
 const latencyMs = Number(values["latency-ms"]);
 const frameGapMs = Number(values["frame-gap-ms"]);
+const observationMs = Number(values["observation-ms"]);
 if (
   !Number.isInteger(runs) ||
   runs < 1 ||
@@ -66,7 +68,9 @@ if (
   !Number.isFinite(latencyMs) ||
   latencyMs < 0 ||
   !Number.isFinite(frameGapMs) ||
-  frameGapMs < 0
+  frameGapMs < 0 ||
+  !Number.isFinite(observationMs) ||
+  observationMs < 0
 ) {
   throw new Error("Expected 1–20 runs and nonnegative finite wire delays");
 }
@@ -78,18 +82,42 @@ const variants = values["worker-variants"] ? values["worker-variants"].split(","
 const workerBench = Boolean(values["worker-variants"]);
 const reuseBuild = values["bundle-dir"] ?? values["reuse-build"];
 const bundleDir = reuseBuild ? path.resolve(reuseBuild) : path.join(artifactDir, "ui");
+const rpcCensus = await readFile("scripts/lib/control-ui-worker-rpc-census.init.js", "utf8");
 const builtServer = reuseBuild
   ? await startBuiltControlUiE2eServer(bundleDir)
   : await startProductionControlUiE2eServer(bundleDir, head);
 // Keep the logical Gateway same-origin; the synthetic endpoint runs outside the renderer.
 const proxy = workerBench
   ? createServer((req, res) => {
+      const workerAsset = /\/gateway-worker-(?:raw-|shared-)?prototype-[^/]+\.js$/.test(
+        req.url ?? "",
+      );
       const upstream = proxyRequest(
         new URL(req.url ?? "/", builtServer.baseUrl),
-        { method: req.method, headers: req.headers },
+        {
+          method: req.method,
+          // Census injection needs JavaScript bytes, before preview compression.
+          headers: workerAsset ? { ...req.headers, "accept-encoding": "identity" } : req.headers,
+        },
         (response) => {
-          res.writeHead(response.statusCode ?? 500, response.headers);
-          response.pipe(res);
+          if (workerAsset) {
+            const chunks: Buffer[] = [];
+            response.on("data", (chunk: Buffer) => chunks.push(chunk));
+            response.on("end", () => {
+              const body = Buffer.concat([
+                Buffer.from(rpcCensus.replaceAll("window", "globalThis") + "\n"),
+                ...chunks,
+              ]);
+              res.writeHead(response.statusCode ?? 500, {
+                ...response.headers,
+                "content-length": body.length,
+              });
+              res.end(body);
+            });
+          } else {
+            res.writeHead(response.statusCode ?? 500, response.headers);
+            response.pipe(res);
+          }
         },
       );
       upstream.on("error", () => {
@@ -129,6 +157,20 @@ const fixture = createControlUiTeamScaleFixture({
 });
 let browser: Browser | undefined;
 let wire: Awaited<ReturnType<typeof startWorkerMockGateway>> | undefined;
+type WireStats = ReturnType<Awaited<ReturnType<typeof startWorkerMockGateway>>["readStats"]>;
+function wireDelta(before: WireStats, after: WireStats) {
+  return {
+    connections: after.connections - before.connections,
+    activeConnections: after.activeConnections,
+    requests: after.requests - before.requests,
+    requestBytes: after.requestBytes - before.requestBytes,
+    responseBytes: after.responseBytes - before.responseBytes,
+    eventBytes: after.eventBytes - before.eventBytes,
+    rpcs: after.perConnection.flatMap((connection, index) =>
+      connection.rpcs.slice(before.perConnection[index]?.rpcs.length ?? 0),
+    ),
+  };
+}
 const results = [];
 try {
   const prepared = await prepareControlUiMockGatewayScenario({
@@ -220,6 +262,9 @@ try {
     },
   );
   if (workerBench) {
+    await context.addInitScript({
+      content: `;(() => { if (window !== window.top) return; ${rpcCensus} })();`,
+    });
     await context.addInitScript({
       content: `;(() => { if (window !== window.top) return; ${await readFile("scripts/lib/control-ui-worker-loaf.init.js", "utf8")} })();`,
     });
@@ -329,7 +374,10 @@ try {
   await settle();
   await page.locator('aside.sidebar[data-snapshot-saved="true"]').waitFor();
   for (let run = 0; run < runs; run++)
-    for (const variant of run % 2 ? [...variants].reverse() : variants) {
+    for (const variant of [
+      ...variants.slice(run % variants.length),
+      ...variants.slice(0, run % variants.length),
+    ]) {
       if (workerBench) {
         const target = new URL(url);
         target.searchParams.set("gatewayWorker", variant);
@@ -337,8 +385,14 @@ try {
         await settle();
       }
       if (values.untraced) {
+        const beforeReload = wire!.readStats();
         await page.reload({ waitUntil: "domcontentloaded" });
         await settle();
+        await page.waitForFunction((ms) => performance.now() >= ms, observationMs);
+        const afterReload = wire!.readStats();
+        const bootConnections = afterReload.perConnection.filter(
+          (connection) => connection.id > beforeReload.connections,
+        );
         const metrics = await page.evaluate(() => Reflect.get(window, "__coldLoad").read());
         const tabs = [];
         const peers = [];
@@ -354,23 +408,38 @@ try {
             .locator(".chat-pane__session-title-text", { hasText: "Project dashboard 1" })
             .waitFor();
           await peer.locator('aside.sidebar[data-snapshot-saved="true"]').waitFor();
-          const after = wire!.readStats();
           await peer.waitForFunction(
             () => Reflect.get(window, "__gatewayFirstListAt") !== undefined,
           );
+          await peer.waitForFunction((ms) => performance.now() >= ms, observationMs);
+          const after = wire!.readStats();
+          const peerMetrics = await peer.evaluate(() => Reflect.get(window, "__coldLoad").read());
           const firstData = await peer.evaluate(
             () => Reflect.get(window, "__gatewayFirstListAt") ?? null,
           );
           tabs.push({
             tab: index + 1,
+            wireDelta: wireDelta(before, after),
             firstDataMs: firstData,
+            metrics: peerMetrics,
+            connections: after.perConnection.filter(
+              (connection) => connection.id > before.connections,
+            ),
             newConnections: after.connections - before.connections,
             responseBytes:
               after.responseBytes + after.eventBytes - before.responseBytes - before.eventBytes,
             requests: after.requests - before.requests,
           });
         }
-        const result = { run: run + 1, variant, ...metrics, tabs, wire: wire?.readStats() };
+        const result = {
+          run: run + 1,
+          variant,
+          ...metrics,
+          tabs,
+          bootConnections,
+          bootWire: wireDelta(beforeReload, afterReload),
+          wire: wire?.readStats(),
+        };
         for (const peer of peers) await peer.close();
         results.push(result);
         await writeFile(
@@ -589,6 +658,8 @@ try {
         sidebarView,
         latencyMs,
         frameGapMs,
+        observationMs,
+        chromium: browser?.version(),
         results,
       },
       null,
