@@ -141,6 +141,37 @@ export class SidebarSessionProjection {
     private readonly host?: { readonly isConnected: boolean; requestUpdate(): void },
   ) {}
 
+  private rows = new Map<string, SidebarRecentSession>();
+
+  reconcileRows(rows: SidebarRecentSession[]): SidebarRecentSession[] {
+    const retained = new Map<string, SidebarRecentSession>();
+    const reconcile = (row: SidebarRecentSession): SidebarRecentSession => {
+      const previous = this.rows.get(row.key);
+      const children = row.children.map(reconcile);
+      const next = { ...row, children };
+      const equal =
+        previous &&
+        Object.keys(previous).length === Object.keys(next).length &&
+        Object.entries(next).every(([key, value]) => {
+          const before: unknown = Reflect.get(previous, key);
+          return (
+            value === before ||
+            (typeof value === "object" &&
+              value !== null &&
+              typeof before === "object" &&
+              before !== null &&
+              JSON.stringify(value) === JSON.stringify(before))
+          );
+        });
+      const result = equal ? previous : next;
+      retained.set(row.key, result);
+      return result;
+    };
+    const result = rows.map(reconcile);
+    this.rows = retained;
+    return result;
+  }
+
   // Record frame admission only; owner.updated can precede child DOM bindings.
   private publishedSessionPresentation = "";
   private admittedPresencePresentation = "";
@@ -689,6 +720,7 @@ export class SidebarSessionProjection {
   }
 
   dispose(): void {
+    this.rows.clear();
     this.clearSubtitleTimer();
     this.revision += 1;
   }

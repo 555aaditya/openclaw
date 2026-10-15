@@ -7,6 +7,32 @@ type ProjectionInput = Parameters<SidebarSessionProjection["project"]>[0];
 const connectionIdentity = {};
 const listSource = {};
 
+it("retains equal presentation branches while changing descendants, membership and order", () => {
+  const projection = new SidebarSessionProjection();
+  const child = sessionRow("child", { isChild: true });
+  const initial = projection.reconcileRows([
+    sessionRow("parent", { children: [child], childSessionKeys: [child.key] }),
+    sessionRow("unchanged"),
+    sessionRow("removed"),
+  ]);
+  const next = projection.reconcileRows([
+    sessionRow("unchanged"),
+    sessionRow("inserted"),
+    sessionRow("parent", {
+      children: [{ ...child, label: "Renamed" }],
+      childSessionKeys: [child.key],
+    }),
+  ]);
+  expect(next.map((row) => row.key)).toEqual(["unchanged", "inserted", "parent"]);
+  expect(next[0]).toBe(initial[1]);
+  expect(next[2]).not.toBe(initial[0]);
+  expect(next[2]!.children[0]!.label).toBe("Renamed");
+  const refresh = projection.reconcileRows(structuredClone(next));
+  expect(refresh[0]).toBe(next[0]);
+  expect(refresh[1]).toBe(next[1]);
+  expect(refresh[2]).toBe(next[2]);
+});
+
 function sessionRow(
   key: string,
   overrides: Partial<SidebarRecentSession> = {},

@@ -149,6 +149,7 @@ it("reconstructs sidebar delta membership, order and facts before capability pub
   const { sessions } = createSessionCapabilityHarness(request);
   const query = { agentId: "main", rowMode: "sidebar" as const };
   await sessions.refresh({ ...query, force: true });
+  const retained = sessions.state.result!.sessions[2];
   request.mockResolvedValue({
     ...sessionsResult(
       [
@@ -180,6 +181,7 @@ it("reconstructs sidebar delta membership, order and facts before capability pub
     owners: [{ actor: { type: "human", id: "new-owner" }, label: "Fresh facet" }],
   });
   expect(sessions.state.result).not.toHaveProperty("rowsDelta");
+  expect(sessions.state.result?.sessions[0]).toBe(retained);
   expect(sessions.state.result).not.toHaveProperty("sharedFacts");
   expect(sessions.state.result?.sessions[1]).not.toHaveProperty("sharedFacts");
   request.mockResolvedValue({ ...sessionsResult([b], 3), rowsRevision: "restarted" });
@@ -188,6 +190,38 @@ it("reconstructs sidebar delta membership, order and facts before capability pub
   expect(request).toHaveBeenLastCalledWith(
     "sessions.list",
     expect.objectContaining({ ifRowsRevision: "delta:next" }),
+  );
+});
+
+it("retains equal full-response rows through capability publication", async () => {
+  const rows = Array.from({ length: 20 }, (_, index) => ({
+    key: `agent:main:row-${index}`,
+    sessionId: `row-${index}`,
+    kind: "direct" as const,
+    rowMode: "sidebar" as const,
+    owner: { actor: { type: "human" as const, id: "owner" } },
+    label: `Row ${index}`,
+  }));
+  const request = vi.fn().mockResolvedValue(sessionsResult(rows, 1));
+  const { sessions } = createSessionCapabilityHarness(request);
+  const query = { agentId: "main", rowMode: "sidebar" as const, force: true };
+  await sessions.refresh(query);
+  const previous = sessions.state.result!.sessions;
+  const next = structuredClone(rows);
+  next[3]!.label = "Renamed";
+  request.mockResolvedValue(sessionsResult(next.toReversed(), 2));
+  await sessions.refresh(query);
+  for (const row of sessions.state.result!.sessions) {
+    const before = previous.find((candidate) => candidate.key === row.key);
+    if (row.key === rows[3]!.key) {
+      expect(row).not.toBe(before);
+      expect(row.label).toBe("Renamed");
+    } else {
+      expect(row).toBe(before);
+    }
+  }
+  expect(sessions.state.result!.sessions.map((row) => row.key)).toEqual(
+    rows.toReversed().map((row) => row.key),
   );
 });
 

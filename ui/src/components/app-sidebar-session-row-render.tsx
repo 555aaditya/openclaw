@@ -35,9 +35,7 @@ export function renderRecentSession(params: RecentSessionParams) {
 }
 function renderRecentSessionRow(params: RecentSessionParams) {
   const host = createMemo(() => params.host),
-    session = createMemo(() => params.session, {
-      equals: false,
-    }),
+    session = createMemo(() => params.session),
     display = createMemo(() => params.display),
     listItem = createMemo(() => params.listItem ?? true),
     icon = createMemo(() => params.icon);
@@ -386,9 +384,7 @@ export function renderSessionTree(params: {
   icon?: JSX.Element;
 }): JSX.Element {
   const host = createMemo(() => params.host),
-    session = createMemo(() => params.session, {
-      equals: false,
-    }),
+    session = createMemo(() => params.session),
     listItem = createMemo(() => params.listItem ?? true),
     icon = createMemo(() => params.icon);
   const expanded = createMemo(() => host().isSessionChildrenExpanded(session()));

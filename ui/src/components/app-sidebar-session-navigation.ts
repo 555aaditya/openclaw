@@ -691,9 +691,11 @@ export abstract class AppSidebarSessionNavigationElement extends AppSidebarBase 
           compareSessions: createSidebarSessionRowsComparator(this.readSidebarSessionSortOptions),
           resolveAttention: this.resolveSessionAttention,
         });
-        return this.applySessionOwnerFilter(
-          projectUnpinnedSessionRows(projected),
-          this.selectedAgentSessionResult()?.owners,
+        return this.sessionProjection.reconcileRows(
+          this.applySessionOwnerFilter(
+            projectUnpinnedSessionRows(projected),
+            this.selectedAgentSessionResult()?.owners,
+          ),
         );
       },
     );

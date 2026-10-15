@@ -134,7 +134,9 @@ export function createSessionRowProvenance() {
     const result =
       next.snapshotAt === current.snapshotAt && isShallowEqualSessionRow(next, current)
         ? current
-        : next;
+        : next.snapshotAt === offered.snapshotAt && isShallowEqualSessionRow(next, offered)
+          ? offered
+          : next;
     const observation = observations.get(newer);
     if (observation) {
       observations.set(result, observation);

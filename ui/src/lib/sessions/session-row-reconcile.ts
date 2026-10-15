@@ -106,9 +106,12 @@ export function preserveRosterPresentationMetadata(
   if (incomingAgentId && existingAgentId && incomingAgentId !== existingAgentId) {
     return incoming;
   }
-  const row = { ...incoming };
+  let row = incoming;
   for (const field of ["derivedTitle", "lastMessagePreview"] as const) {
     if (incoming[field] === undefined && existing[field] !== undefined) {
+      if (row === incoming) {
+        row = { ...incoming };
+      }
       row[field] = existing[field];
     }
   }
