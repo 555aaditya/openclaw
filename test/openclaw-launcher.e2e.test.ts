@@ -1807,7 +1807,7 @@ console.log(JSON.stringify({ parent: process.pid, bun: process.versions.bun, mar
     "disabled-zero",
     "disabled-empty",
     "cache-empty",
-  ])("keeps Gateway main uncached and shares the worker cache base: %s", async (mode) => {
+  ])("shares the Gateway cache base across launcher and worker entrypoints: %s", async (mode) => {
     const fixtureRoot = await makeLauncherFixture(fixtures);
     const tmpRoot = fixtures.createTempDir("openclaw-launcher-cache-");
     await fs.writeFile(path.join(fixtureRoot, "package.json"), '{"version":"2026.9.6"}\n');
@@ -1866,9 +1866,13 @@ console.log(JSON.stringify({ parent: process.pid, bun: process.versions.bun, mar
          assert.deepEqual(a, b, "separate built helpers must share the launcher fact");
          const cachedWorkers = ["owned", "inherited", "inherited-windows", "direct", "source"].includes(${JSON.stringify(mode)});
          if (cachedWorkers) {
-           assert.equal(parentDirectory, null);
            assert.ok(a.NODE_COMPILE_CACHE);
-           process.on("exit", () => assert.equal(getCompileCacheDir(), undefined));
+           const [major, minor] = process.versions.node.split(".").map(Number);
+           const supportsReadOnly = !process.versions.bun && (major > 26 || (major === 26 && minor >= 8));
+           // Inherited-cache workers can populate the native leaf before entry.
+           if (!supportsReadOnly) assert.equal(parentDirectory, null);
+           if (parentDirectory) assert.ok(parentDirectory.startsWith(a.NODE_COMPILE_CACHE));
+           process.on("exit", () => assert.equal(getCompileCacheDir() ?? null, parentDirectory));
          } else if (${JSON.stringify(mode)} === "foreign") {
            assert.ok(parentDirectory);
            assert.equal(process.env.NODE_COMPILE_CACHE, undefined);
