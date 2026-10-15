@@ -3,6 +3,7 @@ import path from "node:path";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { expect, it, vi } from "vitest";
 import type { QuestionGetResult, QuestionRecord } from "../packages/gateway-protocol/src/index.js";
+import { readSessionEntryReadOnlyInWorker } from "../src/config/sessions/session-entry-read-runtime.js";
 import type { OpenClawConfig } from "../src/config/types.openclaw.js";
 import { linkUserChannelIdentity } from "../src/state/user-channel-identities.js";
 import {
@@ -148,6 +149,28 @@ it.for(["allow", "unlink", "queued-allow", "queued-unlink", "queued-reassign"] a
           expect(
             recipients[deliveries.findIndex((text) => text.includes("Which environment?"))],
           ).toBe(telegram.senderId);
+          setStage("asking turn terminal delivery accounting");
+          if (!question.runId) {
+            throw new Error("The native question must retain its asking run");
+          }
+          expect(
+            await client.request("agent.wait", { runId: question.runId, timeoutMs: 30_000 }),
+          ).toMatchObject({ status: "ok" });
+          const askingEntry = await withEnvAsync(fixture.instance.state.envVars, () =>
+            readSessionEntryReadOnlyInWorker({
+              agentId: "main",
+              sessionKey: question.sessionKey,
+              storePath: fixture.instance.state.statePath(
+                "agents",
+                "main",
+                "sessions",
+                "sessions.json",
+              ),
+            }),
+          );
+          expect(askingEntry?.pendingFinalDelivery).toBeUndefined();
+          expect(deliveries).toHaveLength(1);
+          expect(deliveries[0]).toContain("Which environment?");
           setStage("original operator client retirement");
           await client.stopAndWait();
           client = undefined;
