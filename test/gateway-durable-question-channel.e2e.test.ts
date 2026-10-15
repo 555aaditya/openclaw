@@ -132,7 +132,11 @@ it.for(["allow", "unlink", "queued-allow", "queued-unlink", "queued-reassign"] a
             Promise.race([requested.promise, fixture.failed]),
             signal,
           );
-          expect(question.sessionKey).toEqual(expect.any(String));
+          const questionSessionKey = question.sessionKey;
+          expect(questionSessionKey).toEqual(expect.any(String));
+          if (!questionSessionKey) {
+            throw new Error("The native question must retain its original session");
+          }
           setStage("canonical durable acceptance");
           expect(
             (
@@ -159,7 +163,7 @@ it.for(["allow", "unlink", "queued-allow", "queued-unlink", "queued-reassign"] a
           const askingEntry = await withEnvAsync(fixture.instance.state.envVars, () =>
             readSessionEntryReadOnlyInWorker({
               agentId: "main",
-              sessionKey: question.sessionKey,
+              sessionKey: questionSessionKey,
               storePath: fixture.instance.state.statePath(
                 "agents",
                 "main",
@@ -208,7 +212,7 @@ it.for(["allow", "unlink", "queued-allow", "queued-unlink", "queued-reassign"] a
             await client.request(
               "chat.send",
               {
-                sessionKey: question.sessionKey,
+                sessionKey: questionSessionKey,
                 message: "DURABLE_BUSY_PROOF: hold the unrelated foreground turn.",
                 idempotencyKey: "channel-queue-blocker",
                 deliver: false,
