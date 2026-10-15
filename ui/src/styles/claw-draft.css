@@ -7,6 +7,10 @@
   min-width: 0;
 }
 
+.claw-draft .settings-group {
+  padding: var(--space-4);
+}
+
 .claw-draft__actions,
 .claw-draft__identity {
   display: flex;
