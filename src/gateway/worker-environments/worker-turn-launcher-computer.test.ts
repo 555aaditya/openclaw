@@ -1,6 +1,7 @@
 import { mkdir, realpath } from "node:fs/promises";
 import path from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { WORKER_GITHUB_REFRESH_PROTOCOL_FEATURE } from "../../../packages/gateway-protocol/src/schema/worker-admission.js";
 import { WORKER_COMPUTER_PROTOCOL_FEATURE } from "../../../packages/gateway-protocol/src/schema/worker-computer.js";
 import { createSolidPngBuffer } from "../../../test/helpers/image-fixtures.js";
 import { createDeferred } from "../../../test/helpers/promise.js";
@@ -11,7 +12,8 @@ import { FailoverError, resolveModelFallbackError } from "../../agents/failover-
 import { runWithModelFallback } from "../../agents/model-fallback-runner.js";
 import { createAgentRunDirectAbortError } from "../../agents/run-termination.js";
 import { installSessionPlacementAdmissionProvider } from "../../agents/session-placement-admission.js";
-import { loadSessionEntry } from "../../config/sessions/session-accessor.js";
+import { setRuntimeConfigSnapshot } from "../../config/runtime-snapshot.js";
+import { loadSessionEntry, patchSessionEntryCore } from "../../config/sessions/session-accessor.js";
 import {
   attachErrorDiagnostic,
   formatErrorMessageForDisplay,
@@ -19,11 +21,14 @@ import {
 import { saveMediaBuffer } from "../../media/store.js";
 import { getPluginRuntimeGatewayRequestScope } from "../../plugins/runtime/gateway-request-scope.js";
 import { runCommandWithTimeout } from "../../process/exec.js";
+import { getSessionRepositoryWorkspaceStore } from "../../state/session-repository-workspaces.js";
 import { closeStateDatabaseForTest } from "../../test-utils/database-cleanup.js";
 import type { WorkerGitHubLaunchBinding } from "../../worker/launch-descriptor.js";
+import * as githubPublication from "../github-publication-availability.js";
 import type { PreparedWorkerComputer } from "./computer-transport.js";
 import * as skillTransfer from "./skill-resource-transfer.js";
 import { WorkerRunnerCapacityError, type WorkerTunnelHandle } from "./tunnel-contract.js";
+import { prepareGitHubPublicationFact } from "./worker-github-binding.js";
 import {
   createWorkerTurnTunnel,
   ENVIRONMENT_ID,
@@ -51,7 +56,9 @@ import {
 
 afterAll(closeStateDatabaseForTest);
 
-const readGitHubFact = vi.hoisted(() => vi.fn());
+const readGitHubFact = vi.hoisted(() =>
+  vi.fn<typeof import("../github-publication-discovery.js").readGitHubPublicationFact>(),
+);
 // mock-isolation: Worker launches consume facts without starting identity discovery.
 vi.mock("../github-publication-discovery.js", () => ({
   readGitHubPublicationFact: readGitHubFact,
@@ -79,10 +86,39 @@ describe("worker launch capabilities", () => {
         remoteUrl: "https://github.com/owner/repo.git",
         gitAuthor: { name: "Shared Bot", email: "shared@example.test" },
       };
-      readGitHubFact.mockReturnValue(
-        available ? { available: true, github } : { available: false },
-      );
-      const launchTurn = vi.fn<NonNullable<WorkerTunnelHandle["launchTurn"]>>(async ({ plan }) => {
+      const profileId = "ghp_11111111111111111111111111111111";
+      const config = {
+        session: { store: sessionTarget.storePath },
+        tools: { github: { profileId, gitAuthor: github.gitAuthor } },
+      };
+      setRuntimeConfigSnapshot(config);
+      const repository = await getSessionRepositoryWorkspaceStore().create({
+        agentId: "main",
+        sessionKey: SESSION_KEY,
+        url: "https://github.com/owner/repo.git",
+        branch: github.branch,
+        assertCurrent() {},
+      });
+      await patchSessionEntryCore(sessionTarget, (entry) => ({
+        ...entry,
+        repositoryWorkspaceId: repository.workspaceId,
+      }));
+      // Credential discovery is external I/O; retain real workspace and live-profile checks.
+      using _ = vi
+        .spyOn(githubPublication, "prepareCurrentGitHubPublicationIdentity")
+        .mockResolvedValue({
+          source: "system-configured",
+          profileId,
+          account: { accountId: 42, login: github.login, avatarUrl: null },
+          env: { GH_TOKEN: github.token },
+        });
+      const fact = await prepareGitHubPublicationFact(sessionTarget);
+      expect(fact?.github).toEqual(github);
+      if (!fact) {
+        throw new Error("Expected a prepared GitHub publication fact");
+      }
+      readGitHubFact.mockReturnValue(available ? fact : { available: false });
+      const dispatch = vi.fn<NonNullable<WorkerTunnelHandle["launchTurn"]>>(async ({ plan }) => {
         if (available) {
           expect(plan.assignment.github).toEqual(github);
         } else {
@@ -91,11 +127,18 @@ describe("worker launch capabilities", () => {
         throw new WorkerRunnerCapacityError();
       });
       const tunnel: WorkerTunnelHandle = createWorkerTurnTunnel({
-        launchTurn,
+        launchTurn: async (request) => {
+          // The transport consumes this guard immediately before dispatch, after plan awaits.
+          request.assertCurrent?.();
+          return dispatch(request);
+        },
         measureLaunchTurn: (plan, claim) => {
           if (revoked) {
             expect(plan.assignment.github).toEqual(github);
-            readGitHubFact.mockReturnValue({ available: true });
+            setRuntimeConfigSnapshot({
+              ...config,
+              tools: { github: { profileId: "ghp_22222222222222222222222222222222" } },
+            });
           }
           return measureLaunchTurn(plan, claim);
         },
@@ -106,7 +149,13 @@ describe("worker launch capabilities", () => {
       });
       const environments = {
         ...unusedEnvironments(),
-        get: vi.fn(() => attachedEnvironment()),
+        get: vi.fn(() => {
+          const environment = attachedEnvironment();
+          environment.bootstrapReceipt!.protocolFeatures.push(
+            WORKER_GITHUB_REFRESH_PROTOCOL_FEATURE,
+          );
+          return environment;
+        }),
         acquireTurnCredential: vi.fn(async () => credential()),
         startTunnel: vi.fn(async () => tunnel),
       };
@@ -117,13 +166,11 @@ describe("worker launch capabilities", () => {
         vi.fn(),
       );
       if (revoked) {
-        await expect(execution).rejects.toThrow(
-          "GitHub identity changed before worker launch; retry the turn.",
-        );
-        expect(launchTurn).not.toHaveBeenCalled();
+        await expect(execution).rejects.toThrow("Worker GitHub credential authority changed");
+        expect(dispatch).not.toHaveBeenCalled();
       } else {
         await expect(execution).rejects.toBeInstanceOf(WorkerRunnerCapacityError);
-        expect(launchTurn).toHaveBeenCalledOnce();
+        expect(dispatch).toHaveBeenCalledOnce();
       }
     },
   );
