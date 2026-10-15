@@ -52,17 +52,28 @@ that stores without a PostgreSQL schema remain on SQLite.
 | `database.postgres.connection`   | None         | Required for PostgreSQL. A DSN string or env/file/exec SecretRef; store-backed refs are rejected.                                                                |
 | `database.postgres.schemaPrefix` | `"openclaw"` | Prefix for new store schemas: 1–27 lowercase letters, digits, or underscores, starting with a letter or underscore. Existing anchors keep their recorded schema. |
 
-Workboard is currently the only PostgreSQL-supported store. Shared state,
-agent/session storage, and other stores continue using SQLite. Incognito storage
+The supported PostgreSQL families are:
+
+- **Workboard:** runtime storage, bidirectional database ports, and matched backups.
+- **Logbook:** runtime frames, batches, observations, cards, and standups;
+  bidirectional database ports; and matched backups. Frame images remain local
+  file artifacts under `logbook/frames`. Ports preserve their stored paths and
+  leave the files in place. Backups include that directory alongside the database
+  export and anchor; retain it when restoring or moving an installation.
+- **Team Reports:** saved reports, person-day counts, and run history;
+  bidirectional database ports; and matched backups. Collected activity is
+  session-local scratch and is not exported or backed up.
+
+Shared state, agent/session storage, and other stores continue using SQLite. Incognito storage
 remains memory-only. A supported store never silently falls back to SQLite when
 its PostgreSQL connection or admission fails.
 
-Use `openclaw database port` to move existing workboard data between engines.
+Use `openclaw database port` to move existing supported data between engines.
 Changing `database.engine` alone does not migrate existing data. Omitting
 `database` preserves the SQLite default, so ordinary updates require no
 configuration or data migration.
 
-## Port existing workboard stores
+## Port existing stores
 
 Stop the Gateway first, through the service owner that normally manages it, and
 stop embedded agents using the same state directory. The command refuses a live
@@ -77,13 +88,17 @@ openclaw database port --to postgres
 
 Port, backup, restore, and fingerprint operations share one database-family
 provider registry. Each provider resolves its stores and supplies the generated
-schema descriptor and expected PostgreSQL catalog. **Workboard is currently the
-only registered family.** State, agent, Logbook, Team Reports, and Matrix-root
+schema descriptor and expected PostgreSQL catalog. **Workboard, Logbook, and Team Reports
+are registered families.** State, agent, and Matrix-root
 support are not enabled by this registry yet. An unrecognized PostgreSQL anchor
 refuses the operation and names the supported families.
+For separately installed plugins such as Team Reports, operations load the
+selected installed plugin's schema and admission API. Keep the matching plugin
+installed for port, backup, and restore. Preflight does not require absent
+optional plugins.
 
-The command inventories all existing registered workboard stores, including
-disabled workboard plugin stores. It does not create missing stores. Shared state,
+The command inventories all existing registered stores, including
+disabled plugin stores. It does not create missing stores. Shared state,
 agent databases, and safety journals remain on SQLite; shared-state and agent
 support await their respective PostgreSQL migrations. A dry run checks read-only
 prerequisites and reports checks that still require private migration, copying,

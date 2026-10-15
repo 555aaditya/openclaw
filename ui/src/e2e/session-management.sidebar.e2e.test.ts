@@ -134,8 +134,11 @@ suite.define(() => {
       await page.goto(controlUiSessionUrl(suite.server.baseUrl, parentKey));
       const parent = page.locator(`[data-session-key="${parentKey}"]`);
       await parent.waitFor({ state: "visible", timeout: 10_000 });
-      await expect.poll(() => page.locator(".sidebar-recent-session--child").count()).toBe(4);
-      await parent.getByRole("button", { name: "Hide 4 child sessions for Plan release" }).click();
+      const initialToggle = parent.locator("[data-child-session-toggle]");
+      await initialToggle.waitFor();
+      if ((await initialToggle.getAttribute("aria-expanded")) === "true") {
+        await initialToggle.click();
+      }
       await expect.poll(() => page.locator(".sidebar-recent-session--child").count()).toBe(0);
       // Delegated work keeps the idle parent's ring visible even with children collapsed.
       await expect

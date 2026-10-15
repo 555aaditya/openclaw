@@ -30,9 +30,10 @@ suite.define(() => {
     });
     try {
       await page.goto(controlUiSessionUrl(suite.server.baseUrl, parentKey));
-      const disclosure = page.locator('[data-child-session-toggle="' + parentKey + '"]');
-      if ((await disclosure.getAttribute("aria-expanded")) === "false") {
-        await disclosure.click();
+      const toggle = page.locator('[data-child-session-toggle="' + parentKey + '"]');
+      await toggle.waitFor();
+      if ((await toggle.getAttribute("aria-expanded")) === "false") {
+        await toggle.click();
       }
       const row = page.locator('.sidebar-recent-session[data-session-key="' + childKey + '"]');
       await row.waitFor({ state: "visible" });
