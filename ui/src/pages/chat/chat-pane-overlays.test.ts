@@ -21,16 +21,18 @@ async function createPane() {
   onTestFinished(() => overlays.dispose());
   let snapshot = overlays.snapshot;
   const listeners = new Set<(next: ApplicationOverlaySnapshot) => void>();
-  context.overlays = {
-    ...overlays,
-    get snapshot() {
-      return snapshot;
+  Object.assign(context, {
+    overlays: {
+      ...overlays,
+      get snapshot() {
+        return snapshot;
+      },
+      subscribe: (listener: (next: ApplicationOverlaySnapshot) => void) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
     },
-    subscribe: (listener) => {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-  };
+  });
   const pane = createRenderTestChatPane();
   const state = pane.initialize(context);
   state.sessionKey = "agent:main:approval";
