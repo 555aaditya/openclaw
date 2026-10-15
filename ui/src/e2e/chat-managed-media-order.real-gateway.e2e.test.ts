@@ -217,17 +217,36 @@ async function runCli(args: string[]) {
 
 async function capture(page: Page, bubble: Locator, name: string) {
   const body = (await page.locator("body").textContent()) ?? "";
-  for (const privateValue of [
-    instance.gatewayToken,
-    instance.hookToken,
-    instance.stateDir,
-    instance.homeDir,
-    process.cwd(),
-    fixtureKey,
-  ]) {
-    expect(body.includes(privateValue), "Capture must contain only synthetic public content").toBe(
-      false,
-    );
+  for (const [category, privateValue] of [
+    ["gateway token", instance.gatewayToken],
+    ["hook token", instance.hookToken],
+    ["state directory", instance.stateDir],
+    ["home directory", instance.homeDir],
+    ["working directory", process.cwd()],
+    ["provider fixture key", fixtureKey],
+  ] as const) {
+    let message = `Capture ${name} must contain only synthetic public content (${category})`;
+    if (body.includes(privateValue)) {
+      const matches = await page.locator("[aria-describedby]").evaluateAll(
+        (triggers, value) => ({
+          // oxlint-disable-next-line unicorn/prefer-dom-node-text-content -- Compare rendered text with the rejected textContent snapshot.
+          renderedText: document.body.innerText.includes(value),
+          describedText: triggers.some((trigger) => {
+            const root = trigger.getRootNode();
+            if (!(root instanceof Document || root instanceof ShadowRoot)) {
+              return false;
+            }
+            return (trigger.getAttribute("aria-describedby") ?? "")
+              .split(/\s+/u)
+              .filter(Boolean)
+              .some((id) => root.getElementById(id)?.textContent?.includes(value));
+          }),
+        }),
+        privateValue,
+      );
+      message += `; innerText=${matches.renderedText}; describedText=${matches.describedText}`;
+    }
+    expect(body.includes(privateValue), message).toBe(false);
   }
   expect(new URL(page.url()).hash).toBe("");
   const content = [
