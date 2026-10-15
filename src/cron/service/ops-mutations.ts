@@ -57,7 +57,7 @@ import {
   warnIfDisabled,
 } from "./store.js";
 
-const RETRY_ADD_AFTER_SESSION_CLEANUP = new Error("retry add after session cleanup");
+const RETRY_ADD_AFTER_SESSION_CLEANUP = Symbol("retry add after session cleanup");
 
 /** Cancels only caller-corroborated definitions while the durable lifecycle fence holds. */
 export async function quiesceJobs(
@@ -88,7 +88,7 @@ export async function add(
 ): Promise<CronAddResult> {
   const source = captureCronJobMutationSource(state);
   let pendingSessionCleanup: Promise<void> | undefined;
-  return await locked(state, async () => {
+  return await locked<CronAddResult | typeof RETRY_ADD_AFTER_SESSION_CLEANUP>(state, async () => {
     source.assertCurrent();
     warnIfDisabled(state, "add");
     if (input.payload.kind === "heartbeat" && opts?.systemOwned !== true) {
@@ -111,7 +111,7 @@ export async function add(
       normalizeCronRunJobId(normalizedId);
       pendingSessionCleanup = getPendingCronSessionCleanup(state, normalizedId);
       if (pendingSessionCleanup) {
-        throw RETRY_ADD_AFTER_SESSION_CLEANUP;
+        return RETRY_ADD_AFTER_SESSION_CLEANUP;
       }
     }
     const normalizedInput = normalizedId ? { ...input, id: normalizedId } : input;
@@ -216,9 +216,9 @@ export async function add(
           job: committedJob,
         }
       : committedJob;
-  }).catch(async (error: unknown) => {
-    if (error !== RETRY_ADD_AFTER_SESSION_CLEANUP || !pendingSessionCleanup) {
-      throw error;
+  }).then(async (result) => {
+    if (result !== RETRY_ADD_AFTER_SESSION_CLEANUP) {
+      return result;
     }
     await pendingSessionCleanup;
     source.assertCurrent();

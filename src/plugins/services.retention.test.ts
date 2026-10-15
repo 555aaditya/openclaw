@@ -7,8 +7,12 @@ import { pluginRetentionEntrypoints } from "./retention-runtime.test-support.js"
 it.each([
   { name: "completed service generations", scenario: "generations" },
   { name: "completed handle publication", scenario: "on-handle" },
+  {
+    name: "ingress stop caller state while its revoked factory remains retained",
+    scenario: "ingress-stop",
+  },
 ])(
-  "releases $name while the newest service handle remains usable",
+  "releases $name",
   async ({ scenario }) => {
     await promisify(execFile)(
       process.execPath,
