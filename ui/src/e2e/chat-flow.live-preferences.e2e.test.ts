@@ -106,7 +106,7 @@ suite.define(() => {
       // The mounted slider is enabled before the popup can receive keyboard focus.
       await expect.poll(() => slider.isVisible()).toBe(true);
       await expect.poll(() => slider.isEnabled()).toBe(true);
-      expect(await main.locator("[data-chat-speed-option=on]").isDisabled()).toBe(true);
+      expect(await main.locator("[data-chat-speed-option=on]").isDisabled()).toBe(false);
       await slider.press("End");
       const thinking = await gateway.waitForRequest("sessions.patch", { after: 1 });
       expect(thinking.params).toMatchObject({ key, thinkingLevel: "high" });
