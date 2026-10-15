@@ -201,7 +201,7 @@ suite.define(() => {
               step: `warning:doctor:${index + 1}`,
               status: "completed" as const,
               detail:
-                "An optional integration needs attention. Review its configuration in Settings. ".repeat(
+                `Optional integration ${index + 1} needs attention. Review its configuration in Settings. `.repeat(
                   6,
                 ),
             })),
