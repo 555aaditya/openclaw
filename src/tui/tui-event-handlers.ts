@@ -653,6 +653,9 @@ export function createEventHandlers(context: EventHandlerContext) {
         return;
       }
       if (phase === "start") {
+        if (localMode && evt.data?.explicitFollowup === true) {
+          chatLog.addSystem("Your followup has started.");
+        }
         setActivityStatus("running");
       }
       if (phase === "finishing") {

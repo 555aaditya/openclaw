@@ -146,7 +146,11 @@ it("leaves unmatched hidden-run input in visible FIFO followups", async () => {
       for (const run of [first, { ...first, prompt: "second input", messageId: "hidden-second" }]) {
         const state: ReplyOperationRunState = {};
         await startSteer(key, run, operation, followup, state);
-        expect(state.admission).toEqual({ status: "accepted", mode: "followup" });
+        expect(state.admission).toEqual({
+          status: "accepted",
+          mode: "followup",
+          reason: "steering-unavailable",
+        });
       }
       expect(queueMessage).not.toHaveBeenCalled();
       operation.complete();
