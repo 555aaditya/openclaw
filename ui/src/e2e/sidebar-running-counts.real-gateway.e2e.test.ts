@@ -22,7 +22,7 @@ import {
   waitForControlUiInitialRoster,
 } from "../test-helpers/control-ui-e2e-readiness.ts";
 import { takeControlUiScreenshotFrame } from "../test-helpers/control-ui-e2e-screenshot.ts";
-import { controlUiSessionUrl, pauseVirtualClock } from "../test-helpers/control-ui-e2e.ts";
+import { controlUiSessionUrl } from "../test-helpers/control-ui-e2e.ts";
 import { createControlUiE2eSuite } from "./control-ui-e2e-suite.test-support.ts";
 
 const suite = createControlUiE2eSuite({
@@ -179,11 +179,10 @@ suite.define(() => {
           await page.screenshot({ path: path.join(suite.artifactDir, "initial-shell.png") });
           await page.locator('[data-navigation-view="online"]').click();
           const person = page.locator('[data-online-user-id="' + profile.id + '"]');
+          // Keep browser frames running while real Gateway count reads settle.
           await expect
-            .poll(() => person.getAttribute("aria-description"))
+            .poll(() => person.getAttribute("aria-description"), { timeout: 30_000 })
             .toContain("13 open sessions, 0 running");
-          await page.clock.install();
-          await pauseVirtualClock(page);
           // Real runtime owners produce the liveness and sessions.changed events;
           // no mocked count response or paid inference is involved.
           for (const [index, key] of keys.entries()) {
@@ -208,11 +207,10 @@ suite.define(() => {
             });
           }
           await expect.poll(() => activeEvents.size).toBe(12);
-          await page.clock.runFor(5_000);
           await page.mouse.move(900, 600);
           try {
             await expect
-              .poll(() => person.getAttribute("aria-description"))
+              .poll(() => person.getAttribute("aria-description"), { timeout: 30_000 })
               .toContain("13 open sessions, 12 running");
           } finally {
             const frame = await takeControlUiScreenshotFrame(
@@ -241,11 +239,9 @@ suite.define(() => {
             releaseAgentRunContext(runId, claims.get(runId));
           }
           await expect.poll(() => stoppedEvents.size).toBe(12);
-          await page.clock.runFor(5_000);
           await expect
-            .poll(() => person.getAttribute("aria-description"))
+            .poll(() => person.getAttribute("aria-description"), { timeout: 30_000 })
             .toContain("13 open sessions, 0 running");
-          await page.clock.resume();
         },
       );
     } finally {
