@@ -48,11 +48,19 @@ it("keeps palette keyboard editing and catalog work scoped across result navigat
     createContext(harness.gateway, async () => null),
   );
   disposals.push(() => provider.remove());
-  palette.openPalette();
+  // One native edit has a defined undo target; browsers may split a typing
+  // burst into several undo groups depending on scheduling.
+  palette.openPalette({
+    value: "needl",
+    selectionStart: 5,
+    selectionEnd: 5,
+    selectionDirection: "none",
+  });
   await palette.updateComplete;
   const input = palette.querySelector<HTMLTextAreaElement>("textarea")!;
   input.focus();
-  await userEvent.keyboard("needle");
+  await userEvent.keyboard("{End}e");
+  expect(input.value).toBe("needle");
   await expect.poll(() => palette.textContent).toContain("Needle 0 model 000");
   // Settled rows remain visible while typing is debounced; only the active
   // descendant establishes that ArrowDown is admitted as result navigation.
@@ -97,7 +105,7 @@ it("keeps palette keyboard editing and catalog work scoped across result navigat
   input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
   nativeWrites.mockRestore();
   await userEvent.keyboard("{Control>}z{/Control}");
-  expect(input.value).toBe("");
+  expect(input.value).toBe("needl");
   palette.remove();
   const retiredShortcut = new KeyboardEvent("keydown", {
     key: "k",
