@@ -27,6 +27,7 @@ import {
 import { getFreePort } from "../../../src/test-utils/ports.ts";
 import { runQaGatewayFixture } from "../../../test/helpers/qa-gateway-cleanup.ts";
 import { SESSION_PULL_REQUESTS_SUBSCRIBE_METHOD } from "../lib/session-pull-requests.ts";
+import type { ChatDetails } from "../pages/chat/components/chat-details.tsx";
 import { evaluateControlUiContext } from "../test-helpers/control-ui-e2e-context.ts";
 import { takeControlUiViewportScreenshot } from "../test-helpers/control-ui-e2e-screenshot.ts";
 import { controlUiSessionUrl } from "../test-helpers/control-ui-e2e.ts";
@@ -522,11 +523,12 @@ suite.define(() => {
             const retiredCount = retiredDeliveries.length;
             await cue("Replace the workspace while the earlier GitHub refresh is held");
             waitingForReplacement = true;
+            const replacementSessionId = "00000000-0000-4000-8000-000000000202";
             replaceSessionEntrySync(
               { agentId: "main", sessionKey },
               {
                 ...entry,
-                sessionId: "00000000-0000-4000-8000-000000000202",
+                sessionId: replacementSessionId,
                 spawnedCwd: replacement.root,
                 updatedAt: Date.now(),
               },
@@ -534,7 +536,17 @@ suite.define(() => {
             expect(await refreshFromBrowser(page)).toEqual(["operator.read"]);
             releaseProvider.resolve();
             const settled = await racePromiseWithAbortSignal(changedDelivery.promise, signal);
-            // A new session incarnation resets the pane-local Details presentation.
+            // PR publication can precede the session row that resets Details presentation.
+            await expect
+              .poll(() =>
+                pane.evaluate(async (element) => {
+                  const details = element.querySelector<ChatDetails>("openclaw-chat-details");
+                  await details?.updateComplete;
+                  return details?.props?.selectedSession?.sessionId;
+                }),
+              )
+              .toBe(replacementSessionId);
+            await pane.locator(".chat-details").waitFor({ state: "hidden" });
             await openDetailsPullRequests(pane);
             await chip
               .locator(".chat-pr__number")
@@ -572,7 +584,38 @@ suite.define(() => {
                 branch: replacement.branch,
                 additions: replacement.additions,
               });
-              await chip.locator(".chat-pr__number").filter({ hasText: "#203" }).waitFor();
+              try {
+                await chip.locator(".chat-pr__number").filter({ hasText: "#203" }).waitFor();
+              } catch (error) {
+                const detailsState = await page
+                  .evaluate(() => {
+                    const activePane = document.querySelector(
+                      "openclaw-chat-pane.chat-pane-cache__pane--active",
+                    );
+                    const details = activePane?.querySelector<ChatDetails>("openclaw-chat-details");
+                    const panel = activePane?.querySelector<HTMLElement>(".chat-details");
+                    return {
+                      selectedSessionId:
+                        details?.props?.selectedSession?.sessionId?.slice(0, 80) ?? null,
+                      presented: details?.presented ?? null,
+                      mobile: details?.mobile ?? null,
+                      panelHidden: panel?.hidden ?? null,
+                      panelPopover: panel?.popover ?? null,
+                      panelPopoverOpen: panel?.matches(":popover-open") ?? null,
+                      triggerExpanded:
+                        details
+                          ?.querySelector(".chat-details-toggle")
+                          ?.getAttribute("aria-expanded") ?? null,
+                      pullRequestsOpen:
+                        panel?.querySelector<HTMLDetailsElement>(
+                          '[data-details-group="pull-requests"]',
+                        )?.open ?? null,
+                    };
+                  })
+                  .catch(() => null);
+                console.error("PR reader Details snapshot", detailsState);
+                throw error;
+              }
               await reader.request(SESSION_PULL_REQUESTS_SUBSCRIBE_METHOD, {
                 sessionKeys: [sessionKey],
               });
