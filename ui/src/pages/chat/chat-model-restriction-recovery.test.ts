@@ -41,6 +41,7 @@ function fixture(
     unbound?: boolean;
     materializedSessionId?: string;
     remembered?: boolean;
+    sessionKey?: string;
   } = {},
 ) {
   if (options.send) {
@@ -50,6 +51,7 @@ function fixture(
     vi.stubGlobal("requestAnimationFrame", () => 1);
     vi.stubGlobal("cancelAnimationFrame", () => undefined);
   }
+  const sessionKey = options.sessionKey ?? "global";
   const result = createSessionsListResult({
     model: "original",
     modelProvider: "fixture",
@@ -57,7 +59,7 @@ function fixture(
   });
   result.sessions[0] = {
     ...result.sessions[0],
-    key: "global",
+    key: sessionKey,
     kind: "direct",
     updatedAt: 1,
     sessionId: options.materializedSessionId ?? recovery.sessionId,
@@ -78,13 +80,13 @@ function fixture(
   let sends = 0;
   const receipt: SessionsPatchResult = {
     ok: true,
-    key: "global",
+    key: sessionKey,
     path: "",
     entry: { sessionId: recovery.sessionId, permissionMode: "full", updatedAt: 2 },
     resolved: { model: options.unbound ? "original" : "selected", modelProvider: "fixture" },
   };
   const host = makeChatHost({
-    sessionKey: "global",
+    sessionKey,
     assistantAgentId: "selected-agent",
     agentsList: { defaultId: "main", scope: "global", agents: [{ id: "selected-agent" }] },
     hello: sessionMutationGatewayHello(options.scopes),
@@ -171,11 +173,15 @@ function click(modal: Element, label: string) {
   button.click();
 }
 
-it.each([false, true])(
-  "requires explicit consent and handles a rejected recovery=%s without replay",
-  async (rejectRecovery) => {
-    const { host } = fixture({ rejectRecovery });
-    const selection = switchChatModel(host, "fixture/selected", "global", "opencode");
+it.each([
+  { sessionKey: "global", rejectRecovery: false },
+  { sessionKey: "global", rejectRecovery: true },
+  { sessionKey: "agent:selected-agent:native-recovery", rejectRecovery: false },
+])(
+  "requires explicit consent for $sessionKey and handles a rejected recovery=$rejectRecovery without replay",
+  async ({ sessionKey, rejectRecovery }) => {
+    const { host } = fixture({ sessionKey, rejectRecovery });
+    const selection = switchChatModel(host, "fixture/selected", sessionKey, "opencode");
     const modal = await dialog();
     expect(modal.textContent).toContain("own permissions");
     expect(modal.textContent).toContain("Gateway host");
@@ -186,8 +192,8 @@ it.each([false, true])(
     const patches = requestCalls(host.request, "sessions.patch");
     expect(patches).toHaveLength(2);
     expect(patches[1]?.[1]).toEqual({
-      key: "global",
-      agentId: "selected-agent",
+      key: sessionKey,
+      ...(sessionKey === "global" ? { agentId: "selected-agent" } : {}),
       expectedSessionId: recovery.sessionId,
       model: "fixture/selected",
       agentRuntime: "opencode",
@@ -211,19 +217,24 @@ it.each([false, true])(
   },
 );
 
-it("uses remembered native permissions without prompting or writing session consent", async () => {
-  const { host } = fixture({ remembered: true });
-  await expect(switchChatModel(host, "fixture/selected", "global", "opencode")).resolves.toBe(true);
-  expect(document.querySelector("openclaw-modal-dialog")).toBeNull();
-  const patches = requestCalls(host.request, "sessions.patch");
-  expect(patches[1]?.[1]).toMatchObject({
-    agentRuntime: "opencode",
-    permissionMode: "full",
-    sandboxMode: "off",
-  });
-  expect(patches[1]?.[1]).not.toHaveProperty("nativeRuntimeConsent");
-  expect(requestCalls(host.request, "config.patch")).toHaveLength(0);
-});
+it.each(["global", "agent:selected-agent:native-recovery"])(
+  "uses remembered native permissions for %s without prompting or writing session consent",
+  async (sessionKey) => {
+    const { host } = fixture({ remembered: true, sessionKey });
+    await expect(switchChatModel(host, "fixture/selected", sessionKey, "opencode")).resolves.toBe(
+      true,
+    );
+    expect(document.querySelector("openclaw-modal-dialog")).toBeNull();
+    const patches = requestCalls(host.request, "sessions.patch");
+    expect(patches[1]?.[1]).toMatchObject({
+      agentRuntime: "opencode",
+      permissionMode: "full",
+      sandboxMode: "off",
+    });
+    expect(patches[1]?.[1]).not.toHaveProperty("nativeRuntimeConsent");
+    expect(requestCalls(host.request, "config.patch")).toHaveLength(0);
+  },
+);
 
 it.each([
   {
