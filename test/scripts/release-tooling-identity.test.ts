@@ -260,7 +260,7 @@ describe("release tooling identity", () => {
     ).toThrow("branch is missing or moved");
   });
 
-  it("binds a distinct current parent run independently from tag provenance", () => {
+  it("binds bot-child approval to the original parent actor independently from tag provenance", () => {
     const calls: string[][] = [];
     const runGh = vi.fn((args: string[]) => {
       calls.push(args);
@@ -307,7 +307,7 @@ describe("release tooling identity", () => {
         releasePublishRunId: PARENT_RUN_ID,
         runGh,
       }),
-    ).toBe("maintainer");
+    ).toBe("original-operator");
     expect(() =>
       resolveReleasePublicationOperator({
         ...protectedIdentity(),

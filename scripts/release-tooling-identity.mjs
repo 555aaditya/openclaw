@@ -501,14 +501,14 @@ export function verifyReleaseToolingIdentity({
   return parentRun
     ? {
         ...validated,
-        releasePublishActorLogin: parentRun.triggering_actor?.login ?? parentRun.actor?.login,
+        releasePublishActorLogin: parentRun.actor?.login,
       }
     : validated;
 }
 
-// A GITHUB_TOKEN-dispatched publisher executes as a bot. Its operator is the
-// human from the already authenticated exact parent attempt, never a name from
-// the waiver declaration or an extra caller-authored approval receipt.
+// A GITHUB_TOKEN-dispatched publisher executes as a bot. Use its parent's
+// original GITHUB_ACTOR, not a later rerunner or a name from the waiver declaration.
+// The exact parent attempt is already authenticated above.
 export function resolveReleasePublicationOperator({ actorLogin, ...authority }) {
   if (typeof actorLogin !== "string" || !actorLogin.trim()) {
     fail("release validation waiver requires an authenticated publication operator.");
