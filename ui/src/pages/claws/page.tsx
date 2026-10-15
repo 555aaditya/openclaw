@@ -10,9 +10,9 @@ import type { ClawsRouteData } from "./route.ts";
 
 export function ClawsPage(props: { routeData: ClawsRouteData | undefined }) {
   const context = useApplication();
-  const draftTarget = createMemo(() =>
-    clawDraftTargetFromSearch(props.routeData?.location.search ?? ""),
-  );
+  // Shell layout reports refresh route snapshots; only a changed query owns a new draft page.
+  const draftSearch = createMemo(() => props.routeData?.location.search ?? "");
+  const draftTarget = createMemo(() => clawDraftTargetFromSearch(draftSearch()));
   const packageName = () =>
     props.routeData
       ? clawCatalogPackageNameFromPath(props.routeData.location.pathname, props.routeData.basePath)

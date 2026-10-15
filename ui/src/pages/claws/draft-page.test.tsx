@@ -1,8 +1,11 @@
 /* @vitest-environment jsdom */
 
 import type { ClawsDraftsReadResult, ClawsDraftsReviewResult } from "@openclaw/gateway-protocol";
+import { createMemo, createSignal } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
 import { createDeferredCore } from "../../../../src/shared/deferred.js";
+import { ShellLayoutOwner } from "../../app/shell-layout-owner.ts";
+import { ShellLayoutProvider } from "../../app/shell-layout-traits-solid.tsx";
 import type { SessionCreateOutcome } from "../../lib/sessions/create.ts";
 import { mountSolid } from "../../test-helpers/mount-solid.ts";
 import { createSolidApplicationContextProvider } from "../../test-helpers/solid-application-context.tsx";
@@ -13,6 +16,7 @@ import {
 } from "../skill-workshop/skill-workshop-page.test-support.ts";
 import { ClawDraftPage } from "./draft-page.tsx";
 import { ClawDraftPageState } from "./draft-state.ts";
+import { ClawsPage } from "./page.tsx";
 
 const target = { agentId: "research", draftId: "ec8f46b0-4ca3-4991-8a73-dfdcc8764087" };
 const initial = { content: '{"name":"release-notes"}', revision: "a".repeat(64) };
@@ -48,6 +52,50 @@ function draftContext(request: ReturnType<typeof vi.fn>) {
 }
 
 describe("Claw draft review", () => {
+  it("keeps the draft page mounted when its shell layout refreshes the same route", async () => {
+    const context = draftContext(vi.fn());
+    const [shellRevision, setShellRevision] = createSignal(0, { ownedWrite: true });
+    let layoutChanges = 0;
+    const layout = new ShellLayoutOwner(() => {
+      // Bound the buggy remount feedback loop so the regression fails instead of hanging.
+      if (++layoutChanges <= 20) {
+        setShellRevision((revision) => revision + 1);
+      }
+    });
+    const content = document.createElement("main");
+    const host = document.createElement("div");
+    content.append(host);
+    document.body.append(content);
+    layout.contentRef(content);
+    const routeData = createMemo(() => {
+      shellRevision();
+      return {
+        basePath: "",
+        location: { pathname: "/agents/claws", search: "?create=research", hash: "" },
+      };
+    });
+    const page = mountSolid(
+      () => (
+        <ShellLayoutProvider value={{ owner: layout, host }}>
+          <ClawsPage routeData={routeData()} />
+        </ShellLayoutProvider>
+      ),
+      {
+        container: host,
+        wrapper: createSolidApplicationContextProvider(context).wrapper,
+      },
+    );
+    try {
+      await waitForSolid(() =>
+        expect(page.getByRole("button", { name: "Generate private draft" })).toBeTruthy(),
+      );
+      expect(context.runtimeConfig.ensureLoaded).toHaveBeenCalledOnce();
+    } finally {
+      page.unmount();
+      content.remove();
+    }
+  });
+
   it("requires review after edits, displays the personal publisher, and reports pending publication accurately", async () => {
     const request = vi.fn(async (method: string) => {
       if (method === "claws.drafts.read") {
@@ -117,8 +165,15 @@ describe("Claw draft review", () => {
     context.sessions.createResult = vi.fn(() => creation.promise);
     const page = mountSolid(
       () => (
-        <ClawDraftPage
-          target={{ agentId: target.agentId, sourceSessionKey: "agent:research:source" }}
+        <ClawsPage
+          routeData={{
+            basePath: "",
+            location: {
+              pathname: "/agents/claws",
+              search: "?create=research&session=agent%3Aresearch%3Asource",
+              hash: "",
+            },
+          }}
         />
       ),
       {
