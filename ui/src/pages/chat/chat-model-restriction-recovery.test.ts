@@ -41,8 +41,10 @@ function fixture(
     unbound?: boolean;
     materializedSessionId?: string;
     remembered?: boolean;
+    sessionKey?: string;
   } = {},
 ) {
+  const sessionKey = options.sessionKey ?? "global";
   if (options.send) {
     installOutboxBrowserStorage();
     vi.stubGlobal("localStorage", createStorageMock());
@@ -57,7 +59,7 @@ function fixture(
   });
   result.sessions[0] = {
     ...result.sessions[0],
-    key: "global",
+    key: sessionKey,
     kind: "direct",
     updatedAt: 1,
     sessionId: options.materializedSessionId ?? recovery.sessionId,
@@ -78,13 +80,13 @@ function fixture(
   let sends = 0;
   const receipt: SessionsPatchResult = {
     ok: true,
-    key: "global",
+    key: sessionKey,
     path: "",
     entry: { sessionId: recovery.sessionId, permissionMode: "full", updatedAt: 2 },
     resolved: { model: options.unbound ? "original" : "selected", modelProvider: "fixture" },
   };
   const host = makeChatHost({
-    sessionKey: "global",
+    sessionKey,
     assistantAgentId: "selected-agent",
     agentsList: { defaultId: "main", scope: "global", agents: [{ id: "selected-agent" }] },
     hello: sessionMutationGatewayHello(options.scopes),
@@ -210,6 +212,24 @@ it.each([false, true])(
     );
   },
 );
+
+it("offers explicit native consent for an agent-qualified chat", async () => {
+  const sessionKey = "agent:selected-agent:native-consent";
+  const { host } = fixture({ sessionKey });
+  const selection = switchChatModel(host, "fixture/selected", sessionKey, "opencode");
+  const modal = await dialog();
+  expect(modal.textContent).toContain("Only this chat");
+  click(modal, "Continue for this chat");
+  await expect(selection).resolves.toBe(true);
+  const patches = requestCalls(host.request, "sessions.patch");
+  expect(patches).toHaveLength(2);
+  expect(patches[1]?.[1]).toMatchObject({
+    key: sessionKey,
+    expectedSessionId: recovery.sessionId,
+    nativeRuntimeConsent: "opencode",
+  });
+  expect(patches[1]?.[1]).not.toHaveProperty("agentId");
+});
 
 it("uses remembered native permissions without prompting or writing session consent", async () => {
   const { host } = fixture({ remembered: true });
