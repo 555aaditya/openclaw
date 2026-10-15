@@ -79,7 +79,7 @@ describe("PlaywrightDiffScreenshotter", () => {
 
   async function renderWithBrowserDiscovery(): Promise<{ executablePath?: string }> {
     launchMock.mockResolvedValue(createMockBrowser([]));
-    const screenshotter = new PlaywrightDiffScreenshotter({ config: {}, browserIdleMs: 1_000 });
+    const screenshotter = new PlaywrightDiffScreenshotter({ config: {} });
     await screenshotter.screenshotHtml({
       html: '<html><head></head><body><main class="oc-frame"></main></body></html>',
       outputPath,
@@ -205,33 +205,35 @@ describe("PlaywrightDiffScreenshotter", () => {
     ]);
   });
 
-  it("reuses the same browser across renders and closes it after the idle window", async () => {
+  it("shares a browser across parallel renders and closes it after the idle window", async () => {
     const { pages, browser, screenshotter } = await createScreenshotterHarness();
 
-    await screenshotter.screenshotHtml({
-      html: '<html><head></head><body><main class="oc-frame"></main></body></html>',
-      outputPath,
-      theme: "dark",
-      image: {
-        format: "png",
-        qualityPreset: "standard",
-        scale: 2,
-        maxWidth: 960,
-        maxPixels: 8_000_000,
-      },
-    });
-    await screenshotter.screenshotHtml({
-      html: '<html><head></head><body><main class="oc-frame"></main></body></html>',
-      outputPath,
-      theme: "dark",
-      image: {
-        format: "png",
-        qualityPreset: "standard",
-        scale: 2,
-        maxWidth: 960,
-        maxPixels: 8_000_000,
-      },
-    });
+    await Promise.all([
+      screenshotter.screenshotHtml({
+        html: '<html><head></head><body><main class="oc-frame"></main></body></html>',
+        outputPath,
+        theme: "dark",
+        image: {
+          format: "png",
+          qualityPreset: "standard",
+          scale: 2,
+          maxWidth: 960,
+          maxPixels: 8_000_000,
+        },
+      }),
+      screenshotter.screenshotHtml({
+        html: '<html><head></head><body><main class="oc-frame"></main></body></html>',
+        outputPath,
+        theme: "dark",
+        image: {
+          format: "png",
+          qualityPreset: "standard",
+          scale: 2,
+          maxWidth: 960,
+          maxPixels: 8_000_000,
+        },
+      }),
+    ]);
 
     expect(launchMock).toHaveBeenCalledTimes(1);
     expect(browser.newPage).toHaveBeenCalledTimes(2);
@@ -243,7 +245,7 @@ describe("PlaywrightDiffScreenshotter", () => {
     expect(pages[0]?.close).toHaveBeenCalledTimes(1);
     expect(pages[1]?.close).toHaveBeenCalledTimes(1);
 
-    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(30_000);
     expect(browser.close).toHaveBeenCalledTimes(1);
 
     await screenshotter.screenshotHtml({
@@ -334,7 +336,6 @@ describe("PlaywrightDiffScreenshotter", () => {
     launchMock.mockResolvedValue(browser);
     const screenshotter = new PlaywrightDiffScreenshotter({
       config: createConfig(),
-      browserIdleMs: 1_000,
     });
     const pdfPath = path.join(rootDir, "oversized.pdf");
 
@@ -384,7 +385,6 @@ describe("PlaywrightDiffScreenshotter", () => {
     launchMock.mockRejectedValue(new Error("launch failed"));
     const screenshotter = new PlaywrightDiffScreenshotter({
       config: createConfig(),
-      browserIdleMs: 1_000,
     });
 
     await expect(
@@ -409,7 +409,6 @@ describe("PlaywrightDiffScreenshotter", () => {
     launchMock.mockResolvedValue(browser);
     const screenshotter = new PlaywrightDiffScreenshotter({
       config: createConfig(),
-      browserIdleMs: 1_000,
     });
 
     await expect(
@@ -436,7 +435,6 @@ describe("PlaywrightDiffScreenshotter", () => {
     launchMock.mockResolvedValue(browser);
     const screenshotter = new PlaywrightDiffScreenshotter({
       config: createConfig(),
-      browserIdleMs: 1_000,
     });
 
     await expect(
@@ -907,7 +905,6 @@ async function createScreenshotterHarness(options?: {
   launchMock.mockResolvedValue(browser);
   const screenshotter = new PlaywrightDiffScreenshotter({
     config: createConfig(),
-    browserIdleMs: 1_000,
   });
   return { pages, browser, screenshotter };
 }
