@@ -71,8 +71,9 @@ export function createOpenClawStateLeaseCleanup(params: {
       try {
         const workerOwner = params.workerOwner();
         prepareCleanup();
-        if (!unregister) {
-          // Native callbacks may close shared state themselves. Retain only their settled cleanup.
+        if (!unregister && !params.maintenanceScope) {
+          // Maintenance already owns native cleanup; canonical close may run outside its scope.
+          // Other native callbacks may close shared state themselves, so retain only settled cleanup.
           databaseIdentity = params.nativeIdentity?.();
           if (databaseIdentity) {
             unregister = registerOpenClawStateDatabaseAsyncResource(resource);

@@ -35,6 +35,12 @@ backup.
 
 **Updates always work** (`openclaw update` finishes best effort everywhere). Changes to update, Doctor, service lifecycle, migrations, plugin loading: state their update behavior. Installed updater runs first, can't be patched; candidate fixes key on markers shipped drivers set; existing operator state = input. Recoverable hiccups → recorded warnings; back up before mutating, let rollback restore it; refuse only for named data risk with previous Gateway kept running. Timeouts and budgets: generous, derived from measured state, sized for slow hardware. Proof: published-driver × candidate cell.
 
+When an update loses ownership during Doctor schema inspection, the migration
+remains refused and preserves the original database bytes. Unresolved native
+lease cleanup stays with Doctor's maintenance scope, which retains custody until
+cleanup settles. Doctor operations on independent state roots do not inherit
+that cleanup or its offline-maintenance refusal.
+
 Post-activation schema verification preserves agent databases Doctor holds after
 deletion. These stores may keep an older schema without failing the update;
 Doctor's held-store warning remains visible. Active databases and pending

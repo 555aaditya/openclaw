@@ -477,6 +477,13 @@ it("revalidates the update owner after integrity work before committing an agent
     }
     expect(collectNestedErrorCandidates(outcome.reason)).toContain(retired);
     expect(fs.readFileSync(f.pathname)).toEqual(f.bytes);
+    // Retained cancellation custody must not poison Doctor for an independent state root.
+    await withOpenClawTestState({ scenario: "minimal" }, async () => {
+      await withDoctorMaintenance({}, async (next) => {
+        const preflight = await next.run(() => prepareDoctorDatabasePreflight({ scope: "state" }));
+        expect(preflight).toMatchObject({ incompatible: [], indeterminate: [] });
+      });
+    });
   });
 });
 
