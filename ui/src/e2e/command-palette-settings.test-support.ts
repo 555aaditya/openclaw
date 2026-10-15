@@ -5,7 +5,45 @@ export async function expectPaletteSettingsAlignment(popup: Locator) {
   const box = async (selector: string) => {
     const bounds = await popup.locator(selector).boundingBox();
     if (!bounds) {
-      throw new Error("Missing settings control: " + selector);
+      const layout = await popup
+        .evaluate(
+          (root, target) => {
+            const element = root.querySelector(target);
+            if (!element) {
+              return { present: false };
+            }
+            const ancestors = [];
+            for (
+              let current: Element | null = element;
+              current && ancestors.length < 8;
+              current = current.parentElement
+            ) {
+              const style = getComputedStyle(current);
+              const rect = current.getBoundingClientRect();
+              ancestors.push({
+                display: style.display,
+                visibility: style.visibility,
+                opacity: style.opacity,
+                contentVisibility: style.contentVisibility,
+                width: rect.width,
+                height: rect.height,
+                rects: current.getClientRects().length,
+                hidden: current.hasAttribute("hidden"),
+                inert: current.hasAttribute("inert"),
+              });
+              if (current === root) {
+                break;
+              }
+            }
+            return { present: true, connected: element.isConnected, ancestors };
+          },
+          selector,
+          { timeout: 1_000 },
+        )
+        .catch(() => "unavailable");
+      throw new Error(
+        "Missing settings control: " + selector + "; layout=" + JSON.stringify(layout),
+      );
     }
     return bounds;
   };
