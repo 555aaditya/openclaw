@@ -72,6 +72,7 @@ import {
   parseReleaseValidationWaivers,
   releaseChildWaivers,
   validateLegacyReleaseTelegramWaiver,
+  validateReleaseWaiverApproverAuthority,
   validateReleaseWaiverBinding,
   validateReleaseWaivedJobs,
 } from "./lib/release-validation-waivers.mjs";
@@ -2087,10 +2088,14 @@ export function createReleaseEvidenceClient(repository = DEFAULT_REPO) {
       });
     },
     getMaintainerPermission(login) {
-      return githubRestJson(
-        `collaborators/${encodeURIComponent(login)}/permission`,
-        normalizedRepository,
-      );
+      return jsonGh([
+        ...githubRestArgs(
+          `collaborators/${encodeURIComponent(login)}/permission`,
+          normalizedRepository,
+        ),
+        "-H",
+        "Cache-Control: max-age=0",
+      ]);
     },
     getRunArtifacts(runId) {
       return listRunArtifacts(runId, normalizedRepository);
@@ -2917,16 +2922,15 @@ export async function validateReleaseRunEvidence(
     // The standalone CLI always derives the operator from its GitHub credential.
     const operator = approverLogin ?? evidenceClient.getAuthenticatedLogin();
     for (const login of new Set(validationWaivers.waivers.map((row) => row.approvedBy))) {
-      const permission = await evidenceClient.getMaintainerPermission(login);
-      if (
-        login !== operator ||
-        !["admin", "maintain", "write"].includes(permission.permission) ||
-        permission.user?.login !== login
-      ) {
+      if (login !== operator) {
         throw new Error(
           "release waiver approver must be the authenticated approving maintainer with current repository write authority",
         );
       }
+      validateReleaseWaiverApproverAuthority(
+        login,
+        await evidenceClient.getMaintainerPermission(login),
+      );
     }
   }
   const currentEvidence = await loadValidatedParentEvidence({

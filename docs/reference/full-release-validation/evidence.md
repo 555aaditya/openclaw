@@ -160,6 +160,13 @@ explicit declaration. A file's `validationWaivers` field grants no authority and
 cannot be reused as green evidence. Verifier output, evidence, summaries,
 handoff and GitHub release body say **waived — not a pass**, with reason/approver.
 
+Publication's final-effect authority callback rechecks both the original
+qualification admission and the authenticated waiver approver before each
+registry write, including Docker channel promotion. Stable closeout authenticates
+the published declaration against the original publisher's exact input and
+revalidates the failed FRV through the same strict reader; a serialized projection
+alone cannot authorize closeout.
+
 ### Frozen branches and removal path
 
 Already-cut `release/*` and active `extended-stable/2026.9.33` workflows retain

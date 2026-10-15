@@ -19,6 +19,10 @@ export type ReleaseValidationWaivers = {
 
 export function parseReleaseValidationWaivers(value: unknown): ReleaseValidationWaivers | undefined;
 export function formatReleaseValidationWaivers(value: unknown): string;
+export function validateReleaseWaiverApproverAuthority(
+  login: string,
+  permission: { permission?: string; user?: { login?: string } },
+): void;
 export function validateLegacyReleaseTelegramWaiver(record: unknown): void;
 export function validateReleaseWaiverBinding(
   declaration: ReleaseValidationWaivers,

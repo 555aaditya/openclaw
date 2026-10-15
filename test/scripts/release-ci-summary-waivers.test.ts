@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
+import { promoteDockerChannel } from "../../scripts/docker-channel-promote.mjs";
 import {
   buildReleaseStateArtifact,
   classifyReleaseSnapshot,
@@ -10,7 +11,9 @@ import {
 } from "../../scripts/full-release-validation-policy.mjs";
 import type { ReleaseValidationWaivers } from "../../scripts/lib/release-validation-waivers.mjs";
 import { readRecoveryStepInputs } from "../../scripts/lib/stable-publish-recovery.mjs";
+import { authenticateStableCloseoutValidation } from "../../scripts/lib/stable-release-closeout.mjs";
 import { validateReleaseRunEvidence } from "../../scripts/release-ci-summary.mjs";
+import { authenticateCandidateOwnedArtifact } from "../../scripts/validate-full-release-validation-evidence.mjs";
 import { candidatePublicationFixture } from "./candidate-publication.test-support.js";
 
 const candidateSha = "383c124cc32ffee3f8e56f549b88da94d269a4af";
@@ -279,6 +282,151 @@ async function waiverFixture(legacy = false) {
 }
 
 describe("trusted publication waiver evidence", () => {
+  it.each([
+    ["never", 2],
+    ["channel read", 0],
+    ["first write", 1],
+  ] as const)(
+    "keeps a distinct waiver approver live through promotion (revoked during %s)",
+    async (boundary, expectedWrites) => {
+      const fixture = await waiverFixture();
+      let permission = "maintain";
+      fixture.client.getMaintainerPermission = (login: string) => ({ permission, user: { login } });
+      const evidence = await fixture.validate();
+      const authenticated = await authenticateCandidateOwnedArtifact({
+        manifest: evidence.current.manifest,
+        repository,
+        candidateSha,
+        qualificationSha: candidateSha,
+        publisherSha: fixture.fixture.p,
+        publisherFullRef: fixture.fixture.publisherFullRef,
+        validationWaivers: fixture.waivers,
+        approverLogin: fixture.client.getAuthenticatedLogin(),
+        client: fixture.client,
+      });
+      expect(fixture.fixture.admission.receipt.operator.login).not.toBe("release-maintainer");
+      const writes: string[][] = [];
+      const promote = () =>
+        promoteDockerChannel(
+          { version: "2026.10.4", images: ["ghcr.io/openclaw/openclaw"], includeBrowser: false },
+          {
+            revalidateAuthority: authenticated!.revalidateAuthority,
+            verifyAttestationsImpl: () => {},
+            log: () => {},
+            execFileSyncImpl: (_command: string, args: string[]) => {
+              if (args[2] === "create") {
+                writes.push(args);
+                if (boundary === "first write") {
+                  permission = "read";
+                }
+                return "";
+              }
+              if (boundary === "channel read" && !args[3]!.includes("@")) {
+                permission = "read";
+              }
+              return args.at(-1)!.includes(".Image")
+                ? JSON.stringify({
+                    config: { Labels: { "org.opencontainers.image.version": "2026.10.4" } },
+                  })
+                : JSON.stringify({ digest: `sha256:${"1".repeat(64)}` });
+            },
+          },
+        );
+      if (boundary === "never") {
+        expect(promote).not.toThrow();
+      } else {
+        expect(promote).toThrow("current repository write authority");
+      }
+      expect(writes).toHaveLength(expectedWrites);
+      expect(fixture.fixture.admission.authority.permission).toBe("write");
+    },
+  );
+
+  it("authenticates frozen failed-parent closeout against the original P request and current grants", async () => {
+    const fixture = await waiverFixture(true);
+    const evidence = await fixture.validate();
+    const publisher = {
+      id: 600,
+      run_attempt: 1,
+      head_sha: fixture.fixture.p,
+      head_branch: fixture.fixture.publisherFullRef.slice("refs/tags/".length),
+      path: `.github/workflows/openclaw-release-publish.yml@${fixture.fixture.publisherFullRef}`,
+      repository: { full_name: repository },
+      event: "workflow_dispatch",
+      status: "completed",
+      conclusion: "success",
+      actor: { login: "release-maintainer" },
+      triggering_actor: { login: "later-rerunner" },
+    };
+    const stepName = "Validate full release validation manifest";
+    const publisherJob = {
+      ...job("Resolve release target", 6001),
+      run_id: publisher.id,
+      head_sha: publisher.head_sha,
+      steps: [{ name: stepName, number: 6, status: "completed", conclusion: "success" }],
+    };
+    const client = {
+      ...fixture.client,
+      getRun: async (id: string) => (id === "600" ? publisher : fixture.client.getRun(id)),
+      getRunAttemptJobs: async (id: string | number, attempt: number) =>
+        String(id) === "600"
+          ? [publisherJob]
+          : fixture.client.getRunAttemptJobs(String(id), attempt),
+      getRunStepInputs: (id: string, currentJob: EvidenceJob, name: string) => {
+        if (id !== "600") {
+          return fixture.client.getRunStepInputs(id, currentJob, name);
+        }
+        const inputs = {
+          FULL_RELEASE_VALIDATION_RUN_ID: parentRunId,
+          FULL_RELEASE_VALIDATION_RUN_ATTEMPT: "1",
+          EXPECTED_SHA: candidateSha,
+          VALIDATION_WAIVERS_JSON: JSON.stringify(fixture.waivers, null, 2),
+        };
+        const header = [
+          "##[group]Run set -euo pipefail",
+          "env:",
+          ...Object.entries(inputs).map(([key, value]) => `  ${key}: ${value}`),
+          "##[endgroup]",
+        ];
+        return readRecoveryStepInputs(
+          new Map([[`${publisherJob.name}/6_${stepName}.txt`, Buffer.from(header.join("\n"))]]),
+          currentJob,
+          name,
+        );
+      },
+    };
+    const options = {
+      run: fixture.fixture.parent,
+      manifest: evidence.current.manifest,
+      repository,
+      fullReleaseValidationRunId: parentRunId,
+      fullReleaseValidationRunAttempt: "1",
+      sourceSha: candidateSha,
+      releasePublishRunId: "600",
+      verifierSourceSha: fixture.fixture.p,
+      verifierSourceContent: readFileSync("scripts/release-ci-summary.mjs"),
+      runGh: (args: string[]) =>
+        args.includes(`repos/${repository}/actions/runs/600`)
+          ? JSON.stringify(publisher)
+          : fixture.fixture.admission.runGh(args),
+    };
+    const authenticated = await authenticateStableCloseoutValidation(options, client);
+    expect(authenticated).toMatchObject({
+      valid: true,
+      conclusions: { current: "failure", allRequiredSucceeded: false, allRequiredSatisfied: true },
+      manifest: { sourceAdmission: { coverage: { telegram_waiver: "" } } },
+    });
+    const forged = structuredClone(options.manifest);
+    forged.validationWaivers.waivers[0].reason = "Not the original publication request";
+    await expect(
+      authenticateStableCloseoutValidation({ ...options, manifest: forged }, client),
+    ).rejects.toThrow("differ from the original publication input");
+    client.getMaintainerPermission = (login: string) => ({ permission: "read", user: { login } });
+    await expect(authenticateStableCloseoutValidation(options, client)).rejects.toThrow(
+      "current repository write authority",
+    );
+  });
+
   it("accepts empty frozen-branch legacy input without changing the authenticated plan", async () => {
     const fixture = await waiverFixture(true);
     const digest = fixture.fixture.plan.sha256;

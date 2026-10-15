@@ -28,6 +28,7 @@ import { resolveReleasePublishInputs } from "./lib/release-publish-inputs.mjs";
 import {
   formatReleaseValidationWaivers,
   parseReleaseValidationWaivers,
+  validateReleaseWaiverApproverAuthority,
 } from "./lib/release-validation-waivers.mjs";
 import { createReleaseEvidenceClient, validateReleaseRunEvidence } from "./release-ci-summary.mjs";
 import { qualificationAdmissionContract } from "./release-qualification-coverage.mjs";
@@ -710,9 +711,14 @@ export async function authenticateCandidateOwnedArtifact({
   const authority = structuredClone({
     descriptor: manifest.sourceAdmission.qualificationAdmission,
     admission: evidence.qualificationAdmission,
+    waiverApprovers: [...new Set(evidence.validationWaivers?.waivers.map((row) => row.approvedBy))],
   });
-  const revalidateAuthority = () =>
+  const revalidateAuthority = () => {
     evidenceClient.revalidateQualificationAdmissionAuthority(authority);
+    for (const login of authority.waiverApprovers) {
+      validateReleaseWaiverApproverAuthority(login, evidenceClient.getMaintainerPermission(login));
+    }
+  };
   revalidateAuthority();
   return { ...evidence, revalidateAuthority };
 }

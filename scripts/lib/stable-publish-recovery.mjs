@@ -239,13 +239,21 @@ export function readRecoveryStepInputs(log, job, stepName) {
     `${stepName} environment must be unique.`,
   );
   const env = {};
+  let key;
   for (const line of header.slice(header.indexOf("env:") + 1)) {
     const match = /^ {2}([A-Z][A-Z0-9_]*): (.*)$/u.exec(line);
+    if (!match) {
+      // Actions prefixes the key once; embedded newlines retain their bytes.
+      requireValue(key !== undefined, `${stepName} environment continuation has no field.`);
+      env[key] += `\n${line}`;
+      continue;
+    }
     requireValue(
-      match && !Object.hasOwn(env, match[1]),
+      !Object.hasOwn(env, match[1]),
       `${stepName} malformed or duplicate environment field.`,
     );
-    env[match[1]] = match[2];
+    key = match[1];
+    env[key] = match[2];
   }
   return env;
 }

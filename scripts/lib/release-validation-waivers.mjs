@@ -107,6 +107,14 @@ export function parseReleaseValidationWaivers(input) {
   return value;
 }
 
+export function validateReleaseWaiverApproverAuthority(login, permission) {
+  requireValue(
+    ["admin", "maintain", "write"].includes(permission.permission) &&
+      permission.user?.login === login,
+    "approving maintainer must retain current repository write authority",
+  );
+}
+
 // Frozen release branches and their retained artifacts bind these empty fields
 // into existing digests. Never reinterpret a legacy skip as a failed-lane waiver.
 // Remove after the last pre-cutover release line and retained recovery window retire.
