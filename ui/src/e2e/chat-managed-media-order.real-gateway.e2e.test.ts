@@ -393,23 +393,26 @@ suite.define(() => {
               await page
                 .getByRole("button", { name: "Stop generating", exact: true })
                 .waitFor({ state: "detached" });
-              const assertDecoded = async () => {
+              const assertImagesLoaded = async () => {
                 await expect.poll(() => bubble.count()).toBe(1);
                 await expect
                   .poll(() => page.locator(".chat-group.assistant img.chat-message-image").count())
                   .toBe(2);
-                await expect.poll(() => bubble.locator("img.chat-message-image").count()).toBe(2);
                 try {
-                  await bubble.locator("img.chat-message-image").evaluateAll(async (images) => {
-                    await Promise.all(
-                      images.map(async (image) => {
-                        if (!(image instanceof HTMLImageElement)) {
-                          throw new Error("Expected an image element");
-                        }
-                        await image.decode();
-                      }),
-                    );
-                  });
+                  await expect
+                    .poll(() =>
+                      bubble
+                        .locator("img.chat-message-image")
+                        .evaluateAll((images) =>
+                          images.map(
+                            (image) =>
+                              image instanceof HTMLImageElement &&
+                              image.complete &&
+                              image.naturalWidth > 0,
+                          ),
+                        ),
+                    )
+                    .toEqual([true, true]);
                 } catch (error) {
                   await recordImageDecodeFailure(bubble).catch((captureError: unknown) => {
                     console.error(
@@ -419,20 +422,8 @@ suite.define(() => {
                   });
                   throw error;
                 }
-                expect(
-                  await bubble
-                    .locator("img.chat-message-image")
-                    .evaluateAll((images) =>
-                      images.map(
-                        (image) =>
-                          image instanceof HTMLImageElement &&
-                          image.complete &&
-                          image.naturalWidth > 0,
-                      ),
-                    ),
-                ).toEqual([true, true]);
               };
-              await assertDecoded();
+              await assertImagesLoaded();
               // Capture before the order assertion so an unfixed run retains the actual flattening.
               // Running this unchanged scenario on the repaired build yields the comparable After.
               await capture(page, bubble, "01-live");
@@ -496,7 +487,7 @@ suite.define(() => {
               await page.reload();
               await waitForControlUiGatewayReady(page);
               await bubble.getByText(closing, { exact: true }).waitFor();
-              await assertDecoded();
+              await assertImagesLoaded();
               await capture(page, bubble, "02-reloaded");
               const reloadedOrder = await renderedOrder(bubble);
               expect(reloadedOrder).toEqual(expectedOrder);
