@@ -1,6 +1,6 @@
 /* @vitest-environment jsdom */
 /* @vitest-environment-options {"url":"http://chat-pane-reactions.test/"} */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type {
   MessageReactionSummary,
   SessionReactionEvent,
@@ -69,6 +69,36 @@ function fixture(
 }
 
 describe("pane reaction ownership", () => {
+  it.each(["empty", "populated", "error"] as const)(
+    "only invalidates visible changes from a %s reaction read",
+    async (result) => {
+      const list = createDeferred<SessionReactionsListResult>();
+      const { pane, state } = fixture(list.promise);
+      await vi.dynamicImportSettled();
+      const requestUpdate = vi.spyOn(pane, "requestUpdate");
+      pane.syncSessionReactions();
+      if (result === "error") {
+        list.reject(new Error("Reaction read failed"));
+      } else {
+        list.resolve({
+          sessionId: "session-1",
+          reactions: result === "populated" ? { "message-1": peerReaction } : {},
+        });
+      }
+      await list.promise.catch(() => {});
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(requestUpdate).toHaveBeenCalledTimes(result === "empty" ? 0 : 1);
+      expect(pane.messageReactions.get("message-1")).toEqual(
+        result === "populated" ? peerReaction : undefined,
+      );
+      if (result === "error") {
+        expect(state.chatError).toContain("Reaction read failed");
+      }
+    },
+  );
+
   it.each(["list", "set"] as const)(
     "retains live events over an older %s response",
     async (operation) => {

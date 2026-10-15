@@ -167,6 +167,15 @@ async function loadPageAssistantIdentity(state: ChatPageHost) {
       return;
     }
     if (
+      state.assistantName === identity.name &&
+      state.assistantAvatar === identity.avatar &&
+      state.assistantAvatarStatus === (identity.avatarStatus ?? null) &&
+      state.assistantAvatarReason === (identity.avatarReason ?? null) &&
+      state.assistantAgentId === (identity.agentId ?? null)
+    ) {
+      return;
+    }
+    if (
       state.assistantAgentId !== (identity.agentId ?? null) &&
       isUiSelectedGlobalSessionKey(state, state.sessionKey)
     ) {

@@ -2916,9 +2916,10 @@ describe("loadPageAssistantIdentity", () => {
       chatSubmissions: createChatSubmissions(),
       sessions: { refresh: vi.fn().mockResolvedValue(undefined) },
     } as unknown as ApplicationContext;
+    const invalidate = vi.fn();
     const state = createPageState(
       context,
-      { invalidate: vi.fn(), afterCommit: () => () => {} },
+      { invalidate, afterCommit: () => () => {} },
       { dispatchEvent: () => true, querySelector: () => null },
     );
     state.client = client;
@@ -2927,8 +2928,24 @@ describe("loadPageAssistantIdentity", () => {
     state.sessionKey = "agent:main:first";
 
     await state.loadAssistantIdentity();
+    expect(invalidate).toHaveBeenCalledOnce();
+    invalidate.mockClear();
     state.sessionKey = "agent:main:second";
     await state.loadAssistantIdentity();
+    expect(invalidate).not.toHaveBeenCalled();
+
+    for (const changed of [
+      { assistantName: "Changed name" },
+      { assistantAvatar: "https://example.test/changed-avatar.png" },
+      { assistantAvatarStatus: "remote" },
+      { assistantAvatarReason: "Changed reason" },
+      { assistantAgentId: "other" },
+    ]) {
+      Object.assign(state, changed);
+      await state.loadAssistantIdentity();
+      expect(invalidate).toHaveBeenCalledOnce();
+      invalidate.mockClear();
+    }
 
     expect(request).toHaveBeenCalledWith("agent.identity.get", {
       agentId: "main",

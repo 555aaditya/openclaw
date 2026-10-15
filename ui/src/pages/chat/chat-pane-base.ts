@@ -671,13 +671,23 @@ export abstract class ChatPaneBase extends ControllerHost {
       )
       .watch(
         () => this.context?.overlays,
-        (overlays, notify) =>
-          overlays.subscribe((snapshot) => {
+        (overlays, notify) => {
+          let approvalQueue = overlays.snapshot.approvalQueue;
+          return overlays.subscribe((snapshot) => {
+            if (
+              approvalQueue === snapshot.approvalQueue &&
+              approvalQueue.length === 0 &&
+              !this.state?.chatSessionApprovalQueue?.length
+            ) {
+              return;
+            }
+            approvalQueue = snapshot.approvalQueue;
             if (this.state) {
               this.reconcileWaitingApprovalSnapshot(snapshot.approvalQueue);
             }
             notify();
-          }),
+          });
+        },
       )
       .watch(
         () => this.context?.runtimeConfig,

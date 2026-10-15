@@ -13,6 +13,12 @@ function catalog(ready: boolean) {
 
 let picker: ComposerMicrophonePicker;
 
+async function settleCatalog() {
+  for (let turn = 0; turn < 8; turn++) {
+    await Promise.resolve();
+  }
+}
+
 afterEach(() => {
   picker?.dispose();
   vi.restoreAllMocks();
@@ -20,6 +26,47 @@ afterEach(() => {
 });
 
 describe("composer voice readiness", () => {
+  it("settles closed-picker readiness without invalidating the composer", async () => {
+    const requestUpdate = vi.fn();
+    const client = {
+      request: vi.fn(async (method: string) => (method === "talk.config" ? {} : catalog(true))),
+    } as unknown as GatewayBrowserClient;
+    picker = new ComposerMicrophonePicker(requestUpdate);
+    picker.syncCatalog(client, true, "agent:main:main");
+    await settleCatalog();
+    expect(picker.realtimeStatus).toBe("ready");
+    expect(picker.dictationStatus).toBe("ready");
+    expect(requestUpdate).not.toHaveBeenCalled();
+
+    window.dispatchEvent(new Event("focus"));
+    await settleCatalog();
+    expect(requestUpdate).not.toHaveBeenCalled();
+  });
+
+  it("publishes readiness when the microphone picker is open", async () => {
+    vi.spyOn(realtimeTalkInput, "discoverRealtimeTalkInputs").mockResolvedValue({
+      devices: [],
+      issue: "none-found",
+    });
+    const ready = createDeferred<ReturnType<typeof catalog>>();
+    const requestUpdate = vi.fn();
+    const client = {
+      request: vi.fn((method: string) =>
+        method === "talk.config" ? Promise.resolve({}) : ready.promise,
+      ),
+    } as unknown as GatewayBrowserClient;
+    picker = new ComposerMicrophonePicker(requestUpdate);
+    picker.syncCatalog(client, true);
+    picker.handleOpen();
+    await settleCatalog();
+    requestUpdate.mockClear();
+    ready.resolve(catalog(true));
+    await settleCatalog();
+    expect(picker.dictationStatus).toBe("ready");
+    expect(picker.realtimeStatus).toBe("ready");
+    expect(requestUpdate).toHaveBeenCalledOnce();
+  });
+
   it("reloads session readiness and rejects results from the previous session", async () => {
     const previous = createDeferred<ReturnType<typeof catalog>>();
     const current = createDeferred<ReturnType<typeof catalog>>();
@@ -32,22 +79,20 @@ describe("composer voice readiness", () => {
       method === "talk.config" ? Promise.resolve({}) : readCatalog(),
     );
     const client = { request } as unknown as GatewayBrowserClient;
-    let updated = createDeferred();
-    const requestUpdate = vi.fn(() => updated.resolve());
+    const requestUpdate = vi.fn();
     picker = new ComposerMicrophonePicker(requestUpdate);
     picker.syncCatalog(client, true, "agent:first:main");
-    await updated.promise;
+    await settleCatalog();
     expect(picker.realtimeStatus).toBe("ready");
     expect(picker.dictationStatus).toBe("ready");
 
     window.dispatchEvent(new Event("focus"));
-    updated = createDeferred();
     picker.syncCatalog(client, true, "agent:second:main");
     expect(picker.realtimeStatus).toBe("checking");
     expect(picker.dictationStatus).toBe("checking");
     expect(request).toHaveBeenCalledWith("talk.catalog", { sessionKey: "agent:second:main" });
     current.resolve(catalog(false));
-    await updated.promise;
+    await settleCatalog();
     expect(picker.realtimeStatus).toBe("unavailable");
     expect(picker.dictationStatus).toBe("unavailable");
 
@@ -128,7 +173,6 @@ describe("composer voice readiness", () => {
     { name: "configured TTS fallback", fallbackReady: true, ready: true },
     { name: "no speech output", ready: false },
   ])("admits split Talk only with $name", async (scenario) => {
-    const loaded = createDeferred();
     const request = vi.fn(async (method: string) => {
       if (method === "talk.config") {
         return {
@@ -154,9 +198,9 @@ describe("composer voice readiness", () => {
         },
       };
     });
-    picker = new ComposerMicrophonePicker(() => loaded.resolve());
+    picker = new ComposerMicrophonePicker(vi.fn());
     picker.syncCatalog({ request } as unknown as GatewayBrowserClient, true);
-    await loaded.promise;
+    await settleCatalog();
     expect(picker.realtimeStatus).toBe(scenario.ready ? "ready" : "unavailable");
     expect(picker.dictationStatus).toBe("ready");
     expect(request.mock.calls.some(([method]) => method === "tts.status")).toBe(

@@ -82,16 +82,19 @@ export abstract class ChatPaneReactions extends ChatPaneSharingActions {
         }
         // Events committed after the list began outrank its older snapshot.
         this.messageReactions = new Map([...Object.entries(result.reactions), ...updates]);
+        if (Object.values(result.reactions).some((summary) => summary.length > 0)) {
+          this.requestUpdate();
+        }
       })
       .catch((error: unknown) => {
         if (isCurrent()) {
           state.chatError = formatUiError(error);
+          this.requestUpdate();
         }
       })
       .finally(() => {
         if (generation === this.reactionGeneration) {
           this.reactionReadUpdates = undefined;
-          this.requestUpdate();
         }
       });
   }

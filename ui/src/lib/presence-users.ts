@@ -34,16 +34,20 @@ function compareText(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
-let cachedPresencePayload: unknown;
-let cachedPresenceProjection: ReturnType<typeof groupPresenceUsers> | undefined;
+const presenceProjections = new WeakMap<
+  readonly PresenceEntry[],
+  ReturnType<typeof groupPresenceUsers>
+>();
+const emptyPresence: readonly PresenceEntry[] = [];
 
 export function projectPresencePayload(value: unknown) {
-  if (cachedPresenceProjection && cachedPresencePayload === value) {
-    return cachedPresenceProjection;
+  const presence = readPresenceEntries(value) ?? emptyPresence;
+  let projection = presenceProjections.get(presence);
+  if (!projection) {
+    projection = groupPresenceUsers(presence);
+    presenceProjections.set(presence, projection);
   }
-  cachedPresencePayload = value;
-  cachedPresenceProjection = groupPresenceUsers(readPresenceEntries(value) ?? []);
-  return cachedPresenceProjection;
+  return projection;
 }
 
 export function presenceUserLabel(

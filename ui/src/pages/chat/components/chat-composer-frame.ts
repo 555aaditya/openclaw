@@ -542,7 +542,9 @@ export function createChatComposerContext(
     sessionKey: props.sessionKey,
     connected: props.connected,
     enabled: props.composerHoldToRecord !== false,
-    dictationAvailable: devicePicker.dictationStatus === "ready",
+    get dictationAvailable() {
+      return devicePicker.dictationStatus === "ready";
+    },
     realtimeTalkActive: props.realtimeTalkActive === true,
     onCommit: (transcript: string, late?: true) => {
       const target = state.composerTextarea;

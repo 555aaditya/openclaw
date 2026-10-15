@@ -75,6 +75,18 @@ it("isolates namespaces while merging renamed tabs and excluding disconnected fa
   expect(projectPresencePayload({ presence: presence.toReversed() })).toEqual(forward);
 });
 
+it("shares each presence snapshot across consumers comparing previous and current values", () => {
+  const previous = [{ user: { id: "viewer" }, watchedSessions: ["previous-session"] }];
+  const current = [{ user: { id: "viewer" }, watchedSessions: ["current-session"] }];
+  const before = projectPresencePayload({ presence: previous });
+  const after = projectPresencePayload({ presence: current });
+
+  expect(projectPresencePayload({ presence: previous })).toBe(before);
+  expect(projectPresencePayload({ presence: current })).toBe(after);
+  expect(before.users[0]?.watchedSessions).toEqual(["previous-session"]);
+  expect(after.users[0]?.watchedSessions).toEqual(["current-session"]);
+});
+
 it.each([true, false])(
   "excludes self only from session viewers, not the online roster (profile: %s)",
   (qualified) => {

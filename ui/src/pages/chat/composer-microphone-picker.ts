@@ -133,7 +133,7 @@ export class ComposerMicrophonePicker {
     }
     const request = ++this.catalogRequest;
     this.setCatalogChecking(true);
-    if (notify) {
+    if (notify && this.open) {
       this.requestUpdate();
     }
     void Promise.all([
@@ -181,7 +181,7 @@ export class ComposerMicrophonePicker {
         this.setCatalogChecking(false);
       })
       .finally(() => {
-        if (request === this.catalogRequest) {
+        if (request === this.catalogRequest && this.open) {
           this.requestUpdate();
         }
       });
