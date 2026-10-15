@@ -4,6 +4,7 @@ import {
   DEFAULT_PREAUTH_HANDSHAKE_TIMEOUT_MS,
   formatConnectErrorMessage,
   GatewayProtocolClient,
+  GatewayWorkerProtocolClient,
   GatewayProtocolRequestError,
   isGatewayProtocolResponseError,
   type GatewayConnectAuthSelection,
@@ -40,6 +41,7 @@ import { generateUUID } from "../lib/uuid.ts";
 import {
   BROWSER_WEBSOCKET_SECURITY_ERROR_CODE,
   createBrowserGatewaySocket,
+  GatewayPayloadLimitError,
   formatBrowserWebSocketConstructorError,
   probeGatewayReachability,
 } from "./gateway-browser-socket.ts";
@@ -55,6 +57,7 @@ import {
   type ConnectPlan,
   type GatewayBrowserConnectOptions,
 } from "./gateway-connect-plan.ts";
+import { createRawWorkerGatewaySocket } from "./gateway-worker-raw-socket.ts";
 export type { EventFrame as GatewayEventFrame } from "@openclaw/gateway-client/browser";
 export { GatewayPayloadLimitError } from "./gateway-browser-socket.ts";
 
@@ -137,7 +140,10 @@ async function deriveLegacyV4RecoveryScope(material: string | undefined): Promis
 }
 
 export class GatewayBrowserClient {
-  private readonly client: GatewayProtocolClient<ConnectPlan>;
+  private readonly client:
+    | GatewayProtocolClient<ConnectPlan>
+    | GatewayWorkerProtocolClient<ConnectPlan>;
+  private workerPageHide?: () => void;
   private readonly chatEvents = new GatewayChatEvents((reason) => this.forceReconnect(reason));
   private maxPayloadBytes: number | undefined;
   private scopeUpgradeRuntime: Promise<GatewayScopeUpgrade> | null = null;
@@ -170,18 +176,26 @@ export class GatewayBrowserClient {
         scopes: [],
       });
     }
-    this.client = new GatewayProtocolClient<ConnectPlan>({
+    const resetSocketState = () => {
+      this.catalogRetryAbort.abort();
+      this.catalogRetryAbort = new AbortController();
+      this.connectionHello = null;
+      this.pendingPairing = null;
+      this.pairingFailure = null;
+      this.reachabilityProbe?.abort();
+      this.reachabilityProbe = null;
+      this.chatEvents.clear();
+      this.maxPayloadBytes = undefined;
+    };
+    const protocolOptions: ConstructorParameters<typeof GatewayProtocolClient<ConnectPlan>>[0] = {
       createSocket: (handlers) => {
-        this.catalogRetryAbort.abort();
-        this.catalogRetryAbort = new AbortController();
-        this.connectionHello = null;
-        this.pendingPairing = null;
-        this.pairingFailure = null;
-        this.reachabilityProbe?.abort();
-        this.reachabilityProbe = null;
-        this.chatEvents.clear();
-        this.maxPayloadBytes = undefined;
-        return createBrowserGatewaySocket(this.opts.url, handlers, () => this.maxPayloadBytes);
+        resetSocketState();
+        const factory =
+          typeof window !== "undefined" &&
+          new URL(window.location.href).searchParams.get("gatewayWorker") === "socket-raw"
+            ? createRawWorkerGatewaySocket
+            : createBrowserGatewaySocket;
+        return factory(this.opts.url, handlers, () => this.maxPayloadBytes);
       },
       createRequestId: generateUUID,
       createRequestError: (error) =>
@@ -285,7 +299,48 @@ export class GatewayBrowserClient {
         typeof performance !== "undefined" && typeof performance.now === "function"
           ? performance.now()
           : Date.now(),
-    });
+    };
+    // Measurement-only switch; the default connection keeps its existing owner.
+    const experiment =
+      typeof window === "undefined"
+        ? null
+        : new URL(window.location.href).searchParams.get("gatewayWorker");
+    if (experiment === "shared" && !Reflect.get(globalThis, "__openclawWorkerPrototypeSynthetic")) {
+      throw new Error("Shared worker prototype requires the synthetic benchmark harness");
+    }
+    if (
+      experiment === "parsed" ||
+      experiment === "raw" ||
+      experiment === "rows" ||
+      experiment === "shared"
+    ) {
+      const worker =
+        experiment === "shared" && typeof SharedWorker !== "undefined"
+          ? new SharedWorker(new URL("./gateway-worker-shared-prototype.ts", import.meta.url), {
+              name: "openclaw-l56-synthetic",
+            }).port
+          : new Worker(new URL("./gateway-worker-prototype.ts", import.meta.url));
+      this.client = new GatewayWorkerProtocolClient(protocolOptions, worker, {
+        url: this.opts.url,
+        mode: experiment === "raw" ? "raw" : "parsed",
+        rows: experiment === "rows",
+        syntheticSharedScope:
+          experiment === "shared" && typeof SharedWorker !== "undefined"
+            ? "l56-synthetic"
+            : undefined,
+        onSocketCreated: resetSocketState,
+        restoreHostError: (error) =>
+          error.name === "GatewayPayloadLimitError" ? new GatewayPayloadLimitError() : error,
+        onBridgeSample: () => {
+          if (this.client instanceof GatewayWorkerProtocolClient)
+            Reflect.set(window, "__gatewayWorkerMetrics", this.client.readMetrics());
+        },
+      });
+      this.workerPageHide = () => this.stop();
+      window.addEventListener("pagehide", this.workerPageHide, { once: true });
+    } else {
+      this.client = new GatewayProtocolClient(protocolOptions);
+    }
   }
 
   get instanceId(): string | undefined {
@@ -301,6 +356,8 @@ export class GatewayBrowserClient {
   }
 
   stop() {
+    if (this.workerPageHide) window.removeEventListener("pagehide", this.workerPageHide);
+    this.workerPageHide = undefined;
     this.catalogRetryAbort.abort();
     this.connectionHello = null;
     this.nativeAuthAbort?.abort();
@@ -383,6 +440,8 @@ export class GatewayBrowserClient {
     this.recovery = { ...this.recovery, generation, resolved: false };
     this.nativeAuthAbort?.abort();
     this.nativeAuthAbort = new AbortController();
+    const workerClient =
+      this.client instanceof GatewayWorkerProtocolClient ? this.client : undefined;
     const plan = await buildBrowserGatewayConnectPlan({
       opts: this.opts,
       connectNonce,
@@ -391,6 +450,9 @@ export class GatewayBrowserClient {
       serverCapabilities,
       nativeSignal: this.nativeAuthAbort.signal,
       selectAuth: (input) => this.selectConnectAuth(input),
+      signDevice: workerClient
+        ? (identity, payload) => workerClient.signDevicePayload(identity, payload)
+        : undefined,
     });
     if (this.pendingDeviceTokenRetry && plan.selectedAuth.authDeviceToken) {
       this.pendingDeviceTokenRetry = false;
@@ -399,6 +461,11 @@ export class GatewayBrowserClient {
   }
 
   private handleConnectHello(hello: GatewayHelloOk, plan: ConnectPlan) {
+    if (
+      typeof window !== "undefined" &&
+      new URL(window.location.href).searchParams.has("gatewayWorker")
+    )
+      Reflect.set(window, "__gatewayFirstDataAt", performance.now());
     this.connectionHello = hello;
     // Publish this connection's identity before listeners can capture recovery intent.
     // A legacy hello must not retain its predecessor while its digest is pending.
@@ -623,7 +690,21 @@ export class GatewayBrowserClient {
     if (method === "talk.catalog") {
       return this.requestTalkCatalog<T>(params, options);
     }
-    return this.chatEvents.request<T>(this.client, method, params, options);
+    const request = this.chatEvents.request<T>(this.client, method, params, options);
+    if (
+      method === "sessions.list" &&
+      typeof window !== "undefined" &&
+      new URL(window.location.href).searchParams.has("gatewayWorker")
+    ) {
+      void request.then(
+        () => {
+          if (Reflect.get(window, "__gatewayFirstListAt") === undefined)
+            Reflect.set(window, "__gatewayFirstListAt", performance.now());
+        },
+        () => {},
+      );
+    }
+    return request;
   }
 
   private async requestTalkCatalog<T>(

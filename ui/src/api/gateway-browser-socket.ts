@@ -91,7 +91,20 @@ export function createBrowserGatewaySocket(
     finishOpening();
     handlers.open();
   });
-  socket.addEventListener("message", (event) => handlers.message(String(event.data ?? "")));
+  const measure =
+    typeof window !== "undefined" &&
+    new URL(window.location.href).searchParams.has("gatewayWorker");
+  const metrics = { messages: 0, onmessageMs: 0, bytes: 0 };
+  if (measure) Reflect.set(window, "__gatewaySocketMetrics", metrics);
+  socket.addEventListener("message", (event) => {
+    const start = measure ? performance.now() : 0;
+    handlers.message(String(event.data ?? ""));
+    if (measure) {
+      metrics.messages++;
+      metrics.onmessageMs += performance.now() - start;
+      metrics.bytes += String(event.data ?? "").length;
+    }
+  });
   socket.addEventListener("close", (event) => {
     finishOpening();
     // Browsers erase locally initiated close reasons before the handshake finishes.

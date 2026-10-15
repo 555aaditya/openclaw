@@ -63,6 +63,7 @@ export class GatewayProtocolClient<TPlan> {
   private connectFailure: GatewayProtocolCloseContext["connectFailure"];
   private connectTiming: ConnectTimingState | null = null;
   private stoppedSocket?: { socket: GatewayProtocolSocket; context: CloseSnapshot };
+  private pendingCloseContext: GatewayProtocolCloseContext | null = null;
 
   constructor(private readonly opts: GatewayProtocolClientOptions<TPlan>) {
     this.reconnectSupervisor = new RetrySupervisor({
@@ -109,12 +110,19 @@ export class GatewayProtocolClient<TPlan> {
       return;
     }
     this.stopped = false;
+    if (this.pendingCloseContext) {
+      this.requests.flush(
+        this.pendingCloseContext.connectFailure?.error ?? new Error("gateway connection retired"),
+      );
+      this.pendingCloseContext = null;
+    }
     this.reconnectSupervisor.cancel();
     this.connect();
   }
 
   stop(): void {
     this.stopped = true;
+    this.pendingCloseContext = null;
     this.connectionAbort?.abort();
     this.clearHandshakeTimer();
     this.reconnectSignal = null;
@@ -556,6 +564,43 @@ export class GatewayProtocolClient<TPlan> {
     };
     this.connectFailure = undefined;
     const decision = this.opts.resolveClose(context);
+    if (decision instanceof Promise) {
+      this.pendingCloseContext = context;
+      void decision.then(
+        (resolved) => {
+          // A worker policy reply cannot settle requests belonging to a replacement socket.
+          if (
+            this.pendingCloseContext === context &&
+            this.generation === generation &&
+            !this.socket &&
+            !this.stopped
+          ) {
+            this.finishClose(context, resolved);
+          }
+        },
+        (error: unknown) => {
+          if (
+            this.pendingCloseContext === context &&
+            this.generation === generation &&
+            !this.socket &&
+            !this.stopped
+          ) {
+            this.finishClose(context, { retry: false, notify: true });
+            this.opts.onConnectError?.(error instanceof Error ? error : new Error(String(error)));
+          }
+        },
+      );
+      return;
+    }
+    this.finishClose(context, decision);
+  }
+
+  private finishClose(
+    context: GatewayProtocolCloseContext,
+    decision: Awaited<ReturnType<GatewayProtocolClientOptions<TPlan>["resolveClose"]>>,
+  ): void {
+    const { code, reason } = context;
+    this.pendingCloseContext = null;
     this.requests.flush(
       decision.pendingError ??
         context.connectFailure?.error ??

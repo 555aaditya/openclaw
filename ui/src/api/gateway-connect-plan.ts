@@ -80,7 +80,12 @@ export async function buildBrowserGatewayConnectPlan({
   serverCapabilities,
   nativeSignal,
   selectAuth,
+  signDevice,
 }: {
+  signDevice?: (
+    identity: Awaited<ReturnType<typeof loadOrCreateDeviceIdentity>>,
+    payload: string,
+  ) => Promise<string>;
   opts: GatewayBrowserConnectOptions;
   connectNonce: string | null;
   connectChallengeTs: number | null | undefined;
@@ -184,7 +189,9 @@ export async function buildBrowserGatewayConnectPlan({
       token: selectedAuth.signatureToken ?? null,
       nonce,
     });
-    const signature = await signDevicePayload(deviceIdentity.privateKey, payload);
+    const signature = signDevice
+      ? await signDevice(deviceIdentity, payload)
+      : await signDevicePayload(deviceIdentity.privateKey, payload);
     device = {
       id: deviceIdentity.deviceId,
       publicKey: deviceIdentity.publicKey,

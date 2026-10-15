@@ -104,7 +104,9 @@ export type GatewayProtocolClientOptions<TPlan> = {
     error: GatewayProtocolRequestError,
     context: GatewayProtocolConnectContext<TPlan>,
   ) => GatewayProtocolConnectDecision | Promise<GatewayProtocolConnectDecision>;
-  resolveClose: (context: GatewayProtocolCloseContext) => GatewayProtocolCloseDecision;
+  resolveClose: (
+    context: GatewayProtocolCloseContext,
+  ) => GatewayProtocolCloseDecision | Promise<GatewayProtocolCloseDecision>;
   onClose?: (context: GatewayProtocolCloseContext, decision: GatewayProtocolCloseDecision) => void;
   notifyStoppedClose?: boolean;
   onConnectError?: (error: Error) => void;

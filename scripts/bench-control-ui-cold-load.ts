@@ -1,6 +1,8 @@
-// Opt-in production-bundle benchmark; real delays model wire delivery, not test synchronization.
 import { execFileSync } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+// Opt-in production-bundle benchmark; real delays model wire delivery, not test synchronization.
+import { createServer, request as proxyRequest } from "node:http";
+import { connect as connectTcp } from "node:net";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { chromium, type Browser } from "playwright";
@@ -28,6 +30,8 @@ import {
   summarizeColdLoadTrace,
   summarizeCpuProfile,
 } from "./lib/control-ui-cold-load-trace.ts";
+import { installWorkerBenchProbes } from "./lib/control-ui-worker-bench-probes.ts";
+import { startWorkerMockGateway } from "./lib/control-ui-worker-mock-gateway.ts";
 
 function createColdLoadProbeInitScript(input: ColdLoadProbeInput): string {
   return `(${installColdLoadProbes.toString()})(${JSON.stringify(input)}, ${createColdLoadFrameProbe.toString()});`;
@@ -37,6 +41,10 @@ const { values } = parseArgs({
   options: {
     "live-events": { type: "boolean", default: false },
     "bundle-dir": { type: "string" },
+    "worker-variants": { type: "string", default: "" },
+    "reuse-build": { type: "string" },
+    tabs: { type: "string", default: "1" },
+    untraced: { type: "boolean", default: false },
     runs: { type: "string", default: "3" },
     "latency-ms": { type: "string", default: "35" },
     "frame-gap-ms": { type: "string", default: "4" },
@@ -66,12 +74,44 @@ const artifactDir = path.resolve(values.output, new Date().toISOString().replace
 await mkdir(artifactDir, { recursive: true });
 const head = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
 const dirty = execFileSync("git", ["status", "--porcelain"], { encoding: "utf8" });
-const bundleDir = values["bundle-dir"]
-  ? path.resolve(values["bundle-dir"])
-  : path.join(artifactDir, "ui");
-const server = values["bundle-dir"]
+const variants = values["worker-variants"] ? values["worker-variants"].split(",") : ["baseline"];
+const workerBench = Boolean(values["worker-variants"]);
+const reuseBuild = values["bundle-dir"] ?? values["reuse-build"];
+const bundleDir = reuseBuild ? path.resolve(reuseBuild) : path.join(artifactDir, "ui");
+const builtServer = reuseBuild
   ? await startBuiltControlUiE2eServer(bundleDir)
   : await startProductionControlUiE2eServer(bundleDir, head);
+// Keep the logical Gateway same-origin; the synthetic endpoint runs outside the renderer.
+const proxy = workerBench
+  ? createServer((req, res) => {
+      const upstream = proxyRequest(
+        new URL(req.url ?? "/", builtServer.baseUrl),
+        { method: req.method, headers: req.headers },
+        (response) => {
+          res.writeHead(response.statusCode ?? 500, response.headers);
+          response.pipe(res);
+        },
+      );
+      upstream.on("error", () => {
+        res.writeHead(502);
+        res.end();
+      });
+      req.pipe(upstream);
+    })
+  : undefined;
+if (proxy) await new Promise<void>((resolve) => proxy.listen(0, "127.0.0.1", resolve));
+const proxyAddress = proxy?.address();
+const server = {
+  baseUrl:
+    proxyAddress && typeof proxyAddress !== "string"
+      ? `http://127.0.0.1:${proxyAddress.port}/`
+      : builtServer.baseUrl,
+  close: async () => {
+    proxy?.closeAllConnections();
+    if (proxy) await new Promise<void>((resolve) => proxy.close(() => resolve()));
+    await builtServer.close();
+  },
+};
 const sandbox = createSandboxHostHttpServer();
 await new Promise<void>((resolve, reject) => {
   sandbox.once("error", reject);
@@ -88,6 +128,7 @@ const fixture = createControlUiTeamScaleFixture({
   liveRun: values["live-events"],
 });
 let browser: Browser | undefined;
+let wire: Awaited<ReturnType<typeof startWorkerMockGateway>> | undefined;
 const results = [];
 try {
   const prepared = await prepareControlUiMockGatewayScenario({
@@ -95,6 +136,30 @@ try {
     serverBuildId: head,
     serverVersion: JSON.parse(await readFile("package.json", "utf8")).version,
   });
+  if (workerBench) {
+    wire = await startWorkerMockGateway({
+      scenario: prepared.scenario,
+      events: fixture.events,
+      latencyMs,
+      frameGapMs,
+    });
+    const endpoint = new URL(wire.url);
+    proxy!.on("upgrade", (req, socket, head) => {
+      const upstream = connectTcp(Number(endpoint.port), endpoint.hostname, () => {
+        upstream.write(
+          `${req.method} ${req.url} HTTP/${req.httpVersion}\r\n${Object.entries(req.headers)
+            .map(([key, value]) => `${key}: ${value}`)
+            .join("\r\n")}\r\n\r\n`,
+        );
+        if (head.length) upstream.write(head);
+        socket.pipe(upstream);
+        upstream.pipe(socket);
+      });
+      upstream.on("error", () => socket.destroy());
+      socket.on("error", () => upstream.destroy());
+      socket.on("close", () => upstream.destroy());
+    });
+  }
   browser = await chromium.launch({
     executablePath: resolvePlaywrightChromiumExecutablePath(chromium.executablePath()),
     headless: true,
@@ -105,6 +170,7 @@ try {
     permissions: ["local-network-access"],
   });
   const page = await context.newPage();
+  page.setDefaultTimeout(30_000);
   const errors: string[] = [];
   const harnessWarnings: string[] = [];
   page.on("pageerror", (error) => {
@@ -118,20 +184,21 @@ try {
       harnessWarnings.push(error.message);
     } else {
       errors.push(error.stack ?? error.message);
+      console.error("Browser error:", error.message);
     }
   });
-  await page.route("**/control-ui-config.json", (route) =>
+  await context.route("**/control-ui-config.json", (route) =>
     route.fulfill({ json: createControlUiMockBootstrapConfig(prepared.scenario) }),
   );
   const assets = new Map<string, { body: string | Buffer; contentType: string }>([
     ...fixture.assets,
     ...prepared.assets,
   ]);
-  await page.route("**/__openclaw__/**", (route) => {
+  await context.route("**/__openclaw__/**", (route) => {
     const asset = assets.get(new URL(route.request().url()).pathname);
     return asset ? route.fulfill({ status: 200, ...asset }) : route.fallback();
   });
-  await page.addInitScript(
+  await context.addInitScript(
     ({ key, pins }) => {
       if (window !== window.top) {
         return;
@@ -152,9 +219,25 @@ try {
       pins: fixture.sidebarEntries,
     },
   );
-  await page.addInitScript({
-    content: `;(() => { if (window !== window.top) return; ${createControlUiMockGatewayInitScript(prepared.scenario)}\n${createColdLoadProbeInitScript({ latencyMs, frameGapMs, events: fixture.events, liveEvents: fixture.liveEvents, liveHistory: fixture.liveHistory })} })();`,
-  });
+  if (workerBench) {
+    await context.addInitScript({
+      content: `;(() => { if (window !== window.top) return; ${await readFile("scripts/lib/control-ui-worker-loaf.init.js", "utf8")} })();`,
+    });
+    await context.addInitScript({
+      content: `;(() => { if (window !== window.top) return; const __name = (target) => target; (${installWorkerBenchProbes.toString()})(); })();`,
+    });
+    await context.addInitScript(() => {
+      if (window !== window.top) return;
+      Reflect.set(globalThis, "__openclawWorkerPrototypeSynthetic", true);
+      localStorage.setItem(
+        "openclaw:control-ui:community-invite:v2",
+        JSON.stringify({ dismissedAtMs: 1770000000000 }),
+      );
+    });
+  } else
+    await context.addInitScript({
+      content: `;(() => { if (window !== window.top) return; ${createControlUiMockGatewayInitScript(prepared.scenario)}\n${createColdLoadProbeInitScript({ latencyMs, frameGapMs, events: fixture.events, liveEvents: fixture.liveEvents, liveHistory: fixture.liveHistory })} })();`,
+    });
   const url = controlUiSessionUrl(server.baseUrl, fixture.selectedSessionKey, "dashboard");
   async function settle() {
     try {
@@ -180,6 +263,23 @@ try {
         .frameLocator("iframe")
         .getByText("Team metric 12", { exact: true })
         .waitFor();
+      if (workerBench) {
+        const deadline = Date.now() + 30_000;
+        for (;;) {
+          const state = wire!.readStats();
+          if (
+            state.sentEvents >= fixture.events.length &&
+            !state.pending &&
+            !state.queued &&
+            state.idleMs > 750
+          )
+            break;
+          if (Date.now() > deadline)
+            throw new Error(`Wire did not settle: ${JSON.stringify(state)}`);
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        return;
+      }
       await page.waitForFunction(
         (eventCount) => {
           const state = Reflect.get(window, "__coldLoad")?.read();
@@ -205,7 +305,9 @@ try {
       throw error;
     }
   }
+  console.log("Opening synthetic deep link", url);
   await page.goto(url);
+
   try {
     await page.locator("#sidebar-session-owner-title").click();
     await page.locator('.sidebar-session-owner-filter [role="option"][data-value="all"]').click();
@@ -226,177 +328,251 @@ try {
   }
   await settle();
   await page.locator('aside.sidebar[data-snapshot-saved="true"]').waitFor();
-  for (let run = 0; run < runs; run++) {
-    const cdp = await context.newCDPSession(page);
-    const rawTrace: unknown[] = [];
-    cdp.on("Tracing.dataCollected", (data) => rawTrace.push(...data.value));
-    await cdp.send("Profiler.enable");
-    await cdp.send("Profiler.setSamplingInterval", { interval: 1000 });
-    await cdp.send("Profiler.start");
-    await cdp.send("Tracing.start", {
-      categories:
-        "toplevel,loading,blink.user_timing,devtools.timeline,disabled-by-default-devtools.timeline,disabled-by-default-devtools.timeline.stack,disabled-by-default-devtools.screenshot,v8",
-      transferMode: "ReportEvents",
-    });
-    await page.reload({ waitUntil: "domcontentloaded" });
-    await settle();
-    const metrics = await page.evaluate(() => Reflect.get(window, "__coldLoad").read());
-    await writeFile(path.join(artifactDir, `run-${run + 1}.metrics.json`), JSON.stringify(metrics));
-    const profile = await cdp.send("Profiler.stop");
-    const complete = new Promise<void>((resolve) => {
-      cdp.once("Tracing.tracingComplete", () => resolve());
-    });
-    await cdp.send("Tracing.end");
-    await complete;
-    await page.screenshot({ path: path.join(artifactDir, `run-${run + 1}.png`) });
-    await writeFile(
-      path.join(artifactDir, `run-${run + 1}.trace.json`),
-      JSON.stringify({ traceEvents: rawTrace }),
-    );
-    await writeFile(
-      path.join(artifactDir, `run-${run + 1}.cpuprofile`),
-      JSON.stringify(profile.profile),
-    );
-    const trace = rawTrace.map(prepareColdLoadTraceEvent);
-    const screenshots = trace.flatMap((event) =>
-      event.name === "Screenshot" && event.args?.snapshot
-        ? [{ ts: event.ts, data: event.args.snapshot }]
-        : [],
-    );
-    const visual = await page.evaluate(async (frames) => {
-      const canvas = document.createElement("canvas");
-      canvas.width = 344;
-      canvas.height = 236;
-      const ctx = canvas.getContext("2d")!;
-      let previous: DataView | undefined;
-      let lastChange: number | undefined;
-      let significantFrames = 0;
-      let transitionGroups = 0;
-      for (const frame of frames) {
-        const image = new Image();
-        image.src = `data:image/jpeg;base64,${frame.data}`;
-        await image.decode();
-        ctx.drawImage(image, 0, 0, 344, 236);
-        const bytes = ctx.getImageData(0, 0, 344, 236).data;
-        const pixels = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-        if (previous) {
-          let changed = 0;
-          for (let i = 0; i < pixels.byteLength; i += 4) {
-            if (
-              Math.max(
-                Math.abs(pixels.getUint8(i) - previous.getUint8(i)),
-                Math.abs(pixels.getUint8(i + 1) - previous.getUint8(i + 1)),
-                Math.abs(pixels.getUint8(i + 2) - previous.getUint8(i + 2)),
-              ) >= 32
-            ) {
-              changed++;
-            }
-          }
-          if (changed / (344 * 236) >= 0.004) {
-            significantFrames++;
-            if (lastChange === undefined || frame.ts - lastChange > 100_000) {
-              transitionGroups++;
-            }
-            lastChange = frame.ts;
-          }
-        }
-        previous = pixels;
+  for (let run = 0; run < runs; run++)
+    for (const variant of run % 2 ? [...variants].reverse() : variants) {
+      if (workerBench) {
+        const target = new URL(url);
+        target.searchParams.set("gatewayWorker", variant);
+        await page.goto(target.href);
+        await settle();
       }
-      return {
-        frames: frames.length,
-        significantFrames,
-        transitionGroups,
-      };
-    }, screenshots);
-    const mapped = await mapColdLoadCpuProfile(profile.profile, {
-      assetBaseUrl: new URL("assets/", server.baseUrl).href,
-      assetDirectory: path.join(bundleDir, "assets"),
-    });
-    await cdp.detach();
-    let live;
-    const readLivePresentation = () =>
-      page.evaluate(
-        (keys) => {
-          const rows = Object.fromEntries(
-            keys.map((key) => {
-              const row = document.querySelector<HTMLElement>(
-                `openclaw-app-sidebar [data-session-key="${key}"]`,
-              );
-              const rect = row?.getBoundingClientRect();
-              return [
-                key,
-                {
-                  attached: Boolean(row),
-                  inViewport: Boolean(rect && rect.bottom > 0 && rect.top < innerHeight),
-                  text: row?.textContent?.trim() ?? null,
-                  classes: row?.className ?? null,
-                },
-              ];
-            }),
+      if (values.untraced) {
+        await page.reload({ waitUntil: "domcontentloaded" });
+        await settle();
+        const metrics = await page.evaluate(() => Reflect.get(window, "__coldLoad").read());
+        const tabs = [];
+        const peers = [];
+        for (let index = 1; index < Number(values.tabs); index++) {
+          const before = wire!.readStats();
+          const peer = await context.newPage();
+          peer.setDefaultTimeout(30_000);
+          peers.push(peer);
+          const target = new URL(url);
+          target.searchParams.set("gatewayWorker", variant);
+          await peer.goto(target.href);
+          await peer
+            .locator(".chat-pane__session-title-text", { hasText: "Project dashboard 1" })
+            .waitFor();
+          await peer.locator('aside.sidebar[data-snapshot-saved="true"]').waitFor();
+          const after = wire!.readStats();
+          await peer.waitForFunction(
+            () => Reflect.get(window, "__gatewayFirstListAt") !== undefined,
           );
-          return {
-            rows,
-            viewers: [...document.querySelectorAll("openclaw-chat-pane [data-viewer-id]")].map(
-              (element) => element.getAttribute("data-viewer-id"),
-            ),
-            streamingText:
-              document.querySelector("openclaw-chat-pane .chat-bubble.streaming")?.textContent ??
-              null,
-          };
-        },
-        [
-          fixture.scenario.sessions![0]!.key,
-          fixture.scenario.sessions![119]!.key,
-          fixture.scenario.sessions![160]!.key,
-          fixture.scenario.sessions![240]!.key,
-        ],
-      );
-    if (values["live-events"]) {
-      const before = await readLivePresentation();
-      await page.evaluate(() => Reflect.get(window, "__coldLoad").startLive());
-      await page.waitForFunction(
-        (count) => Reflect.get(window, "__coldLoad").readLive().sentEvents === count,
-        fixture.liveEvents.length,
-        { timeout: 35_000 },
-      );
-      const plannedWindowMs = fixture.liveEvents.at(-1)!.atMs + 750;
-      await page.waitForFunction(
-        (windowMs) => Reflect.get(window, "__coldLoad").readLive().elapsedMs >= windowMs,
-        plannedWindowMs,
-      );
-      await page.evaluate(() => Reflect.get(window, "__coldLoad").finishLive());
-      const after = await readLivePresentation();
-      live = {
-        ...(await page.evaluate(() => Reflect.get(window, "__coldLoad").readLive())),
-        plannedWindowMs,
-        presentation: { before, after },
-      };
-      await page.screenshot({ path: path.join(artifactDir, `run-${run + 1}.live.png`) });
+          const firstData = await peer.evaluate(
+            () => Reflect.get(window, "__gatewayFirstListAt") ?? null,
+          );
+          tabs.push({
+            tab: index + 1,
+            firstDataMs: firstData,
+            newConnections: after.connections - before.connections,
+            responseBytes:
+              after.responseBytes + after.eventBytes - before.responseBytes - before.eventBytes,
+            requests: after.requests - before.requests,
+          });
+        }
+        const result = { run: run + 1, variant, ...metrics, tabs, wire: wire?.readStats() };
+        for (const peer of peers) await peer.close();
+        results.push(result);
+        await writeFile(
+          path.join(artifactDir, `run-${run + 1}-${variant}.metrics.json`),
+          JSON.stringify(result),
+        );
+        if (run === 0) await page.screenshot({ path: path.join(artifactDir, `${variant}.png`) });
+        console.log(
+          JSON.stringify({
+            run: run + 1,
+            variant,
+            at: metrics.at,
+            mutations: metrics.mutations,
+            loaf: metrics.loaf?.length,
+          }),
+        );
+        continue;
+      }
+      const cdp = await context.newCDPSession(page);
+      const rawTrace: unknown[] = [];
+      cdp.on("Tracing.dataCollected", (data) => rawTrace.push(...data.value));
+      await cdp.send("Profiler.enable");
+      await cdp.send("Profiler.setSamplingInterval", { interval: 1000 });
+      await cdp.send("Profiler.start");
+      await cdp.send("Tracing.start", {
+        categories:
+          "toplevel,loading,blink.user_timing,devtools.timeline,disabled-by-default-devtools.timeline,disabled-by-default-devtools.timeline.stack,disabled-by-default-devtools.screenshot,v8",
+        transferMode: "ReportEvents",
+      });
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await settle();
+      const metrics = await page.evaluate(() => Reflect.get(window, "__coldLoad").read());
       await writeFile(
-        path.join(artifactDir, `run-${run + 1}.live.json`),
-        JSON.stringify(live, null, 2),
+        path.join(artifactDir, `run-${run + 1}-${variant}.metrics.json`),
+        JSON.stringify(metrics),
+      );
+      const profile = await cdp.send("Profiler.stop");
+      const complete = new Promise<void>((resolve) => {
+        cdp.once("Tracing.tracingComplete", () => resolve());
+      });
+      await cdp.send("Tracing.end");
+      await complete;
+      await page.screenshot({ path: path.join(artifactDir, `run-${run + 1}-${variant}.png`) });
+      await writeFile(
+        path.join(artifactDir, `run-${run + 1}-${variant}.trace.json`),
+        JSON.stringify({ traceEvents: rawTrace }),
+      );
+      await writeFile(
+        path.join(artifactDir, `run-${run + 1}-${variant}.cpuprofile`),
+        JSON.stringify(profile.profile),
+      );
+      const trace = rawTrace.map(prepareColdLoadTraceEvent);
+      const screenshots = trace.flatMap((event) =>
+        event.name === "Screenshot" && event.args?.snapshot
+          ? [{ ts: event.ts, data: event.args.snapshot }]
+          : [],
+      );
+      const visual = await page.evaluate(async (frames) => {
+        const canvas = document.createElement("canvas");
+        canvas.width = 344;
+        canvas.height = 236;
+        const ctx = canvas.getContext("2d")!;
+        let previous: DataView | undefined;
+        let lastChange: number | undefined;
+        let significantFrames = 0;
+        let transitionGroups = 0;
+        for (const frame of frames) {
+          const image = new Image();
+          image.src = `data:image/jpeg;base64,${frame.data}`;
+          await image.decode();
+          ctx.drawImage(image, 0, 0, 344, 236);
+          const bytes = ctx.getImageData(0, 0, 344, 236).data;
+          const pixels = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+          if (previous) {
+            let changed = 0;
+            for (let i = 0; i < pixels.byteLength; i += 4) {
+              if (
+                Math.max(
+                  Math.abs(pixels.getUint8(i) - previous.getUint8(i)),
+                  Math.abs(pixels.getUint8(i + 1) - previous.getUint8(i + 1)),
+                  Math.abs(pixels.getUint8(i + 2) - previous.getUint8(i + 2)),
+                ) >= 32
+              ) {
+                changed++;
+              }
+            }
+            if (changed / (344 * 236) >= 0.004) {
+              significantFrames++;
+              if (lastChange === undefined || frame.ts - lastChange > 100_000) {
+                transitionGroups++;
+              }
+              lastChange = frame.ts;
+            }
+          }
+          previous = pixels;
+        }
+        return {
+          frames: frames.length,
+          significantFrames,
+          transitionGroups,
+        };
+      }, screenshots);
+      const mapped = await mapColdLoadCpuProfile(profile.profile, {
+        assetBaseUrl: new URL("assets/", server.baseUrl).href,
+        assetDirectory: path.join(bundleDir, "assets"),
+      });
+      await cdp.detach();
+      let live;
+      const readLivePresentation = () =>
+        page.evaluate(
+          (keys) => {
+            const rows = Object.fromEntries(
+              keys.map((key) => {
+                const row = document.querySelector<HTMLElement>(
+                  `openclaw-app-sidebar [data-session-key="${key}"]`,
+                );
+                const rect = row?.getBoundingClientRect();
+                return [
+                  key,
+                  {
+                    attached: Boolean(row),
+                    inViewport: Boolean(rect && rect.bottom > 0 && rect.top < innerHeight),
+                    text: row?.textContent?.trim() ?? null,
+                    classes: row?.className ?? null,
+                  },
+                ];
+              }),
+            );
+            return {
+              rows,
+              viewers: [...document.querySelectorAll("openclaw-chat-pane [data-viewer-id]")].map(
+                (element) => element.getAttribute("data-viewer-id"),
+              ),
+              streamingText:
+                document.querySelector("openclaw-chat-pane .chat-bubble.streaming")?.textContent ??
+                null,
+            };
+          },
+          [
+            fixture.scenario.sessions![0]!.key,
+            fixture.scenario.sessions![119]!.key,
+            fixture.scenario.sessions![160]!.key,
+            fixture.scenario.sessions![240]!.key,
+          ],
+        );
+      if (values["live-events"]) {
+        const before = await readLivePresentation();
+        await page.evaluate(() => Reflect.get(window, "__coldLoad").startLive());
+        await page.waitForFunction(
+          (count) => Reflect.get(window, "__coldLoad").readLive().sentEvents === count,
+          fixture.liveEvents.length,
+          { timeout: 35_000 },
+        );
+        const plannedWindowMs = fixture.liveEvents.at(-1)!.atMs + 750;
+        await page.waitForFunction(
+          (windowMs) => Reflect.get(window, "__coldLoad").readLive().elapsedMs >= windowMs,
+          plannedWindowMs,
+        );
+        await page.evaluate(() => Reflect.get(window, "__coldLoad").finishLive());
+        const after = await readLivePresentation();
+        live = {
+          ...(await page.evaluate(() => Reflect.get(window, "__coldLoad").readLive())),
+          plannedWindowMs,
+          presentation: { before, after },
+        };
+        await page.screenshot({ path: path.join(artifactDir, `run-${run + 1}.live.png`) });
+        await writeFile(
+          path.join(artifactDir, `run-${run + 1}.live.json`),
+          JSON.stringify(live, null, 2),
+        );
+      }
+      const result = {
+        run: run + 1,
+        variant,
+        wire: wire?.readStats(),
+        ...metrics,
+        trace: summarizeColdLoadTrace(trace, metrics.at),
+        cpu: summarizeCpuProfile(mapped.profile),
+        mappedFrames: mapped.mappedFrames,
+        unmappedFrames: mapped.unmappedFrames,
+        harnessWarnings,
+        visual,
+        live,
+      };
+      results.push(result);
+      console.log(
+        JSON.stringify({
+          run: run + 1,
+          variant,
+          trace: result.trace,
+          bridge: result.bridge,
+          mutations: result.mutations,
+        }),
       );
     }
-    const result = {
-      run: run + 1,
-      ...metrics,
-      trace: summarizeColdLoadTrace(trace, metrics.at),
-      cpu: summarizeCpuProfile(mapped.profile),
-      mappedFrames: mapped.mappedFrames,
-      unmappedFrames: mapped.unmappedFrames,
-      harnessWarnings,
-      visual,
-      live,
-    };
-    results.push(result);
-    console.log(JSON.stringify(result));
-  }
   if (errors.length) {
     throw new Error(`Browser errors: ${errors.join("\n")}`);
   }
   await context.close();
 } finally {
   await browser?.close();
+  await wire?.close();
   await server.close();
   sandbox.closeAllConnections();
   await new Promise<void>((resolve, reject) => {

@@ -8,6 +8,14 @@ export * from "./gateway-origin-scope.js";
 export * from "./connect-auth.js";
 export * from "./model-catalog-connect.js";
 export * from "./protocol-client.js";
+export * from "./worker-protocol-client.js";
+export * from "./worker-protocol-host.js";
+export * from "./worker-shared-host.js";
+export type {
+  GatewayWorkerBridgeMode,
+  GatewayWorkerBridgeSample,
+  GatewayWorkerPort,
+} from "./worker-bridge.js";
 export { isGatewayProtocolResponseError } from "./protocol-request.js";
 export * from "./reconnect-policy.js";
 export * from "./session-projection.js";
