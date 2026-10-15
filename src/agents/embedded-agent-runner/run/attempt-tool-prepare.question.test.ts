@@ -28,6 +28,7 @@ import type { EmbeddedRunAttemptInternalParams } from "./internal-params.js";
 // Keep native preparation, tool construction, and canonical worker admission;
 // only the external question transport is isolated.
 const transport = vi.hoisted(() => vi.fn());
+// mock-isolation: Keep the native preparation and worker admission; isolate only external Gateway transport.
 vi.mock("../../harness/gateway-question-dispatch.runtime.js", () => ({
   callGatewayTool: transport,
 }));
@@ -150,11 +151,13 @@ describe("prepared native question custody", () => {
           });
           const tool = prepared.toolsRaw.find((candidate) => candidate.name === "ask_user");
           expect(tool).toBeDefined();
+          expect(prepared.runtimeContinuationStarted).not.toBe(true);
           const result = await tool!.execute("question-call", validArgs);
           expect(transport.mock.calls.map(([method]) => method)).toEqual(
             scenario.durable ? ["question.request"] : ["question.request", "question.waitAnswer"],
           );
           expect(yielded).toHaveBeenCalledTimes(scenario.durable ? 1 : 0);
+          expect(prepared.runtimeContinuationStarted).toBe(scenario.durable);
           expect(result).toMatchObject({
             details: { status: scenario.durable ? "waiting" : "answered" },
           });

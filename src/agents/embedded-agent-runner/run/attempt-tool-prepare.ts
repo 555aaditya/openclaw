@@ -299,6 +299,7 @@ export async function prepareEmbeddedAttemptToolBase(params: {
     },
   };
   let webSearchUnconfigured = false;
+  let runtimeContinuationStarted = false;
   const constructTools = async (
     sessionPermissionPolicy: PreparedSessionPermissionPolicy | undefined,
     abortSignal: AbortSignal,
@@ -313,7 +314,11 @@ export async function prepareEmbeddedAttemptToolBase(params: {
         sessionAdmission?.entry.lifecycleRevision &&
         !sessionAdmission.entry.incognito &&
         !isIncognitoSessionKey(sessionAdmission.sessionKey)
-          ? params.onYield
+          ? (...args: Parameters<typeof params.onYield>) => {
+              // ask_user calls this only after its native durable custody was accepted.
+              runtimeContinuationStarted = true;
+              return params.onYield(...args);
+            }
           : undefined;
       const codingToolOptions: OpenClawCodingToolsOptions = {
         awaitSessionDiffBaseline,
@@ -519,6 +524,9 @@ export async function prepareEmbeddedAttemptToolBase(params: {
       },
       get webSearchUnconfigured() {
         return webSearchUnconfigured;
+      },
+      get runtimeContinuationStarted() {
+        return runtimeContinuationStarted;
       },
       codeModeControlsEnabledForRun,
       codeModeSkills,
