@@ -155,6 +155,60 @@ it.each(["blocked", "interrupted"] as const)(
   },
 );
 
+it.each([
+  { status: "blocked", disposeSubmitter: false },
+  { status: "interrupted", disposeSubmitter: false },
+  { status: "blocked", disposeSubmitter: true },
+  { status: "interrupted", disposeSubmitter: true },
+] as const)(
+  "refreshes $status guidance without a broadcast (submitter disposed=$disposeSubmitter)",
+  async ({ status, disposeSubmitter }) => {
+    let finishResolution: ((result: QuestionResolveResult) => void) | undefined;
+    const client: QuestionClient = {
+      request: vi.fn((method) => {
+        if (method === "question.resolve") {
+          return new Promise<QuestionResolveResult>((resolve) => {
+            finishResolution = resolve;
+          });
+        }
+        return Promise.resolve({
+          questions: [],
+          continuations: [
+            {
+              questionId: "question-1",
+              status,
+              reason: "Original caller is unavailable",
+              nextAction: "Start a new user turn",
+            },
+          ],
+        });
+      }),
+    };
+    const submitter = connectQuestionState(client);
+    const sibling = connectQuestionState(client);
+    const submission = submitQuestionPrompt(submitter, "question-1", { format: ["Compact"] });
+    if (disposeSubmitter) {
+      disposeQuestionPromptState(submitter);
+    }
+    finishResolution?.({ status: "answered", answers: { answers: { format: ["Compact"] } } });
+    await submission;
+    for (const projection of disposeSubmitter ? [sibling] : [submitter, sibling]) {
+      await vi.waitFor(() =>
+        expect(projection.prompts.get("question-1")).toMatchObject({
+          status: "answered",
+          answers: { answers: { format: ["Compact"] } },
+          continuationMessage: "Original caller is unavailable Start a new user turn",
+        }),
+      );
+    }
+    expect(client.request).toHaveBeenCalledWith(
+      "question.list",
+      { includeContinuation: true },
+      expect.any(Object),
+    );
+  },
+);
+
 describe("Gateway-client question outcome ownership", () => {
   it("shares connection hydration across sidebar, favicon, and later chat mounts", async () => {
     vi.useFakeTimers();
@@ -207,7 +261,12 @@ describe("Gateway-client question outcome ownership", () => {
           answers: { format: ["Compact"] },
         });
       }
-      expect(client.request).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(client.request).mock.calls.map(([method]) => method)).toEqual([
+        "question.resolve",
+        "question.list",
+        "question.list",
+        "question.list",
+      ]);
     },
   );
 
@@ -219,9 +278,11 @@ describe("Gateway-client question outcome ownership", () => {
       const client: QuestionClient = {
         request: vi.fn((method, params) =>
           method === "question.list"
-            ? new Promise<unknown>((complete) => {
-                finishList = complete;
-              })
+            ? finishList
+              ? Promise.resolve({ questions: [] })
+              : new Promise<unknown>((complete) => {
+                  finishList = complete;
+                })
             : resolver.request(method, params),
         ),
       };
@@ -263,6 +324,9 @@ describe("Gateway-client question outcome ownership", () => {
             });
           }
           if (method === "question.list") {
+            if (finishList) {
+              return Promise.resolve({ questions: [] });
+            }
             return new Promise<{ questions: unknown[] }>((complete) => {
               finishList = complete;
             });
@@ -301,6 +365,7 @@ describe("Gateway-client question outcome ownership", () => {
       );
       expect(vi.mocked(client.request).mock.calls.map(([method]) => method)).toEqual([
         "question.resolve",
+        "question.list",
         "question.list",
         "question.get",
       ]);

@@ -338,6 +338,24 @@ function recordQuestionResolution(
     state.revision += 1;
   }
   state.onChange();
+  const client = state.client;
+  const currentPrompt = state.prompts.get(resolved.id);
+  if (client && currentPrompt) {
+    const generation = state.clientGeneration;
+    const revision = currentPrompt.revision;
+    // Receipt invalidation must not reinstall stale question records or start
+    // recovery for an unmatched outcome; reconnect hydration owns those reads.
+    void refreshQuestionContinuationReceipt(
+      client,
+      currentPrompt,
+      () =>
+        state.client === client &&
+        state.clientGeneration === generation &&
+        state.prompts.get(resolved.id) === currentPrompt &&
+        currentPrompt.revision === revision,
+      state.onChange,
+    ).catch(() => {});
+  }
 }
 
 export function handleQuestionPromptEvent(
@@ -369,24 +387,6 @@ export function handleQuestionPromptEvent(
     return false;
   }
   recordQuestionResolution(state, resolved);
-  const client = state.client;
-  const prompt = state.prompts.get(resolved.id);
-  if (client && prompt) {
-    const generation = state.clientGeneration;
-    const revision = prompt.revision;
-    // Receipt invalidation must not reinstall stale question records or start
-    // recovery for an unmatched outcome; reconnect hydration owns those reads.
-    void refreshQuestionContinuationReceipt(
-      client,
-      prompt,
-      () =>
-        state.client === client &&
-        state.clientGeneration === generation &&
-        state.prompts.get(resolved.id) === prompt &&
-        prompt.revision === revision,
-      state.onChange,
-    ).catch(() => {});
-  }
   return true;
 }
 

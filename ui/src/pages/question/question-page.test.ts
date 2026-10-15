@@ -90,6 +90,17 @@ it("recovers a failed reconnect lookup without losing the typed answer", async (
     .mockResolvedValueOnce({
       status: "answered",
       answers: { answers: { audience: ["The design team"] } },
+    })
+    .mockResolvedValueOnce({
+      questions: [],
+      continuations: [
+        {
+          questionId: "question-one",
+          status: "blocked",
+          reason: "Original caller is unavailable.",
+          nextAction: "Start a new user turn.",
+        },
+      ],
     });
   const { page, update } = mount(request);
   await settle(page);
@@ -109,7 +120,7 @@ it("recovers a failed reconnect lookup without losing the typed answer", async (
   expect(page.querySelector("textarea")?.value).toBe("The design team");
   page.querySelector<HTMLButtonElement>(".chat-question-panel__advance")!.click();
   await settle(page);
-  expect(request).toHaveBeenLastCalledWith(
+  expect(request).toHaveBeenCalledWith(
     "question.resolve",
     {
       id: "question-one",
@@ -118,6 +129,9 @@ it("recovers a failed reconnect lookup without losing the typed answer", async (
     expect.any(Object),
   );
   await waitForSolid(() => expect(page.textContent).toContain("Answered"));
+  await waitForSolid(() =>
+    expect(page.textContent).toContain("Original caller is unavailable. Start a new user turn."),
+  );
 });
 
 it.each(["id", "client"] as const)(
