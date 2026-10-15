@@ -4,35 +4,11 @@ import { CHAT_RUN_ACTIVITY_CHANGED_EVENT } from "../pages/chat/chat-history-even
 import { controlUiSessionUrl, installMockGateway } from "../test-helpers/control-ui-e2e.ts";
 import { requireRecord, requireString } from "./chat-flow.test-support.ts";
 import { createControlUiE2eSuite } from "./control-ui-e2e-suite.test-support.ts";
+import { expectStatusColor } from "./favicon-status.test-support.ts";
 
 const suite = createControlUiE2eSuite({
   name: "Control UI favicon status",
 });
-
-async function expectStatusColor(page: Page, token: string) {
-  await expect
-    .poll(() =>
-      page.evaluate((colorToken) => {
-        const icon = document.querySelector<HTMLLinkElement>(
-          'link[rel="icon"][type="image/svg+xml"]',
-        );
-        if (!icon?.href.startsWith("data:image/svg+xml,")) {
-          return false;
-        }
-        const svg = new DOMParser().parseFromString(
-          decodeURIComponent(icon.href.slice(icon.href.indexOf(",") + 1)),
-          "image/svg+xml",
-        );
-        const color = getComputedStyle(document.documentElement)
-          .getPropertyValue(colorToken)
-          .trim();
-        return (
-          Boolean(color) && svg.documentElement.lastElementChild?.getAttribute("fill") === color
-        );
-      }, token),
-    )
-    .toBe(true);
-}
 
 async function faviconLinks(page: Page) {
   return page.locator('link[rel="icon"]').evaluateAll((icons) =>
