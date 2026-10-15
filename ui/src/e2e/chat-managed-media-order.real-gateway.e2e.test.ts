@@ -228,6 +228,7 @@ async function capture(page: Page, bubble: Locator, name: string) {
     const matches = body.includes(privateValue);
     let message = "Capture must contain only synthetic public content";
     if (matches) {
+      // oxlint-disable-next-line unicorn/prefer-dom-node-text-content -- innerText separately proves rendered visible text.
       const visible = (await page.locator("body").innerText()).includes(privateValue);
       message += ` (${category}: ${visible ? "visible" : "DOM-only"})`;
     }
