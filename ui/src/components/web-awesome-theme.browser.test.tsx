@@ -165,6 +165,8 @@ describe.runIf("__vitest_browser__" in globalThis)("shared control theme inherit
     )!;
     await prepareControls(host);
     const menuTrigger = menu.parentElement!.querySelector<HTMLButtonElement>(".oc-menu-trigger")!;
+    const clearButton = select.shadowRoot!.querySelector<HTMLElement>('[part~="clear-button"]')!;
+    const { userEvent } = await import("vitest/browser");
 
     for (const theme of [
       "dark",
@@ -201,6 +203,11 @@ describe.runIf("__vitest_browser__" in globalThis)("shared control theme inherit
       expect(controlStyle(menu, "menu").backgroundColor, theme).toBe(color("bg-elevated"));
       const currentOption = await focusNextOption(select);
       await expect.poll(() => menu.getAttribute("data-phase")).toBe("hidden");
+      // Sample the resting palette after a real pointer has left the clear control.
+      await userEvent.hover(clearButton);
+      expect(clearButton.matches(":hover")).toBe(true);
+      await userEvent.unhover(clearButton);
+      expect(clearButton.matches(":hover")).toBe(false);
       expect(controlStyle(select, "options").backgroundColor, theme).toBe(color("popover"));
       expect(controlStyle(select, "select indicator").color, theme).toBe(color("muted"));
       expect(controlStyle(select, "selected value").color, theme).toBe(color("text"));
