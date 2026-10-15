@@ -27,6 +27,26 @@ suite.define(() => {
       await expect.poll(() => thread.count()).toBe(0);
       await expect.poll(() => composer.textContent()).toBe("");
       await expect.poll(() => sidebar.count()).toBeGreaterThan(0);
+      await expect
+        .poll(() =>
+          favicon.evaluate((icon) => {
+            const href = icon.getAttribute("href");
+            if (!href?.startsWith("data:image/svg+xml,")) {
+              return false;
+            }
+            const svg = new DOMParser().parseFromString(
+              decodeURIComponent(href.slice(href.indexOf(",") + 1)),
+              "image/svg+xml",
+            );
+            const root = document.documentElement;
+            const token = root.dataset.themeMode === "light" ? "--info" : "--accent";
+            const color = getComputedStyle(root).getPropertyValue(token).trim();
+            return (
+              Boolean(color) && svg.documentElement.lastElementChild?.getAttribute("fill") === color
+            );
+          }),
+        )
+        .toBe(true);
       const activeFavicon = await favicon.getAttribute("href");
       await emit(
         2,
