@@ -4,7 +4,7 @@ import { expect, it } from "vitest";
 import { createControlUiE2eArtifactDir } from "../test-helpers/control-ui-e2e-artifacts.ts";
 import { takeControlUiScreenshotFrame } from "../test-helpers/control-ui-e2e-screenshot.ts";
 import { installMockGateway, pauseVirtualClock } from "../test-helpers/control-ui-e2e.ts";
-import { openChatDetails } from "./chat-details.test-support.ts";
+import { closeChatDetails, openChatDetails } from "./chat-details.test-support.ts";
 import { createControlUiE2eSuite } from "./control-ui-e2e-suite.test-support.ts";
 
 const suite = createControlUiE2eSuite({
@@ -160,7 +160,7 @@ suite.define(() => {
       await page.setViewportSize({ width: 1180, height: 800 });
       await page.clock.runFor(32);
     }
-    await details.getByRole("button", { name: "Close details", exact: true }).click();
+    await closeChatDetails(page);
     const beforeHidden = (await gateway.getRequests("sessions.diff")).length;
     await page.clock.fastForward(60_000);
     expect(await gateway.getRequests("sessions.diff")).toHaveLength(beforeHidden);
