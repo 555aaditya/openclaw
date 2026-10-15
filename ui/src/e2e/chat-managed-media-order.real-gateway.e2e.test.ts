@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import path from "node:path";
 import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
-import type { Locator, Page } from "playwright";
+import type { Locator, Page, Request } from "playwright";
 import { expect, it } from "vitest";
 import { setAvatar } from "../../../src/state/user-profile-writes.worker.ts";
 import { ensureGatewayOwnerProfile } from "../../../src/state/user-profiles.ts";
@@ -38,6 +38,27 @@ const expectedOrder = [
   closing,
 ];
 const fixtureKey = "synthetic-managed-media-key";
+
+type ImageRequestTrace = {
+  sourceIndex: number;
+  startedAtMs: number;
+  response?: { atMs: number; status: number; png: boolean };
+  settled?: { atMs: number; outcome: "finished" | "aborted" | "failed" };
+};
+
+declare global {
+  interface Window {
+    managedImageDecodeFailures?: {
+      imageIndex: number;
+      connected: boolean;
+      currentImage: boolean;
+      sourceChanged: boolean;
+      complete: boolean;
+      naturalWidth: number;
+      naturalHeight: number;
+    }[];
+  }
+}
 
 async function startProvider() {
   const requests: string[] = [];
@@ -271,64 +292,78 @@ async function renderedOrder(bubble: Locator) {
     );
 }
 
-async function recordImageDecodeFailure(bubble: Locator) {
-  const images = await bubble.locator("img.chat-message-image").evaluateAll(async (elements) =>
-    Promise.all(
-      elements.map(async (image) => {
-        if (!(image instanceof HTMLImageElement)) {
-          throw new Error("Expected an image element");
-        }
-        const source = image.src;
-        const url = new URL(source, document.baseURI);
-        const scheme =
-          url.protocol === "blob:"
-            ? "blob"
-            : url.protocol === "data:"
-              ? "data"
-              : url.protocol === "http:" || url.protocol === "https:"
-                ? "http"
-                : "other";
-        const state = {
-          scheme,
-          route:
-            scheme !== "http"
-              ? null
-              : url.pathname.includes("/__openclaw__/assistant-media")
-                ? "assistant-media"
-                : url.pathname.includes("/api/chat/media/outgoing/")
-                  ? "managed-media"
-                  : "other",
-          complete: image.complete,
-          naturalWidth: image.naturalWidth,
-          naturalHeight: image.naturalHeight,
-          currentSrcMatchesSrc: image.currentSrc === source,
-        };
-        try {
-          const response = await fetch(source, { signal: AbortSignal.timeout(5_000) });
-          const bytes = new Uint8Array(await response.arrayBuffer());
-          const hex = (value: Uint8Array) =>
-            Array.from(value, (byte) => byte.toString(16).padStart(2, "0")).join("");
-          return {
-            ...state,
-            fetch: {
-              ok: response.ok,
-              status: response.status,
-              contentType: response.headers.get("content-type"),
-              byteLength: bytes.byteLength,
-              first16Hex: hex(bytes.subarray(0, 16)),
-              sha256: hex(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))),
-            },
+async function recordImageDecodeFailure(
+  bubble: Locator,
+  sources: string[],
+  requests: ImageRequestTrace[],
+) {
+  const rejectedImages = await bubble.page().evaluate(() => window.managedImageDecodeFailures);
+  const images = await bubble.locator("img.chat-message-image").evaluateAll(
+    async (elements, urls) =>
+      Promise.all(
+        elements.map(async (image) => {
+          if (!(image instanceof HTMLImageElement)) {
+            throw new Error("Expected an image element");
+          }
+          const source = image.src;
+          const url = new URL(source, document.baseURI);
+          const scheme =
+            url.protocol === "blob:"
+              ? "blob"
+              : url.protocol === "data:"
+                ? "data"
+                : url.protocol === "http:" || url.protocol === "https:"
+                  ? "http"
+                  : "other";
+          const state = {
+            sourceIndex: urls.indexOf(source),
+            scheme,
+            route:
+              scheme !== "http"
+                ? null
+                : url.pathname.includes("/__openclaw__/assistant-media")
+                  ? "assistant-media"
+                  : url.pathname.includes("/api/chat/media/outgoing/")
+                    ? "managed-media"
+                    : "other",
+            complete: image.complete,
+            naturalWidth: image.naturalWidth,
+            naturalHeight: image.naturalHeight,
+            currentSrcMatchesSrc: image.currentSrc === source,
           };
-        } catch (error) {
-          return {
-            ...state,
-            fetch: { errorName: error instanceof Error ? error.name : "UnknownError" },
-          };
-        }
-      }),
-    ),
+          try {
+            const response = await fetch(source, { signal: AbortSignal.timeout(5_000) });
+            const bytes = new Uint8Array(await response.arrayBuffer());
+            const hex = (value: Uint8Array) =>
+              Array.from(value, (byte) => byte.toString(16).padStart(2, "0")).join("");
+            return {
+              ...state,
+              fetch: {
+                ok: response.ok,
+                status: response.status,
+                contentType: response.headers.get("content-type"),
+                byteLength: bytes.byteLength,
+                first16Hex: hex(bytes.subarray(0, 16)),
+                sha256: hex(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))),
+              },
+            };
+          } catch (error) {
+            return {
+              ...state,
+              fetch: { errorName: error instanceof Error ? error.name : "UnknownError" },
+            };
+          }
+        }),
+      ),
+    sources,
   );
-  const record = { schemaVersion: 1, kind: "managed-image-decode", images };
+  const record = {
+    schemaVersion: 1,
+    kind: "managed-image-decode",
+    rejectedImages,
+    requests,
+    images,
+  };
   console.error("[control-ui-e2e] image decode failure", JSON.stringify(record));
   const artifactDir = createControlUiE2eArtifactDir(
     "failure",
@@ -363,6 +398,51 @@ suite.define(() => {
           await suite.withPage(
             { locale: "en-US", serviceWorkers: "block", colorScheme: "dark", viewport },
             async ({ page }) => {
+              const traceStartedAt = Date.now();
+              const imageSources: string[] = [];
+              const imageRequests = new Map<Request, ImageRequestTrace>();
+              page.on("request", (request) => {
+                if (
+                  request.resourceType() !== "image" ||
+                  !new URL(request.url()).pathname.endsWith("/__openclaw__/assistant-media")
+                ) {
+                  return;
+                }
+                let sourceIndex = imageSources.indexOf(request.url());
+                if (sourceIndex < 0) {
+                  sourceIndex = imageSources.push(request.url()) - 1;
+                }
+                imageRequests.set(request, {
+                  sourceIndex,
+                  startedAtMs: Date.now() - traceStartedAt,
+                });
+              });
+              page.on("response", (response) => {
+                const trace = imageRequests.get(response.request());
+                if (trace) {
+                  trace.response = {
+                    atMs: Date.now() - traceStartedAt,
+                    status: response.status(),
+                    png: response.headers()["content-type"]?.split(";")[0]?.trim() === "image/png",
+                  };
+                }
+              });
+              const recordSettlement = (request: Request) => {
+                const trace = imageRequests.get(request);
+                if (trace) {
+                  const failure = request.failure();
+                  trace.settled = {
+                    atMs: Date.now() - traceStartedAt,
+                    outcome: failure
+                      ? failure.errorText === "net::ERR_ABORTED"
+                        ? "aborted"
+                        : "failed"
+                      : "finished",
+                  };
+                }
+              };
+              page.on("requestfinished", recordSettlement);
+              page.on("requestfailed", recordSettlement);
               const sends: string[] = [];
               page.on("websocket", (socket) => {
                 socket.on("framesent", ({ payload }) => {
@@ -400,17 +480,41 @@ suite.define(() => {
                   .toBe(2);
                 try {
                   await bubble.locator("img.chat-message-image").evaluateAll(async (images) => {
+                    const failures: Window["managedImageDecodeFailures"] = [];
+                    window.managedImageDecodeFailures = failures;
                     await Promise.all(
-                      images.map(async (image) => {
+                      images.map(async (image, imageIndex) => {
                         if (!(image instanceof HTMLImageElement)) {
                           throw new Error("Expected an image element");
                         }
-                        await image.decode();
+                        const source = image.src;
+                        try {
+                          await image.decode();
+                        } catch (error) {
+                          failures.push({
+                            imageIndex,
+                            connected: image.isConnected,
+                            currentImage: Array.from(
+                              document.querySelectorAll(
+                                ".chat-group.assistant img.chat-message-image",
+                              ),
+                            ).includes(image),
+                            sourceChanged: image.src !== source,
+                            complete: image.complete,
+                            naturalWidth: image.naturalWidth,
+                            naturalHeight: image.naturalHeight,
+                          });
+                          throw error;
+                        }
                       }),
                     );
                   });
                 } catch (error) {
-                  await recordImageDecodeFailure(bubble).catch((captureError: unknown) => {
+                  await recordImageDecodeFailure(
+                    bubble,
+                    imageSources,
+                    Array.from(imageRequests.values(), (trace) => ({ ...trace })),
+                  ).catch((captureError: unknown) => {
                     console.error(
                       "[control-ui-e2e] image decode diagnostics failed",
                       captureError instanceof Error ? captureError.name : "UnknownError",
