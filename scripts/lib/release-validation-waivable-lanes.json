@@ -1,287 +1,65 @@
-[
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "native-live-src-agents",
-    "jobName": "Run repo/live E2E validation / Native live suites (Native live agents)"
+{
+  "releaseChecks": {
+    "native-live-src-agents": "Run repo/live E2E validation / Native live suites (Native live agents)",
+    "native-live-src-agents-zai-coding": "Run repo/live E2E validation / Native live suites (Native live Z.AI Coding Plan)",
+    "native-live-src-gateway-core": "Run repo/live E2E validation / Native live suites (Native live gateway core)",
+    "native-live-src-gateway-profiles-anthropic-smoke": "Run repo/live E2E validation / Native live suites (Native live gateway profiles Anthropic smoke)",
+    "native-live-src-gateway-profiles-anthropic-opus": "Run repo/live E2E validation / Native live suites (Native live gateway profiles Anthropic Opus)",
+    "native-live-src-gateway-profiles-anthropic-sonnet-haiku": "Run repo/live E2E validation / Native live suites (Native live gateway profiles Anthropic Sonnet/Haiku)",
+    "native-live-src-gateway-profiles-google": "Run repo/live E2E validation / Native live suites (Native live gateway profiles Google)",
+    "native-live-src-gateway-profiles-minimax": "Run repo/live E2E validation / Native live suites (Native live gateway profiles MiniMax)",
+    "native-live-src-gateway-profiles-openai": "Run repo/live E2E validation / Native live suites (Native live gateway profiles OpenAI)",
+    "native-live-src-gateway-profiles-openai-api-default": "Run repo/live E2E validation / Native live suites (Native live gateway fresh OpenAI API-key default)",
+    "native-live-src-gateway-profiles-openai-gpt56-ultra": "Run repo/live E2E validation / Native live suites (Native live gateway OpenAI GPT-5.6 Ultra)",
+    "native-live-src-gateway-profiles-fireworks": "Run repo/live E2E validation / Native live suites (Native live gateway profiles Fireworks)",
+    "native-live-src-gateway-profiles-deepseek": "Run repo/live E2E validation / Native live suites (Native live gateway profiles DeepSeek)",
+    "native-live-src-gateway-profiles-opencode-go-deepseek-glm": "Run repo/live E2E validation / Native live suites (Native live gateway profiles OpenCode Go DeepSeek/GLM)",
+    "native-live-src-gateway-profiles-opencode-go-kimi": "Run repo/live E2E validation / Native live suites (Native live gateway profiles OpenCode Go Kimi)",
+    "native-live-src-gateway-profiles-opencode-go-mimo": "Run repo/live E2E validation / Native live suites (Native live gateway profiles OpenCode Go MiMo)",
+    "native-live-src-gateway-profiles-opencode-go-minimax-qwen": "Run repo/live E2E validation / Native live suites (Native live gateway profiles OpenCode Go MiniMax/Qwen)",
+    "native-live-src-gateway-profiles-opencode-go-smoke": "Run repo/live E2E validation / Native live suites (Native live gateway profiles OpenCode Go smoke)",
+    "native-live-src-gateway-profiles-openrouter": "Run repo/live E2E validation / Native live suites (Native live gateway profiles OpenRouter)",
+    "native-live-src-gateway-profiles-xai": "Run repo/live E2E validation / Native live suites (Native live gateway profiles xAI)",
+    "native-live-src-gateway-profiles-zai": "Run repo/live E2E validation / Native live suites (Native live gateway profiles Z.ai)",
+    "native-live-src-gateway-backends": "Run repo/live E2E validation / Native live suites (Native live gateway backends)",
+    "native-live-extensions-l-n": "Run repo/live E2E validation / Native live suites (Native live plugins L-N)",
+    "native-live-extensions-moonshot": "Run repo/live E2E validation / Native live suites (Native live Moonshot plugin)",
+    "native-live-extensions-openai": "Run repo/live E2E validation / Native live suites (Native live OpenAI plugin)",
+    "native-live-extensions-o-z-other": "Run repo/live E2E validation / Native live suites (Native live plugins O-Z other)",
+    "native-live-extensions-xai": "Run repo/live E2E validation / Native live suites (Native live xAI plugin)",
+    "live-gateway-docker": "Run repo/live E2E validation / Docker live suites (Docker live gateway OpenAI)",
+    "live-gateway-anthropic-docker": "Run repo/live E2E validation / Docker live suites (Docker live gateway Anthropic)",
+    "live-gateway-anthropic-docker-full": "Run repo/live E2E validation / Docker live suites (Docker live gateway Anthropic (full))",
+    "live-gateway-google-docker": "Run repo/live E2E validation / Docker live suites (Docker live gateway Google)",
+    "live-gateway-minimax-docker": "Run repo/live E2E validation / Docker live suites (Docker live gateway MiniMax)",
+    "live-gateway-advisory-docker-deepseek-fireworks": "Run repo/live E2E validation / Docker live suites (Docker live gateway DeepSeek/Fireworks)",
+    "live-gateway-advisory-docker-opencode-openrouter": "Run repo/live E2E validation / Docker live suites (Docker live gateway OpenCode/OpenRouter)",
+    "live-gateway-advisory-docker-xai-zai": "Run repo/live E2E validation / Docker live suites (Docker live gateway xAI/Z.ai)",
+    "live-cli-backend-docker": "Run repo/live E2E validation / Docker live suites (Docker live CLI backend)",
+    "live-cli-cache-docker": "Run repo/live E2E validation / Docker live suites (Docker live Claude CLI prompt cache)",
+    "live-acp-bind-docker": "Run repo/live E2E validation / Docker live suites (Docker live ACP bind)",
+    "live-codex-harness-docker": "Run repo/live E2E validation / Docker live suites (Docker live Codex harness)",
+    "live-codex-harness-gpt56-sol-docker": "Run repo/live E2E validation / Docker live suites (Docker live Codex GPT-5.6 Sol Ultra)",
+    "live-codex-harness-gpt56-terra-docker": "Run repo/live E2E validation / Docker live suites (Docker live Codex GPT-5.6 Terra Ultra)",
+    "live-codex-harness-gpt56-luna-docker": "Run repo/live E2E validation / Docker live suites (Docker live Codex GPT-5.6 Luna Max)",
+    "live-subagent-announce-docker": "Run repo/live E2E validation / Docker live suites (Docker live subagent announce)",
+    "docker-live-models": [
+      "Run repo/live E2E validation / Docker live models (Anthropic)",
+      "Run repo/live E2E validation / Docker live models (Google)",
+      "Run repo/live E2E validation / Docker live models (MiniMax)",
+      "Run repo/live E2E validation / Docker live models (Moonshot)",
+      "Run repo/live E2E validation / Docker live models (OpenAI)",
+      "Run repo/live E2E validation / Docker live models (OpenCode)",
+      "Run repo/live E2E validation / Docker live models (OpenRouter)",
+      "Run repo/live E2E validation / Docker live models (xAI)",
+      "Run repo/live E2E validation / Docker live models (Z.ai)",
+      "Run repo/live E2E validation / Docker live models (Fireworks)",
+      "Run repo/live E2E validation / Docker live models (selected providers)"
+    ],
+    "qa-live-telegram": "Run QA Lab live Telegram lane",
+    "package-telegram-e2e": "Run package acceptance / Telegram package acceptance / Run package Telegram E2E"
   },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "native-live-src-agents-zai-coding",
-    "jobName": "Run repo/live E2E validation / Native live suites (Native live Z.AI Coding Plan)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "native-live-src-gateway-core",
-    "jobName": "Run repo/live E2E validation / Native live suites (Native live gateway core)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "native-live-src-gateway-profiles-anthropic-smoke",
-    "jobName": "Run repo/live E2E validation / Native live suites (Native live gateway profiles Anthropic smoke)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "native-live-src-gateway-profiles-anthropic-opus",
-    "jobName": "Run repo/live E2E validation / Native live suites (Native live gateway profiles Anthropic Opus)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "native-live-src-gateway-profiles-anthropic-sonnet-haiku",
-    "jobName": "Run repo/live E2E validation / Native live suites (Native live gateway profiles Anthropic Sonnet/Haiku)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "native-live-src-gateway-profiles-google",
-    "jobName": "Run repo/live E2E validation / Native live suites (Native live gateway profiles Google)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "native-live-src-gateway-profiles-minimax",
-    "jobName": "Run repo/live E2E validation / Native live suites (Native live gateway profiles MiniMax)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "native-live-src-gateway-profiles-openai",
-    "jobName": "Run repo/live E2E validation / Native live suites (Native live gateway profiles OpenAI)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "native-live-src-gateway-profiles-openai-api-default",
-    "jobName": "Run repo/live E2E validation / Native live suites (Native live gateway fresh OpenAI API-key default)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "native-live-src-gateway-profiles-openai-gpt56-ultra",
-    "jobName": "Run repo/live E2E validation / Native live suites (Native live gateway OpenAI GPT-5.6 Ultra)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "native-live-src-gateway-profiles-fireworks",
-    "jobName": "Run repo/live E2E validation / Native live suites (Native live gateway profiles Fireworks)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "native-live-src-gateway-profiles-deepseek",
-    "jobName": "Run repo/live E2E validation / Native live suites (Native live gateway profiles DeepSeek)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "native-live-src-gateway-profiles-opencode-go-deepseek-glm",
-    "jobName": "Run repo/live E2E validation / Native live suites (Native live gateway profiles OpenCode Go DeepSeek/GLM)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "native-live-src-gateway-profiles-opencode-go-kimi",
-    "jobName": "Run repo/live E2E validation / Native live suites (Native live gateway profiles OpenCode Go Kimi)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "native-live-src-gateway-profiles-opencode-go-mimo",
-    "jobName": "Run repo/live E2E validation / Native live suites (Native live gateway profiles OpenCode Go MiMo)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "native-live-src-gateway-profiles-opencode-go-minimax-qwen",
-    "jobName": "Run repo/live E2E validation / Native live suites (Native live gateway profiles OpenCode Go MiniMax/Qwen)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "native-live-src-gateway-profiles-opencode-go-smoke",
-    "jobName": "Run repo/live E2E validation / Native live suites (Native live gateway profiles OpenCode Go smoke)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "native-live-src-gateway-profiles-openrouter",
-    "jobName": "Run repo/live E2E validation / Native live suites (Native live gateway profiles OpenRouter)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "native-live-src-gateway-profiles-xai",
-    "jobName": "Run repo/live E2E validation / Native live suites (Native live gateway profiles xAI)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "native-live-src-gateway-profiles-zai",
-    "jobName": "Run repo/live E2E validation / Native live suites (Native live gateway profiles Z.ai)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "native-live-src-gateway-backends",
-    "jobName": "Run repo/live E2E validation / Native live suites (Native live gateway backends)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "native-live-extensions-l-n",
-    "jobName": "Run repo/live E2E validation / Native live suites (Native live plugins L-N)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "native-live-extensions-moonshot",
-    "jobName": "Run repo/live E2E validation / Native live suites (Native live Moonshot plugin)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "native-live-extensions-openai",
-    "jobName": "Run repo/live E2E validation / Native live suites (Native live OpenAI plugin)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "native-live-extensions-o-z-other",
-    "jobName": "Run repo/live E2E validation / Native live suites (Native live plugins O-Z other)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "native-live-extensions-xai",
-    "jobName": "Run repo/live E2E validation / Native live suites (Native live xAI plugin)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "live-gateway-docker",
-    "jobName": "Run repo/live E2E validation / Docker live suites (Docker live gateway OpenAI)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "live-gateway-anthropic-docker",
-    "jobName": "Run repo/live E2E validation / Docker live suites (Docker live gateway Anthropic)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "live-gateway-anthropic-docker-full",
-    "jobName": "Run repo/live E2E validation / Docker live suites (Docker live gateway Anthropic (full))"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "live-gateway-google-docker",
-    "jobName": "Run repo/live E2E validation / Docker live suites (Docker live gateway Google)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "live-gateway-minimax-docker",
-    "jobName": "Run repo/live E2E validation / Docker live suites (Docker live gateway MiniMax)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "live-gateway-advisory-docker-deepseek-fireworks",
-    "jobName": "Run repo/live E2E validation / Docker live suites (Docker live gateway DeepSeek/Fireworks)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "live-gateway-advisory-docker-opencode-openrouter",
-    "jobName": "Run repo/live E2E validation / Docker live suites (Docker live gateway OpenCode/OpenRouter)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "live-gateway-advisory-docker-xai-zai",
-    "jobName": "Run repo/live E2E validation / Docker live suites (Docker live gateway xAI/Z.ai)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "live-cli-backend-docker",
-    "jobName": "Run repo/live E2E validation / Docker live suites (Docker live CLI backend)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "live-cli-cache-docker",
-    "jobName": "Run repo/live E2E validation / Docker live suites (Docker live Claude CLI prompt cache)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "live-acp-bind-docker",
-    "jobName": "Run repo/live E2E validation / Docker live suites (Docker live ACP bind)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "live-codex-harness-docker",
-    "jobName": "Run repo/live E2E validation / Docker live suites (Docker live Codex harness)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "live-codex-harness-gpt56-sol-docker",
-    "jobName": "Run repo/live E2E validation / Docker live suites (Docker live Codex GPT-5.6 Sol Ultra)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "live-codex-harness-gpt56-terra-docker",
-    "jobName": "Run repo/live E2E validation / Docker live suites (Docker live Codex GPT-5.6 Terra Ultra)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "live-codex-harness-gpt56-luna-docker",
-    "jobName": "Run repo/live E2E validation / Docker live suites (Docker live Codex GPT-5.6 Luna Max)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "live-subagent-announce-docker",
-    "jobName": "Run repo/live E2E validation / Docker live suites (Docker live subagent announce)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "docker-live-models",
-    "jobName": "Run repo/live E2E validation / Docker live models (Anthropic)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "docker-live-models",
-    "jobName": "Run repo/live E2E validation / Docker live models (Google)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "docker-live-models",
-    "jobName": "Run repo/live E2E validation / Docker live models (MiniMax)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "docker-live-models",
-    "jobName": "Run repo/live E2E validation / Docker live models (Moonshot)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "docker-live-models",
-    "jobName": "Run repo/live E2E validation / Docker live models (OpenAI)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "docker-live-models",
-    "jobName": "Run repo/live E2E validation / Docker live models (OpenCode)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "docker-live-models",
-    "jobName": "Run repo/live E2E validation / Docker live models (OpenRouter)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "docker-live-models",
-    "jobName": "Run repo/live E2E validation / Docker live models (xAI)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "docker-live-models",
-    "jobName": "Run repo/live E2E validation / Docker live models (Z.ai)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "docker-live-models",
-    "jobName": "Run repo/live E2E validation / Docker live models (Fireworks)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "docker-live-models",
-    "jobName": "Run repo/live E2E validation / Docker live models (selected providers)"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "qa-live-telegram",
-    "jobName": "Run QA Lab live Telegram lane"
-  },
-  {
-    "childRole": "releaseChecks",
-    "suiteId": "package-telegram-e2e",
-    "jobName": "Run package acceptance / Telegram package acceptance / Run package Telegram E2E"
-  },
-  {
-    "childRole": "npmTelegram",
-    "suiteId": "npm-telegram-e2e",
-    "jobName": "Run package Telegram E2E"
+  "npmTelegram": {
+    "npm-telegram-e2e": "Run package Telegram E2E"
   }
-]
+}

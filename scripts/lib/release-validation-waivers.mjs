@@ -91,15 +91,13 @@ export function parseReleaseValidationWaivers(input) {
         /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/u.test(row.approvedBy),
       "approving maintainer login",
     );
+    const role = RELEASE_CHECK_ROLES.has(row.childRole) ? "releaseChecks" : row.childRole;
+    const allowed =
+      typeof row.childRole === "string" && Object.hasOwn(lanes, role)
+        ? lanes[role][row.suiteId]
+        : undefined;
     requireValue(
-      lanes.some(
-        (lane) =>
-          lane.jobName === row.jobName &&
-          lane.suiteId === row.suiteId &&
-          (lane.childRole === "releaseChecks"
-            ? RELEASE_CHECK_ROLES.has(row.childRole)
-            : lane.childRole === row.childRole),
-      ),
+      Array.isArray(allowed) ? allowed.includes(row.jobName) : allowed === row.jobName,
       `lane is not allowlisted: ${row.childRole} / ${row.jobName} (${row.suiteId})`,
     );
     const identity = `${row.childRole}\0${row.childRunId}\0${row.jobName}`;

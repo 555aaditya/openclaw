@@ -1333,6 +1333,16 @@ verify_published_release() {
     run_label="Authorized Beta Focused Validation"
   else
     validation_file="${FULL_RELEASE_VALIDATION_MANIFEST_DIR}/full-release-validation-manifest.json"
+    if [[ ! -f "${validation_file}" && -n "${VALIDATION_WAIVERS_JSON:-}" ]]; then
+      # Failed FRVs have no candidate success seal. Reauthenticate at the
+      # existing evidence boundary; no projection artifact/cache is transferred.
+      git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+      gh_read api "repos/${GITHUB_REPOSITORY}/actions/runs/${FULL_RELEASE_VALIDATION_RUN_ID}/attempts/${FULL_RELEASE_VALIDATION_RUN_ATTEMPT}" |
+        MANIFEST_FILE="${validation_file}" EXPECTED_SHA="${TARGET_SHA}" \
+        PUBLICATION_CONSUMER=core-npm TRUSTED_WORKFLOW_FULL_REF="${PARENT_WORKFLOW_FULL_REF}" \
+        TRUSTED_WORKFLOW_REF="${PARENT_WORKFLOW_BRANCH}" TRUSTED_WORKFLOW_SHA="${PARENT_WORKFLOW_SHA}" \
+        node "${BASH_SOURCE[0]%/*}/../validate-full-release-validation-evidence.mjs"
+    fi
     run_id="$(jq -er '.runId | select(type == "string" and length > 0)' "${validation_file}")"
     run_attempt="$(jq -er '.runAttempt | select(type == "string" and test("^[1-9][0-9]*$"))' "${validation_file}")"
     workflow_ref="$(jq -er '.workflowRef | select(type == "string" and length > 0)' "${validation_file}")"

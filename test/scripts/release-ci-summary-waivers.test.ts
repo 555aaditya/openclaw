@@ -9,6 +9,7 @@ import {
   releaseExecutionPlanSha256,
 } from "../../scripts/full-release-validation-policy.mjs";
 import type { ReleaseValidationWaivers } from "../../scripts/lib/release-validation-waivers.mjs";
+import { readRecoveryStepInputs } from "../../scripts/lib/stable-publish-recovery.mjs";
 import { validateReleaseRunEvidence } from "../../scripts/release-ci-summary.mjs";
 import { candidatePublicationFixture } from "./candidate-publication.test-support.js";
 
@@ -27,7 +28,7 @@ type EvidenceJob = {
   started_at?: string;
   completed_at?: string;
   html_url?: string;
-  steps: Array<{ name: string; conclusion: string; status?: string }>;
+  steps: Array<{ name: string; number?: number; conclusion: string; status?: string }>;
 };
 
 function job(name: string, id: number, conclusion = "success", runAttempt = 1) {
@@ -101,63 +102,14 @@ async function waiverFixture(legacy = false) {
     { name: "Enforce release decision", status: "completed", conclusion: "failure" },
   ];
   parentJobs.find((entry) => entry.name === "Verify full validation")!.steps = [
+    {
+      name: "Require qualified publication artifacts",
+      number: 2,
+      status: "completed",
+      conclusion: "success",
+    },
     { name: "Verify exact release state artifacts", status: "completed", conclusion: "failure" },
   ];
-  const npmProducer = {
-    repository,
-    workflowRef: `${repository}/.github/workflows/full-release-artifacts.yml@${fixture.tooling.fullRef}`,
-    workflowSha: candidateSha,
-    runId: "501",
-    runAttempt: "1",
-    jobId: "801",
-    jobName: "Prepare npm artifacts / Prepare publishable npm package",
-    producerWorkflowPath: ".github/workflows/openclaw-npm-preflight.yml",
-  };
-  const raw = {
-    schema: "openclaw.prepared-npm-bundle/v1",
-    source: { sha: candidateSha },
-    producer: npmProducer,
-    artifact: {
-      id: "601",
-      name: "openclaw-npm-package-501-1",
-      digest: "c".repeat(64),
-      runId: "501",
-      runAttempt: "1",
-    },
-    package: {
-      name: "openclaw",
-      version: "2026.10.4",
-      fileName: "openclaw.tgz",
-      sha256: "d".repeat(64),
-      sourceSha: candidateSha,
-    },
-    corePackages: [],
-    manifestSha256: "e".repeat(64),
-  };
-  const qualified = {
-    schema: "openclaw.qualified-npm-preflight/v1",
-    source: raw.source,
-    producer: {
-      ...npmProducer,
-      jobId: "802",
-      jobName: "Prepare npm artifacts / Qualify prepared npm package",
-    },
-    artifact: { ...raw.artifact, id: "602", name: `openclaw-npm-preflight-${candidateSha}` },
-    preparedBundle: raw,
-    manifestSha256: "f".repeat(64),
-  };
-  for (const [stage, runId] of [
-    ["npm", "501"],
-    ["docker", "502"],
-  ] as const) {
-    runById.set(runId, {
-      ...parent,
-      id: Number(runId),
-      conclusion: "success",
-      display_title: `Full Release Artifacts full-release-validation-${parentRunId}-1-artifacts-${stage}`,
-      path: ".github/workflows/full-release-artifacts.yml",
-    });
-  }
   const waivers: ReleaseValidationWaivers = {
     schema: "openclaw.release-validation-waivers/v1",
     targetVersion: "2026.10.4",
@@ -252,47 +204,35 @@ async function waiverFixture(legacy = false) {
       ["full-release-decision", "full-release-diagnostics"].map((prefix) => ({
         name: `${prefix}-${parentRunId}-1`,
       })),
-    loadRunJsonArtifact: (id: string, name: string) => {
-      const artifact = { workflow_run: { head_sha: candidateSha, head_branch: fixture.branch } };
-      if (id === parentRunId) {
-        return {
-          artifact,
-          value: state(name.startsWith("full-release-decision") ? "decision" : "drain"),
-        };
-      }
-      const stage = id === "501" ? "npm" : "docker";
-      return {
-        artifact,
-        value: {
-          schema: "openclaw.full-release-artifact-receipt/v1",
-          stage,
-          dispatchId: `full-release-validation-${parentRunId}-1-artifacts-${stage}`,
-          repository,
-          sourceSha: candidateSha,
-          toolingSha: candidateSha,
-          workflowRef: fixture.branch,
-          releaseTag: "v2026.10.4",
-          preflightPhase: "all",
-          runId: id,
-          runAttempt: "1",
-          outputs:
-            stage === "npm"
-              ? {
-                  prepared_bundle_json: JSON.stringify(raw),
-                  qualified_preflight_bundle_json: JSON.stringify(qualified),
-                }
-              : {
-                  prepared_run_id: "502",
-                  prepared_run_attempt: "1",
-                  prepared_artifact_name: "docker-qualified",
-                  prepared_manifest_sha256: "a".repeat(64),
-                },
-        },
+    loadRunJsonArtifact: (_id: string, name: string) => ({
+      value: state(name.startsWith("full-release-decision") ? "decision" : "drain"),
+    }),
+    getRunStepInputs: (_id: string, summary: EvidenceJob, stepName: string) => {
+      const inputs = {
+        NPM_PREPARE_RESULT: "success",
+        NPM_QUALIFY_RESULT: "success",
+        PLUGIN_NPM_REQUIRED: "false",
+        DOCKER_PREPARE_RESULT: "success",
+        QUALIFIED_NPM_BUNDLE_JSON: JSON.stringify(fixture.npmQualified),
+        PREPARED_DOCKER_MANIFEST_SHA256:
+          fixture.manifest.publicationArtifacts.docker.preparedManifestSha256,
+        TARGET_VERSION: "2026.10.4",
       };
+      const header = [
+        "##[group]Run set -euo pipefail",
+        "env:",
+        ...Object.entries(inputs).map(([key, value]) => `  ${key}: ${value}`),
+        "##[endgroup]",
+      ];
+      return readRecoveryStepInputs(
+        new Map([[`Verify full validation/2_${stepName}.txt`, Buffer.from(header.join("\n"))]]),
+        summary,
+        stepName,
+      );
     },
     getJobLog: async (id: number) => {
-      if (id === 1101 || id === 1103) {
-        return `Dispatched full-release-artifacts.yml: https://github.com/${repository}/actions/runs/${id === 1101 ? "501" : "502"} (attempt 1)`;
+      if (id === 1103) {
+        return `Dispatched full-release-artifacts.yml: https://github.com/${repository}/actions/runs/${parentRunId} (attempt 1)`;
       }
       if (id === 1002) {
         return `##[error]live_repo_e2e_release_checks ended with failure\n${extraAggregateCause}\n##[error]Process completed with exit code 1.`;
@@ -355,7 +295,6 @@ describe("trusted publication waiver evidence", () => {
       conclusions: { allRequiredSucceeded: false, allRequiredSatisfied: true, current: "failure" },
       current: {
         artifact: null,
-        publicationVerification: { basis: "authenticated-plan-and-jobs-v1" },
       },
       validationWaivers: fixture.waivers,
     });
@@ -380,6 +319,7 @@ describe("trusted publication waiver evidence", () => {
 
   it.each([
     "candidateSha",
+    "targetVersion",
     "parentRunId",
     "parentRunAttempt",
     "childRunId",
@@ -390,6 +330,8 @@ describe("trusted publication waiver evidence", () => {
     const declaration = structuredClone(fixture.waivers);
     if (field === "candidateSha") {
       declaration.candidateSha = "a".repeat(40);
+    } else if (field === "targetVersion") {
+      declaration.targetVersion = "2026.10.5";
     } else if (field === "parentRunId") {
       declaration.parentRunId = "999";
     } else if (field === "parentRunAttempt") {
@@ -477,13 +419,16 @@ describe("trusted publication waiver evidence", () => {
 
   it("rejects any additional parent failure rather than waiving aggregate setup", async () => {
     const fixture = await waiverFixture();
-    fixture.parentJobs
+    const guard = fixture.parentJobs
       .find((entry) => entry.name === "Verify full validation")!
-      .steps.unshift({
-        name: "Require qualified publication artifacts",
-        conclusion: "failure",
-        status: "completed",
-      });
-    await expect(fixture.validate()).rejects.toThrow("second or non-policy failure");
+      .steps.find((step) => step.name === "Require qualified publication artifacts")!;
+    guard.conclusion = "failure";
+    await expect(fixture.validate()).rejects.toThrow("did not succeed");
+  });
+
+  it("rejects a recorded non-empty legacy waiver before interpreting its omitted coverage", async () => {
+    const fixture = await waiverFixture(true);
+    fixture.fixture.plan.sourceAdmission.coverage.telegram_waiver = "old-owner-approved";
+    await expect(fixture.validate()).rejects.toThrow("Non-empty legacy");
   });
 });

@@ -75,9 +75,6 @@ describe("release publish preflight operator interface", () => {
           `#!${process.execPath}\nrequire('node:fs').writeFileSync(${JSON.stringify(output)}, JSON.stringify(process.argv.slice(2)));\n`,
         );
         chmodSync(executable, 0o755);
-        const validationWaiversJson = JSON.stringify({
-          reason: "Owner's reason\n$(touch should-not-exist); `false`",
-        });
         const installerDigests = "Owner's approved reason\n$(touch should-not-exist); `false`";
         const command = buildReleasePublishDispatchCommand(
           {
@@ -88,7 +85,6 @@ describe("release publish preflight operator interface", () => {
             npmDistTag: "latest",
             pluginPublishScope: "all-publishable",
             windowsNodeInstallerDigests: installerDigests,
-            validationWaiversJson,
           },
           "2",
           "release-publish/aaaaaaaaaaaa-123",
@@ -100,7 +96,6 @@ describe("release publish preflight operator interface", () => {
         });
         const args = JSON.parse(readFileSync(output, "utf8"));
         expect(args).toContain(`windows_node_installer_digests=${installerDigests}`);
-        expect(args).toContain(`validation_waivers_json=${validationWaiversJson}`);
         expect(args).toContain("full_release_validation_run_attempt=2");
         expect(args).toContain("openclaw_npm_resume_run_id=456");
         expect(args).toContain("release-publish/aaaaaaaaaaaa-123");

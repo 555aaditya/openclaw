@@ -162,7 +162,7 @@ function readArtifactRun(request, runId, runAttempt, options) {
   );
 }
 
-export function validateArtifactReceipt(receipt, request, runId, runAttempt) {
+function validateArtifactReceipt(receipt, request, runId, runAttempt) {
   const { outputs, ...identity } = receipt;
   requireValue(
     isDeepStrictEqual(identity, {

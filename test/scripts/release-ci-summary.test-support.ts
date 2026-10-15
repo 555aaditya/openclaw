@@ -218,6 +218,9 @@ export function trustedMainPackageFixture({
     getRunArtifacts() {
       throw new Error("Historical success fixture must not reconstruct a waiver projection");
     },
+    getRunStepInputs() {
+      throw new Error("Historical success fixture must not reconstruct a waiver projection");
+    },
     loadRunJsonArtifact() {
       throw new Error("Historical success fixture must not reconstruct a waiver projection");
     },

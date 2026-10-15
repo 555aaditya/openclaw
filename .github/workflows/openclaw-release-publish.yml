@@ -568,15 +568,6 @@ jobs:
           }
           NODE
 
-      - name: Retain authenticated P-side validation projection
-        if: ${{ inputs.validation_waivers_json != '' && steps.full_manifest.outcome == 'success' }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: release-publication-verification-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/full-release-validation-manifest/full-release-validation-manifest.json
-          if-no-files-found: error
-          retention-days: 30
-
       - name: Summarize sealed npm publication decisions
         if: ${{ steps.full_manifest.outputs.npm_decisions != '' }}
         env:
@@ -1347,13 +1338,6 @@ jobs:
           repository: ${{ github.repository }}
           run-id: ${{ inputs.full_release_validation_run_id }}
           github-token: ${{ github.token }}
-
-      - name: Download authenticated P-side validation projection
-        if: ${{ inputs.publish_openclaw_npm && inputs.validation_waivers_json != '' }}
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: release-publication-verification-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/full-release-validation-manifest
 
       - name: Download focused release evidence
         if: ${{ inputs.publish_openclaw_npm && inputs.release_evidence_mode == 'authorized-beta-focused-v1' }}

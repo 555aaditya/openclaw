@@ -250,12 +250,6 @@ describe("release candidate checklist", () => {
     const flags = ["--tag", "v2026.10.4", "--validation-waivers-json", declaration];
     expect(() => parseArgs(flags)).toThrow("requires an existing --full-release-run");
     expect(() =>
-      parseArgs([...flags, "--full-release-run", "111", "--validation-waivers-json", declaration]),
-    ).toThrow("provided more than once");
-    expect(parseArgs([...flags, "--full-release-run", "111"]).validationWaiversJson).toBe(
-      declaration,
-    );
-    expect(() =>
       parseArgs([
         ...flags,
         "--full-release-run",
@@ -266,16 +260,6 @@ describe("release candidate checklist", () => {
         publishWorkflowRef,
       ]),
     ).toThrow("requires --publication-route normal");
-    expect(() =>
-      parseArgs([
-        "--tag",
-        "v2026.10.4",
-        "--full-release-run",
-        "111",
-        "--validation-waivers-json",
-        "{bad",
-      ]),
-    ).toThrow("expected JSON object");
   });
 
   it("requires an explicit prepared route and preserves historical normal state semantics", () => {

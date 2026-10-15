@@ -2559,6 +2559,7 @@ async function main() {
       npmManifestPath: join(npmDir, "preflight-manifest.json"),
       npmPreflightRun: npmRun,
       fullValidationEvidence,
+      approverLogin,
     },
   );
   const publishPreflightTable = formatReleasePublishPreflight(publishPreflight, {
@@ -2601,7 +2602,6 @@ async function main() {
     artifacts: {
       npmPreflight: npmArtifactName,
       fullReleaseValidation: options.validationWaiversJson ? undefined : fullArtifactName,
-      publicationVerification: fullManifest.publicationVerification,
     },
     releaseNotesCheck,
     releaseNotesProvenance,

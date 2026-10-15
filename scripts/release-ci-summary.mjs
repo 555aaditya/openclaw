@@ -51,7 +51,6 @@ import { verifySealedFullReleaseCandidate } from "./lib/full-release-candidate-r
 import { releaseChildReuseSha256 } from "./lib/full-release-child-request.mjs";
 import { validateReusableReleaseChild } from "./lib/full-release-child-reuse.mjs";
 import { manifestContextFromEnvironment } from "./lib/full-release-manifest.mjs";
-import corePackages from "./lib/npm-core-release-packages.json" with { type: "json" };
 import {
   execGhRead,
   execGhReadAsync,
@@ -2096,6 +2095,15 @@ export function createReleaseEvidenceClient(repository = DEFAULT_REPO) {
     getRunArtifacts(runId) {
       return listRunArtifacts(runId, normalizedRepository);
     },
+    async getRunStepInputs(runId, job, stepName) {
+      const { readRecoveryAttemptLogs, readRecoveryStepInputs } =
+        await import("./lib/stable-publish-recovery.mjs");
+      const logs = readRecoveryAttemptLogs(
+        { id: runId, run_attempt: job.acceptedRunAttempt },
+        normalizedRepository,
+      );
+      return readRecoveryStepInputs(logs, job, stepName);
+    },
     loadRunJsonArtifact(runId, name, entry, artifacts) {
       return readRunJsonArtifactEvidence(runId, name, entry, normalizedRepository, artifacts);
     },
@@ -2210,128 +2218,40 @@ function exactSuccessfulJob(jobs, name) {
   return matches[0];
 }
 
-async function recoverPublicationArtifacts(plan, parentJobs, client, repository) {
-  const { validateArtifactProducerRun, validateArtifactReceipt } =
-    await import("./full-release-artifacts.mjs");
-  const source = plan.sourceAdmission;
-  const dispatched = async (jobName, workflow) => {
-    const job = exactSuccessfulJob(parentJobs, jobName);
-    const log = await client.getJobLog(job.id);
-    const prefix = `Dispatched ${workflow}: https://github.com/${repository}/actions/runs/`;
-    const lines = String(log)
-      .split(/\r?\n/u)
-      .filter((line) => line.includes(prefix) && !line.includes("\u001b"));
-    const tuples = lines.map((line) =>
-      /\/actions\/runs\/([1-9][0-9]*) \(attempt ([1-9][0-9]*)\)$/u.exec(line),
-    );
-    if (tuples.length !== 1 || !tuples[0]) {
-      throw new Error(`publication artifact dispatch is missing or ambiguous: ${jobName}`);
-    }
-    return { runId: tuples[0][1], runAttempt: Number(tuples[0][2]) };
-  };
-  const receipt = async (stage, jobName) => {
-    const tuple = await dispatched(jobName, "full-release-artifacts.yml");
-    const request = {
-      stage,
-      dispatchId: `full-release-validation-${plan.parentRunId}-${plan.parentRunAttempt}-artifacts-${stage}`,
-      repository,
-      sourceSha: plan.targetSha,
-      toolingSha: plan.workflowSha,
-      workflowRef: plan.workflowRef,
-      releaseTag: `v${source.projection.version}`,
-      preflightPhase: "all",
-    };
-    const run = await client.getRun(tuple.runId);
-    validateArtifactProducerRun(request, run, tuple.runId, tuple.runAttempt, {
-      allowNewerAttempts: stage === "npm",
-    });
-    if (run.status !== "completed" || run.conclusion !== "success") {
-      throw new Error(`publication artifact producer is not successful: ${stage}`);
-    }
-    const retained = client.loadRunJsonArtifact(
-      tuple.runId,
-      `full-release-artifact-receipt-${tuple.runId}-${run.run_attempt}`,
-      "artifact-receipt.json",
-    );
-    if (
-      retained.artifact.workflow_run?.head_sha !== plan.workflowSha ||
-      retained.artifact.workflow_run?.head_branch !== plan.workflowRef
-    ) {
-      throw new Error(`publication artifact receipt producer mismatch: ${stage}`);
-    }
-    return validateArtifactReceipt(retained.value, request, tuple.runId, run.run_attempt);
-  };
-  exactSuccessfulJob(parentJobs, "Qualify release npm artifacts");
-  const npm = await receipt("npm", "Prepare release npm artifacts");
-  const docker = await receipt("docker", "Prepare release Docker artifacts");
-  let pluginNpm = null;
-  const pluginPackages = source.projection.packages.filter(
-    (pkg) =>
-      pkg.targets.includes("npm") &&
-      pkg.name !== "openclaw" &&
-      !corePackages.some((core) => core.name === pkg.name),
-  );
-  if (pluginPackages.length > 0) {
-    const tuple = await dispatched("Prepare exact plugin npm artifacts", "plugin-npm-release.yml");
-    const run = await client.getRun(tuple.runId);
-    const title = `Plugin NPM Artifact Preflight [${source.publicationSelection.npmDistTag}] ${plan.targetSha} (full-release-validation-${plan.parentRunId}-${plan.parentRunAttempt}-plugin-npm-preflight)`;
-    if (
-      run.status !== "completed" ||
-      run.conclusion !== "success" ||
-      run.run_attempt !== tuple.runAttempt ||
-      run.repository?.full_name !== repository ||
-      run.head_repository?.full_name !== repository ||
-      run.head_sha !== plan.workflowSha ||
-      run.head_branch !== plan.workflowRef ||
-      run.event !== "workflow_dispatch" ||
-      workflowPath(run) !== ".github/workflows/plugin-npm-release.yml" ||
-      run.display_title !== title
-    ) {
-      throw new Error("plugin npm artifact producer identity mismatch");
-    }
-    const name = `plugin-npm-prepared-${plan.targetSha}-${tuple.runId}-${tuple.runAttempt}`;
-    const artifacts = client
-      .getRunArtifacts(tuple.runId)
-      .filter((entry) => entry.name === name && entry.expired === false);
-    if (artifacts.length !== 1) {
-      throw new Error("qualified plugin npm artifact is missing or ambiguous");
-    }
-    const artifact = client.getArtifact(artifacts[0].id);
-    if (
-      artifact.name !== name ||
-      artifact.digest !== artifacts[0].digest ||
-      !/^sha256:[a-f0-9]{64}$/u.test(artifact.digest) ||
-      artifact.workflow_run?.head_sha !== plan.workflowSha ||
-      String(artifact.workflow_run?.id) !== tuple.runId ||
-      artifact.expired !== false ||
-      artifact.size_in_bytes < 1
-    ) {
-      throw new Error("qualified plugin npm artifact binding mismatch");
-    }
-    pluginNpm = {
-      repository,
-      runId: Number(tuple.runId),
-      runAttempt: tuple.runAttempt,
-      workflowPath: ".github/workflows/plugin-npm-release.yml",
-      workflowEvent: "workflow_dispatch",
-      workflowHeadBranch: plan.workflowRef,
-      workflowSha: plan.workflowSha,
-      artifactId: artifact.id,
-      artifactName: artifact.name,
-      artifactDigest: artifact.digest,
-      artifactSizeBytes: artifact.size_in_bytes,
-    };
+async function recoverPublicationContext(plan, parentJobs, client, repository) {
+  const { dockerReleaseArtifactName } = await import("./docker-release-artifacts.mjs");
+  for (const name of ["Prepare release npm artifacts", "Qualify release npm artifacts"]) {
+    exactSuccessfulJob(parentJobs, name);
   }
-  return {
-    npmPreflight: JSON.parse(npm.qualified_preflight_bundle_json),
-    pluginNpm,
-    docker: {
-      preparedRunId: docker.prepared_run_id,
-      preparedRunAttempt: docker.prepared_run_attempt,
-      preparedArtifactName: docker.prepared_artifact_name,
-      preparedManifestSha256: docker.prepared_manifest_sha256,
-    },
-  };
+  const summary = parentJobs.filter((job) => job.name === "Verify full validation");
+  if (summary.length !== 1) {
+    throw new Error("waiver evidence requires one Verify full validation job");
+  }
+  // Recover the normal manifest writer's inputs from its successful guard, not stdout.
+  // Actual artifact bytes and producer identities remain the publication consumers' job.
+  const inputs = await client.getRunStepInputs(
+    plan.parentRunId,
+    summary[0],
+    "Require qualified publication artifacts",
+  );
+  if (inputs.PLUGIN_NPM_REQUIRED === "true") {
+    exactSuccessfulJob(parentJobs, "Prepare exact plugin npm artifacts");
+  }
+  const dockerJob = exactSuccessfulJob(parentJobs, "Prepare release Docker artifacts");
+  const prefix = `Dispatched full-release-artifacts.yml: https://github.com/${repository}/actions/runs/`;
+  const tuples = String(await client.getJobLog(dockerJob.id))
+    .split(/\r?\n/u)
+    .filter((line) => line.includes(prefix) && !line.includes("\u001b"))
+    .map((line) => /\/actions\/runs\/([1-9][0-9]*) \(attempt ([1-9][0-9]*)\)$/u.exec(line));
+  if (tuples.length !== 1 || !tuples[0]) {
+    throw new Error("publication Docker dispatch is missing or ambiguous");
+  }
+  return manifestContextFromEnvironment(plan.sourceAdmission, {
+    ...inputs,
+    PREPARED_DOCKER_RUN_ID: tuples[0][1],
+    PREPARED_DOCKER_RUN_ATTEMPT: tuples[0][2],
+    PREPARED_DOCKER_ARTIFACT_NAME: dockerReleaseArtifactName(plan.targetSha, tuples[0][2]),
+  });
 }
 
 async function loadWaivedParentEvidence({
@@ -2342,7 +2262,6 @@ async function loadWaivedParentEvidence({
   repository,
   runId,
   validationWaivers,
-  verifier,
 }) {
   const retained = client.loadExecutionPlanEvidence(runId);
   validateLegacyReleaseTelegramWaiver(retained.plan);
@@ -2387,13 +2306,17 @@ async function loadWaivedParentEvidence({
     ),
   );
   const artifacts = client.getRunArtifacts(runId);
-  const states = (prefix, entry) =>
-    artifacts
-      .filter((artifact) => new RegExp(`^${prefix}-${runId}-[1-9][0-9]*$`, "u").test(artifact.name))
+  const states = (prefix, entry) => {
+    const start = `${prefix}-${runId}-`;
+    return artifacts
+      .filter(
+        ({ name }) => name.startsWith(start) && /^[1-9][0-9]*$/u.test(name.slice(start.length)),
+      )
       .map((artifact) => ({
         name: artifact.name,
         payload: client.loadRunJsonArtifact(runId, artifact.name, entry, artifacts).value,
       }));
+  };
   const { drain, decision } = selectReleaseStateArtifacts(
     plan,
     states("full-release-decision", "full-release-decision.json"),
@@ -2416,19 +2339,7 @@ async function loadWaivedParentEvidence({
   for (const requiredGate of plan.gates.filter((entry) => entry.required)) {
     exactSuccessfulJob(parentJobs, requiredGate.name);
   }
-  const publicationArtifacts = await recoverPublicationArtifacts(
-    plan,
-    parentJobs,
-    client,
-    repository,
-  );
-  const context = manifestContextFromEnvironment(source, {});
-  const publicationVerification = {
-    basis: "authenticated-plan-and-jobs-v1",
-    executionPlanSha256: plan.sha256,
-    verifierSourceSha: verifier.sourceSha,
-    parentConclusion: parentRun.conclusion,
-  };
+  const context = await recoverPublicationContext(plan, parentJobs, client, repository);
   const manifestJson = buildReleaseValidationManifest({
     plan,
     drain,
@@ -2441,11 +2352,9 @@ async function loadWaivedParentEvidence({
       workflowRefType: "branch",
       workflowSha: parentRun.head_sha,
       targetRef: plan.targetSha,
-      publicationArtifacts,
     },
   });
   manifestJson.validationWaivers = validationWaivers;
-  manifestJson.publicationVerification = publicationVerification;
   if (
     manifestPath &&
     !isDeepStrictEqual(JSON.parse(readFileSync(manifestPath, "utf8")), manifestJson)
@@ -2464,7 +2373,6 @@ async function loadWaivedParentEvidence({
     manifestJson,
     parentRun,
     parentView,
-    publicationVerification,
     parentJobs: rawParentJobs,
     parentCompositeJobs: parentJobs,
     plan,
@@ -2480,7 +2388,6 @@ async function loadValidatedParentEvidence({
   repository,
   runId,
   validationWaivers,
-  verifier,
 }) {
   const parentView = client.getRunView(runId);
   const parentRun = await client.getRun(runId);
@@ -2508,7 +2415,6 @@ async function loadValidatedParentEvidence({
       repository,
       runId,
       validationWaivers,
-      verifier,
     });
   }
   validateCompletedParentRun(parentView, parentRun, repository, runId);
@@ -2542,9 +2448,6 @@ function normalizedParentTuple(evidence, identity) {
     artifact: evidence.artifact
       ? normalizedManifestArtifact(evidence.artifact, manifest.runAttempt)
       : null,
-    ...(evidence.publicationVerification
-      ? { publicationVerification: evidence.publicationVerification }
-      : {}),
     conclusion: parentRun.conclusion,
     manifest: evidence.manifestJson,
     manifestVersion: manifest.version,
@@ -3033,7 +2936,6 @@ export async function validateReleaseRunEvidence(
     repository: normalizedRepository,
     runId: normalizedRunId,
     validationWaivers,
-    verifier,
   });
   const requestedReuse = {
     expectedChangedPaths,

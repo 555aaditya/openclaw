@@ -109,7 +109,6 @@ function displayValue(value) {
  * @property {unknown} [qualificationCoverage]
  * @property {{ changedPaths?: unknown, evidenceSha?: unknown, policy?: unknown, runId?: unknown, selectedRunId?: unknown }} [evidenceReuse]
  * @property {unknown} [validationWaivers]
- * @property {unknown} [publicationVerification]
  */
 /**
  * @typedef {object} FullReleaseValidationEvidenceOptions
@@ -619,10 +618,9 @@ export async function authenticateFullReleaseValidationEvidence(options, client)
     },
     { ...evidenceClient, getWorkflowSource },
   );
-  const validationWaivers = parseReleaseValidationWaivers(options.validationWaivers);
   if (
     !evidence.conclusions.allRequiredSucceeded &&
-    !(validationWaivers && evidence.conclusions.allRequiredSatisfied)
+    !(evidence.validationWaivers && evidence.conclusions.allRequiredSatisfied)
   ) {
     throw new Error("Required release validation evidence did not pass.");
   }
@@ -699,10 +697,7 @@ export async function authenticateCandidateOwnedArtifact({
     evidence.current.runAttempt !== Number(manifest.runAttempt) ||
     evidence.current.workflowRefProof !== "candidate-owned-admission-v1" ||
     (!evidence.conclusions.allRequiredSucceeded &&
-      !(
-        parseReleaseValidationWaivers(validationWaivers) &&
-        evidence.conclusions.allRequiredSatisfied
-      )) ||
+      !(evidence.validationWaivers && evidence.conclusions.allRequiredSatisfied)) ||
     !isDeepStrictEqual(evidence.current.manifest, sortJsonValueKeys(manifest))
   ) {
     throw new Error("Publication artifact is not bound to authenticated candidate qualification");
