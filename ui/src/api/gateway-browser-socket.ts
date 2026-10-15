@@ -7,6 +7,10 @@ import {
 import { gatewayWebSocketTransportUrl, uiDevGatewayResourceUrl } from "../dev-gateway.ts";
 import { formatUiError } from "../lib/format-error.ts";
 
+declare const scheduler:
+  | { postTask(callback: () => void, options: { priority: "user-visible" }): Promise<void> }
+  | undefined;
+
 const BROWSER_WEBSOCKET_CONSTRUCTOR_ERROR_CODE = "BROWSER_WEBSOCKET_CONSTRUCTOR_ERROR";
 export const BROWSER_WEBSOCKET_SECURITY_ERROR_CODE = "BROWSER_WEBSOCKET_SECURITY_ERROR";
 
@@ -76,6 +80,39 @@ export function createBrowserGatewaySocket(
   maxPayloadBytes?: () => number | undefined,
 ): GatewayProtocolSocket {
   const socket = new WebSocket(gatewayWebSocketTransportUrl(url));
+  const scheduling: unknown = Reflect.get(globalThis, "__openclawGatewayScheduling");
+  const deferred = scheduling === "task" || scheduling === "chunk" || scheduling === "frame";
+  const messages: string[] = [];
+  let retired = false;
+  let scheduled = false;
+  const flush = () => {
+    scheduled = false;
+    const deadline = performance.now() + 4;
+    while (!retired && messages.length) {
+      handlers.message(messages.shift()!);
+      if (scheduling === "task" || performance.now() >= deadline) {
+        break;
+      }
+    }
+    schedule();
+  };
+  const schedule = () => {
+    if (retired || scheduled || !messages.length) {
+      return;
+    }
+    scheduled = true;
+    if (scheduling === "frame" && document.visibilityState !== "hidden") {
+      requestAnimationFrame(flush);
+    } else if (typeof scheduler !== "undefined") {
+      void scheduler.postTask(flush, { priority: "user-visible" }).catch(handlers.error);
+    } else {
+      setTimeout(flush, 0);
+    }
+  };
+  const retire = () => {
+    retired = true;
+    messages.length = 0;
+  };
   let opening = true;
   let openingTimeoutReason: string | undefined;
   let openingTimer: ReturnType<typeof setTimeout> | undefined;
@@ -91,8 +128,17 @@ export function createBrowserGatewaySocket(
     finishOpening();
     handlers.open();
   });
-  socket.addEventListener("message", (event) => handlers.message(String(event.data ?? "")));
+  socket.addEventListener("message", (event) => {
+    const data = String(event.data ?? "");
+    if (!deferred) {
+      handlers.message(data);
+    } else if (!retired) {
+      messages.push(data);
+      schedule();
+    }
+  });
   socket.addEventListener("close", (event) => {
+    retire();
     finishOpening();
     // Browsers erase locally initiated close reasons before the handshake finishes.
     handlers.close(event.code, event.reason || openingTimeoutReason || "");
@@ -130,6 +176,7 @@ export function createBrowserGatewaySocket(
       socket.send(data);
     },
     close: (code, reason) => {
+      retire();
       finishOpening();
       // Browser-initiated closes reject the shared protocol's 1008 policy code.
       socket.close(code === 1008 ? 4008 : code, reason);

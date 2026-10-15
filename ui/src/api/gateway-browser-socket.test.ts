@@ -64,6 +64,7 @@ describe("createBrowserGatewaySocket", () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.useRealTimers();
     vi.unstubAllGlobals();
   });
@@ -127,5 +128,75 @@ describe("createBrowserGatewaySocket", () => {
   it("maps protocol policy-violation closes to the browser-safe connect failure code", () => {
     expect(() => socketAdapter.close(1008, "connect failed")).not.toThrow();
     expect(socket.close).toHaveBeenCalledWith(4008, "connect failed");
+  });
+
+  it("delivers messages immediately when the experiment is off", () => {
+    socket.emit("message", { data: "first" });
+    expect(handlers.message).toHaveBeenCalledWith("first");
+  });
+
+  describe.each(["task", "chunk", "frame"])("%s scheduling", (mode) => {
+    let tasks: Array<() => void>;
+    beforeEach(() => {
+      socketAdapter.close();
+      tasks = [];
+      vi.stubGlobal("__openclawGatewayScheduling", mode);
+      vi.stubGlobal("scheduler", {
+        postTask: (callback: () => void) => {
+          tasks.push(callback);
+          return Promise.resolve();
+        },
+      });
+      vi.stubGlobal("document", {
+        visibilityState: "visible",
+        documentElement: { getAttribute: () => null },
+      });
+      vi.stubGlobal("requestAnimationFrame", (callback: () => void) => tasks.push(callback));
+      socketAdapter = createBrowserGatewaySocket("wss://gateway.example", handlers);
+      socket = sockets.at(-1)!;
+      socket.readyState = MockWebSocket.OPEN;
+      socket.emit("open");
+    });
+
+    function flushTasks() {
+      while (tasks.length) {
+        tasks.shift()!();
+      }
+    }
+
+    it("defers delivery and preserves FIFO across a yielding burst", () => {
+      let clock = 0;
+      vi.spyOn(performance, "now").mockImplementation(() => clock);
+      handlers.message.mockImplementation(() => {
+        clock += 5;
+      });
+      for (const data of ["first", "second", "third"]) {
+        socket.emit("message", { data });
+      }
+      expect(handlers.message).not.toHaveBeenCalled();
+      tasks.shift()!();
+      expect(handlers.message.mock.calls).toEqual([["first"]]);
+      flushTasks();
+      expect(handlers.message.mock.calls).toEqual([["first"], ["second"], ["third"]]);
+    });
+
+    it.each(["local", "remote"])("retires queued messages on %s close", (close) => {
+      socket.emit("message", { data: "retired" });
+      if (close === "local") {
+        socketAdapter.close();
+      } else {
+        socket.emit("close", { code: 1006 });
+      }
+      flushTasks();
+      expect(handlers.message).not.toHaveBeenCalled();
+    });
+
+    it("stops a burst when its first callback retires the connection", () => {
+      handlers.message.mockImplementation(() => socketAdapter.close());
+      socket.emit("message", { data: "first" });
+      socket.emit("message", { data: "retired" });
+      flushTasks();
+      expect(handlers.message.mock.calls).toEqual([["first"]]);
+    });
   });
 });
