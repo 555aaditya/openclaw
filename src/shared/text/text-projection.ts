@@ -1,34 +1,27 @@
 import { expectDefined } from "@openclaw/normalization-core";
 import { escapeRegExp } from "../regexp.js";
-import { findCodeRegions } from "./code-regions.js";
+import { findCodeRegions, isInsideSettledBlockCode } from "./code-regions.js";
 
-type TextProjection = { text: string; delta: string | null };
+export type TextProjection = { text: string; delta: string | null };
 type TextProjector = (input: TextProjection) => TextProjection;
 // Token absence must prove identity; activated syntax stays with the canonical transform.
 export type TextFilter = { transform: (text: string) => string } & (
-  | { activationTokens: readonly string[] }
+  | { activationTokens: readonly string[]; ignoreBlockCode?: boolean }
   | { create: () => TextProjector }
 );
 
-function createActivatedProjector(
-  filter: Extract<TextFilter, { activationTokens: readonly string[] }>,
+/** Preserve append provenance while a probe proves that the canonical transform is identity. */
+export function createConditionalTextProjector(
+  transform: (text: string) => string,
+  shouldTransform: (input: TextProjection) => boolean,
 ): TextProjector {
-  const activation = new RegExp(filter.activationTokens.map(escapeRegExp).join("|"), "i");
-  const overlap = Math.max(0, ...filter.activationTokens.map((token) => token.length - 1));
-  let tail = "";
-  let active = false;
   let previous = "";
   let identity = true;
   return (input) => {
     if (input.delta === "") {
       return identity ? input : { text: previous, delta: "" };
     }
-    if (!active) {
-      const appended = tail + (input.delta ?? input.text);
-      active = activation.test(appended);
-      tail = !active && overlap ? appended.slice(-overlap) : "";
-    }
-    const text = active ? filter.transform(input.text) : input.text;
+    const text = shouldTransform(input) ? transform(input.text) : input.text;
     const nextIdentity = text === input.text;
     const delta =
       input.delta === null
@@ -42,6 +35,33 @@ function createActivatedProjector(
     identity = nextIdentity;
     return nextIdentity && delta === input.delta ? input : { text, delta };
   };
+}
+
+export function createActivatedProjector(
+  filter: Extract<TextFilter, { activationTokens: readonly string[] }>,
+): TextProjector {
+  const activation = new RegExp(filter.activationTokens.map(escapeRegExp).join("|"), "gi");
+  const overlap = Math.max(0, ...filter.activationTokens.map((token) => token.length - 1));
+  let tail = "";
+  let active = false;
+  return createConditionalTextProjector(filter.transform, (input) => {
+    if (!active) {
+      const appended = tail + (input.delta ?? input.text);
+      let regions: ReturnType<typeof findCodeRegions> | undefined;
+      for (const match of appended.matchAll(activation)) {
+        const start = input.text.length - appended.length + match.index;
+        if (
+          !filter.ignoreBlockCode ||
+          !isInsideSettledBlockCode(start, input.text, (regions ??= findCodeRegions(input.text)))
+        ) {
+          active = true;
+          break;
+        }
+      }
+      tail = !active && overlap ? appended.slice(-overlap) : "";
+    }
+    return active;
+  });
 }
 
 export function applyTextFilters(input: string, filters: readonly TextFilter[]): string {
@@ -77,8 +97,10 @@ export function createTextProjection(filters: readonly TextFilter[]) {
     get text() {
       return text;
     },
-    append(delta: string): TextProjection {
-      source += delta;
+    append(delta: string, preparedSource?: string): TextProjection {
+      // A validated cumulative snapshot already owns these bytes; rebuilding its
+      // rope would copy the growing reply again when a consumer reads it.
+      source = preparedSource ?? source + delta;
       const next = project({ text: source, delta });
       // A downstream filter can cancel an intermediate replacement without changing the final prefix.
       if (next.delta === null && next.text.startsWith(text)) {

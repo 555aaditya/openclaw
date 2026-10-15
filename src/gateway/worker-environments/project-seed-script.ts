@@ -2,6 +2,7 @@ import {
   WORKSPACE_SEED_RETENTION,
   WORKSPACE_SEED_RETENTION_JS,
 } from "../../worker/workspace-seed-retention.js";
+import { DEFAULT_NODE_TOOLCHAIN_SETUP_SH } from "./node-toolchain.js";
 import {
   PREPARE_PROJECT_WORKSPACE_JS,
   type PreparedProjectVerification,
@@ -30,10 +31,15 @@ type ProjectSeedScriptInput = {
 
 /** Only immutable Git content and non-secret preparation metadata enter the machine image. */
 export function createProjectSeedScript(input: ProjectSeedScriptInput): string {
+  // Bootstrap can install a toolchain before Node performs the full seed-path admission.
   return `set -eu
+if [ -n "\${HOME:-}" ] && { [ -L "$HOME/.openclaw-worker" ] || [ -L "$HOME/.openclaw-worker/git-seeds" ]; }; then
+  echo 'Project seed directory escaped its owner' >&2
+  exit 1
+fi
+${DEFAULT_NODE_TOOLCHAIN_SETUP_SH}
 node <<'PROJECT_SEED_SCRIPT'
 const fs = require("node:fs");
-const fsp = fs.promises;
 const path = require("node:path");
 const os = require("node:os");
 const crypto = require("node:crypto");
@@ -114,7 +120,7 @@ const ownedDirectory = (parent, target) => {
     if (repositoryUrl !== undefined) {
       const url = new URL(repositoryUrl);
       const segments = url.pathname.slice(1).split("/");
-      if (url.origin !== "https://github.com" || url.href !== repositoryUrl || url.username || url.password || url.search || url.hash || segments.length !== 2 || segments.some((segment) => !/^[A-Za-z0-9_.-]+$/.test(segment)) || !segments[1].endsWith(".git") || !/^[a-f0-9]{40}$/.test(input.baseCommit)) throw new Error("Project repository source is invalid");
+      if (url.protocol !== "https:" || (input.repository && url.origin !== "https://github.com") || url.href !== repositoryUrl || url.username || url.password || url.search || url.hash || segments.length !== 2 || segments.some((segment) => !/^[A-Za-z0-9_.-]+$/.test(segment)) || !segments[1].endsWith(".git") || !/^[a-f0-9]{40}$/.test(input.baseCommit)) throw new Error("Project repository source is invalid");
     }
     if (input.repository) {
       // Public fetches cannot use ambient credentials, helpers, or redirects.
@@ -147,7 +153,12 @@ const ownedDirectory = (parent, target) => {
     if (git(repository, ["status", "--porcelain=v1", "--untracked-files=all"])) throw new Error("Prepared project checkout is not pristine");
     fs.renameSync(repository, seed);
     prune();
-    process.stdout.write(JSON.stringify({ ready: true }));
+    // Repository code keeps its separate Gateway authority check. A checkout that
+    // cannot run setup can complete under this seed command's existing owner.
+    const preparedWorkspace = input.preparation && (!input.preparation.setupRecipe || input.preparation.runSetupScript === false)
+      ? await prepareWorkspace({ ...input, ...input.preparation, runSetupScript: false })
+      : undefined;
+    process.stdout.write(JSON.stringify({ ready: true, preparedWorkspace }));
   } finally { if (directory !== undefined) fs.rmSync(directory, { recursive: true, force: true }); }
 })().catch((error) => { console.error(error.message); process.exitCode = 1; });
 PROJECT_SEED_SCRIPT`;

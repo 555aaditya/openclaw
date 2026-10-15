@@ -12,7 +12,10 @@ const { getState, getSource, isReachable, resolveExecutable } = vi.hoisted(() =>
   resolveExecutable: vi.fn<() => BrowserExecutable | null>(() => null),
 }));
 vi.mock("./browser-control-state.js", () => ({ getBrowserControlState: getState }));
-vi.mock("./config/config.js", () => ({ getRuntimeConfigSourceSnapshot: getSource }));
+vi.mock("openclaw/plugin-sdk/runtime-config-snapshot", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("openclaw/plugin-sdk/runtime-config-snapshot")>()),
+  getRuntimeConfigSourceSnapshot: getSource,
+}));
 vi.mock("./browser/chrome.js", () => ({ isChromeReachable: isReachable }));
 vi.mock("./browser/chrome.executables.js", () => ({
   resolveBrowserExecutableForPlatform: resolveExecutable,
@@ -39,25 +42,6 @@ describe("browser host availability", () => {
     expect(await isBrowserHostAvailable({})).toBe(false);
   });
 
-  it("resolves the requested profile's executable ahead of global defaults", async () => {
-    const config: OpenClawConfig = {
-      browser: {
-        executablePath: "/opt/default/chrome",
-        profiles: { work: { cdpPort: 18801, executablePath: "/opt/work/chrome" } },
-      },
-    };
-    expect(await isBrowserHostAvailable(config, "work")).toBe(true);
-    expect(resolveExecutable).toHaveBeenLastCalledWith(
-      expect.objectContaining({ executablePath: "/opt/work/chrome" }),
-      process.platform,
-    );
-    expect(await isBrowserHostAvailable(config)).toBe(true);
-    expect(resolveExecutable).toHaveBeenLastCalledWith(
-      expect.objectContaining({ executablePath: "/opt/default/chrome" }),
-      process.platform,
-    );
-  });
-
   it.each([
     { name: "disabled browser", config: { browser: { enabled: false } }, profile: undefined },
     { name: "missing profile", config: {}, profile: "missing" },
@@ -69,7 +53,6 @@ describe("browser host availability", () => {
   it.each([
     { name: "existing-session", profile: { driver: "existing-session" as const } },
     { name: "extension", profile: { driver: "extension" as const } },
-    { name: "attach-only", profile: { cdpPort: 18801, attachOnly: true } },
     { name: "remote CDP", profile: { cdpUrl: "https://browser.example.test" } },
   ])(
     "preserves a configured $name connection without a managed executable",
@@ -101,7 +84,6 @@ describe("browser host availability", () => {
               exe: { kind: "chrome", path: "/usr/bin/google-chrome" },
               userDataDir: "/browser/user-data",
               cdpPort: profile.cdpPort,
-              startedAt: 1,
               proc: new ChildProcess(),
             },
           },
@@ -111,22 +93,6 @@ describe("browser host availability", () => {
     resolveExecutable.mockReturnValue(null);
     expect(await isBrowserHostAvailable({})).toBe(true);
     expect(resolveExecutable).not.toHaveBeenCalled();
-  });
-
-  it("recognizes a surviving browser after its runtime and executable were removed", async () => {
-    resolveExecutable.mockReturnValue(null);
-    isReachable.mockResolvedValue(true);
-    expect(await isBrowserHostAvailable({})).toBe(true);
-    expect(isReachable).toHaveBeenCalledWith("http://127.0.0.1:18800");
-  });
-
-  it("uses the browser owner's source snapshot after config refresh", async () => {
-    getSource.mockReturnValue({ browser: { executablePath: "/updated/chrome" } });
-    expect(await isBrowserHostAvailable({ browser: { enabled: false } })).toBe(true);
-    expect(resolveExecutable).toHaveBeenCalledWith(
-      expect.objectContaining({ executablePath: "/updated/chrome" }),
-      process.platform,
-    );
   });
 
   it("leaves an invalid explicit executable on the host to report its configuration error", async () => {

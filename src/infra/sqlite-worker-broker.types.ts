@@ -1,5 +1,6 @@
 import type { Worker } from "node:worker_threads";
 import type { OpenClawDatabaseMaintenanceScope } from "../state/openclaw-state-db-async-lifecycle.js";
+import type { captureStateDatabaseAccess } from "./gateway-state-owner.js";
 import type { RuntimeWorkerGeneration } from "./runtime-worker-generation.js";
 import type {
   SqliteWorkerRequest,
@@ -11,39 +12,34 @@ import type {
   SqliteWorkerOperationAdmission,
 } from "./sqlite-worker-operation-admission.js";
 import type { SqliteWorkerOperationSettlement } from "./sqlite-worker-operation-settlement.js";
+import type {
+  SqliteWorkerRequestCustody,
+  SqliteWorkerSlotCustody,
+} from "./sqlite-worker-request-custody.js";
 import type { SqliteWorkerStateContext } from "./sqlite-worker-state-context.js";
 import type {
   createSqliteWorkerTransferOwner,
   createSqliteWorkerTransferReceiver,
 } from "./sqlite-worker-transfer.js";
-import type {
-  tryCreateGatewaySchemaFenceDelegate,
-  tryCreateStateLifecycleDelegate,
-} from "./state-database-coordinator.js";
-
-type StateLifecycleDelegate = NonNullable<ReturnType<typeof tryCreateStateLifecycleDelegate>>;
-
+import type { WorkerRequestObservation } from "./worker-request-diagnostics.js";
 export type RequestBody = SqliteWorkerRequest extends infer Request
   ? Request extends SqliteWorkerRequest
     ? Omit<Request, "id">
     : never
   : never;
-type DispatchState = { dispatched: boolean; openNotEntered?: boolean };
+type DispatchState = {
+  custody: SqliteWorkerRequestCustody;
+  openNotEntered?: boolean;
+  openRefused?: boolean;
+};
 export type Job = {
-  requireStateLifecycle?: boolean;
+  custody: SqliteWorkerRequestCustody;
+  observation: WorkerRequestObservation;
+  signal?: AbortSignal;
   maintenanceScope?: OpenClawDatabaseMaintenanceScope;
-  maintenanceSchemaFence?: { actor: Actor; delegate: StateLifecycleDelegate };
-  gatewaySchemaFence?: { actor: Actor; delegate: StateLifecycleDelegate };
   createAdmission?: SqliteWorkerAdmissionFactory;
   operationAdmission?: { admission: SqliteWorkerOperationAdmission; releaseService(): void };
   settleNative?: (settlement: SqliteWorkerOperationSettlement) => void;
-  nativeDispatched?: boolean;
-  requestPosted?: boolean;
-  rejectPreparation?: (error: unknown) => void;
-  preparation?: Promise<void>;
-  lifecyclePreparation?: { failure: unknown; finish(): void };
-  cancelPreparation?: AbortController;
-  stateLifecycle?: { actor: Actor; delegate: StateLifecycleDelegate };
   assertCurrent?: () => void;
   inputTransfer?: {
     id: number;
@@ -62,10 +58,11 @@ export type Job = {
   detach(): void;
 };
 export type Slot = {
+  custody: SqliteWorkerSlotCustody;
   runtimeGeneration?: RuntimeWorkerGeneration;
   borrowedGenerationSlot?: true;
   worker: Worker;
-  receiveReply(reply: SqliteWorkerReply, pumping?: boolean): void;
+  receiveReply(reply: SqliteWorkerReply): void;
   actors: Set<Actor>;
   queue: Job[];
   current?: Job;
@@ -76,11 +73,13 @@ export type Slot = {
   pendingOpens: number;
 };
 export type Actor = {
+  nativeLostObservers?: Set<(reason: Error) => void>;
   runtimeGeneration?: RuntimeWorkerGeneration;
   nativeStopped: Promise<void>;
   markNativeStopped(): void;
   closeReceipt?: SqliteWorkerCloseReceipt;
   stateDatabasePath?: string;
+  stateAccess: ReturnType<typeof captureStateDatabaseAccess>;
   id: number;
   key: string;
   databasePath: string;
@@ -96,14 +95,13 @@ export type Actor = {
   cleanupState?: "pending" | "complete";
   closing?: Promise<void>;
   retirementRequested?: boolean;
+  settlement?: Promise<void>;
   retirement?: Promise<void>;
   onReferencesDrained?: () => void;
   stateContext?: SqliteWorkerStateContext;
-  gatewaySchemaFence?: NonNullable<ReturnType<typeof tryCreateGatewaySchemaFenceDelegate>>;
-  pendingStateLifecycles: Set<StateLifecycleDelegate>;
 };
 export type OperationScope = {
-  requireStateLifecycle?: boolean;
+  maintenanceScope?: OpenClawDatabaseMaintenanceScope;
   createAdmission?: SqliteWorkerAdmissionFactory;
   assertCurrent?: (commandType: PropertyKey) => void;
   active: boolean;
@@ -111,6 +109,7 @@ export type OperationScope = {
   stateContext?: SqliteWorkerStateContext;
 };
 export type EnqueueOptions = {
+  requestClass?: string;
   maintenanceScope?: OpenClawDatabaseMaintenanceScope;
   createAdmission?: SqliteWorkerAdmissionFactory;
   signal?: AbortSignal;
@@ -121,6 +120,7 @@ export type EnqueueOptions = {
 export type StoreClient = {
   actor: Actor;
   close(): Promise<void>;
+  retireIdle?: () => Promise<void> | undefined;
   sealed: boolean;
   isAvailable(): boolean;
   scopes: Set<Promise<void>>;
@@ -141,7 +141,11 @@ export type SqliteWorkerStoreOptions = {
 };
 
 export type PreparedSqliteWorkerOpen = {
-  preparation?: Buffer;
+  /** The caching owner synchronously seals an idle client, or declines reclamation. */
+  retireIdle?: () => Promise<void> | undefined;
+  onNativeLost?: (reason: Error) => void;
+  signal?: AbortSignal;
+  preparation?: Buffer<ArrayBuffer>;
   runtimeGeneration?: RuntimeWorkerGeneration;
   carrierUrl: URL;
   expectedIdentity?: string;
@@ -151,13 +155,14 @@ export type PreparedSqliteWorkerOpen = {
   onNativeStopped?: (
     stopped: Promise<void>,
     readCloseReceipt: () => SqliteWorkerCloseReceipt | undefined,
+    readOpenRefused: () => boolean,
   ) => void;
   stateDatabasePath?: string;
   createAdmission?: SqliteWorkerAdmissionFactory;
   assertCurrent?: () => void;
   moduleUrl: URL;
   databasePath: string;
-  input: Buffer;
+  input: Buffer<ArrayBuffer>;
   existingOnly: boolean;
   stateContext?: SqliteWorkerStateContext;
 };
@@ -170,8 +175,16 @@ export type SqliteWorkerAdmissionCleanup = {
 
 export type SqliteWorkerOpenCustody = Pick<
   PreparedSqliteWorkerOpen,
-  "maintenanceScope" | "retainCleanup" | "createAdmission" | "stateDatabasePath" | "onNativeStopped"
+  | "maintenanceScope"
+  | "retainCleanup"
+  | "createAdmission"
+  | "stateDatabasePath"
+  | "onNativeStopped"
+  | "onNativeLost"
+  | "signal"
+  | "retireIdle"
 > & { preparation?: unknown };
+export type SqliteWorkerInputRetention = "snapshot" | "stream";
 export type SqliteWorkerInputPreparation = {
   assertCurrent: () => void;
   /** Transfer to a dispatch that reaches enqueue synchronously, before returning its Promise. */
