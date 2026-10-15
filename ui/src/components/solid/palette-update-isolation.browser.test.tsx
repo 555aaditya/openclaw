@@ -54,6 +54,9 @@ it("keeps palette keyboard editing and catalog work scoped across result navigat
   input.focus();
   await userEvent.keyboard("needle");
   await expect.poll(() => palette.textContent).toContain("Needle 0 model 000");
+  // Settled rows remain visible while typing is debounced; only the active
+  // descendant establishes that ArrowDown is admitted as result navigation.
+  await expect.poll(() => input.getAttribute("aria-activedescendant")).toBeTruthy();
   await palette.updateComplete;
   const rows = [...palette.querySelectorAll('[role="option"]')];
   const beforeActive = input.getAttribute("aria-activedescendant");
