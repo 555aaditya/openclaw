@@ -561,7 +561,14 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
     return { atMs: (index + 1) * 160, kind, event, payload, history };
   });
   if (options.sidebarListChurn) {
-    prepareTeamScaleSidebarListChurn({ sessions, people, liveEvents, selectedSessionKey, now });
+    prepareTeamScaleSidebarListChurn({
+      sessions,
+      people,
+      liveEvents,
+      selectedSessionKey,
+      now,
+      certifyExclusions: true,
+    });
   }
   return {
     scenario,

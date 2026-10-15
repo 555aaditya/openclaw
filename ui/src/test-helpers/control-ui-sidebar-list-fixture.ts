@@ -25,6 +25,14 @@ type TeamScaleSidebarListInventory = {
 type TeamScaleSidebarRow = GatewaySessionRow & { updatedAt: number | null };
 type TeamScaleSidebarListResult = SessionsListResult & { sessions: TeamScaleSidebarRow[] };
 
+function involvesViewer(row: GatewaySessionRow, profileId: string) {
+  return (
+    row.hiddenFromInvolvingMe !== true &&
+    ((row.owner?.actor.identity?.type === "profile" && row.owner.actor.identity.id === profileId) ||
+      row.participants?.some(({ identity }) => identity.id === profileId))
+  );
+}
+
 /** Owns the synthetic Gateway's changing membership; production code packs its wire rows. */
 export function createTeamScaleSidebarListOwner(input: TeamScaleSidebarListInventory) {
   const admit = (row: GatewaySessionRow): TeamScaleSidebarRow =>
@@ -68,12 +76,7 @@ export function createTeamScaleSidebarListOwner(input: TeamScaleSidebarListInven
           if (query.ownerId && row.owner?.actor.id !== query.ownerId) {
             return false;
           }
-          if (
-            query.involvingMe === true &&
-            (row.hiddenFromInvolvingMe === true ||
-              (!ownedBy(row, input.viewerProfileId) &&
-                !row.participants?.some(({ identity }) => identity.id === input.viewerProfileId)))
-          ) {
+          if (query.involvingMe === true && !involvesViewer(row, input.viewerProfileId)) {
             return false;
           }
           if (query.archived !== "all" && (row.archived === true) !== (query.archived === true)) {
@@ -205,12 +208,14 @@ export function prepareTeamScaleSidebarListChurn({
   liveEvents,
   selectedSessionKey,
   now,
+  certifyExclusions = false,
 }: {
   sessions: GatewaySessionRow[];
   people: ControlUiMockPresenceUser[];
   liveEvents: TeamScaleLiveEvent[];
   selectedSessionKey: string;
   now: number;
+  certifyExclusions?: boolean;
 }): void {
   const working = new Map<string, GatewaySessionRow>(sessions.map((row) => [row.key, row]));
   const pendingCreatedKeys: string[] = [];
@@ -379,6 +384,9 @@ export function prepareTeamScaleSidebarListChurn({
             sessionId: row.sessionId,
             agentId: "main",
             ts,
+            ...(certifyExclusions && !involvesViewer(row, self.id)
+              ? { excludedFromInvolvingMe: self.id }
+              : {}),
             ...(reason === "delete" ? {} : { session: row, ancestorSessions: ancestors }),
           }
         : { reason, ts },

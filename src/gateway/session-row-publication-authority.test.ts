@@ -54,6 +54,10 @@ it.each(["child and swarm links", "sharing role", "incognito"] as const)(
           sessionId: "publication-session",
           updatedAt: now,
           label: "Publication authority",
+          profileInvolvement: {
+            key: query.key,
+            profiles: { [allowed!.id]: { hidden: false, updatedAt: now } },
+          },
           ...(restriction === "incognito" ? { incognito: true } : {}),
         },
       );
@@ -184,6 +188,11 @@ it.each(["child and swarm links", "sharing role", "incognito"] as const)(
                 continue;
               }
               const frame = JSON.parse(String(send.mock.calls[0]![0]));
+              if (restriction === "child and swarm links") {
+                expect(frame.payload.excludedFromInvolvingMe).toBe(
+                  index % 2 === 0 ? undefined : restricted!.id,
+                );
+              }
               expect(frame.payload.message).toEqual(message);
               expect(frame.seq).toBe(1);
               expect(send.mock.calls[0]![1]).toEqual({ binary: false });

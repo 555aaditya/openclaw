@@ -173,7 +173,11 @@ export function canApplySessionListSnapshot(
         (options.excludeDock !== false && excluded.isDock === true) ||
         (options.includeUnknown === false && excluded.kind === "unknown") ||
         !sessionMatchesArchivedFilter(excluded, options.archivedFilter ?? "active") ||
-        (options.involvingMe === true && excluded.hiddenFromInvolvingMe === true))
+        (options.involvingMe === true &&
+          (excluded.hiddenFromInvolvingMe === true ||
+            (snapshot === payload &&
+              viewerProfileId !== undefined &&
+              event.excludedFromInvolvingMe === viewerProfileId))))
     ) {
       covered = true;
       continue;

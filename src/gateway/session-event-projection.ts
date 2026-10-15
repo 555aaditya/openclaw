@@ -3,11 +3,13 @@ import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { parseAgentSessionKey } from "../routing/session-key.js";
 import { readGatewayAccessRevision } from "./gateway-access-revision.js";
 import type { PrepareSessionEventProjection } from "./server-broadcast-types.js";
+import { gatewayClientSessionCreator } from "./server-methods/gateway-client-identity.js";
 import { prepareSessionAncestor } from "./session-ancestor-references.js";
 import { buildGatewaySessionSnapshot } from "./session-event-payload.js";
 import type { SessionRowReadView } from "./session-row-prepared-read.js";
 import { prepareSessionRowPublication, serializeSessionRow } from "./session-row-presentation.js";
 import type { SessionRowProjection } from "./session-row-projection.js";
+import { prepareSessionRowSelection } from "./session-utils-list.js";
 
 /** Bind prepared rows without exposing their implementation to transport contracts. */
 export function prepareSessionEventProjection(
@@ -148,8 +150,25 @@ export function prepareSessionEventProjection(
       const deliveryKey = ancestorDelivery?.deliveryKey;
       let projected = audience.payloads.get(deliveryKey);
       if (!projected) {
+        // Bounded wire participants cannot certify exclusion; reuse the list owner's index.
+        const viewerId = gatewayClientSessionCreator(client)?.id;
+        const excludedFromInvolvingMe =
+          viewerId &&
+          !prepareSessionRowSelection(
+            projection,
+            { agentId: scope[1] },
+            {
+              key: record.key,
+              metadataPrepared: true,
+            },
+          )
+            .involvementKeys(viewerId, true)
+            .has(record.key)
+            ? viewerId
+            : undefined;
         projected = {
           ...base,
+          excludedFromInvolvingMe,
           session: row,
           fastMode: row.fastMode,
           effectiveFastMode: row.effectiveFastMode,
