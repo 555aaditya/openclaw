@@ -42,6 +42,7 @@ function fixture(
     materializedSessionId?: string;
     remembered?: boolean;
     sessionKey?: string;
+    rememberedAgentId?: string;
   } = {},
 ) {
   if (options.send) {
@@ -100,7 +101,9 @@ function fixture(
         config: {
           agents: {
             entries: {
-              "selected-agent": { nativeRuntimeConsent: options.remembered ? ["opencode"] : [] },
+              [options.rememberedAgentId ?? "selected-agent"]: {
+                nativeRuntimeConsent: options.remembered ? ["opencode"] : [],
+              },
             },
           },
         },
@@ -173,15 +176,11 @@ function click(modal: Element, label: string) {
   button.click();
 }
 
-it.each([
-  { sessionKey: "global", rejectRecovery: false },
-  { sessionKey: "global", rejectRecovery: true },
-  { sessionKey: "agent:selected-agent:native-recovery", rejectRecovery: false },
-])(
-  "requires explicit consent for $sessionKey and handles a rejected recovery=$rejectRecovery without replay",
-  async ({ sessionKey, rejectRecovery }) => {
-    const { host } = fixture({ sessionKey, rejectRecovery });
-    const selection = switchChatModel(host, "fixture/selected", sessionKey, "opencode");
+it.each([false, true])(
+  "requires explicit consent and handles a rejected recovery=%s without replay",
+  async (rejectRecovery) => {
+    const { host } = fixture({ rejectRecovery });
+    const selection = switchChatModel(host, "fixture/selected", "global", "opencode");
     const modal = await dialog();
     expect(modal.textContent).toContain("own permissions");
     expect(modal.textContent).toContain("Gateway host");
@@ -192,8 +191,8 @@ it.each([
     const patches = requestCalls(host.request, "sessions.patch");
     expect(patches).toHaveLength(2);
     expect(patches[1]?.[1]).toEqual({
-      key: sessionKey,
-      ...(sessionKey === "global" ? { agentId: "selected-agent" } : {}),
+      key: "global",
+      agentId: "selected-agent",
       expectedSessionId: recovery.sessionId,
       model: "fixture/selected",
       agentRuntime: "opencode",
@@ -217,16 +216,21 @@ it.each([
   },
 );
 
-it.each(["global", "agent:selected-agent:native-recovery"])(
-  "uses remembered native permissions for %s without prompting or writing session consent",
-  async (sessionKey) => {
-    const { host } = fixture({ remembered: true, sessionKey });
+it.each([
+  { sessionKey: "global", rememberedAgentId: "selected-agent" },
+  { sessionKey: "agent:selected-agent:chat", rememberedAgentId: "selected-agent" },
+  { sessionKey: "agent:other-agent:chat", rememberedAgentId: "other-agent" },
+])(
+  "uses the owning agent's remembered permissions for $sessionKey without prompting",
+  async ({ sessionKey, rememberedAgentId }) => {
+    const { host } = fixture({ remembered: true, sessionKey, rememberedAgentId });
     await expect(switchChatModel(host, "fixture/selected", sessionKey, "opencode")).resolves.toBe(
       true,
     );
     expect(document.querySelector("openclaw-modal-dialog")).toBeNull();
     const patches = requestCalls(host.request, "sessions.patch");
     expect(patches[1]?.[1]).toMatchObject({
+      key: sessionKey,
       agentRuntime: "opencode",
       permissionMode: "full",
       sandboxMode: "off",
@@ -235,6 +239,21 @@ it.each(["global", "agent:selected-agent:native-recovery"])(
     expect(requestCalls(host.request, "config.patch")).toHaveLength(0);
   },
 );
+
+it("requires confirmation when only the UI-selected agent remembers consent", async () => {
+  const sessionKey = "agent:other-agent:chat";
+  const { host } = fixture({
+    remembered: true,
+    sessionKey,
+    rememberedAgentId: "selected-agent",
+  });
+  const selection = switchChatModel(host, "fixture/selected", sessionKey, "opencode");
+  const modal = await dialog();
+  expect(requestCalls(host.request, "sessions.patch")).toHaveLength(1);
+  click(modal, "Cancel");
+  await expect(selection).resolves.toBe(false);
+  expect(requestCalls(host.request, "sessions.patch")).toHaveLength(1);
+});
 
 it.each([
   {
