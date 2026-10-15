@@ -193,9 +193,16 @@ async function getGatewayCatalogPool(
       ),
     };
     const retire = () => {
-      void current.close(signal.reason).catch((error: unknown) => {
-        process.emitWarning(`Gateway catalog worker failed to retire: ${String(error)}`);
-      });
+      void current
+        .close(signal.reason)
+        .then(() => {
+          if (gatewayCatalog.current === current) {
+            gatewayCatalog.current = undefined;
+          }
+        })
+        .catch((error: unknown) => {
+          process.emitWarning(`Gateway catalog worker failed to retire: ${String(error)}`);
+        });
     };
     // Shutdown can refuse registration; do not expose retirement until release exists.
     const release = registerPreparedModelRuntimeClose(async (error) => {

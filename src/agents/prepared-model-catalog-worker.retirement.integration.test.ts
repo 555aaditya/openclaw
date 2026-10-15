@@ -3,6 +3,7 @@ import path from "node:path";
 import { setImmediate as checkpoint } from "node:timers/promises";
 import { describe, expect, it, vi } from "vitest";
 import { awaitGateBeforeSettlement, withinTest } from "../../test/helpers/promise.js";
+import { getPluginMetadataSnapshotCache, retirePluginCache } from "../plugins/plugin-cache.js";
 import * as providerRuntime from "../plugins/provider-runtime.js";
 import * as catalogWorker from "./prepared-model-catalog-worker.js";
 import { loadPreparedModelRuntimeAuth } from "./prepared-model-runtime-auth.js";
@@ -19,7 +20,7 @@ const { makeTempDir } = usePreparedCatalogWorkerFixtures();
 const createFleetFixture = createCatalogFleetFixture(makeTempDir);
 
 describe("catalog worker generation retirement", () => {
-  it("keeps settled fleet generations idle without a timer", async () => {
+  it("keeps settled fleet generations idle and releases their retired pool", async () => {
     const createWorker = catalogWorker.createPreparedModelCatalogWorker;
     let checks = 0;
     const observe = vi
@@ -50,6 +51,12 @@ describe("catalog worker generation retirement", () => {
       const settledChecks = checks;
       await vi.advanceTimersByTimeAsync(100);
       expect(checks).toBe(settledChecks);
+      await retirePluginCache(
+        getPluginMetadataSnapshotCache(fixture.snapshots[0]!.metadataSnapshot),
+      );
+      await expect
+        .poll(() => catalogWorker.getPreparedModelCatalogWorkerPoolSnapshot())
+        .toMatchObject({ workers: 0, workersCreated: 0, activeTasks: 0, pendingTasks: 0 });
     } finally {
       await closePreparedModelRuntimeSnapshots();
       vi.useRealTimers();
