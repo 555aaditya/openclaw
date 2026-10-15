@@ -49,6 +49,12 @@ export function resolveOpenClawCompileCacheRespawnEnv({
     return undefined;
   }
   if (foregroundGateway && isMainThread) {
+    if (
+      globalThis[Symbol.for("openclaw.nodeCompileCacheBase")]?.readOnlyDirectory ===
+      path.resolve(directory)
+    ) {
+      return undefined;
+    }
     return {
       ...env,
       NODE_COMPILE_CACHE: directory,
@@ -76,10 +82,21 @@ export function enableOpenClawCompileCache({
   }
   const owner = (globalThis[Symbol.for("openclaw.nodeCompileCacheBase")] ??= {});
   if (foregroundGateway && isMainThread) {
-    // Main-thread synchronous cache flushes stall the event loop; workers keep
-    // this cache base and flush on their own threads at their existing boundaries.
+    // Workers populate the cache. Main-thread reuse must never serialize or flush
+    // bytecode: Node's writable cache stalls the event loop during lifecycle work.
     owner.baseDirectory ??= path.resolve(directory);
     void maintainOpenClawCompileCache(directory);
+    const [major, minor] = process.versions.node.split(".").map(Number);
+    if (!process.versions.bun && (major > 26 || (major === 26 && minor >= 8))) {
+      try {
+        const result = module.enableCompileCache({ directory, readOnly: true });
+        if (result.status === module.constants.compileCacheStatus.ENABLED) {
+          owner.readOnlyDirectory = path.resolve(directory);
+        }
+      } catch {
+        // A cold or unavailable cache must not prevent startup.
+      }
+    }
     return;
   }
   try {

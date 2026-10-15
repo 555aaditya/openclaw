@@ -2,15 +2,61 @@ import { execFile } from "node:child_process";
 import { once } from "node:events";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { Worker } from "node:worker_threads";
 import { expectDefined } from "@openclaw/normalization-core";
 import { afterEach, expect, it } from "vitest";
 import { resolveOpenClawCompileCacheDirectory } from "../../node-compile-cache.mjs";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
+import { resolveTestNodeExecPath } from "../test-utils/node-process.js";
 
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
 const MiB = 1024 * 1024;
+
+it("reuses prewarmed Gateway bytecode without persisting main-thread modules", async () => {
+  const root = tempDirs.make("openclaw-cache-readonly-");
+  const cache = path.join(root, "cache");
+  const helperUrl = new URL("../../node-compile-cache.mjs", import.meta.url).href;
+  const moduleUrl = pathToFileURL(path.join(root, "warm.mjs")).href;
+  await fs.writeFile(path.join(root, "warm.mjs"), "export const value = 42;\n");
+  await fs.writeFile(path.join(root, "cold.mjs"), "export const value = 17;\n");
+  const env = { ...process.env };
+  delete env.NODE_COMPILE_CACHE;
+  delete env.NODE_DISABLE_COMPILE_CACHE;
+  delete env.NODE_COMPILE_CACHE_READONLY;
+  delete env.NODE_OPTIONS;
+  const run = (script: string) =>
+    promisify(execFile)(resolveTestNodeExecPath(), ["--input-type=module", "--eval", script], {
+      env,
+    });
+  await run(`
+    import { enableCompileCache, flushCompileCache } from "node:module";
+    enableCompileCache(${JSON.stringify(cache)});
+    await import(${JSON.stringify(moduleUrl)});
+    flushCompileCache();
+  `);
+  const { stdout } = await run(`
+    import assert from "node:assert/strict";
+    import { readdirSync, statSync } from "node:fs";
+    import { getCompileCacheDir, flushCompileCache } from "node:module";
+    import { enableOpenClawCompileCache, resolveOpenClawCompileCacheRespawnEnv } from ${JSON.stringify(helperUrl)};
+    const directory = ${JSON.stringify(cache)};
+    const files = () => readdirSync(directory, { recursive: true }).map(name => [name, statSync(directory + "/" + name).mtimeMs]);
+    const before = files();
+    enableOpenClawCompileCache({ directory, foregroundGateway: true });
+    const [major, minor] = process.versions.node.split(".").map(Number);
+    const supported = !process.versions.bun && (major > 26 || (major === 26 && minor >= 8));
+    assert.equal(Boolean(getCompileCacheDir()), supported);
+    assert.equal(resolveOpenClawCompileCacheRespawnEnv({ directory, foregroundGateway: true }), undefined);
+    assert.equal((await import(${JSON.stringify(moduleUrl)})).value, 42);
+    assert.equal((await import(${JSON.stringify(moduleUrl.replace("warm.mjs", "cold.mjs"))})).value, 17);
+    flushCompileCache();
+    process.on("exit", () => assert.deepEqual(files(), before));
+    process.stdout.write("read-only:verified");
+  `);
+  expect(stdout).toBe("read-only:verified");
+});
 
 it("prewarms the release graph, respecting the disabled cache policy", async () => {
   const root = tempDirs.make("openclaw-cache-prewarm-");

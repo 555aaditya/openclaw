@@ -75,9 +75,10 @@ Packaged OpenClaw uses `NODE_COMPILE_CACHE/openclaw/<version>/<build>` when
 `NODE_COMPILE_CACHE` is set, or `node-compile-cache/openclaw` under the OS temporary
 directory otherwise. Gateway workers and child processes reuse the same build
 namespace, including when running a built source checkout. The Gateway main
-thread stays uncached: Node's synchronous cache flush can stall its event loop
-at startup or shutdown. Workers retain their existing flush boundaries on their
-own threads. An inherited active cache requires a startup respawn; on platforms
+thread uses read-only cache entries on Node 26.8 and later and stays uncached on
+older supported runtimes: Node's synchronous cache flush can stall its event loop
+at startup or shutdown. Workers populate the cache and retain their existing flush
+boundaries on their own threads. An inherited writable cache requires a startup respawn; on platforms
 with `execve`, the serving process keeps its PID. Node permission mode retains
 an already-active caller cache because it can forbid process replacement.
 
