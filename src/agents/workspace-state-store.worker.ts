@@ -4,7 +4,6 @@ import {
   getNodeSqliteKysely,
 } from "../infra/kysely-sync.js";
 import { withSqlitePostCommitPublications } from "../infra/sqlite-post-commit.js";
-import { runSqliteDeferredTransactionSync } from "../infra/sqlite-transaction.js";
 import { requestSqliteWorkerOperationAdmission } from "../infra/sqlite-worker-operation-admission.js";
 import { assertAgentDeletionRecoveryHoldPredicate } from "../state/agent-deletion-journal-recovery.kernel.js";
 import { assertAgentDeletionWorkerPredicate } from "../state/agent-deletion.worker.js";
@@ -198,23 +197,22 @@ export function executeWorkspaceStateCommand(
     );
   }
   if (command.type === "workspace.snapshotAndRegister") {
+    // The writer FIFO owns both reads and alias registration without yielding.
     const initial = withSqlitePostCommitPublications(database.db, () =>
-      runSqliteDeferredTransactionSync(database.db, () =>
-        captureWorkspaceStateReceipt(database.db, () => {
-          assertAgentDeletionRecoveryHoldPredicate(database, command.input.recoveryHoldPredicate);
-          const resolution = resolveWorkspaceIdentityFromDatabase({
-            workspaceDir: command.input.workspaceDir,
+      captureWorkspaceStateReceipt(database.db, () => {
+        assertAgentDeletionRecoveryHoldPredicate(database, command.input.recoveryHoldPredicate);
+        const resolution = resolveWorkspaceIdentityFromDatabase({
+          workspaceDir: command.input.workspaceDir,
+          database,
+        });
+        return {
+          resolution,
+          snapshot: readWorkspaceStateSnapshotFromDatabase({
+            identity: resolution.identity,
             database,
-          });
-          return {
-            resolution,
-            snapshot: readWorkspaceStateSnapshotFromDatabase({
-              identity: resolution.identity,
-              database,
-            }),
-          };
-        }),
-      ),
+          }),
+        };
+      }),
     );
     if (
       initial.resolution.missingAliasKeys.length === 0 ||
@@ -226,28 +224,15 @@ export function executeWorkspaceStateCommand(
       (writer) =>
         captureWorkspaceStateReceipt(writer.db, () => {
           requestSqliteWorkerOperationAdmission({ stage: "transaction", facts: undefined });
-          const resolution = resolveWorkspaceIdentityFromDatabase({
-            workspaceDir: command.input.workspaceDir,
+          registerWorkspaceStateAliasIdentitiesInTransaction({
             database: writer,
+            identity: initial.resolution.identity,
+            aliases: initial.resolution.aliases,
+            updatedAtMs: Date.now(),
           });
-          if (resolution.identity.workspaceKey !== initial.resolution.identity.workspaceKey) {
-            throw new Error("Workspace state identity changed before alias registration");
-          }
-          const snapshot = readWorkspaceStateSnapshotFromDatabase({
-            identity: resolution.identity,
-            database: writer,
-          });
-          if (snapshot.setupExists || snapshot.attestation) {
-            registerWorkspaceStateAliasIdentitiesInTransaction({
-              database: writer,
-              identity: resolution.identity,
-              aliases: resolution.aliases,
-              updatedAtMs: Date.now(),
-            });
-          }
           requestSqliteWorkerOperationAdmission({ stage: "commit", facts: undefined });
           assertAgentDeletionRecoveryHoldPredicate(writer, command.input.recoveryHoldPredicate);
-          return snapshot;
+          return initial.snapshot;
         }),
       options,
     );

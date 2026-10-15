@@ -13,6 +13,7 @@ import {
 } from "./device-identity-async.js";
 import type { DeviceIdentityStoreOptions } from "./device-identity-store.js";
 import { signDevicePayload, verifyDeviceSignature } from "./device-identity.js";
+import { resolveHeartbeatSchedulerSeedAsync } from "./heartbeat-schedule.js";
 
 async function withIdentityWorkerState(
   run: (options: DeviceIdentityStoreOptions & { path: string }, stateDir: string) => Promise<void>,
@@ -45,7 +46,11 @@ describe("device identity shared worker", () => {
       await fs.mkdir(path.dirname(claimPath), { recursive: true });
       await fs.writeFile(claimPath, "synthetic retired identity");
       await closeOpenClawStateDatabaseByPathAsync(options.path);
+      await fs.rm(options.path);
       expect(await loadOrCreateProcessDeviceIdentityAsync(options)).toBe(primary);
+      expect(await resolveHeartbeatSchedulerSeedAsync(undefined, { env: options.env })).toBe(
+        primary.deviceId,
+      );
       expect(await fs.readFile(claimPath, "utf8")).toBe("synthetic retired identity");
     });
   });

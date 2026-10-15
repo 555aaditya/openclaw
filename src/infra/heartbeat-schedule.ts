@@ -2,7 +2,7 @@
 import { createHash } from "node:crypto";
 import { resolveIntegerOption } from "@openclaw/normalization-core/number-coercion";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import { loadOrCreateDeviceIdentityAsync } from "./device-identity-async.js";
+import { loadOrCreateProcessDeviceIdentityAsync } from "./device-identity-async.js";
 import { readStoredDeviceIdentityReadOnly } from "./device-identity-store.js";
 import { loadOrCreateDeviceIdentity } from "./device-identity.js";
 
@@ -41,7 +41,7 @@ export async function resolveHeartbeatSchedulerSeedAsync(
   const env = options.env ?? process.env;
   const fallback = fallbackSchedulerSeed(env);
   try {
-    return (await loadOrCreateDeviceIdentityAsync({ env })).deviceId;
+    return (await loadOrCreateProcessDeviceIdentityAsync({ env })).deviceId;
   } catch {
     // Unavailable identity state retains the deterministic monitor anchor.
   }

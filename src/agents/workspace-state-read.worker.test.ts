@@ -233,8 +233,14 @@ it("keeps captured first-writer setup milestones across queued merges and reopen
   const second = mergeWorkspaceSetupState(state.workspaceDir, next, 3_000);
   expect((await first).setupCompletedAt).toBe("2026-07-16T02:00:00.000Z");
   expect((await second).setupCompletedAt).toBe("2026-07-16T02:00:00.000Z");
+  const alias = state.path("completed-workspace-alias");
+  fs.symlinkSync(state.workspaceDir, alias, process.platform === "win32" ? "junction" : "dir");
+  expect((await readWorkspaceStateSnapshot(alias)).setup.setupCompletedAt).toBe(
+    "2026-07-16T02:00:00.000Z",
+  );
+  fs.unlinkSync(alias);
   await closeOpenClawStateDatabaseAsync();
-  expect((await readWorkspaceStateSnapshot(state.workspaceDir)).setup.setupCompletedAt).toBe(
+  expect((await readWorkspaceStateSnapshot(alias)).setup.setupCompletedAt).toBe(
     "2026-07-16T02:00:00.000Z",
   );
 });

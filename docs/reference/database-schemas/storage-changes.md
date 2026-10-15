@@ -1213,8 +1213,11 @@ owners. Attestation refreshes use the shared-state writer's native SQLite
 transactions, with live host
 checks at transaction and commit admission. Every observation retains its durable
 timestamp so the 24-hour disappearance guard survives restart; unchanged generated
-hashes reuse the transaction's stored rows. Mutable workspace reads, setup writes,
-and Doctor alias repair keep their existing transaction owners. Schemas,
+hashes reuse the transaction's stored rows. Mutable workspace reads resolve aliases
+and setup state in one synchronous writer command, without a separate read
+transaction. Alias registration reuses those facts within the same FIFO command;
+its write transaction, filesystem guard, and recovery-hold checks remain. Setup
+writes and Doctor alias repair keep their existing transaction owners. Schemas,
 retention, and update behavior are unchanged.
 
 MCP grant preparation reads exec approval policy through the independent shared-state
