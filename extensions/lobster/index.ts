@@ -7,11 +7,14 @@ export default definePluginEntry({
   description: "Optional local shell helper tools",
   register(api) {
     api.registerTool(
-      (ctx) => {
-        if (ctx.sandboxed) {
-          return null;
-        }
-        return createLobsterTool(api);
+      {
+        contextVersion: 2,
+        create(ctx) {
+          if (ctx.sandboxed) {
+            return null;
+          }
+          return createLobsterTool(api, { context: ctx });
+        },
       },
       { optional: true, workspaceAccess: "execute" },
     );
