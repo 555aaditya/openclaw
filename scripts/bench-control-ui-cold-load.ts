@@ -42,7 +42,6 @@ const { values } = parseArgs({
     "live-events": { type: "boolean", default: false },
     "bundle-dir": { type: "string" },
     "worker-variants": { type: "string", default: "" },
-    "reuse-build": { type: "string" },
     "observation-ms": { type: "string", default: "15000" },
     tabs: { type: "string", default: "1" },
     untraced: { type: "boolean", default: false },
@@ -80,10 +79,14 @@ const head = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).tr
 const dirty = execFileSync("git", ["status", "--porcelain"], { encoding: "utf8" });
 const variants = values["worker-variants"] ? values["worker-variants"].split(",") : ["baseline"];
 const workerBench = Boolean(values["worker-variants"]);
-const reuseBuild = values["bundle-dir"] ?? values["reuse-build"];
-const bundleDir = reuseBuild ? path.resolve(reuseBuild) : path.join(artifactDir, "ui");
+if (workerBench && values["live-events"])
+  throw new Error("live-events requires the window-backed fixture, without worker-variants");
+if (values.untraced && !workerBench) throw new Error("untraced requires worker-variants");
+const bundleDir = values["bundle-dir"]
+  ? path.resolve(values["bundle-dir"])
+  : path.join(artifactDir, "ui");
 const rpcCensus = await readFile("scripts/lib/control-ui-worker-rpc-census.init.js", "utf8");
-const builtServer = reuseBuild
+const builtServer = values["bundle-dir"]
   ? await startBuiltControlUiE2eServer(bundleDir)
   : await startProductionControlUiE2eServer(bundleDir, head);
 // Keep the logical Gateway same-origin; the synthetic endpoint runs outside the renderer.

@@ -164,9 +164,13 @@ describe("opt-in worker protocol boundary", () => {
       });
       try {
         client.start();
+        expect(client.opening).toBe(true);
         const socket = await created.promise;
         await accept(socket);
         await ready.promise;
+        expect(client.opening).toBe(false);
+        client.start();
+        expect(client.opening).toBe(false);
         const result = client.request("synthetic.denied", {}).catch((error: unknown) => error);
         const request = await socket.nextSent();
         socket.emit({
@@ -185,6 +189,7 @@ describe("opt-in worker protocol boundary", () => {
         await closed.promise;
         expect(received).toEqual(["chat:1", "chat:3", "gap"]);
         expect(client.connected).toBe(false);
+        expect(client.opening).toBe(false);
       } finally {
         disposeHost();
         client.dispose();

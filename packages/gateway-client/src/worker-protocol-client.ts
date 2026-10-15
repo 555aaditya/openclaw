@@ -65,6 +65,7 @@ export class GatewayWorkerProtocolClient<TPlan> {
   private readonly rows = new GatewayWorkerSessionRows();
   private isConnected = false;
   private isConnecting = false;
+  private isOpening = false;
   private stopped = true;
   private readonly metrics: GatewayWorkerMetrics = {
     sentMessages: 0,
@@ -120,6 +121,9 @@ export class GatewayWorkerProtocolClient<TPlan> {
   get connecting(): boolean {
     return this.isConnecting;
   }
+  get opening(): boolean {
+    return this.isOpening;
+  }
   get hasPendingRequests(): boolean {
     return this.requests.size > 0 || this.isConnecting;
   }
@@ -137,11 +141,12 @@ export class GatewayWorkerProtocolClient<TPlan> {
   }
   start(): void {
     this.stopped = false;
+    if (!this.isConnected && !this.isConnecting) this.isOpening = true;
     this.bridge.notify("start");
   }
   stop(): void {
     this.stopped = true;
-    this.isConnected = this.isConnecting = false;
+    this.isConnected = this.isConnecting = this.isOpening = false;
     for (const authority of this.authorities.values()) authority.abort();
     for (const reconnect of this.reconnects.values()) reconnect.abort();
     this.authorities.clear();
@@ -155,7 +160,7 @@ export class GatewayWorkerProtocolClient<TPlan> {
     this.bridge.dispose();
   }
   closeSocket(code?: number, reason?: string): void {
-    this.isConnected = false;
+    this.isConnected = this.isOpening = false;
     for (const authority of this.authorities.values()) authority.abort();
     this.bridge.notify("close-socket", { code, reason });
   }
@@ -302,24 +307,26 @@ export class GatewayWorkerProtocolClient<TPlan> {
           context: WorkerCloseContext;
           decision: Omit<CloseDecision, "pendingError">;
         };
-        this.isConnected = this.isConnecting = false;
+        this.isConnected = this.isConnecting = this.isOpening = false;
         this.opts.onClose?.(this.restoreClose(input.context), input.decision);
         this.plans.delete(input.context.generation);
         this.connectInputs.delete(input.context.generation);
         return;
       }
       case "socket-created":
+        this.isOpening = !this.stopped;
         this.rows.clear();
         this.worker.onSocketCreated?.();
         return;
       case "socket-open":
+        this.isOpening = false;
         this.isConnected = true;
         return;
       case "authority-abort": {
         const generation = value as number;
         this.authorities.get(generation)?.abort();
         this.authorities.delete(generation);
-        this.isConnected = this.isConnecting = false;
+        this.isConnected = this.isConnecting = this.isOpening = false;
         return;
       }
       case "hello":
