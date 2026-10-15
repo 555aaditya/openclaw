@@ -201,12 +201,11 @@ it.skipIf(!stableRoot)(
         expect(parseUpgradeCliJson(backup.stdout).archivePath).toBe(archive);
         expect((await instance.cli(["backup", "verify", archive, "--json"])).code).toBe(0);
         fixture.useBinary(candidateBinary);
-        const doctor = await instance.cli([
-          "doctor",
-          "--fix",
-          "--non-interactive",
-          "--no-workspace-suggestions",
-        ]);
+        // Both offline Doctor passes include migration and full maintenance checks.
+        const doctor = await instance.cli(
+          ["doctor", "--fix", "--non-interactive", "--no-workspace-suggestions"],
+          { timeoutMs: 120_000 },
+        );
         expect(doctor.code).toBe(0);
         const migrated = await inspectUpgradeDatabases(instance.state.stateDir);
         const migratedAgent = migrated.find((row) => row.cacheCount !== undefined);
