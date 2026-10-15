@@ -8020,15 +8020,17 @@ NODE
     expect(evidenceStep.run).toContain(
       "actions/runs/${FULL_RELEASE_VALIDATION_RUN_ID}/attempts/${FULL_RELEASE_VALIDATION_RUN_ATTEMPT}",
     );
-    expect(evidenceStep.run).toContain(
-      'String(run.run_attempt ?? "") !== process.env.FULL_RELEASE_VALIDATION_RUN_ATTEMPT',
-    );
+    expect(evidenceStep.run).toContain("await authenticateStableCloseoutValidation({");
     expect(evidenceStep.run).toContain(
       'manifest_asset="openclaw-${evidence_version}-release-manifest.json"',
     );
     expect(evidenceStep.run).toContain('gh_with_retry release download "$EVIDENCE_TAG"');
-    expect(evidenceStep.run).toContain(".runId == $run_id");
-    expect(evidenceStep.run).toContain(".runAttempt == $run_attempt");
+    expect(evidenceStep.run).toContain(
+      "fullReleaseValidationRunId: process.env.FULL_RELEASE_VALIDATION_RUN_ID,",
+    );
+    expect(evidenceStep.run).toContain(
+      "fullReleaseValidationRunAttempt: process.env.FULL_RELEASE_VALIDATION_RUN_ATTEMPT,",
+    );
     expect(workflow).toContain(
       '--full-release-validation-run-attempt "$FULL_RELEASE_VALIDATION_RUN_ATTEMPT"',
     );
