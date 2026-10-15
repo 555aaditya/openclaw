@@ -165,6 +165,9 @@ describe.runIf("__vitest_browser__" in globalThis)("shared control theme inherit
     )!;
     await prepareControls(host);
     const menuTrigger = menu.parentElement!.querySelector<HTMLButtonElement>(".oc-menu-trigger")!;
+    const { userEvent } = await import("vitest/browser");
+    // The browser retains pointer coordinates across files; check resting palette colors.
+    await userEvent.unhover(select, { force: true, position: { x: 1, y: 1 } });
 
     for (const theme of [
       "dark",
