@@ -5,8 +5,11 @@ import {
 } from "../../../config/plugin-auto-enable.test-helpers.js";
 import { setPluginToolMeta } from "../../../plugins/tool-metadata.js";
 import { withStateDirEnv } from "../../../test-helpers/state-dir-env.js";
+import { finalizeAgentTools } from "../../agent-tools.finalize.js";
 import { resolveConversationCapabilityProfile } from "../../conversation-capability-profile.js";
+import { gateBoundTool } from "../../harness/host-bound-tool.js";
 import { createAgentCleanupScope } from "../../run-cleanup-timeout.js";
+import { getInternalToolExecutionPreparer } from "../../runtime/internal-hooks.js";
 import { createStubTool } from "../../test-helpers/agent-tool-stubs.js";
 import { attachToolAllowlistIntersection } from "../../tool-policy.js";
 import { listPersistedRuntimeToolSchemaQuarantines } from "../../tool-schema-quarantine-health.js";
@@ -88,6 +91,81 @@ describe("prepareEmbeddedAttemptBundleTools", () => {
       },
     } as unknown as Parameters<typeof prepareEmbeddedAttemptBundleTools>[0];
   }
+
+  it("reuses finalized core bindings and rotates bundled cancellation with the tool generation", async () => {
+    const core = createStubTool("core");
+    core.execute = vi.fn(async () => ({ content: [], details: {} }));
+    const bundled = createStubTool("server__read");
+    bundled.execute = vi.fn(async () => ({ content: [], details: {} }));
+    let ready = Promise.resolve();
+    let onWait = () => {};
+    const finalize = (abortSignal: AbortSignal) =>
+      finalizeAgentTools({ tools: [core], hookContext: {}, abortSignal }).map((tool) =>
+        gateBoundTool(
+          tool,
+          () => abortSignal.throwIfAborted(),
+          () => {},
+          {
+            sessionKey: "fixture",
+            assertCurrent: () => {},
+            waitUntilReady: () => {
+              onWait();
+              return ready;
+            },
+          },
+        ),
+      );
+    const first = new AbortController();
+    const input = createInput([], finalize(first.signal));
+    let signal = first.signal;
+    Object.defineProperty(input.preparedToolBase, "toolAbortSignal", { get: () => signal });
+    mocks.acquireSessionMcpRuntime.mockResolvedValue({ runtime: {}, releaseLease: () => {} });
+    mocks.materializeBundleMcpToolsForRun.mockResolvedValue({ tools: [bundled] });
+
+    const result = await prepareEmbeddedAttemptBundleTools(input);
+    const previous = [...result.uncompactedEffectiveTools];
+    // Projection must reuse the normalized binding instead of rebuilding its plugin view.
+    expect(previous[0]).toBe(result.tools[0]);
+    for (const tool of previous) {
+      await expect(tool.execute("first", {})).resolves.toMatchObject({ content: [] });
+    }
+
+    const readiness = Promise.withResolvers<void>();
+    const entered = Promise.withResolvers<void>();
+    ready = readiness.promise;
+    let waits = 0;
+    onWait = () => {
+      if (++waits === 2) {
+        entered.resolve();
+      }
+    };
+    const coreTool = previous[0]!;
+    const execution = expect(coreTool.execute("waiting", {})).rejects.toThrow("Aborted");
+    const preparation = expect(
+      getInternalToolExecutionPreparer(coreTool)!({ toolCallId: "waiting-preparation", args: {} }),
+    ).rejects.toThrow("Aborted");
+    await entered.promise;
+    first.abort();
+    await Promise.all([execution, preparation]);
+    readiness.resolve();
+    const second = new AbortController();
+    signal = second.signal;
+    input.preparedToolBase.toolsRaw.splice(0, 1, ...finalize(second.signal));
+    result.refreshTools(() => {});
+    expect(result.uncompactedEffectiveTools[0]).toBe(result.tools[0]);
+    for (const tool of previous) {
+      await expect(tool.execute("retired", {})).rejects.toThrow("Aborted");
+      await expect(
+        getInternalToolExecutionPreparer(tool)!({ toolCallId: "retired", args: {} }),
+      ).rejects.toThrow("Aborted");
+    }
+    for (const tool of result.uncompactedEffectiveTools) {
+      await expect(tool.execute("second", {})).resolves.toMatchObject({ content: [] });
+    }
+    expect(core.execute).toHaveBeenCalledTimes(2);
+    expect(bundled.execute).toHaveBeenCalledTimes(2);
+    second.abort();
+  });
 
   it.each(["file"] as const)(
     "does not widen a %s memory flush with MCP, LSP, or client functions",

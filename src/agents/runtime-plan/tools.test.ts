@@ -19,6 +19,7 @@ import {
   isToolWrappedWithBeforeToolCallHook,
   wrapToolWithBeforeToolCallHook,
 } from "../agent-tools.before-tool-call.js";
+import { getInternalToolExecutionPreparer } from "../runtime/internal-hooks.js";
 import type { RuntimeToolSchemaDiagnostic } from "../tool-schema-projection.js";
 import {
   clearToolSearchCatalog,
@@ -197,9 +198,10 @@ describe("AgentRuntimePlan tool policy helpers", () => {
           route === "plan"
             ? ({ tools: { normalize, logDiagnostics: vi.fn() } } as unknown as AgentRuntimePlan)
             : undefined;
+        const generation = new AbortController();
         const normalized = normalizeAgentRuntimeTools({
           runtimePlan,
-          tools: [tool],
+          tools: [wrapToolWithAbortSignal(wrapToolWithBeforeToolCallHook(tool), generation.signal)],
           provider: "openai",
         });
         const normalizedTool = expectDefined(normalized[0], "normalized tool");
@@ -216,6 +218,14 @@ describe("AgentRuntimePlan tool policy helpers", () => {
         ]);
         await expect(normalizedTool.execute("current-call", {})).resolves.toBe(output);
         await expect(wrappedTool.execute("wrapped-call", {})).resolves.toBe(output);
+        generation.abort();
+        await expect(normalizedTool.execute("cancelled-call", {})).rejects.toThrow("Aborted");
+        await expect(
+          getInternalToolExecutionPreparer(normalizedTool)!({
+            toolCallId: "cancelled-preparation",
+            args: {},
+          }),
+        ).rejects.toThrow("Aborted");
         await instance.dispose();
         expect(() => normalizedTool.execute("retired-call", {})).toThrow(
           "Plugin normalizer-fixture was reloaded or disabled",

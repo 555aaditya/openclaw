@@ -75,9 +75,17 @@ export async function prepareEmbeddedAttemptBundleTools(params: {
           sessionId: params.attempt.sessionId,
         }),
     });
-  const tools = await withRuntimeToolSchemaQuarantine((record) =>
-    normalizeTools(toolsEnabled ? toolsRaw : [], record),
-  );
+  const normalizeCoreTools = (record: RuntimeToolSchemaQuarantineRecorder) =>
+    normalizeTools(
+      toolsEnabled
+        ? toolsRaw.map((tool) =>
+            wrapToolWithAbortSignal(tool, params.preparedToolBase.toolAbortSignal),
+          )
+        : [],
+      record,
+    );
+  // Bind before provider views: cancellation must also enclose host workspace-readiness gates.
+  const tools = await withRuntimeToolSchemaQuarantine(normalizeCoreTools);
   const auxiliaryToolsEnabled =
     toolsEnabled &&
     params.attempt.trigger !== "memory" &&
@@ -202,14 +210,14 @@ export async function prepareEmbeddedAttemptBundleTools(params: {
           )
         : filteredBundledTools
     ).map((tool) => wrapToolWithBeforeToolCallHook(tool, params.preparedToolBase.toolHookContext));
-    const projectTools = (
-      coreTools: typeof toolsRaw,
-      recordQuarantine: RuntimeToolSchemaQuarantineRecorder,
-    ) => {
+    const projectTools = (recordQuarantine: RuntimeToolSchemaQuarantineRecorder) => {
       const projectedTools = filterLocalModelLeanTools({
-        tools: [...coreTools, ...normalizedBundledTools].map((tool) =>
-          wrapToolWithAbortSignal(tool, params.preparedToolBase.toolAbortSignal),
-        ),
+        tools: [
+          ...tools,
+          ...normalizedBundledTools.map((tool) =>
+            wrapToolWithAbortSignal(tool, params.preparedToolBase.toolAbortSignal),
+          ),
+        ],
         config: params.attempt.config,
         agentId: params.setup.sessionAgentId,
         preserveToolNames: localModelLeanPreserveToolNames,
@@ -243,9 +251,7 @@ export async function prepareEmbeddedAttemptBundleTools(params: {
       });
       return schemaProjection.tools;
     };
-    const uncompactedEffectiveTools = await withRuntimeToolSchemaQuarantine((record) =>
-      projectTools(tools, record),
-    );
+    const uncompactedEffectiveTools = await withRuntimeToolSchemaQuarantine(projectTools);
     return {
       bundleLspRuntime,
       bundleMcpRuntime,
@@ -253,9 +259,9 @@ export async function prepareEmbeddedAttemptBundleTools(params: {
       tools,
       uncompactedEffectiveTools,
       refreshTools: (recordQuarantine: RuntimeToolSchemaQuarantineRecorder) => {
-        const nextTools = normalizeTools(toolsEnabled ? toolsRaw : [], recordQuarantine);
+        const nextTools = normalizeCoreTools(recordQuarantine);
         tools.splice(0, tools.length, ...nextTools);
-        const nextEffectiveTools = projectTools(tools, recordQuarantine);
+        const nextEffectiveTools = projectTools(recordQuarantine);
         uncompactedEffectiveTools.splice(
           0,
           uncompactedEffectiveTools.length,
