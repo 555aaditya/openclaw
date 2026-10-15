@@ -30,7 +30,10 @@ suite.define(() => {
     });
     try {
       await page.goto(controlUiSessionUrl(suite.server.baseUrl, parentKey));
-      await page.locator('[data-child-session-toggle="' + parentKey + '"]').click();
+      const disclosure = page.locator('[data-child-session-toggle="' + parentKey + '"]');
+      if ((await disclosure.getAttribute("aria-expanded")) === "false") {
+        await disclosure.click();
+      }
       const row = page.locator('.sidebar-recent-session[data-session-key="' + childKey + '"]');
       await row.waitFor({ state: "visible" });
       expect(await row.getAttribute("draggable")).toBe("true");

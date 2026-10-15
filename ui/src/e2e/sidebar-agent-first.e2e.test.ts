@@ -35,8 +35,8 @@ const sessionRow = (
   ...extra,
 });
 const sessionRows = [
-  sessionRow("project", "Project"),
-  sessionRow("weekly", "Weekly"),
+  sessionRow("project", "Project next steps"),
+  sessionRow("weekly", "Weekly review"),
   sessionRow("parent", "Implement the navigation sidebar without losing independent outcomes", {
     lastMessagePreview: "A preview must not create a second line in team mode.",
   }),
@@ -140,8 +140,8 @@ suite.define(() => {
           ).toBe(width + 52);
           await captureSidebarUiProof(suite, page, `agent-first-${mode}-${width}-ready.png`);
           for (const [id, label] of [
-            ["project", "Project"],
-            ["weekly", "Weekly"],
+            ["project", "Project next steps"],
+            ["weekly", "Weekly review"],
           ]) {
             const title = group.locator(
               `[data-session-key="agent:main:${id}"] .sidebar-recent-session__name`,
@@ -195,8 +195,12 @@ suite.define(() => {
           );
           await page.keyboard.press("Escape");
           await group.locator('[data-agent-collapse="main"]').click();
-          await group.locator('[data-child-session-toggle="agent:main:parent"]').click();
-          await group.locator('[data-child-session-toggle="agent:main:child"]').click();
+          for (const key of ["parent", "child"]) {
+            const disclosure = group.locator(`[data-child-session-toggle="agent:main:${key}"]`);
+            if ((await disclosure.getAttribute("aria-expanded")) === "false") {
+              await disclosure.click();
+            }
+          }
           await group
             .locator('[data-session-key="agent:main:grandchild"]')
             .waitFor({ state: "visible" });
@@ -234,6 +238,9 @@ suite.define(() => {
                 const state = row
                   .querySelector(".sidebar-session-team-state")
                   ?.getBoundingClientRect();
+                const link = row
+                  .querySelector(":scope > .sidebar-recent-session__link")!
+                  .getBoundingClientRect();
                 return {
                   left: title.left,
                   iconLeft: icon.left,
@@ -241,6 +248,7 @@ suite.define(() => {
                   right: row.getBoundingClientRect().right,
                   stateLeft: state?.left,
                   stateRight: state?.right,
+                  linkRight: link.right,
                   titleRight: title.right,
                   height: row.getBoundingClientRect().height,
                   radius: Number.parseFloat(getComputedStyle(row).borderTopRightRadius),
@@ -268,7 +276,7 @@ suite.define(() => {
             expect(row.height).toBe(touch ? 44 : 32);
             if (row.stateLeft !== undefined) {
               expect(row.titleRight).toBeLessThanOrEqual(row.stateLeft);
-              expect(row.stateRight).toBeLessThanOrEqual(row.right - (touch ? 96 : 0) - row.radius);
+              expect(row.stateRight).toBeLessThanOrEqual(row.linkRight - row.radius);
             } else if (!touch) {
               expect(row.titleRight).toBeCloseTo(row.right, 1);
             }
