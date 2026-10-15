@@ -226,10 +226,6 @@ openclaw-chat-details-progress {
   gap: 8px;
   margin-top: 4px;
 }
-.chat-details__meta-actions > .chat-details__changes {
-  width: 100%;
-  gap: 7px;
-}
 .chat-details__change-summary {
   display: flex;
   flex: 1;

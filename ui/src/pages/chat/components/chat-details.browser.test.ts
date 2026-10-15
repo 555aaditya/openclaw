@@ -374,11 +374,14 @@ it("keeps the change summary in one full-width compact action and omits empty Pa
   const action = () => view.session.querySelector<HTMLButtonElement>(".chat-details__changes")!;
   await vi.waitFor(() => expect(action().textContent).toContain("+248"));
   const row = action().getBoundingClientRect();
-  const actions = view.session
-    .querySelector(".chat-details__meta-actions")!
-    .getBoundingClientRect();
-  expect(row.width).toBeCloseTo(actions.width, 0);
-  expect(row.height).toBe(28);
+  const group = action().closest<HTMLElement>(".chat-details__group")!;
+  const groupStyle = getComputedStyle(group);
+  const contentWidth =
+    group.clientWidth -
+    Number.parseFloat(groupStyle.paddingLeft) -
+    Number.parseFloat(groupStyle.paddingRight);
+  expect(row.width).toBeCloseTo(contentWidth, 0);
+  expect(row.height).toBe(32);
   expect(action().scrollWidth).toBeLessThanOrEqual(action().clientWidth);
   expect(view.session.querySelector(".chat-details__participants")).toBeNull();
   const additions = view.session.querySelector<HTMLElement>(".chat-details__change-lines--add")!;
