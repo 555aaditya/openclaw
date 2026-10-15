@@ -18,6 +18,8 @@ export type PluginInstallActionProps = {
   pluginName?: string;
   buttonClass?: string;
   primary?: boolean;
+  actionLabel?: string;
+  busyLabel?: string;
   onInstall?: () => void;
 };
 
@@ -158,15 +160,15 @@ export function PluginInstallAction(props: PluginInstallActionProps): SolidJSX.E
           }}
         >
           {active() && !failed() ? <span class="btn__spinner" aria-hidden="true" /> : undefined}
-          {t(
-            canInstall()
-              ? failed()
-                ? "pluginsPage.retryInstall"
-                : "pluginsPage.install"
-              : failed()
-                ? "pluginsPage.installProgress.viewStatus"
-                : "pluginsPage.installing",
-          )}
+          {canInstall() && !failed()
+            ? (props.actionLabel ?? t("pluginsPage.install"))
+            : active() && !failed()
+              ? (props.busyLabel ?? t("pluginsPage.installing"))
+              : t(
+                  failed() && canInstall()
+                    ? "pluginsPage.retryInstall"
+                    : "pluginsPage.installProgress.viewStatus",
+                )}
           {progress() ? <Icon name="chevronDown" /> : undefined}
         </button>
         {progress() && button() ? (
