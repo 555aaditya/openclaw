@@ -51,6 +51,7 @@ type FixtureOptions = {
   sandboxPort?: number;
   liveRun?: boolean;
   sidebarListChurn?: boolean;
+  sidebarExclusionReceipts?: boolean;
 };
 
 function personId(index: number) {
@@ -567,7 +568,7 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
       liveEvents,
       selectedSessionKey,
       now,
-      certifyExclusions: true,
+      certifyExclusions: options.sidebarExclusionReceipts,
     });
   }
   return {
