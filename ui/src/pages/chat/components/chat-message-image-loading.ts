@@ -111,7 +111,7 @@ export function resolveManagedImageResource(
   if (!resource.pending) {
     const controller = new AbortController();
     resource.abortController = controller;
-    const pending = (async () => {
+    resource.pending = (async () => {
       const blob = await fetchManagedImageBlob(source, opts, artifactId, variant, controller);
       if (!blob) {
         return markManagedImageUnavailable(resource);
@@ -125,18 +125,13 @@ export function resolveManagedImageResource(
       resource.unavailableAt = undefined;
       return blobUrl;
     })().finally(() => {
-      if (resource.abortController === controller) {
-        resource.abortController = undefined;
-      }
-      if (resource.pending === pending) {
-        resource.pending = undefined;
-      }
-      if (resource.value === null && resource.subscribers.size === 0 && !resource.pending) {
+      resource.abortController = undefined;
+      resource.pending = undefined;
+      if (resource.value === null && resource.subscribers.size === 0) {
         trimManagedImageMissResources();
       }
       notifyChatMediaResourceSubscribers(resource);
     });
-    resource.pending = pending;
   }
   return resource;
 }
@@ -150,8 +145,8 @@ function buildManagedOutgoingImageVariantUrl(
     const parsed = new URL(source, window.location.origin);
     parsed.pathname = parsed.pathname.replace(/\/(?:full|thumbnail)$/u, `/${variant}`);
     if (variant === "thumbnail") {
-      // Thumbnails are immutable in HTTP caches; replace the former 300px rendition.
-      parsed.searchParams.set("v", "2");
+      // Thumbnails are immutable in HTTP caches; replace pre-byte-limit renditions.
+      parsed.searchParams.set("v", "3");
     }
     if (/^https?:\/\//iu.test(source)) {
       return parsed.href;
