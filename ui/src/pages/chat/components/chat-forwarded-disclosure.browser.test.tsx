@@ -1,8 +1,10 @@
-import { render } from "lit";
+import { createSignal } from "solid-js";
 import { afterEach, beforeEach, expect, it } from "vitest";
 import { resolveTypefaces, syncTypefaceStylesheets } from "../../../app/typography.ts";
-import type { MessageGroup } from "../../../lib/chat/chat-types.ts";
-import { renderMessageGroup } from "./chat-message-group.test-support.ts";
+import type { MessageGroup as MessageGroupData } from "../../../lib/chat/chat-types.ts";
+import { mountSolid } from "../../../test-helpers/mount-solid.ts";
+import { flush } from "../../../test-helpers/solid-settle.ts";
+import { MessageGroup } from "./chat-message-group-view.tsx";
 import baseCss from "../../../styles/base.css?inline";
 import groupedCss from "../../../styles/chat/grouped.css?inline";
 import messageCss from "../../../styles/chat/message-layout.css?inline";
@@ -29,10 +31,11 @@ beforeEach(async () => {
 });
 
 let host: HTMLDivElement;
+let unmount: () => void;
 let avatarUrl: string | undefined;
 afterEach(async () => {
   if (host) {
-    render(null, host);
+    unmount?.();
     host.remove();
   }
   if (avatarUrl) {
@@ -55,7 +58,7 @@ function fixture(
   host.className = "chat-thread";
   host.style.width = `${width}px`;
   document.body.append(host);
-  const group: MessageGroup = {
+  const initialGroup: MessageGroupData = {
     kind: "group",
     key: "forwarded",
     role,
@@ -71,31 +74,43 @@ function fixture(
       }),
     ),
   };
-  const expanded = new Set<string>();
-  const draw = () =>
-    render(
-      renderMessageGroup(group, {
-        agentId: "main",
-        mainKey: "main",
-        senderAgentAvatars,
-        agents: [{ id: "research", identity: { name: "research" } }],
-        showReasoning: true,
-        showToolCalls: true,
-        avatarPlacement: "none",
-        isUserMessageExpanded: (id) => expanded.has(id),
-        onToggleUserMessageExpanded: (id) => {
-          if (expanded.has(id)) {
-            expanded.delete(id);
-          } else {
-            expanded.add(id);
-          }
-          draw();
-        },
-      }),
-      host,
-    );
-  draw();
-  return { group, draw };
+  const [group, setGroup] = createSignal(initialGroup);
+  const [expanded, setExpanded] = createSignal(new Set<string>());
+  ({ unmount } = mountSolid(
+    () => (
+      <MessageGroup
+        group={group()}
+        options={{
+          agentId: "main",
+          mainKey: "main",
+          senderAgentAvatars,
+          agents: [{ id: "research", identity: { name: "research" } }],
+          showReasoning: true,
+          showToolCalls: true,
+          avatarPlacement: "none",
+          isUserMessageExpanded: (id) => expanded().has(id),
+          onToggleUserMessageExpanded: (id) => {
+            setExpanded((previous) => {
+              const next = new Set(previous);
+              if (next.has(id)) {
+                next.delete(id);
+              } else {
+                next.add(id);
+              }
+              return next;
+            });
+          },
+        }}
+      />
+    ),
+    { container: host },
+  ));
+  flush();
+  const updateGroup = (update: (previous: MessageGroupData) => MessageGroupData) => {
+    setGroup(update);
+    flush();
+  };
+  return { updateGroup };
 }
 
 it.each([
@@ -109,7 +124,7 @@ it.each([
     const { page } = await import("vitest/browser");
     await page.viewport(width, 800);
     document.documentElement.dataset.themeMode = theme;
-    const { draw } = fixture(role, width);
+    const { updateGroup } = fixture(role, width);
     await document.fonts.ready;
     const bubbles = host.querySelectorAll<HTMLElement>(".chat-bubble");
     const content = bubbles[0]!.querySelector<HTMLElement>(".chat-message-disclosure__content");
@@ -151,48 +166,50 @@ it.each([
     expect(label.textContent).toBe("research");
     expect(getComputedStyle(label, "::first-letter").textTransform).toBe("uppercase");
     toggle.click();
+    flush();
     await expect.poll(() => toggle.getAttribute("aria-expanded")).toBe("true");
     expect(getComputedStyle(content!).maskImage).toBe("none");
     expect(content!.scrollHeight - content!.clientHeight).toBeLessThanOrEqual(1);
     expect(bubbles[1]!.querySelector("button[aria-expanded='false']")).not.toBeNull();
-    draw();
+    updateGroup((group) => ({ ...group }));
+    expect(host.querySelector(".chat-message-disclosure__toggle")).toBe(toggle);
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
     toggle.click();
+    flush();
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
   },
 );
 
 it("keeps a forwarded stream open until final while collapsing prior messages", async () => {
-  const { group, draw } = fixture("assistant", 700);
-  group.messages = group.messages.slice(0, 2);
-  group.isStreaming = true;
-  draw();
+  const { updateGroup } = fixture("assistant", 700);
+  updateGroup((group) => ({ ...group, messages: group.messages.slice(0, 2), isStreaming: true }));
   const bubbles = host.querySelectorAll(".chat-bubble");
   expect(bubbles[0]!.querySelector(".chat-message-disclosure")).not.toBeNull();
   expect(bubbles[1]!.querySelector(".chat-message-disclosure")).toBeNull();
-  group.isStreaming = false;
-  draw();
+  updateGroup((group) => ({ ...group, isStreaming: false }));
   await expect
     .poll(() => bubbles[1]!.querySelector("button[aria-expanded='false']") !== null)
     .toBe(true);
 });
 
 it("rechecks wrapped content when the transcript width changes", async () => {
-  const { group, draw } = fixture("assistant", 1000);
-  group.messages = [
-    {
-      key: "wrapped",
-      hasVisibleContent: true,
-      message: {
-        role: "assistant",
-        content:
-          "A scheduled update preserves the full instruction text while keeping the conversation readable. ".repeat(
-            3,
-          ),
+  const { updateGroup } = fixture("assistant", 1000);
+  updateGroup((group) => ({
+    ...group,
+    messages: [
+      {
+        key: "wrapped",
+        hasVisibleContent: true,
+        message: {
+          role: "assistant",
+          content:
+            "A scheduled update preserves the full instruction text while keeping the conversation readable. ".repeat(
+              3,
+            ),
+        },
       },
-    },
-  ];
-  draw();
+    ],
+  }));
   const toggle = host.querySelector<HTMLButtonElement>(".chat-message-disclosure__toggle")!;
   const content = host.querySelector<HTMLElement>(".chat-message-disclosure__content")!;
   await expect.poll(() => toggle.hidden).toBe(true);

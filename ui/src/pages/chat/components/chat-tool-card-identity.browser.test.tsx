@@ -1,16 +1,11 @@
-import { html, nothing, render } from "lit";
+import { createSignal } from "solid-js";
 import { afterEach, describe, expect, it } from "vitest";
-import { waitForSolid } from "../../../test-helpers/solid-settle.ts";
-import { renderGroupedMessage } from "./chat-message-bubble.ts";
+import { mountSolid } from "../../../test-helpers/mount-solid.ts";
+import { flush, waitForSolid } from "../../../test-helpers/solid-settle.ts";
+import { GroupedMessage } from "./chat-message-bubble-view.tsx";
 import { prepareChatMessageRender } from "./chat-message-markdown.ts";
-import { settleToolBridges } from "./chat-tool-render.test-support.ts";
 
-const containers: HTMLElement[] = [];
 afterEach(() => {
-  for (const container of containers.splice(0)) {
-    render(nothing, container);
-    container.remove();
-  }
   window.getSelection()?.removeAllRanges();
 });
 
@@ -37,44 +32,48 @@ function fixture(mode: "inline" | "standalone") {
       },
     };
   });
-  const container = document.body.appendChild(document.createElement("div"));
-  containers.push(container);
   const toggledKeys: string[] = [];
   const expansion = new Map<string, boolean>();
   for (const row of rows) {
     expansion.set(`${row.key}:toolcard:0`, true);
     expansion.set(`toolmsg:${row.key}`, true);
   }
-  const draw = () =>
-    render(
-      html`${rows.map((row) =>
-        renderGroupedMessage(prepareChatMessageRender(row.message), row.key, {
-          isStreaming: false,
-          showReasoning: false,
-          showToolCalls: true,
-          isToolExpanded: (key) => expansion.get(key) ?? false,
-          isToolMessageExpanded: (key) => expansion.get(key),
-          onToggleToolExpanded: toggle,
-          onToggleToolMessageExpanded: toggle,
-        }),
-      )}`,
-      container,
-    );
+  const createOptions = () => ({
+    isStreaming: false,
+    showReasoning: false,
+    showToolCalls: true,
+    isToolExpanded: (key: string) => expansion.get(key) ?? false,
+    isToolMessageExpanded: (key: string) => expansion.get(key),
+    onToggleToolExpanded: toggle,
+    onToggleToolMessageExpanded: toggle,
+  });
+  const [options, setOptions] = createSignal(createOptions());
+  const { container } = mountSolid(() =>
+    rows.map((row) => (
+      <GroupedMessage
+        preparation={prepareChatMessageRender(row.message)}
+        messageKey={row.key}
+        options={options()}
+      />
+    )),
+  );
+  const draw = () => {
+    setOptions(createOptions());
+    flush();
+  };
   function toggle(key: string) {
     toggledKeys.push(key);
     expansion.set(key, !expansion.get(key));
     draw();
   }
-  return { rows, container, draw, toggledKeys };
+  return { rows, container, toggledKeys };
 }
 
 describe
   .skipIf(navigator.userAgent.toLowerCase().includes("jsdom"))
   .each(["inline", "standalone"] as const)("%s tool message disclosures", (mode) => {
   it("preserves message-scoped IDs and independent Raw tabs for reused call IDs", async () => {
-    const { rows, container, draw, toggledKeys } = fixture(mode);
-    draw();
-    await settleToolBridges(container);
+    const { rows, container, toggledKeys } = fixture(mode);
     const bubbles = Array.from(container.querySelectorAll<HTMLElement>(".chat-bubble"));
     expect(bubbles.map((bubble) => bubble.dataset.messageId)).toEqual(rows.map((row) => row.key));
     expect(container.querySelectorAll(".chat-tools-inline")).toHaveLength(
@@ -110,12 +109,12 @@ describe
     const disclosureKey =
       mode === "inline" ? `${rows[0]!.key}:toolcard:0` : `toolmsg:${rows[0]!.key}`;
     bubbles[0]!.querySelector<HTMLButtonElement>(toggleSelector)!.click();
-    await settleToolBridges(container);
+    flush();
     expect(toggledKeys).toEqual([disclosureKey]);
     expect(bubbles[0]!.querySelector(".chat-tool-card__modes")).toBeNull();
     expect(bubbles[1]!.querySelector(".chat-tool-card__modes")).not.toBeNull();
     bubbles[0]!.querySelector<HTMLButtonElement>(toggleSelector)!.click();
-    await settleToolBridges(container);
+    flush();
     expect(toggledKeys).toEqual([disclosureKey, disclosureKey]);
     bubbles[0]!.querySelector<HTMLButtonElement>('[role="tab"][data-tab-value="raw"]')!.click();
     await waitForSolid(() => {

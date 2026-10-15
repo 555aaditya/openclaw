@@ -1,17 +1,20 @@
-import { html, nothing, render } from "lit";
+import { For } from "solid-js";
 import { afterEach, expect, it } from "vitest";
 import { page } from "vitest/browser";
-import type { MessageGroup } from "../../../lib/chat/chat-types.ts";
-import { renderMessageGroup } from "./chat-message-group.test-support.ts";
+import type { MessageGroup as MessageGroupData } from "../../../lib/chat/chat-types.ts";
+import { mountSolid } from "../../../test-helpers/mount-solid.ts";
+import { flush } from "../../../test-helpers/solid-settle.ts";
+import { MessageGroup } from "./chat-message-group-view.tsx";
 import baseCss from "../../../styles/base.css?inline";
 import groupedCss from "../../../styles/chat/grouped.css?inline";
 import startupCss from "../../../styles/chat/startup-layout.css?inline";
 import textCss from "../../../styles/chat/text.css?inline";
 
 let container: HTMLElement;
+let unmount: () => void;
 
 afterEach(() => {
-  render(nothing, container);
+  unmount?.();
   container.remove();
 });
 
@@ -26,7 +29,7 @@ it.each(
   async ({ width, agentId, sessionKey }) => {
     await page.viewport(width, 1000);
     container = document.body.appendChild(document.createElement("section"));
-    const makeGroup = (key: string, count: number, forwarded: boolean): MessageGroup => ({
+    const makeGroup = (key: string, count: number, forwarded: boolean): MessageGroupData => ({
       kind: "group",
       key,
       role: "assistant",
@@ -46,20 +49,28 @@ it.each(
     const normal = makeGroup("normal", 1, false);
     const single = makeGroup("single", 1, true);
     const grouped = makeGroup("grouped", 2, true);
-    render(
-      html`<style>
-          ${baseCss}${startupCss}${groupedCss}${textCss}
-        </style>
-        ${[normal, single, grouped].map((group) =>
-          renderMessageGroup(group, {
-            agentId: "main",
-            agents: [{ id: "main" }, { id: "research" }],
-            assistantTextAvatar: "M",
-            showReasoning: false,
-          }),
-        )}`,
-      container,
-    );
+    ({ unmount } = mountSolid(
+      () => (
+        <>
+          <style>{baseCss + startupCss + groupedCss + textCss}</style>
+          <For each={[normal, single, grouped]}>
+            {(group) => (
+              <MessageGroup
+                group={group}
+                options={{
+                  agentId: "main",
+                  agents: [{ id: "main" }, { id: "research" }],
+                  assistantTextAvatar: "M",
+                  showReasoning: false,
+                }}
+              />
+            )}
+          </For>
+        </>
+      ),
+      { container },
+    ));
+    flush();
     const groups = [...container.querySelectorAll<HTMLElement>(".chat-group")];
     const normalGroup = groups[0]!;
     const reference = normalGroup.querySelector(".chat-group-messages")!.getBoundingClientRect();

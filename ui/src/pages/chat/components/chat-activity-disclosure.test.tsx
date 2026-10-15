@@ -1,14 +1,15 @@
 /* @vitest-environment jsdom */
 
-import { render } from "lit";
+import { createSignal, flush } from "solid-js";
 import { expect, it, vi } from "vitest";
 import { createNestedToolActivity } from "../../../../../src/sessions/nested-tool-activity.ts";
 import { prepareChatHistoryFixture } from "../../../test-helpers/chat-activity-fixtures.ts";
+import { mountSolid } from "../../../test-helpers/mount-solid.ts";
 import { attachHistoryActivity } from "../chat-history-request.ts";
 import { buildChatItems } from "../chat-thread-build.ts";
 import { createProps } from "../chat-thread.test-support.ts";
-import { renderActivityGroup, renderMessageGroup } from "./chat-message-group.test-support.ts";
-import { renderWorkGroupSummary } from "./chat-message-stream.test-support.ts";
+import { ActivityGroup, MessageGroup } from "./chat-message-group-view.tsx";
+import { WorkGroupSummary } from "./chat-message-stream-view.tsx";
 import {
   createAssistantMessage,
   createMessageEntry,
@@ -18,44 +19,52 @@ import {
   createToolResultMessage,
   prepareHistoryGroups,
 } from "./chat-message.test-support.ts";
-import { renderToolFixture } from "./chat-tool-render.test-support.ts";
+import { settleToolBridges } from "./chat-tool-render.test-support.ts";
 
-async function renderSummary(
+function mountSummary(
   messages: Record<string, unknown>[],
   kind: "activity" | "work",
-  options: { expanded?: boolean; durationMs?: number | null; container?: HTMLElement } = {},
+  options: { expanded?: boolean; durationMs?: number | null } = {},
 ) {
-  const {
-    expanded = false,
-    durationMs = 1000,
-    container = document.createElement("div"),
-  } = options;
+  const { durationMs = 1000 } = options;
+  let updateExpanded: (value: boolean) => void;
   const groups = [
     createToolGroup(
       "history",
       messages.map((message, index) => createMessageEntry(`message-${index}`, message)),
     ),
   ];
-  await renderToolFixture(
-    kind === "activity"
-      ? renderActivityGroup(groups, {
+  const { container } = mountSolid(() => {
+    const [expanded, setExpanded] = createSignal(options.expanded ?? false);
+    updateExpanded = setExpanded;
+    return kind === "activity" ? (
+      <ActivityGroup
+        groups={groups}
+        options={{
           showToolCalls: true,
           showReasoning: true,
-          isToolMessageExpanded: () => expanded,
-        })
-      : renderWorkGroupSummary(
-          { key: "work", durationMs, groups },
-          { expanded, onToggle: () => {} },
-        ),
-    container,
-  );
-  return container.querySelector(".chat-activity-group__summary");
+          isToolMessageExpanded: expanded,
+        }}
+        presentation="standalone"
+      />
+    ) : (
+      <WorkGroupSummary
+        item={{ key: "work", durationMs, groups }}
+        options={{ expanded: expanded(), onToggle: () => {} }}
+      />
+    );
+  });
+  return async (expanded = options.expanded ?? false) => {
+    updateExpanded(expanded);
+    flush();
+    await settleToolBridges(container);
+    return container.querySelector(".chat-activity-group__summary");
+  };
 }
 
 it.each(["activity", "work"] as const)(
   "keeps parallel tool activity expandable without hover text (%s)",
   (kind) => {
-    const container = document.createElement("div");
     const groups = prepareHistoryGroups([
       createToolGroup("parallel-tool-group", [
         createMessageEntry(
@@ -73,21 +82,25 @@ it.each(["activity", "work"] as const)(
       ]),
     ]);
     const onToggle = vi.fn();
-    render(
-      kind === "activity"
-        ? groups.map((group) =>
-            renderMessageGroup(group, {
+    const { container } = mountSolid(() =>
+      kind === "activity" ? (
+        groups.map((group) => (
+          <MessageGroup
+            group={group}
+            options={{
               showToolCalls: true,
               showReasoning: true,
               isToolMessageExpanded: () => false,
               onToggleToolMessageExpanded: onToggle,
-            }),
-          )
-        : renderWorkGroupSummary(
-            { key: "parallel-work", durationMs: 1000, groups },
-            { expanded: false, onToggle },
-          ),
-      container,
+            }}
+          />
+        ))
+      ) : (
+        <WorkGroupSummary
+          item={{ key: "parallel-work", durationMs: 1000, groups }}
+          options={{ expanded: false, onToggle }}
+        />
+      ),
     );
 
     const activity = container.querySelector<HTMLButtonElement>(".chat-activity-group__summary");
@@ -136,9 +149,9 @@ it.each([
         ],
       },
     );
-    const container = document.createElement("div");
+    const draw = mountSummary([message], kind);
     for (const expanded of [false, true]) {
-      const summary = await renderSummary([message], kind, { expanded, container });
+      const summary = await draw(expanded);
       expect(summary?.textContent).toContain(kind === "work" ? "Worked for 1 second" : "1 read");
       expect(summary?.textContent?.match(/1 failed/gu)).toHaveLength(1);
       if (kind === "work") {
@@ -180,7 +193,7 @@ it.each(["activity", "work"] as const)(
         ],
       },
     );
-    const summary = await renderSummary([message], kind);
+    const summary = await mountSummary([message], kind)();
     expect(summary?.textContent).toContain(kind === "work" ? "Worked for 1 second" : "1 read");
     expect(summary?.textContent).not.toContain("failed");
     if (kind === "work") {
@@ -206,9 +219,9 @@ it.each(["blocked", "skipped", undefined] as const)(
         },
       ],
     });
-    const container = document.createElement("div");
+    const draw = mountSummary([message], "work");
     for (const expanded of [false, true]) {
-      const summary = await renderSummary([message], "work", { expanded, container });
+      const summary = await draw(expanded);
       expect(summary?.textContent).toContain("Worked for 1 second");
       expect(summary?.textContent?.includes("1 tool call")).toBe(expanded);
       expect(summary?.textContent).toContain(`1 ${status ?? "unknown"}`);
@@ -236,21 +249,20 @@ it.each([0, 10])("keeps failures visible without a duration (%i calls)", async (
       ),
     ]),
   ]);
-  const container = document.createElement("div");
-  await renderToolFixture(
-    renderWorkGroupSummary(
-      { key: "mixed-work", durationMs: null, groups },
-      { expanded: false, onToggle: () => {} },
-    ),
-    container,
-  );
+  const { container } = mountSolid(() => (
+    <WorkGroupSummary
+      item={{ key: "mixed-work", durationMs: null, groups }}
+      options={{ expanded: false, onToggle: () => {} }}
+    />
+  ));
+  await settleToolBridges(container);
   const summary = container.querySelector(".chat-activity-group__summary");
   const text = summary?.textContent?.replace(/\s+/gu, " ").trim();
   expect(text).toBe(total ? "Worked · 2 failed" : "Worked");
 });
 
 async function workSummaryText(messages: Record<string, unknown>[]) {
-  return (await renderSummary(messages, "work", { durationMs: null, expanded: true }))?.textContent
+  return (await mountSummary(messages, "work", { durationMs: null, expanded: true })())?.textContent
     ?.replace(/\s+/gu, " ")
     .trim();
 }
@@ -412,16 +424,26 @@ it.each([
   if (group?.kind !== "group") {
     throw new Error("expected the step's tool group");
   }
-  const container = document.createElement("div");
-  const draw = async (expanded: boolean) =>
-    renderToolFixture(
-      renderMessageGroup(group, {
-        showToolCalls: true,
-        showReasoning: false,
-        isToolExpanded: () => expanded,
-      }),
-      container,
+  let updateExpanded: (value: boolean) => void;
+  const { container } = mountSolid(() => {
+    const [expanded, setExpanded] = createSignal(false);
+    updateExpanded = setExpanded;
+    return (
+      <MessageGroup
+        group={group}
+        options={{
+          showToolCalls: true,
+          showReasoning: false,
+          isToolExpanded: expanded,
+        }}
+      />
     );
+  });
+  const draw = async (expanded: boolean) => {
+    updateExpanded(expanded);
+    flush();
+    await settleToolBridges(container);
+  };
   await draw(false);
   if (isError) {
     // A step that did not complete keeps the counted row that carries its status.

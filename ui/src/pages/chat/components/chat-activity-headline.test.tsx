@@ -1,18 +1,17 @@
 /* @vitest-environment jsdom */
 
-import { nothing, render } from "lit";
 import { createSignal, flush } from "solid-js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentActivityItem } from "../../../../../packages/gateway-protocol/src/schema/logs-chat.js";
 import { projectAgentToolActivity } from "../../../../../src/infra/agent-activity-events.js";
 import { SolidContentPresentation } from "../../../lit/solid-content.tsx";
-import { mountSolid } from "../../../test-helpers/mount-solid.ts";
+import { cleanupSolid, mountSolid } from "../../../test-helpers/mount-solid.ts";
 import type { ActivityHeadline } from "./chat-activity-headline-selection.ts";
 import {
   ChatActivityHeadline,
   type ChatActivityHeadlineProps,
 } from "./chat-activity-headline.solid.tsx";
-import { renderActivityGroup } from "./chat-message-group.test-support.ts";
+import { ActivityGroup } from "./chat-message-group-view.tsx";
 import {
   createAssistantMessage,
   createMessageEntry,
@@ -20,24 +19,51 @@ import {
   createToolGroup,
   createToolResultMessage,
 } from "./chat-message.test-support.ts";
-import { renderToolFixture, settleToolBridges } from "./chat-tool-render.test-support.ts";
+import { settleToolBridges } from "./chat-tool-render.test-support.ts";
 
 let container: HTMLDivElement;
 let updateHeadline: ((props: ChatActivityHeadlineProps) => void) | undefined;
 let presentHeadline: ((active: boolean) => void) | undefined;
+let updateActivity: ((props: Parameters<typeof ActivityGroup>[0]) => void) | undefined;
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(10_000);
   container = document.createElement("div");
   updateHeadline = undefined;
   presentHeadline = undefined;
+  updateActivity = undefined;
 });
 afterEach(() => {
-  if (!updateHeadline) {
-    render(nothing, container);
-  }
+  cleanupSolid();
+  container.remove();
   vi.useRealTimers();
 });
+
+function drawActivityGroup(
+  groups: Parameters<typeof ActivityGroup>[0]["groups"],
+  options: Parameters<typeof ActivityGroup>[0]["options"],
+) {
+  const props: Parameters<typeof ActivityGroup>[0] = {
+    groups,
+    options,
+    presentation: "standalone",
+  };
+  if (!updateActivity) {
+    document.body.append(container);
+    mountSolid(
+      () => {
+        const [current, setCurrent] = createSignal(props);
+        updateActivity = setCurrent;
+        return <ActivityGroup {...current()} />;
+      },
+      { container },
+    );
+  } else {
+    updateActivity(props);
+    flush();
+  }
+  return settleToolBridges(container);
+}
 
 function advanceTimersByTime(ms: number) {
   vi.advanceTimersByTime(ms);
@@ -228,10 +254,7 @@ it.each([
   { name: "session_status", phase: "result", isError: false, expected: "1 other operation" },
 ] as const)("renders accessible $name activity: $expected", async ({ expected, ...params }) => {
   const activity = projectAgentToolActivity({ toolCallId: "purpose", ...params });
-  await renderToolFixture(
-    renderActivityGroup([group("current", [activity])], liveOptions),
-    container,
-  );
+  await drawActivityGroup([group("current", [activity])], liveOptions);
   const summary = container.querySelector<HTMLButtonElement>(".chat-activity-group__summary")!;
   const icon = summary.querySelector('.chat-activity-group__icon[role="img"]');
   expect(label()).toBe(expected);
@@ -257,10 +280,7 @@ it("keeps the icon paired with the held purpose and restores the aggregate icon"
     phase: "start",
   });
   const draw = async (items: AgentActivityItem[], runActive = true) =>
-    await renderToolFixture(
-      renderActivityGroup([group("current", items)], { ...liveOptions, runActive }),
-      container,
-    );
+    await drawActivityGroup([group("current", items)], { ...liveOptions, runActive });
   const icon = () => container.querySelector(".chat-activity-group__icon");
   await draw([exec]);
   expect(icon()?.getAttribute("aria-label")).toBe("exec");
@@ -287,19 +307,16 @@ const liveOptions = {
   activityRunId: "active-run",
 };
 
-it("keeps the headline and its dwell across disclosure toggles with accessible controls", () => {
+it("keeps the headline and its dwell across disclosure toggles with accessible controls", async () => {
   let expanded = false;
   const onToggle = vi.fn();
-  const draw = (activity: AgentActivityItem[]) =>
-    render(
-      renderActivityGroup([group("current", activity)], {
-        ...liveOptions,
-        isToolMessageExpanded: () => expanded,
-        onToggleToolMessageExpanded: onToggle,
-      }),
-      container,
-    );
-  draw([prepared("first")]);
+  const draw = async (activity: AgentActivityItem[]) =>
+    await drawActivityGroup([group("current", activity)], {
+      ...liveOptions,
+      isToolMessageExpanded: () => expanded,
+      onToggleToolMessageExpanded: onToggle,
+    });
+  await draw([prepared("first")]);
   const summary = container.querySelector<HTMLButtonElement>(".chat-activity-group__summary")!;
   const body = container.querySelector<HTMLElement>(".chat-activity-group__body")!;
   expect(summary.getAttribute("aria-expanded")).toBe("false");
@@ -309,9 +326,9 @@ it("keeps the headline and its dwell across disclosure toggles with accessible c
   expect(onToggle).toHaveBeenCalledWith("activity:current", false);
 
   advanceTimersByTime(1_000);
-  draw([prepared("first", "completed")]);
+  await draw([prepared("first", "completed")]);
   expanded = true;
-  draw([prepared("first", "completed"), prepared("next")]);
+  await draw([prepared("first", "completed"), prepared("next")]);
   expect(label()).toBe("Read first");
   expect(summary.getAttribute("aria-expanded")).toBe("true");
   expect(body.hidden).toBe(false);
@@ -321,18 +338,18 @@ it("keeps the headline and its dwell across disclosure toggles with accessible c
   advanceTimersByTime(1);
   expect(label()).toBe("Read next…");
   expanded = false;
-  draw([prepared("first", "completed"), prepared("next", "completed")]);
+  await draw([prepared("first", "completed"), prepared("next", "completed")]);
   expect(label()).toBe("Read next");
   expect(summary.getAttribute("aria-expanded")).toBe("false");
 });
 
-it("retains the latest completed operation between tools and returns to counts when the run ends", () => {
+it("retains the latest completed operation between tools and returns to counts when the run ends", async () => {
   const groups = [group("current", [prepared("finished", "completed")])];
-  render(renderActivityGroup(groups, liveOptions), container);
+  await drawActivityGroup(groups, liveOptions);
   expect(label()).toBe("Read finished");
-  render(renderActivityGroup([group("current", [prepared("next")])], liveOptions), container);
+  await drawActivityGroup([group("current", [prepared("next")])], liveOptions);
   expect(label()).toBe("Read finished");
-  render(renderActivityGroup(groups, { ...liveOptions, runActive: false }), container);
+  await drawActivityGroup(groups, { ...liveOptions, runActive: false });
   expect(label()).toBe("1 read");
   expect(vi.getTimerCount()).toBe(0);
   advanceTimersByTime(3_000);
@@ -341,21 +358,15 @@ it("retains the latest completed operation between tools and returns to counts w
 
 it.each(["failed", "blocked"] as const)(
   "prioritizes a new %s outcome over running and pending operations",
-  (status) => {
-    render(renderActivityGroup([group("current", [prepared("first")])], liveOptions), container);
-    render(
-      renderActivityGroup(
-        [group("current", [prepared("first"), prepared("pending")])],
-        liveOptions,
-      ),
-      container,
+  async (status) => {
+    await drawActivityGroup([group("current", [prepared("first")])], liveOptions);
+    await drawActivityGroup(
+      [group("current", [prepared("first"), prepared("pending")])],
+      liveOptions,
     );
-    render(
-      renderActivityGroup(
-        [group("current", [prepared("first"), prepared("urgent", status)])],
-        liveOptions,
-      ),
-      container,
+    await drawActivityGroup(
+      [group("current", [prepared("first"), prepared("urgent", status)])],
+      liveOptions,
     );
     expect(label()).toBe("Read urgent");
     expect(vi.getTimerCount()).toBe(0);
@@ -364,7 +375,7 @@ it.each(["failed", "blocked"] as const)(
   },
 );
 
-it("selects only visible activity from the matching run and newest eligible group", () => {
+it("selects only visible activity from the matching run and newest eligible group", async () => {
   const groups = [
     group("old", [prepared("history", "completed")], "old-run"),
     group("current", [
@@ -374,14 +385,11 @@ it("selects only visible activity from the matching run and newest eligible grou
     ]),
     group("peer", [prepared("peer")], "peer-run"),
   ];
-  render(renderActivityGroup(groups, { ...liveOptions, activityGroupKey: "current" }), container);
+  await drawActivityGroup(groups, { ...liveOptions, activityGroupKey: "current" });
   expect(label()).toBe("Read current…");
-  render(
-    renderActivityGroup(groups, { ...liveOptions, activityGroupKey: "newer-group" }),
-    container,
-  );
+  await drawActivityGroup(groups, { ...liveOptions, activityGroupKey: "newer-group" });
   expect(label()).toBe("3 reads");
-  render(renderActivityGroup(groups, { ...liveOptions, activityRunId: "absent-run" }), container);
+  await drawActivityGroup(groups, { ...liveOptions, activityRunId: "absent-run" });
   expect(label()).toBe("3 reads");
   advanceTimersByTime(3_000);
   expect(label()).toBe("3 reads");
@@ -442,7 +450,7 @@ it("uses the newest group's live card label without inheriting an earlier failur
     activityRunId: "active-run",
   };
 
-  await renderToolFixture(renderActivityGroup(groups, opts), container);
+  await drawActivityGroup(groups, opts);
   const activitySummary = container.querySelector<HTMLButtonElement>(
     ".chat-activity-group__summary",
   )!;
@@ -454,7 +462,7 @@ it("uses the newest group's live card label without inheriting an earlier failur
     "in /repo/src/a.ts…",
   );
 
-  await renderToolFixture(renderActivityGroup(groups, { ...opts, runActive: false }), container);
+  await drawActivityGroup(groups, { ...opts, runActive: false });
   expect(activitySummary.textContent?.replace(/\s+/gu, " ").trim()).toBe(
     "1 read · 1 edit 1 failed",
   );
@@ -463,10 +471,7 @@ it("uses the newest group's live card label without inheriting an earlier failur
 it.each(["failed", "blocked"] as const)(
   "preserves a nested child's %s urgency under its parent purpose",
   async (status) => {
-    await renderToolFixture(
-      renderActivityGroup([group("current", [prepared("first")])], liveOptions),
-      container,
-    );
+    await drawActivityGroup([group("current", [prepared("first")])], liveOptions);
     const parent = { ...prepared("parent"), name: "exec", title: "Build the snake game" };
     const child = prepared("child", status);
     const nested = createToolGroup("current", [
@@ -491,7 +496,7 @@ it.each(["failed", "blocked"] as const)(
         ),
       ),
     ]);
-    await renderToolFixture(renderActivityGroup([nested], liveOptions), container);
+    await drawActivityGroup([nested], liveOptions);
     expect(label()).toBe("Build the snake game");
     expect(vi.getTimerCount()).toBe(0);
     expect(container.querySelector(".chat-activity-group__summary")?.textContent).toContain(
@@ -530,15 +535,12 @@ it("keeps the live row for a step with a routine nested call until the run settl
         ),
       ),
     ]);
-  await renderToolFixture(renderActivityGroup([step("running")], liveOptions), container);
+  await drawActivityGroup([step("running")], liveOptions);
   expect(label()).toBe("Build the snake game…");
   // Finishing mid-run keeps the live row; only settlement swaps in the step's own row.
-  await renderToolFixture(renderActivityGroup([step("completed")], liveOptions), container);
+  await drawActivityGroup([step("completed")], liveOptions);
   expect(label()).toBe("Build the snake game");
-  await renderToolFixture(
-    renderActivityGroup([step("completed")], { ...liveOptions, runActive: false }),
-    container,
-  );
+  await drawActivityGroup([step("completed")], { ...liveOptions, runActive: false });
   expect(container.querySelector(".chat-activity-group__summary")).toBeNull();
   expect(container.querySelector(".chat-tool-row__title")?.textContent).toBe(
     "Build the snake game",
@@ -547,21 +549,18 @@ it("keeps the live row for a step with a routine nested call until the run settl
 
 it.each([false, true])(
   "refreshes a held operation when completion and the next start coexist (duplicate start: %s)",
-  (duplicateStart) => {
-    render(renderActivityGroup([group("current", [prepared("first")])], liveOptions), container);
+  async (duplicateStart) => {
+    await drawActivityGroup([group("current", [prepared("first")])], liveOptions);
     advanceTimersByTime(200);
     const settled = [
       ...(duplicateStart ? [prepared("first")] : []),
       prepared("first", "completed"),
     ];
     if (duplicateStart) {
-      render(renderActivityGroup([group("current", settled)], liveOptions), container);
+      await drawActivityGroup([group("current", settled)], liveOptions);
       expect(label()).toBe("Read first");
     }
-    render(
-      renderActivityGroup([group("current", [...settled, prepared("next")])], liveOptions),
-      container,
-    );
+    await drawActivityGroup([group("current", [...settled, prepared("next")])], liveOptions);
     expect(label()).toBe("Read first");
     advanceTimersByTime(2_800);
     expect(label()).toBe("Read next…");

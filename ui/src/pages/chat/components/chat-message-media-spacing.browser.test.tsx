@@ -1,14 +1,16 @@
-import { html, nothing, render } from "lit";
+import { createSignal } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../../../test/helpers/promise.js";
-import { renderGroupedMessage } from "./chat-message-bubble.ts";
+import { mountSolid } from "../../../test-helpers/mount-solid.ts";
+import { flush } from "../../../test-helpers/solid-settle.ts";
+import { GroupedMessage } from "./chat-message-bubble-view.tsx";
 import { prepareChatMessageRender } from "./chat-message-markdown.ts";
 import baseCss from "../../../styles/base.css?inline";
 import layoutCss from "../../../styles/chat/layout.css?inline";
 import messageCss from "../../../styles/chat/message-layout.css?inline";
 import textCss from "../../../styles/chat/text.css?inline";
 
-const containers: HTMLElement[] = [];
+const views: ReturnType<typeof mountSolid>[] = [];
 const originalThemeMode = document.documentElement.getAttribute("data-theme-mode");
 const imageUrl =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAHElEQVR4nGP4z8DwnxLMMGrAsDCAQv2jBgwPAwAxtf4Q24P5oAAAAABJRU5ErkJggg==";
@@ -33,9 +35,8 @@ const video = {
 };
 
 afterEach(() => {
-  for (const container of containers.splice(0)) {
-    render(nothing, container);
-    container.remove();
+  for (const view of views.splice(0)) {
+    view.unmount();
   }
   vi.unstubAllGlobals();
   if (originalThemeMode === null) {
@@ -46,25 +47,33 @@ afterEach(() => {
 });
 
 function mount(width: number, theme: string) {
-  const container = document.body.appendChild(document.createElement("section"));
+  const [message, setMessage] = createSignal<{ content: unknown[]; role: string }>({
+    content: [],
+    role: "assistant",
+  });
+  const [streaming, setStreaming] = createSignal(false);
+  const view = mountSolid(() => (
+    <>
+      <style>{baseCss + layoutCss + messageCss + textCss}</style>
+      <div class={`chat-group ${message().role}`}>
+        <GroupedMessage
+          preparation={prepareChatMessageRender(message())}
+          messageKey="media-spacing"
+          options={{ isStreaming: streaming(), showReasoning: false }}
+        />
+      </div>
+    </>
+  ));
+  const { container } = view;
   container.style.width = `${width}px`;
-  containers.push(container);
+  views.push(view);
   document.documentElement.dataset.themeMode = theme;
   return {
     container,
     draw: (content: unknown[], isStreaming = false, role = "assistant") => {
-      render(
-        html`<style>
-            ${baseCss}${layoutCss}${messageCss}${textCss}
-          </style>
-          <div class="chat-group ${role}">
-            ${renderGroupedMessage(prepareChatMessageRender({ role, content }), "media-spacing", {
-              isStreaming,
-              showReasoning: false,
-            })}
-          </div>`,
-        container,
-      );
+      setMessage({ role, content });
+      setStreaming(isStreaming);
+      flush();
     },
   };
 }
