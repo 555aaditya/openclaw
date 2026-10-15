@@ -265,30 +265,38 @@ export const ChatDetails = defineSolidBridge<Props, Methods>(
               </div>
             </Show>
             <Show when={scope()} keyed>
-              {(_scope) => (
-                <>
-                  <ChatDetailsSession
-                    props={props.props}
-                    presented={props.presented && opened()}
-                    dismissed={intent() === "closed"}
-                  />
-                  <Show when={props.props?.progressCard || props.props?.progressCardInitialLoading}>
-                    <ChatDetailsProgress
-                      onHideProgress={() => {
-                        // The top-layer inspector must not cover the Undo toast.
-                        if (!docked()) {
-                          close(true);
-                        }
-                      }}
-                      menuRef={(menu) => {
-                        progressMenu = menu;
-                      }}
-                      props={props.props}
-                      presented={props.presented && opened()}
-                    />
+              {(_scope) => {
+                // Keep disclosure intent on reopen without constructing an unseen inspector.
+                const revealed = createMemo((previous = false) => previous || opened());
+                return (
+                  <Show when={revealed()}>
+                    <>
+                      <ChatDetailsSession
+                        props={props.props}
+                        presented={props.presented && opened()}
+                        dismissed={intent() === "closed"}
+                      />
+                      <Show
+                        when={props.props?.progressCard || props.props?.progressCardInitialLoading}
+                      >
+                        <ChatDetailsProgress
+                          onHideProgress={() => {
+                            // The top-layer inspector must not cover the Undo toast.
+                            if (!docked()) {
+                              close(true);
+                            }
+                          }}
+                          menuRef={(menu) => {
+                            progressMenu = menu;
+                          }}
+                          props={props.props}
+                          presented={props.presented && opened()}
+                        />
+                      </Show>
+                    </>
                   </Show>
-                </>
-              )}
+                );
+              }}
             </Show>
           </div>
         </Portal>

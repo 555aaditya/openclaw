@@ -58,16 +58,11 @@ async function fixture(value = props(), width = 600) {
   frame.append(conversation);
   mounted.push(frame, styles);
   await element.updateComplete;
-  const session = frame.querySelector<ChatDetailsSession>("openclaw-chat-details-session")!;
-  const progress = frame.querySelector<HTMLElement>("openclaw-chat-details-progress")!;
-  await session.updateComplete;
   flush();
   return {
     element,
     frame,
     footer,
-    session,
-    progress,
     conversation,
     panel: frame.querySelector<HTMLElement>(".chat-details")!,
     trigger: element.querySelector<HTMLButtonElement>(".chat-details-toggle")!,
@@ -89,11 +84,9 @@ afterEach(() => {
 describe("chat Details presentation", () => {
   it("automatically docks within the available pane, preserves intent, and releases its column", async () => {
     await page.viewport(1700, 900);
-    const { element, frame, conversation, footer, trigger, panel, session } = await fixture(
-      props(),
-      1320,
-    );
+    const { element, frame, conversation, footer, trigger, panel } = await fixture(props(), 1320);
     await expect.poll(() => trigger.getAttribute("aria-expanded")).toBe("true");
+    const session = frame.querySelector<ChatDetailsSession>("openclaw-chat-details-session")!;
     expect(panel.getAttribute("role")).toBe("complementary");
     expect(panel.querySelector(".chat-details__toolbar")).toBeNull();
     const groupStyle = getComputedStyle(panel.querySelector(".chat-details__group")!);
@@ -150,6 +143,8 @@ describe("chat Details presentation", () => {
     const { element, trigger, panel } = await fixture();
     expect(trigger.textContent).toContain("Details");
     expect(panel.matches(":popover-open")).toBe(false);
+    expect(panel.querySelector("openclaw-chat-details-session")).toBeNull();
+    expect(panel.querySelector("openclaw-chat-details-progress")).toBeNull();
     element.props = { ...element.props!, progressCard: { ...card, revision: 2 } };
     await element.updateComplete;
     expect(panel.matches(":popover-open")).toBe(false);
@@ -201,9 +196,10 @@ describe("chat Details presentation", () => {
   });
 
   it("closes Details after its child menu closes", async () => {
-    const { element, trigger, panel, progress } = await fixture();
+    const { element, trigger, panel } = await fixture();
     trigger.click();
     await element.updateComplete;
+    const progress = panel.querySelector<HTMLElement>("openclaw-chat-details-progress")!;
     const menu = progress.querySelector<HTMLElement>(".chat-details-progress__menu")!;
     const menuSurface = menu.querySelector<HTMLElement>('[role="menu"]')!;
     menu.querySelector<HTMLButtonElement>("button")!.click();
@@ -222,9 +218,11 @@ describe("chat Details presentation", () => {
   });
 
   it("keeps metadata visible while progress retains its collapse across revisions", async () => {
-    const { element, trigger, session, progress } = await fixture();
+    const { element, trigger, panel } = await fixture();
     trigger.click();
     await element.updateComplete;
+    const session = panel.querySelector<ChatDetailsSession>("openclaw-chat-details-session")!;
+    const progress = panel.querySelector<HTMLElement>("openclaw-chat-details-progress")!;
     await session.updateComplete;
     flush();
     const sessionSection = session.querySelector<HTMLElement>(".chat-details-session")!;
@@ -294,7 +292,7 @@ describe("chat Details presentation", () => {
     const refresh = vi.fn();
     const collapse = vi.fn();
     const settings = vi.fn();
-    const { element, trigger, progress } = await fixture(
+    const { element, trigger, panel } = await fixture(
       props({
         onHideTaskProgress: hide,
         onDismissProgressCard: dismiss,
@@ -307,6 +305,7 @@ describe("chat Details presentation", () => {
     trigger.click();
     await element.updateComplete;
     flush();
+    const progress = panel.querySelector<HTMLElement>("openclaw-chat-details-progress")!;
     const menu = progress.querySelector<HTMLElement>(".chat-details-progress__menu")!;
     const menuSurface = menu.querySelector<HTMLElement>('[role="menu"]')!;
     menu.querySelector<HTMLButtonElement>("button")!.click();

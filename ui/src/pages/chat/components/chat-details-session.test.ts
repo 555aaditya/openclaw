@@ -4,6 +4,7 @@ import { expect, it, vi } from "vitest";
 import { fnv1aUtf16 } from "../../../lib/fnv1a.ts";
 import { mountSolid } from "../../../test-helpers/mount-solid.ts";
 import { flush } from "../../../test-helpers/solid-settle.ts";
+import { openDetails } from "../../../test-helpers/web-awesome.ts";
 import { ChatDetailsSession } from "./chat-details-session.tsx";
 import type { ChatDetailsProps } from "./chat-details-types.ts";
 import type { ChatSubagentActivityLive } from "./chat-subagent-activity-live.ts";
@@ -77,15 +78,15 @@ it("keeps immutable creator, mutable owner and participants distinct without cla
   expect(element.querySelector(".chat-details__creator")?.textContent).not.toContain(
     "Current owner",
   );
+  expect(element.querySelector(".chat-details__person")).toBeNull();
+  expect(element.textContent).toContain("3 participants");
+  await openDetails(element.querySelector(".chat-details__participants")!);
   expect(element.querySelector(".chat-details__participants")?.textContent).toContain(
     "Current owner",
   );
   expect(element.textContent).toContain("3 participants");
   expect(element.textContent).toContain("2 more participants");
   expect(element.textContent).not.toMatch(/online|viewers/i);
-  expect(element.querySelector<HTMLDetailsElement>(".chat-details__participants")?.open).toBe(
-    false,
-  );
 });
 it("uses the current PR renderer and preserves CI session identity and branch dismissal", async () => {
   const dismiss = vi.fn();
@@ -147,6 +148,8 @@ it("projects direct active children through the live observer with stable rounde
     subagentSessions: [child],
     subagentSessionsHydrated: true,
   });
+  expect(element.querySelector("openclaw-chat-subagent-activity")).toBeNull();
+  await openDetails(element.querySelector(".chat-details__subagents")!);
   const live = element.querySelector<ChatSubagentActivityLive>("openclaw-chat-subagent-activity")!;
   await live.updateComplete;
   expect(live.rows[0]?.session).toBe(child);
@@ -185,7 +188,8 @@ it("shows live environment and context facts while preserving disclosure intent"
   expect(element.querySelector('[aria-label="Copy branch name"]')).not.toBeNull();
   const context = element.querySelector<HTMLDetailsElement>(".chat-details__context")!;
   expect(context.querySelector("summary")?.textContent).toContain("50%");
-  context.open = true;
+  expect(context.querySelector(".chat-details__stats")).toBeNull();
+  await openDetails(context);
   element.props = {
     ...element.props!,
     selectedSession: {
@@ -201,11 +205,13 @@ it("shows live environment and context facts while preserving disclosure intent"
     .querySelector<HTMLButtonElement>(".chat-details__environment .chat-details__navigation")!
     .click();
   expect(openFiles).toHaveBeenCalledOnce();
+  const filesButton = element.querySelector<HTMLButtonElement>(
+    ".chat-details__environment .chat-details__navigation",
+  )!;
   element.presented = false;
   await element.updateComplete;
-  element
-    .querySelector<HTMLButtonElement>(".chat-details__environment .chat-details__navigation")!
-    .click();
+  expect(element.querySelector(".chat-details__environment .chat-details__navigation")).toBeNull();
+  filesButton.click();
   expect(openFiles).toHaveBeenCalledOnce();
 });
 

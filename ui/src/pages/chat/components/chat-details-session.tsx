@@ -32,6 +32,8 @@ export const ChatDetailsSession = defineSolidBridge<Props>(
       <Show when={identity()} keyed>
         {(_identity) => {
           const [pullRequestsOpen, setPullRequestsOpen] = createSignal(true);
+          const [participantsOpen, setParticipantsOpen] = createSignal(false);
+          const [subagentsOpen, setSubagentsOpen] = createSignal(false);
           const active = () => props.presented;
           const session = () => props.props?.selectedSession;
           const creatorName = () => session()?.createdActor?.label || session()?.createdActor?.id;
@@ -95,7 +97,10 @@ export const ChatDetailsSession = defineSolidBridge<Props>(
                   )}
                 </div>
                 <div class="chat-details__meta-actions">
-                  <details class="chat-details__participants">
+                  <details
+                    class="chat-details__participants"
+                    onToggle={(event) => setParticipantsOpen(event.currentTarget.open)}
+                  >
                     <summary>
                       <Icon name="users" />
                       <span>
@@ -103,50 +108,55 @@ export const ChatDetailsSession = defineSolidBridge<Props>(
                       </span>
                       <Icon name="chevronDown" />
                     </summary>
-                    {owner() && (
-                      <div class="chat-details__person">
-                        <span>{t("chat.sessionDetails.owner")}</span>
-                        <span>{owner()?.label || owner()?.id || owner()?.type}</span>
-                      </div>
-                    )}
-                    <For each={people()}>
-                      {(person) => (
+                    <Show when={active() && participantsOpen()}>
+                      {owner() && (
                         <div class="chat-details__person">
-                          <LitContent
-                            render={() =>
-                              renderChatAuthorAvatar({
-                                id: person.identity.id,
-                                name: person.label || person.identity.id,
-                                identity: person.identity,
-                                profileAvatarUrl: person.avatarUrl,
-                              })
-                            }
-                          />
-                          <span title={person.label || person.identity.id}>
-                            {person.label || person.identity.id}
-                          </span>
+                          <span>{t("chat.sessionDetails.owner")}</span>
+                          <span>{owner()?.label || owner()?.id || owner()?.type}</span>
                         </div>
                       )}
-                    </For>
-                    {count() > people().length && (
-                      <div class="chat-details__muted">
-                        {t("chat.sessionDetails.moreParticipants", {
-                          count: String(count() - people().length),
-                        })}
-                      </div>
-                    )}
+                      <For each={people()}>
+                        {(person) => (
+                          <div class="chat-details__person">
+                            <LitContent
+                              render={() =>
+                                renderChatAuthorAvatar({
+                                  id: person.identity.id,
+                                  name: person.label || person.identity.id,
+                                  identity: person.identity,
+                                  profileAvatarUrl: person.avatarUrl,
+                                })
+                              }
+                            />
+                            <span title={person.label || person.identity.id}>
+                              {person.label || person.identity.id}
+                            </span>
+                          </div>
+                        )}
+                      </For>
+                      {count() > people().length && (
+                        <div class="chat-details__muted">
+                          {t("chat.sessionDetails.moreParticipants", {
+                            count: String(count() - people().length),
+                          })}
+                        </div>
+                      )}
+                    </Show>
                   </details>
                 </div>
                 <ChatDetailsEnvironment details={props.props!} presented={active()} />
                 <ChatDetailsContext details={props.props!} presented={active()} />
                 {subagents().length > 0 && (
-                  <details class="chat-details__group chat-details__subagents">
+                  <details
+                    class="chat-details__group chat-details__subagents"
+                    onToggle={(event) => setSubagentsOpen(event.currentTarget.open)}
+                  >
                     <summary class="chat-details__caption">
                       {t("chat.sessionDetails.backgroundTasks")}
                       <span>{subagents().length}</span>
                       <Icon name="chevronDown" />
                     </summary>
-                    {active() && (
+                    {active() && subagentsOpen() && (
                       <openclaw-chat-subagent-activity
                         prop:rows={subagents()}
                         prop:compact={true}
@@ -172,22 +182,24 @@ export const ChatDetailsSession = defineSolidBridge<Props>(
                       <span>{props.props?.pullRequests?.length || null}</span>
                       <Icon name="chevronDown" />
                     </summary>
-                    {props.props?.onOpenSessionDiff && (
-                      <button
-                        type="button"
-                        class="chat-details__row chat-details__navigation"
-                        onClick={() => {
-                          if (host.isConnected && props.presented) {
-                            props.props?.onOpenSessionDiff?.();
-                          }
-                        }}
-                      >
-                        <Icon name="diff" />
-                        <span>{t("chat.sessionDetails.allChanges")}</span>
-                        <Icon name="chevronRight" />
-                      </button>
-                    )}
-                    <LitContent render={() => pullRequests()} />
+                    <Show when={active() && pullRequestsOpen()}>
+                      {props.props?.onOpenSessionDiff && (
+                        <button
+                          type="button"
+                          class="chat-details__row chat-details__navigation"
+                          onClick={() => {
+                            if (host.isConnected && props.presented) {
+                              props.props?.onOpenSessionDiff?.();
+                            }
+                          }}
+                        >
+                          <Icon name="diff" />
+                          <span>{t("chat.sessionDetails.allChanges")}</span>
+                          <Icon name="chevronRight" />
+                        </button>
+                      )}
+                      <LitContent render={() => pullRequests()} />
+                    </Show>
                   </details>
                 </Show>
                 <ChatSummaryAutomations

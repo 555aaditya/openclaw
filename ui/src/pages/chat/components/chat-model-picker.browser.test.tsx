@@ -64,7 +64,6 @@ function mountPicker() {
   flush();
   const picker = container.querySelector("details")!;
   const trigger = picker.querySelector("summary")!;
-  const search = picker.querySelector<HTMLInputElement>("[data-chat-model-search]")!;
   const composer = container.querySelector("textarea")!;
   const toggle = async (activate: () => Promise<void>) => {
     const toggled = new Promise<void>((resolve) => {
@@ -75,14 +74,16 @@ function mountPicker() {
     flush();
     await new Promise(requestAnimationFrame);
   };
-  return { params, update, picker, trigger, search, composer, toggle };
+  return { params, update, picker, trigger, composer, toggle };
 }
 
 it("keeps typing in the filter and preserves focus and query across catalog rerenders", async () => {
-  const { search, composer, toggle, params, update, trigger } = mountPicker();
+  const { picker, composer, toggle, params, update, trigger } = mountPicker();
+  expect(picker.querySelector("[data-chat-model-search]")).toBeNull();
   composer.value = "Keep this draft";
   composer.focus();
   await toggle(() => page.getByText("Alpha", { exact: true }).first().click());
+  const search = picker.querySelector<HTMLInputElement>("[data-chat-model-search]")!;
   expect(document.activeElement).toBe(search);
   await userEvent.keyboard("beta");
   expect(search.value).toBe("beta");
@@ -133,10 +134,11 @@ it("leaves digit shortcuts to a nested native menu", async () => {
 });
 
 it("focuses the filter on keyboard open and reopen, and returns Escape to the trigger", async () => {
-  const { picker, trigger, search, params, toggle } = mountPicker();
+  const { picker, trigger, params, toggle } = mountPicker();
   trigger.focus();
   for (const key of ["{Enter}", " "]) {
     await toggle(() => userEvent.keyboard(key));
+    const search = picker.querySelector<HTMLInputElement>("[data-chat-model-search]")!;
     expect(document.activeElement).toBe(search);
     await userEvent.keyboard("beta");
     await userEvent.keyboard("{Escape}");
@@ -174,14 +176,15 @@ it.each(["closed", "removed", "focus moved"])(
 it.each(["trigger", "Escape", "selection"])(
   "retains provider toggles after closing through %s",
   async (close) => {
-    const { picker, trigger, search, toggle, update, params } = mountPicker();
+    const { picker, trigger, toggle, update, params } = mountPicker();
+    await toggle(() => page.getByText("Alpha", { exact: true }).first().click());
+    const search = picker.querySelector<HTMLInputElement>("[data-chat-model-search]")!;
     const selectedToggle = picker.querySelector<HTMLButtonElement>(
       '[data-chat-model-provider-group="example"] [data-chat-model-provider-toggle]',
     )!;
     const otherToggle = picker.querySelector<HTMLButtonElement>(
       '[data-chat-model-provider-group="other"] [data-chat-model-provider-toggle]',
     )!;
-    await toggle(() => page.getByText("Alpha", { exact: true }).first().click());
     await userEvent.click(selectedToggle);
     await userEvent.click(otherToggle);
     expect(selectedToggle.getAttribute("aria-expanded")).toBe("false");

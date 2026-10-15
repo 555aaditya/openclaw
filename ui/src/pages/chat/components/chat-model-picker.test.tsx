@@ -92,41 +92,46 @@ it.each([false, true])(
   },
 );
 
-it.each([false, true])("keeps current visible with Default=%s", (hasDefault) => {
-  const container = document.body.appendChild(document.createElement("div"));
-  mountSolid(
-    () => (
-      <ChatModelPicker
-        {...{
-          disabled: false,
-          modelSelectionLocked: false,
-          modelOptions: Array.from({ length: 300 }, (_, index) => ({
-            provider: "fixture",
-            value: `fixture/model-${index}`,
-            commitValue: hasDefault && index === 0 ? "" : `fixture/model-${index}`,
-            label: `Model ${index}`,
-            isDefault: hasDefault && index === 0,
-          })),
-          selectedModelValue: "fixture/model-299",
-          sessionModelPinned: true,
-          sessionKey: "main",
-          triggerModelLabel: "Model 299",
-          onModelSelect: vi.fn(async () => {}),
-        }}
-      />
-    ),
-    { container },
-  );
-  flush();
-  const rows = Array.from(container.querySelectorAll<HTMLElement>("[data-chat-model-option]"));
-  expect(rows).toHaveLength(300);
-  expect(rows.slice(0, 3).map((row) => row.dataset.chatModelOption)).toEqual(
-    hasDefault
-      ? ["fixture/model-0", "fixture/model-299", "fixture/model-1"]
-      : ["fixture/model-299", "fixture/model-0", "fixture/model-1"],
-  );
-  expect(rows[hasDefault ? 1 : 0]?.getAttribute("aria-selected")).toBe("true");
-});
+it.each([false, true])(
+  "lazily opens the catalog with current visible and Default=%s",
+  async (hasDefault) => {
+    const container = document.body.appendChild(document.createElement("div"));
+    mountSolid(
+      () => (
+        <ChatModelPicker
+          {...{
+            disabled: false,
+            modelSelectionLocked: false,
+            modelOptions: Array.from({ length: 300 }, (_, index) => ({
+              provider: "fixture",
+              value: `fixture/model-${index}`,
+              commitValue: hasDefault && index === 0 ? "" : `fixture/model-${index}`,
+              label: `Model ${index}`,
+              isDefault: hasDefault && index === 0,
+            })),
+            selectedModelValue: "fixture/model-299",
+            sessionModelPinned: true,
+            sessionKey: "main",
+            triggerModelLabel: "Model 299",
+            onModelSelect: vi.fn(async () => {}),
+          }}
+        />
+      ),
+      { container },
+    );
+    flush();
+    expect(container.querySelector("[data-chat-model-option]")).toBeNull();
+    await openDetails(container.querySelector("details")!);
+    const rows = Array.from(container.querySelectorAll<HTMLElement>("[data-chat-model-option]"));
+    expect(rows).toHaveLength(300);
+    expect(rows.slice(0, 3).map((row) => row.dataset.chatModelOption)).toEqual(
+      hasDefault
+        ? ["fixture/model-0", "fixture/model-299", "fixture/model-1"]
+        : ["fixture/model-299", "fixture/model-0", "fixture/model-1"],
+    );
+    expect(rows[hasDefault ? 1 : 0]?.getAttribute("aria-selected")).toBe("true");
+  },
+);
 
 it.each([false, true])(
   "drops the All models row once expanded so the rest continue the group (rest disabled=%s)",
@@ -200,7 +205,7 @@ it.each([false, true])(
   },
 );
 
-it("groups Anthropic refs pinned to Claude CLI under Claude CLI", () => {
+it("groups Anthropic refs pinned to Claude CLI under Claude CLI", async () => {
   const container = document.body.appendChild(document.createElement("div"));
   const option = (provider: string, id: string, agentRuntimeId?: string) => ({
     provider,
@@ -235,6 +240,7 @@ it("groups Anthropic refs pinned to Claude CLI under Claude CLI", () => {
     { container },
   );
   flush();
+  await openDetails(container.querySelector("details")!);
   const groups = Object.fromEntries(
     Array.from(container.querySelectorAll<HTMLElement>("[data-chat-model-provider-group]")).map(
       (group) => [
