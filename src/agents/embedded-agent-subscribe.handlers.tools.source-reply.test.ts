@@ -202,7 +202,7 @@ describe("native question prompt source progress", () => {
         delivered.resolve();
         const result = await execution;
         expect(handoff).toHaveBeenCalledOnce();
-        if (outcome === "failed") {
+        if (outcome === "failed" || outcome === "suppressed") {
           expect(result).toMatchObject({
             error: expect.objectContaining({ message: "ask_user prompt delivery failed" }),
           });

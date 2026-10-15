@@ -64,34 +64,40 @@ describe("native durable ask_user handoff", () => {
       await observed;
     }
   });
-  it("commits registration and delivers the prompt before yielding without a live answer waiter", async () => {
-    const delivered = createDeferred();
-    const yielded = vi.fn();
-    const gateway = gatewayStub(async (method, _opts, params) => {
-      if (method === "question.request") {
-        return { id: params.id, durable: true };
-      }
-      throw new Error(`Unexpected live waiter: ${method}`);
-    });
-    const send = vi.fn(async () => delivered.promise);
-    const tool = createAskUserTool({
-      sessionKey: "agent:main:durable",
-      runId: "asking",
-      agentId: "main",
-      gatewayCall: gateway.call,
-      questionPrompt: { send },
-      nativeQuestionHandoff: yielded,
-    });
-    const result = tool.execute("durable-call", validArgs);
-    await gateway.waitForCall("question.request", result);
-    expect(gateway.mock.mock.calls[0]?.[2].durable).toBe(true);
-    expect(yielded).not.toHaveBeenCalled();
-    delivered.resolve();
-    await result;
-    expect(send).toHaveBeenCalledOnce();
-    expect(yielded).toHaveBeenCalledOnce();
-    expect(gateway.mock.mock.calls.map(([method]) => method)).toEqual(["question.request"]);
-  });
+  it.each(["legacy-void", "explicit-true"])(
+    "commits registration and delivers the %s prompt before yielding without a live answer waiter",
+    async (outcome) => {
+      const delivered = createDeferred();
+      const yielded = vi.fn();
+      const gateway = gatewayStub(async (method, _opts, params) => {
+        if (method === "question.request") {
+          return { id: params.id, durable: true };
+        }
+        throw new Error(`Unexpected live waiter: ${method}`);
+      });
+      const send = vi.fn(async () => {
+        await delivered.promise;
+        return outcome === "explicit-true" ? true : undefined;
+      });
+      const tool = createAskUserTool({
+        sessionKey: "agent:main:durable",
+        runId: "asking",
+        agentId: "main",
+        gatewayCall: gateway.call,
+        questionPrompt: { send },
+        nativeQuestionHandoff: yielded,
+      });
+      const result = tool.execute("durable-call", validArgs);
+      await gateway.waitForCall("question.request", result);
+      expect(gateway.mock.mock.calls[0]?.[2].durable).toBe(true);
+      expect(yielded).not.toHaveBeenCalled();
+      delivered.resolve();
+      await result;
+      expect(send).toHaveBeenCalledOnce();
+      expect(yielded).toHaveBeenCalledOnce();
+      expect(gateway.mock.mock.calls.map(([method]) => method)).toEqual(["question.request"]);
+    },
+  );
 
   it.each(["answered", "cancelled", "expired"])(
     "hands off a terminal %s registration retry without redelivering a prompt",
@@ -119,38 +125,44 @@ describe("native durable ask_user handoff", () => {
     },
   );
 
-  it("hands off a committed question even when prompt delivery fails", async () => {
-    const yielded = vi.fn();
-    const gateway = gatewayStub(async (method, _opts, params) => {
-      if (method === "question.request") {
-        return { id: params.id, durable: true };
-      }
-      if (method === "question.resolve") {
-        return { status: "cancelled" };
-      }
-      throw new Error(`Unexpected live waiter: ${method}`);
-    });
-    const tool = createAskUserTool({
-      sessionKey: "agent:main:delivery-failure",
-      runId: "asking",
-      agentId: "main",
-      gatewayCall: gateway.call,
-      nativeQuestionHandoff: yielded,
-      questionPrompt: {
-        send: async () => {
-          throw new Error("transport failed");
+  it.each(["failed", "suppressed"])(
+    "hands off a committed question even when prompt delivery is %s",
+    async (outcome) => {
+      const yielded = vi.fn();
+      const gateway = gatewayStub(async (method, _opts, params) => {
+        if (method === "question.request") {
+          return { id: params.id, durable: true };
+        }
+        if (method === "question.resolve") {
+          return { status: "cancelled" };
+        }
+        throw new Error(`Unexpected live waiter: ${method}`);
+      });
+      const tool = createAskUserTool({
+        sessionKey: "agent:main:delivery-failure",
+        runId: "asking",
+        agentId: "main",
+        gatewayCall: gateway.call,
+        nativeQuestionHandoff: yielded,
+        questionPrompt: {
+          send: async () => {
+            if (outcome === "failed") {
+              throw new Error("transport failed");
+            }
+            return false;
+          },
         },
-      },
-    });
-    await expect(tool.execute("failed-delivery", validArgs)).rejects.toThrow(
-      "prompt delivery failed",
-    );
-    expect(yielded).toHaveBeenCalledOnce();
-    expect(gateway.mock.mock.calls.map(([method]) => method)).toEqual([
-      "question.request",
-      "question.resolve",
-    ]);
-  });
+      });
+      await expect(tool.execute("failed-delivery", validArgs)).rejects.toThrow(
+        "prompt delivery failed",
+      );
+      expect(yielded).toHaveBeenCalledOnce();
+      expect(gateway.mock.mock.calls.map(([method]) => method)).toEqual([
+        "question.request",
+        "question.resolve",
+      ]);
+    },
+  );
 
   it("keeps questions transient without a native handoff owner", async () => {
     const gateway = gatewayStub(async (method, _opts, params) => {

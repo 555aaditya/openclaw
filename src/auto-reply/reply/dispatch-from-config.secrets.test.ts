@@ -310,7 +310,9 @@ it("does not retain source progress when the real dispatcher finds an expired qu
           gatewayCall: gateway,
           nativeQuestionHandoff: handoff,
         });
-        await tool.execute("expired-prompt", validArgs);
+        await expect(tool.execute("expired-prompt", validArgs)).rejects.toThrow(
+          "ask_user prompt delivery failed",
+        );
         expect(gateway.mock.calls.map(([method]) => method)).toContain("question.list");
         expect(callbackResult).toBe(false);
         expect(h.subscription.getMessagingToolSourceReplyPayloads()).toEqual([]);

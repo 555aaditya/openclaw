@@ -523,6 +523,7 @@ export function handleToolExecutionStart(
                 ctx.state.messagingToolSourceReplyPayloads.push({ sourceReplyFinal: false });
                 ctx.trimMessagingToolSent();
               }
+              return delivered;
             },
           });
         })
