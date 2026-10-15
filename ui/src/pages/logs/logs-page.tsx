@@ -60,6 +60,7 @@ export function LogsPage() {
   });
   const [forceFollow, setForceFollow] = createSignal(0);
   let cursor: number | null = null;
+  let cursorBootId: string | undefined;
   let request: AbortController | null = null;
   let pollTimer: ReturnType<typeof setInterval> | undefined;
   let connected = false;
@@ -88,6 +89,7 @@ export function LogsPage() {
     getGateway: () => context.gateway,
     onIdentityChange: () => {
       cursor = null;
+      cursorBootId = undefined;
       setStatus(createPanelRefreshStatus());
       setFile(null);
       setEntries([]);
@@ -101,8 +103,12 @@ export function LogsPage() {
     },
     ensureInitialData: (change) => {
       const quiet = !change.identityChanged && untrack(status).hasLoaded;
-      // A same-Gateway reconnect resumes the cursor; a full window costs a busy Gateway one
-      // file read and redaction pass per reconnect.
+      const bootId = change.snapshot.hello?.server?.bootId;
+      // A restart can replace the log file; only the same known boot can resume its cursor.
+      if (!bootId || bootId !== cursorBootId) {
+        cursor = null;
+      }
+      cursorBootId = bootId;
       void loadLogs({ reset: !quiet || cursor === null, quiet }).then((current) => {
         if (current && !quiet) {
           setForceFollow((revision) => revision + 1);
