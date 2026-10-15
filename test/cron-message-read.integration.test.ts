@@ -5,6 +5,7 @@ import { json as readJson } from "node:stream/consumers";
 import { expectDefined } from "@openclaw/normalization-core";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { upsertAuthProfileAsync } from "../src/agents/auth-profiles/profiles.js";
 import { refreshPreparedModelRuntimeSnapshots } from "../src/agents/prepared-model-runtime.js";
 import { resetPreparedModelRuntimeSnapshotsForTest } from "../src/agents/prepared-model-runtime.test-support.js";
 import { AUTOMATIONS_TOOL_NAME } from "../src/agents/tools/automations-tool-name.js";
@@ -505,6 +506,8 @@ describe("scheduled message actions", () => {
         vi.stubEnv("OPENCLAW_SCHEDULED_READ_CLOCK_URL", `${providerOrigin}/scheduled-clock-gap`);
         const embedded = buildMockOpenAiResponsesProvider(`${providerOrigin}/v1`, embeddedModelId);
         const selectedModelRef = runtime === "openclaw" ? embedded.modelRef : modelRef;
+        // Scheduled inference records a stored account; provider-config keys have no owner.
+        const { apiKey: _unownedKey, ...embeddedProviderConfig } = embedded.config;
         const cfg: OpenClawConfig = {
           gateway: {
             mode: "local",
@@ -533,8 +536,7 @@ describe("scheduled message actions", () => {
           models: {
             providers: {
               [embedded.providerId]: {
-                ...embedded.config,
-                apiKey: modelToken,
+                ...embeddedProviderConfig,
                 request: { allowPrivateNetwork: true },
               },
               anthropic: {
@@ -607,6 +609,10 @@ describe("scheduled message actions", () => {
         };
         await writeFile(configPath, JSON.stringify(cfg));
         setRuntimeConfigSnapshot(cfg, cfg);
+        await upsertAuthProfileAsync({
+          profileId: `${embedded.providerId}:scheduled-message-read`,
+          credential: { type: "api_key", provider: embedded.providerId, key: modelToken },
+        });
         if (nativeCreator) {
           await replaceSessionEntry(
             { agentId: "main", sessionKey: creatorSessionKey },

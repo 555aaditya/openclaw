@@ -3,6 +3,8 @@ import { captureAuthProfileAuthorization } from "../agents/auth-profiles/authori
 import { resolveSessionAuthSelection } from "../agents/auth-profiles/session-override.js";
 import { ensureAuthProfileStoreAsync } from "../agents/auth-profiles/store-runtime.js";
 import { resolveProviderModelAuthPolicy } from "../agents/model-auth-policy.js";
+import { resolveCliRuntimeExecutionProvider } from "../agents/model-runtime-aliases.js";
+import { isCliProvider } from "../agents/model-selection-cli.js";
 import { prepareAgentRuntimeAuth } from "../agents/runtime-plan/prepare-auth.js";
 import { resolveSimpleCompletionSelectionForAgent } from "../agents/simple-completion-selection.js";
 import type { SessionEntry } from "../config/sessions/types.js";
@@ -22,6 +24,18 @@ export async function captureCronInferenceBinding(params: {
   const model = resolveSimpleCompletionSelectionForAgent({ cfg, agentId, modelRef: params.model });
   if (!model) {
     throw new Error("Automation model could not be resolved.");
+  }
+  const cliProvider = resolveCliRuntimeExecutionProvider({
+    provider: model.provider,
+    cfg,
+    agentId,
+    modelId: model.modelId,
+    authProfileId: model.profileId,
+  });
+  // CLI backends run unbound on their native login; a recorded account would make
+  // every CLI run fail as an incompatible route.
+  if (cliProvider !== undefined && isCliProvider(cliProvider, cfg)) {
+    return undefined;
   }
   // A temporary creator model does not change the model an unpinned job will run.
   const creatorProvider =
