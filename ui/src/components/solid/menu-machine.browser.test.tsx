@@ -10,19 +10,29 @@ it("keeps current menu input reads bounded after visibility and direction change
   let binding!: MenuBinding;
   let surface!: HTMLDivElement;
   let contentReads = 0;
+  let directionReads = 0;
   const [direction, setDirection] = createSignal<"ltr" | "rtl">("ltr");
   const overlay = createOverlay("current-menu-inputs");
   render(() => {
     onCleanup(() => overlay.dispose());
     onSettled(() => overlay.bindSurface(surface));
-    binding = useMenuMachine(overlay, direction, () => {}, undefined, {
-      ids: {
-        get content() {
-          contentReads++;
-          return "current-menu-inputs:content";
+    binding = useMenuMachine(
+      overlay,
+      () => {
+        directionReads++;
+        return direction();
+      },
+      () => {},
+      undefined,
+      {
+        ids: {
+          get content() {
+            contentReads++;
+            return "current-menu-inputs:content";
+          },
         },
       },
-    });
+    );
     return (
       <div
         id="current-menu-inputs:content"
@@ -55,5 +65,10 @@ it("keeps current menu input reads bounded after visibility and direction change
     flush();
     expect(binding.read().open).toBe(false);
   }
+  const beforeRetirement = directionReads;
+  overlay.retire();
+  await Promise.resolve();
+  flush();
+  expect(directionReads).toBe(beforeRetirement);
   expect(readCost()).toBe(initialCost);
 });

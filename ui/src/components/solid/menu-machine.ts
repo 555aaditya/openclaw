@@ -289,7 +289,9 @@ export function useMenuMachine(
       focusItem(state);
     });
     const stopOpen = overlay.subscribe((open) => {
-      props.dir = untrack(direction);
+      if (open || props.open) {
+        props.dir = untrack(direction);
+      }
       props.open = open;
       // Deliver the same controlled transition as the menu open-prop watcher,
       // preserving the event that selected keyboard opening/closing behavior.
