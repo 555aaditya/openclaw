@@ -14,6 +14,7 @@ import {
 } from "../../scripts/npm-preflight-tooling-identity.mjs";
 import {
   resolveReleaseToolingIdentity,
+  resolveReleasePublicationOperator,
   validateReleasePublishParentRun,
   validateReleaseToolingIdentity,
   verifyReleaseToolingIdentity,
@@ -279,6 +280,8 @@ describe("release tooling identity", () => {
         head_sha: SHA,
         status: "in_progress",
         conclusion: null,
+        actor: { login: "original-operator" },
+        triggering_actor: { login: "maintainer" },
       });
     });
 
@@ -293,6 +296,48 @@ describe("release tooling identity", () => {
         runGh,
       }),
     ).toMatchObject({ route: "protected-tag", sha: SHA });
+    expect(
+      resolveReleasePublicationOperator({
+        ...protectedIdentity(),
+        actorLogin: "github-actions[bot]",
+        releasePublishFullRef: "refs/heads/main",
+        releasePublishParentStatePolicy: "active",
+        releasePublishRef: "main",
+        releasePublishRunAttempt: PARENT_RUN_ATTEMPT,
+        releasePublishRunId: PARENT_RUN_ID,
+        runGh,
+      }),
+    ).toBe("maintainer");
+    expect(() =>
+      resolveReleasePublicationOperator({
+        ...protectedIdentity(),
+        actorLogin: "github-actions[bot]",
+        releasePublishFullRef: "refs/heads/main",
+        releasePublishParentStatePolicy: "active",
+        releasePublishRef: "main",
+        releasePublishRunAttempt: "999",
+        releasePublishRunId: PARENT_RUN_ID,
+        runGh,
+      }),
+    ).toThrow("runAttempt does not match");
+    expect(() =>
+      resolveReleasePublicationOperator({
+        ...protectedIdentity(),
+        actorLogin: "github-actions[bot]",
+        runGh,
+      }),
+    ).toThrow("verified parent publication run with a human operator");
+    const noRead = vi.fn(() => {
+      throw new Error("Unexpected GitHub read");
+    });
+    expect(
+      resolveReleasePublicationOperator({
+        ...protectedIdentity(),
+        actorLogin: "maintainer",
+        runGh: noRead,
+      }),
+    ).toBe("maintainer");
+    expect(noRead).not.toHaveBeenCalled();
     expect(PARENT_RUN_ID).not.toBe(RUN_ID);
     expect(calls).toContainEqual([
       "api",

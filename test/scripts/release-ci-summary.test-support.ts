@@ -209,6 +209,21 @@ export function trustedMainPackageFixture({
     };
   };
   const client = {
+    getAuthenticatedLogin() {
+      throw new Error("Historical success fixture must not request publication waiver authority");
+    },
+    getMaintainerPermission() {
+      throw new Error("Historical success fixture must not request publication waiver authority");
+    },
+    getRunArtifacts() {
+      throw new Error("Historical success fixture must not reconstruct a waiver projection");
+    },
+    loadRunJsonArtifact() {
+      throw new Error("Historical success fixture must not reconstruct a waiver projection");
+    },
+    verifyCandidate() {
+      throw new Error("Historical success fixture must not reconstruct a waiver projection");
+    },
     verifyQualificationAdmission: () => {
       throw new Error("historical fixture must not request candidate qualification admission");
     },

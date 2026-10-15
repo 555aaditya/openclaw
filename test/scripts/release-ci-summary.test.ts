@@ -2437,9 +2437,7 @@ describe("release CI summary child correlation", () => {
     },
   );
 
-  it("recomputes mixed-attempt evidence with an authenticated Telegram waiver", async () => {
-    const version = "2026.9.1";
-
+  it("recomputes mixed-attempt evidence with unchanged frozen inputs", async () => {
     const fixture = trustedMainPackageFixture({
       manifestVersion: 3,
       workflowSha: "a".repeat(40),
@@ -2471,10 +2469,6 @@ describe("release CI summary child correlation", () => {
       getRunAttemptJobs: (runId: string, runAttempt: number) => Array<Record<string, unknown>>;
       loadExecutionPlan: () => Record<string, unknown>;
     };
-    const waiver = version
-      ? { telegramWaiver: `${version}-owner-approved`, targetVersion: version }
-      : {};
-    Object.assign(manifest.validationInputs, waiver);
     const plannedChild = {
       dispatchName: "Dispatch release checks",
       displayTitle: fixture.childRun.display_title,
@@ -2491,7 +2485,6 @@ describe("release CI summary child correlation", () => {
       workflowSha: fixture.childRun.head_sha,
     };
     const executionPlan = buildReleaseExecutionPlanArtifact({
-      ...waiver,
       attemptEvidenceVersion: 2,
       candidate: null,
       children: [plannedChild],
@@ -2623,14 +2616,6 @@ describe("release CI summary child correlation", () => {
         runAttempt: 2,
       }),
     ]);
-    if (version) {
-      delete manifest.validationInputs.telegramWaiver;
-      await expect(validate()).rejects.toThrow(/Telegram waiver/u);
-      Object.assign(manifest.validationInputs, waiver);
-      client.loadExecutionPlan = () => undefined as never;
-      await expect(validate()).rejects.toThrow(/Telegram waiver/u);
-      client.loadExecutionPlan = () => executionPlan;
-    }
 
     for (const [expectedRunAttempts, message] of [
       [{ [fixture.runId]: 1, [String(fixture.childRun.id)]: 2 }, "parent run attempt changed"],
@@ -3548,26 +3533,7 @@ describe("release CI summary child correlation", () => {
     ).toThrow("selected child is missing from manifest: NPM Telegram Beta E2E");
   });
 
-  it("validates the Telegram waiver before changing package child coverage", () => {
-    const version = "2026.9.5";
-
-    const raw = rawManifest({});
-    raw.releaseProfile = "stable";
-    Object.assign(raw.validationInputs, {
-      telegramWaiver: `${version}-owner-approved`,
-      targetVersion: version,
-      releasePackageSpec: `openclaw@${version}`,
-    });
-    const expected = { runAttempt: 2, runId: "29090000000" };
-    const manifest = validateParentManifest(raw, expected);
-    expect(
-      requiredChildKeysForRerunGroup(manifest.rerunGroup, manifest.validationInputs),
-    ).not.toContain("npmTelegram");
-    raw.validationInputs.targetVersion = "2026.8.2";
-    expect(() => validateParentManifest(raw, expected)).toThrow(/Telegram waiver/u);
-  });
-
-  it("rejects an unreviewed self-declared Telegram waiver", () => {
+  it("rejects non-empty recorded legacy Telegram waivers without changing coverage", () => {
     const raw = rawManifest({});
     raw.releaseProfile = "stable";
     Object.assign(raw.validationInputs, {
@@ -3576,7 +3542,7 @@ describe("release CI summary child correlation", () => {
       releasePackageSpec: "openclaw@2026.10.1",
     });
     expect(() => validateParentManifest(raw, { runAttempt: 2, runId: "29090000000" })).toThrow(
-      /Telegram waiver/u,
+      /Non-empty legacy telegram_waiver/u,
     );
   });
 

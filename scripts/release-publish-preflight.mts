@@ -43,6 +43,10 @@ import {
   observeReleaseNpmState,
   readReleasePublicationPackages,
 } from "./lib/release-publish-state.mts";
+import {
+  formatReleaseValidationWaivers,
+  parseReleaseValidationWaivers,
+} from "./lib/release-validation-waivers.mjs";
 import { verifyReleasePreflightToolingIdentity } from "./npm-preflight-tooling-identity.mjs";
 import { validateNpmPublishBoundary } from "./openclaw-npm-extended-stable-release.mjs";
 import { verifyOpenClawNpmResumeRun } from "./openclaw-npm-resume-run.mts";
@@ -72,6 +76,7 @@ export async function runReleasePublishPreflight(
   context: PreflightContext = {},
 ): Promise<PreflightReport> {
   let options = inputOptions;
+  let validationWaivers: ReturnType<typeof parseReleaseValidationWaivers>;
   const rows: ReleasePublishGate[] = [];
   const runGh = createPublishPreflightGh();
   const api = (endpoint: string) => preflightApi(runGh, options.repo, endpoint);
@@ -103,6 +108,17 @@ export async function runReleasePublishPreflight(
     "Publication inputs are consistent.",
     "Correct the named dispatch inputs and repeat preflight.",
     () => {
+      validationWaivers = parseReleaseValidationWaivers(options.validationWaiversJson);
+      if (validationWaivers && options.publicationRoute === "prepared") {
+        throw new Error(
+          "Validation waivers require normal direct protected-P publication; the prepared handoff does not carry an authenticated initiating human.",
+        );
+      }
+      if (validationWaivers && !options.fullReleaseValidationRunId) {
+        throw new Error(
+          "validation_waivers_json requires an existing Full Release Validation run.",
+        );
+      }
       if (
         options.tag.includes("-alpha.") ||
         options.npmDistTag === "alpha" ||
@@ -279,6 +295,65 @@ export async function runReleasePublishPreflight(
         }),
     );
   }
+  const validationOptionsFor = (
+    run: PublishPreflightRecord,
+    targetSha: string,
+    manifest?: PublishPreflightRecord,
+  ) => {
+    const selection = normalizePublicationIntent(
+      "publish",
+      JSON.stringify({
+        route:
+          options.publicationRoute === "prepared"
+            ? "prepared"
+            : options.npmDistTag === "extended-stable"
+              ? "extended-stable"
+              : "normal",
+        npmDistTag: options.npmDistTag,
+        publishOpenclawNpm: options.publishOpenclawNpm !== false,
+        pluginPublishScope: options.pluginPublishScope,
+        plugins: (options.plugins ?? "").split(/[\s,]+/u).filter(Boolean),
+        ...(options.windowsNodeTag
+          ? {
+              windowsNodeTag: options.windowsNodeTag,
+              windowsNodeInstallerDigests: JSON.parse(options.windowsNodeInstallerDigests ?? ""),
+            }
+          : {}),
+      }),
+    ).publicationSelection;
+    if (!selection) {
+      throw new Error("Publication intent must include an exact package selection.");
+    }
+    return {
+      run,
+      manifest,
+      validationWaivers: options.validationWaiversJson,
+      approverLogin: validationWaivers
+        ? runGh(["api", "user", "--jq", ".login"]).trim()
+        : undefined,
+      expectedRepository: options.repo,
+      expectedRunId: options.fullReleaseValidationRunId,
+      expectedRunAttempt: attempt,
+      expectedTargetSha: targetSha,
+      expectedReleaseTag: options.tag,
+      expectedTrustedWorkflowFullRef: `refs/${PUBLISH_REF.test(workflowRef) ? "tags" : "heads"}/${workflowRef}`,
+      expectedTrustedWorkflowSha: toolingSha,
+      expectedWorkflowBranch: workflowRef,
+      expectedPublicationSelection: selection,
+      verifierSourceSha: execFileSync(
+        "git",
+        ["-C", fileURLToPath(new URL("../", import.meta.url)), "rev-parse", "HEAD"],
+        {
+          encoding: "utf8",
+        },
+      ).trim(),
+      verifierSourceContent: readFileSync(new URL("./release-ci-summary.mjs", import.meta.url)),
+      isTrustedMainAncestor: (sha: string) => {
+        const result = requirePreflightRecord(api(`compare/${sha}...main?per_page=1`), "ancestry");
+        return result.status === "ahead" || result.status === "identical";
+      },
+    };
+  };
   const client = createPublishPreflightEvidenceClient(options.repo);
   const evidenceRequired =
     options.publishOpenclawNpm !== false ||
@@ -290,7 +365,9 @@ export async function runReleasePublishPreflight(
   if (evidenceRequired) {
     const run = await check(
       "validation.run",
-      "Exact successful validation attempt selected.",
+      validationWaivers
+        ? "Exact terminal validation attempt selected; its failed conclusion is retained pending strict waiver authentication."
+        : "Exact successful validation attempt selected.",
       "Supply the successful Full Release Validation run and exact attempt; use pnpm frv status --run <id> to inspect.",
       () => {
         if (!POSITIVE_ID.test(options.fullReleaseValidationRunId)) {
@@ -302,7 +379,8 @@ export async function runReleasePublishPreflight(
         );
         if (
           selectedRun.status !== "completed" ||
-          selectedRun.conclusion !== "success" ||
+          (selectedRun.conclusion !== "success" &&
+            !(validationWaivers && selectedRun.conclusion === "failure")) ||
           !POSITIVE_ID.test(String(selectedRun.run_attempt))
         ) {
           throw new Error("Validation run is not completed/success with an exact attempt.");
@@ -316,7 +394,7 @@ export async function runReleasePublishPreflight(
         return selectedRun;
       },
     );
-    if (!manifest && run) {
+    if (!manifest && run && !validationWaivers) {
       manifest = await check(
         "validation.manifest",
         "Validation manifest downloaded once.",
@@ -329,6 +407,20 @@ export async function runReleasePublishPreflight(
           return requirePreflightRecord(loaded.manifest, "validation manifest");
         },
       );
+    }
+    let authenticatedEvidence = context.fullValidationEvidence;
+    if (!manifest && run && validationWaivers && sourceSha && SHA.test(toolingSha)) {
+      const authenticated = await check(
+        "validation.manifest",
+        "P-side evidence reconstructed from authenticated execution plan and GitHub jobs; waived lanes are not passes.",
+        "Correct the exact waiver declaration or resolve every unwaived failure; no new FRV is dispatched.",
+        () =>
+          authenticateFullReleaseValidationEvidence(validationOptionsFor(run, sourceSha), client),
+      );
+      if (authenticated) {
+        manifest = authenticated.evidence.current.manifest;
+        authenticatedEvidence = authenticated;
+      }
     }
     if (manifest) {
       const fullManifest = manifest;
@@ -350,75 +442,21 @@ export async function runReleasePublishPreflight(
         };
       }
       if (run && sourceSha && SHA.test(toolingSha)) {
-        await check(
+        const authenticated = await check(
           "validation.provenance",
           "Full Release Validation provenance and publication selection authenticated.",
           "Use evidence admitted for this exact release source, tooling lineage, publication route and package selection.",
           async () => {
-            const selection = normalizePublicationIntent(
-              "publish",
-              JSON.stringify({
-                route:
-                  options.publicationRoute === "prepared"
-                    ? "prepared"
-                    : options.npmDistTag === "extended-stable"
-                      ? "extended-stable"
-                      : "normal",
-                npmDistTag: options.npmDistTag,
-                publishOpenclawNpm: options.publishOpenclawNpm !== false,
-                pluginPublishScope: options.pluginPublishScope,
-                plugins: (options.plugins ?? "").split(/[\s,]+/u).filter(Boolean),
-                ...(options.windowsNodeTag
-                  ? {
-                      windowsNodeTag: options.windowsNodeTag,
-                      windowsNodeInstallerDigests: JSON.parse(
-                        options.windowsNodeInstallerDigests ?? "",
-                      ),
-                    }
-                  : {}),
-              }),
-            ).publicationSelection;
-            if (!selection) {
-              throw new Error("Publication intent must include an exact package selection.");
-            }
-            const validationOptions = {
-              run,
-              manifest: fullManifest,
-              expectedRepository: options.repo,
-              expectedRunId: options.fullReleaseValidationRunId,
-              expectedRunAttempt: attempt,
-              expectedTargetSha: sourceSha,
-              expectedReleaseTag: options.tag,
-              expectedTrustedWorkflowFullRef: `refs/${PUBLISH_REF.test(workflowRef) ? "tags" : "heads"}/${workflowRef}`,
-              expectedTrustedWorkflowSha: toolingSha,
-              expectedWorkflowBranch: workflowRef,
-              expectedPublicationSelection: selection,
-              verifierSourceSha: execFileSync(
-                "git",
-                ["-C", fileURLToPath(new URL("../", import.meta.url)), "rev-parse", "HEAD"],
-                {
-                  encoding: "utf8",
-                },
-              ).trim(),
-              verifierSourceContent: readFileSync(
-                new URL("./release-ci-summary.mjs", import.meta.url),
-              ),
-              isTrustedMainAncestor: (sha: string) => {
-                const result = requirePreflightRecord(
-                  api(`compare/${sha}...main?per_page=1`),
-                  "ancestry",
-                );
-                return result.status === "ahead" || result.status === "identical";
-              },
-            };
-            if (context.fullValidationEvidence) {
+            const validationOptions = validationOptionsFor(run, sourceSha, fullManifest);
+            if (authenticatedEvidence) {
               const prior = requirePreflightRecord(
-                context.fullValidationEvidence,
+                authenticatedEvidence,
                 "authenticated candidate evidence",
               );
               const evidence = requirePreflightRecord(prior.evidence, "strict candidate evidence");
               const validated = validateFullReleaseValidationEvidence({
                 ...validationOptions,
+                manifest: fullManifest,
                 getWorkflowSource: (sha: string) => client.getWorkflowSource(sha),
                 validateEvidenceReuseStrictly: () => evidence,
               });
@@ -427,6 +465,13 @@ export async function runReleasePublishPreflight(
             return authenticateFullReleaseValidationEvidence(validationOptions, client);
           },
         );
+        if (authenticated && validationWaivers) {
+          warn(
+            "validation.waivers",
+            formatReleaseValidationWaivers(validationWaivers),
+            "These lanes were not passes; retain this declaration with publication evidence.",
+          );
+        }
       }
       for (const consumer of [
         "publisher",
@@ -550,6 +595,10 @@ export async function runReleasePublishPreflight(
                 preflightRunId: options.preflightRunId ?? options.fullReleaseValidationRunId,
                 fullReleaseValidationRunId: options.fullReleaseValidationRunId,
                 fullReleaseValidationRunAttempt: attempt,
+                validationWaiversJson: options.validationWaiversJson,
+                approverLogin: validationWaivers
+                  ? runGh(["api", "user", "--jq", ".login"]).trim()
+                  : undefined,
                 fullManifest: manifest,
                 pluginSdkApiAcknowledgement: options.pluginSdkApiAcknowledgement ?? "",
                 currentSelectorRef: `v${version}`,

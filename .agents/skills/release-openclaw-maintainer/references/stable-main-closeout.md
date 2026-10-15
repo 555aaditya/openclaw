@@ -8,8 +8,10 @@ and closeout on `main` are separate state transitions; never imply that
 publishing stable also advanced `main`.
 
 Closeout requires the original strict stable/full publication evidence with
-soak, blocking performance, and successful selected validation lanes. Historical
-waiver-bearing receipt replay and repair are unsupported. Completion requires both the closeout manifest and its matching checksum. If only the checksum is missing,
+soak, blocking performance, and successful required lanes or the original
+authenticated P-side live-provider/Telegram waiver declaration. Historical
+candidate-side lane/soak waiver-bearing receipt replay and repair are unsupported.
+Completion requires both the closeout manifest and its matching checksum. If only the checksum is missing,
 replay an eligible strict-evidence closeout to regenerate identical bytes; do not manufacture
 new evidence. Invalid or mismatched assets remain blocking.
 
@@ -96,7 +98,7 @@ new evidence. Invalid or mismatched assets remain blocking.
    when repository drill variables are configured. Replay requires successful
    stable/full evidence with soak and blocking performance. Complete
    manifest/checksum pairs remain recorded without rewriting. Historical
-   waiver-bearing receipt replay and repair are unsupported: the original
+   candidate-side lane/soak waiver-bearing receipt replay and repair are unsupported: the original
    postpublish evidence binds its validation run, which a fresh run cannot
    replace. Preserve those artifacts and stop instead of overwriting them or
    publishing again to repair a receipt.

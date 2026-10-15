@@ -488,7 +488,7 @@ export function verifyReleaseToolingIdentity({
     workflowRef,
     workflowSha,
   });
-  validateParentRunIfRequested({
+  const parentRun = validateParentRunIfRequested({
     identity: validated,
     releasePublishFullRef,
     releasePublishParentStatePolicy,
@@ -498,7 +498,32 @@ export function verifyReleaseToolingIdentity({
     repository: normalizedRepository,
     runGh,
   });
-  return validated;
+  return parentRun
+    ? {
+        ...validated,
+        releasePublishActorLogin: parentRun.triggering_actor?.login ?? parentRun.actor?.login,
+      }
+    : validated;
+}
+
+// A GITHUB_TOKEN-dispatched publisher executes as a bot. Its operator is the
+// human from the already authenticated exact parent attempt, never a name from
+// the waiver declaration or an extra caller-authored approval receipt.
+export function resolveReleasePublicationOperator({ actorLogin, ...authority }) {
+  if (typeof actorLogin !== "string" || !actorLogin.trim()) {
+    fail("release validation waiver requires an authenticated publication operator.");
+  }
+  if (!/\[bot\]$/iu.test(actorLogin)) {
+    return actorLogin;
+  }
+  const identity = verifyReleaseToolingIdentity(authority);
+  const parentActor = identity.releasePublishActorLogin;
+  if (typeof parentActor !== "string" || !parentActor.trim() || /\[bot\]$/iu.test(parentActor)) {
+    fail(
+      "bot-dispatched validation waiver requires a verified parent publication run with a human operator.",
+    );
+  }
+  return parentActor;
 }
 
 function validateParentRunIfRequested({
@@ -518,7 +543,7 @@ function validateParentRunIfRequested({
     !releasePublishRef &&
     !releasePublishFullRef
   ) {
-    return;
+    return undefined;
   }
   if (
     !releasePublishRunId ||
@@ -550,6 +575,7 @@ function validateParentRunIfRequested({
     repository,
     run,
   });
+  return run;
 }
 
 function parseArgs(argv) {

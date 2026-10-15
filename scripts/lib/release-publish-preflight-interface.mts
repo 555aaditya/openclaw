@@ -6,6 +6,7 @@ export type ReleasePublishPreflightOptions = {
   tag: string;
   fullReleaseValidationRunId: string;
   fullReleaseValidationRunAttempt?: string | number;
+  validationWaiversJson?: string;
   preflightRunId?: string;
   npmDistTag: string;
   pluginPublishScope: "selected" | "all-publishable";
@@ -42,6 +43,7 @@ export function buildReleasePublishDispatchCommand(
     preflight_run_id: options.preflightRunId ?? options.fullReleaseValidationRunId,
     full_release_validation_run_id: options.fullReleaseValidationRunId,
     full_release_validation_run_attempt: attempt,
+    validation_waivers_json: options.validationWaiversJson,
     npm_dist_tag: options.npmDistTag,
     plugin_publish_scope: options.pluginPublishScope,
     plugins: options.plugins,
@@ -95,6 +97,7 @@ export function parsePublishPreflightArgs(argv: string[]) {
     "tag",
     "full-release-validation-run-id",
     "full-release-validation-run-attempt",
+    "validation-waivers-json",
     "preflight-run-id",
     "npm-dist-tag",
     "plugin-publish-scope",
@@ -142,6 +145,7 @@ export function parsePublishPreflightArgs(argv: string[]) {
     tag: value("tag"),
     fullReleaseValidationRunId: value("full-release-validation-run-id"),
     fullReleaseValidationRunAttempt: value("full-release-validation-run-attempt"),
+    validationWaiversJson: value("validation-waivers-json"),
     preflightRunId: value("preflight-run-id") || undefined,
     npmDistTag: value("npm-dist-tag", "beta"),
     pluginPublishScope: scope,
