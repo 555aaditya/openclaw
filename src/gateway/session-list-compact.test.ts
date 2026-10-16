@@ -1,6 +1,5 @@
 import { expect, it } from "vitest";
 import type { SessionsListParams } from "../../packages/gateway-protocol/src/index.js";
-import type { SessionOwnerFacetIdentity } from "../shared/session-types.js";
 import {
   selectCompactSessionList,
   supportsCompactSessionList,
@@ -9,34 +8,18 @@ import {
 } from "./session-list-compact.js";
 
 const all: CompactSessionListAudience = { all: true, aliases: [] };
-const alice: SessionOwnerFacetIdentity = {
-  id: "alice",
-  type: "human",
-  label: "Alice",
-  identity: { type: "profile", id: "alice" },
-};
-const bob: SessionOwnerFacetIdentity = {
-  id: "bob",
-  type: "human",
-  label: "Bob",
-  identity: { type: "profile", id: "bob" },
-};
+const alice = { ownerId: "alice", ownerType: "human", ownerProfileId: "alice" } as const;
+const bob = { ownerId: "bob", ownerType: "human", ownerProfileId: "bob" } as const;
 
 function row(key: string, patch: Partial<CompactSessionListRow> = {}): CompactSessionListRow {
   return {
     key,
     agentId: "main",
-    selection: {
-      agentId: "main",
-      isCronRun: false,
-      isCron: false,
-      isDock: false,
-      isSystem: false,
-      isSubagent: false,
-      isPhantom: false,
-    },
+    isCron: false,
+    isDock: false,
+    isSystem: false,
+    isSubagent: false,
     activityAt: 0,
-    pinnable: true,
     heartbeatIsolated: false,
     visibility: "shared",
     incognito: false,
@@ -59,7 +42,7 @@ it("keeps pin ordering, archive presence, and stable page offsets independent", 
     row("b", { updatedAt: 200, lastInteractionAt: 300, activityAt: 400 }),
     row("a", { updatedAt: 200, lastInteractionAt: 100, activityAt: 200 }),
     row("pinned", { updatedAt: 1, pinnedAt: 10 }),
-    row("not-pinnable", { updatedAt: 2, pinnedAt: 100, pinnable: false }),
+    row("unpinned", { updatedAt: 2 }),
     row("archived", { updatedAt: 900, archivedAt: 0 }),
   ];
   expect(select(rows, { limit: 2 })).toMatchObject({
@@ -69,12 +52,13 @@ it("keeps pin ordering, archive presence, and stable page offsets independent", 
     hasMore: true,
   });
   expect(select(rows, { limit: 2, offset: 2 })).toMatchObject({
-    keys: ["b", "not-pinnable"],
+    keys: ["b", "unpinned"],
     nextOffset: null,
     hasMore: false,
   });
   expect(select(rows, { archived: true }).keys).toEqual(["archived"]);
   expect(select(rows, { archived: "all", pinned: true }).keys).toEqual(["pinned"]);
+  expect(select([row("zero-pin", { pinnedAt: 0 })], { pinned: true }).keys).toEqual(["zero-pin"]);
   for (const sortBy of ["lastInteractionAt", "activity"] as const) {
     expect(select(rows, { sortBy, limit: 2 }).keys).toEqual(["b", "a"]);
   }
@@ -82,10 +66,10 @@ it("keeps pin ordering, archive presence, and stable page offsets independent", 
 
 it("prepends owned rows once without advancing the shared-page offset", () => {
   const rows = [
-    row("newest", { updatedAt: 4, owner: bob }),
-    row("owned-new", { updatedAt: 3, owner: alice }),
-    row("other", { updatedAt: 2, owner: bob }),
-    row("owned-old", { updatedAt: 1, owner: alice }),
+    row("newest", { updatedAt: 4, ...bob }),
+    row("owned-new", { updatedAt: 3, ...alice }),
+    row("other", { updatedAt: 2, ...bob }),
+    row("owned-old", { updatedAt: 1, ...alice }),
   ];
   expect(select(rows, { limit: 2, ownerFirst: true })).toMatchObject({
     keys: ["owned-new", "owned-old", "newest"],
@@ -104,7 +88,7 @@ it("resolves draft visibility by creator profiles and aliases, never assigned ow
   const rows = [
     row("created", { visibility: "draft", creatorProfileId: "alice" }),
     row("alias", { visibility: "draft", creatorProfileId: "old-alice" }),
-    row("assigned", { visibility: "draft", creatorProfileId: "bob", owner: alice }),
+    row("assigned", { visibility: "draft", creatorProfileId: "bob", ...alice }),
     row("channel", { visibility: "draft", creatorId: "alice" }),
     row("shared"),
     row("private", { visibility: "private" }),
@@ -117,12 +101,12 @@ it("resolves draft visibility by creator profiles and aliases, never assigned ow
 });
 
 it("retains complete visible owner facets before creator and owner filters", () => {
-  const agent: SessionOwnerFacetIdentity = { type: "agent", id: "bob", label: "Agent Bob" };
+  const agent = { ownerType: "agent", ownerId: "bob" } as const;
   const rows = [
-    row("a", { owner: alice, creatorId: "alice" }),
-    row("b", { owner: bob, creatorId: "bob" }),
-    row("agent", { owner: agent, creatorId: "bob" }),
-    row("hidden", { visibility: "draft", owner: { type: "agent", id: "hidden" } }),
+    row("a", { ...alice, creatorId: "alice" }),
+    row("b", { ...bob, creatorId: "bob" }),
+    row("agent", { ...agent, creatorId: "bob" }),
+    row("hidden", { visibility: "draft", ownerType: "agent", ownerId: "hidden" }),
   ];
   expect(
     select(
@@ -134,7 +118,7 @@ it("retains complete visible owner facets before creator and owner filters", () 
         aliases: [],
       },
     ),
-  ).toMatchObject({ keys: ["a"], totalCount: 1, ownerFacet: [agent, alice] });
+  ).toMatchObject({ keys: ["a"], totalCount: 1, ownerKeys: ["a", "agent"] });
 });
 
 it("keeps activity cutoffs inclusive and independent from creator filtering", () => {
@@ -162,7 +146,7 @@ it("applies exact metadata and prepared classification filters before facets", (
     projectId: "project",
     workspaceDir: "/workspace",
     group: "work",
-    owner: alice,
+    ...alice,
   });
   const opts: SessionsListParams = {
     requireLastInteraction: true,
@@ -182,14 +166,13 @@ it("applies exact metadata and prepared classification filters before facets", (
     row("heartbeat", { ...eligible, key: "heartbeat", heartbeatIsolated: true }),
     row("no-interaction", { ...eligible, key: "no-interaction", lastInteractionAt: 0 }),
     row("other-project", { ...eligible, key: "other-project", projectId: "other" }),
-    ...(["isCronRun", "isCron", "isSystem", "isDock", "isSubagent", "isPhantom"] as const).map(
-      (flag) =>
-        row(flag, { ...eligible, key: flag, selection: { ...eligible.selection, [flag]: true } }),
+    ...(["isCron", "isSystem", "isDock", "isSubagent"] as const).map((flag) =>
+      row(flag, { ...eligible, key: flag, [flag]: true }),
     ),
   ];
   expect(select([eligible, ...rejected], opts)).toMatchObject({
     keys: ["eligible"],
-    ownerFacet: [alice],
+    ownerKeys: ["eligible"],
     totalCount: 1,
   });
 });

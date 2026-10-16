@@ -6,7 +6,11 @@ import { replaceSessionEntrySync } from "../config/sessions/session-accessor.js"
 import { WorkerTaskPool } from "../infra/worker-task-pool.js";
 import type { WorkerTaskInput, WorkerTaskOptions } from "../infra/worker-task-pool.types.js";
 import { createDeferredCore } from "../shared/deferred.js";
-import { setUserProfileRole } from "../state/user-profile-writes.worker.js";
+import {
+  setAvatar,
+  setDisplayName,
+  setUserProfileRole,
+} from "../state/user-profile-writes.worker.js";
 import { ensureProfileForEmail } from "../state/user-profiles.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import { prepareGatewayRecipientProfile } from "./expected-profile.js";
@@ -36,6 +40,9 @@ it.each(["row visibility", "caller scope"] as const)(
       setRuntimeConfigSnapshot(cfg);
       const viewer = ensureProfileForEmail("viewer@compact-worker.test");
       const other = ensureProfileForEmail("other@compact-worker.test");
+      setDisplayName(viewer.id, "Zed");
+      setDisplayName(other.id, "Alice");
+      setAvatar(viewer.id, new Uint8Array([137, 80, 78, 71]), "image/png");
       setUserProfileRole(viewer.id, change === "caller scope" ? "none" : "view");
       const client = sharingPolicyClient({
         user: viewer.id,
@@ -47,6 +54,8 @@ it.each(["row visibility", "caller scope"] as const)(
       const otherEntry = {
         sessionId: "compact-other",
         updatedAt: 2,
+        pinnedAt: 100,
+        spawnedBy: "agent:main:parent",
         createdActor: { type: "human" as const, source: "profile" as const, id: other.id },
       };
       replaceSessionEntrySync(
@@ -54,10 +63,15 @@ it.each(["row visibility", "caller scope"] as const)(
         {
           sessionId: "compact-owned",
           updatedAt: 1,
+          pinnedAt: 0,
           createdActor: { type: "human", source: "profile", id: viewer.id },
         },
       );
       replaceSessionEntrySync({ agentId: "main", sessionKey: otherKey }, otherEntry);
+      replaceSessionEntrySync(
+        { agentId: "main", sessionKey: "agent:main:cron:job:run:excluded" },
+        { sessionId: "excluded", updatedAt: 3 },
+      );
       const releaseForeground = retainSessionListForegroundWork();
       const projection = await createSessionRowProjection({ cfg, modelCatalog: [] });
       const seeded = createDeferredCore();
@@ -124,6 +138,8 @@ it.each(["row visibility", "caller scope"] as const)(
         });
         expect(initial.sessions.map((row) => row.key)).toEqual([otherKey, ownKey]);
         expect(initial.totalCount).toBe(2);
+        expect(initial.owners?.map((owner) => owner.label)).toEqual(["Alice", "Zed"]);
+        expect(initial.owners?.find((owner) => owner.id === viewer.id)?.avatarUrl).toBeTruthy();
         await seeded.promise;
         // The seed task's acknowledgement precedes its continuation marking the replica ready.
         await nextTurn();
@@ -166,11 +182,18 @@ it.each(["row visibility", "caller scope"] as const)(
         expect(workerSelections[1]).toMatchObject({
           keys: [ownKey],
           totalCount: 1,
-          ownerFacet: [{ id: viewer.id }],
+          ownerKeys: [ownKey],
         });
         expect(next.sessions.map((row) => row.key)).toEqual([ownKey]);
         expect(next.totalCount).toBe(1);
-        expect(next.owners?.map((owner) => owner.id)).toEqual([viewer.id]);
+        expect(next.owners).toEqual([initial.owners?.find((owner) => owner.id === viewer.id)]);
+        const pinned = await listProjectedSessions({
+          projection,
+          client,
+          acceptsSerializedJson: true,
+          opts: { pinned: true, limit: 3 },
+        });
+        expect(pinned.sessions.map((row) => row.key)).toEqual([ownKey]);
       } finally {
         releaseReply.resolve();
         await pending?.catch(() => {});

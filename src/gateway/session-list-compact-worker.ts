@@ -2,6 +2,7 @@ import { setImmediate as yieldToRequests } from "node:timers/promises";
 import type { SessionsListParams } from "../../packages/gateway-protocol/src/index.js";
 import { sessionCreatorProfileId } from "../config/sessions/session-entry-provenance.js";
 import { isPinnableSessionEntry } from "../config/sessions/session-pin-policy.js";
+import type { SessionEntry } from "../config/sessions/types.js";
 import { resolveRuntimeProcessEntrypointUrl } from "../infra/runtime-process-url.js";
 import { WorkerTaskPool } from "../infra/worker-task-pool.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
@@ -9,7 +10,7 @@ import { isIncognitoSessionKey } from "../routing/session-key.js";
 import { sessionActivityTimestamp } from "../shared/session-activity-timestamp.js";
 import { gatewayClientSessionCreator } from "./server-methods/gateway-client-identity.js";
 import type { GatewayClient } from "./server-methods/types.js";
-import { projectSessionOwner } from "./session-identity-projection.js";
+import { projectSessionOwner, sortSessionOwnerFacet } from "./session-identity-projection.js";
 import {
   supportsCompactSessionList,
   type CompactSessionListAudience,
@@ -56,23 +57,34 @@ type SelectionProjection = {
 const indexes = new WeakMap<SelectionProjection, ReturnType<typeof createIndex>>();
 const log = createSubsystemLogger("gateway/session-selection");
 
+function captureOwner(prepared: PreparedSelection, entry: SessionEntry) {
+  const context = prepared.getRowContext();
+  return (context.identityProjection?.owner ?? projectSessionOwner)(
+    entry,
+    context.userProfileIdentityById,
+    prepared.cfg,
+    prepared.configuredAgentIds,
+  )?.actor;
+}
+
 function captureRow(prepared: PreparedSelection, key: string): CompactSessionListRow | undefined {
   const target = prepared.getTarget(key);
-  if (!target) {
+  if (!target || target.selection.isCronRun || target.selection.isPhantom) {
     return undefined;
   }
-  const { entry, selection, agentId, hasBoard } = target;
-  const context = prepared.getRowContext();
+  const { entry, selection, hasBoard } = target;
+  const owner = captureOwner(prepared, entry);
   return {
     key,
-    agentId,
-    selection,
+    agentId: selection.agentId,
+    isCron: selection.isCron,
+    isDock: selection.isDock,
+    isSystem: selection.isSystem,
+    isSubagent: selection.isSubagent,
     updatedAt: entry.updatedAt,
-    createdAt: entry.createdAt,
     lastInteractionAt: entry.lastInteractionAt,
     activityAt: sessionActivityTimestamp(entry),
-    pinnedAt: entry.pinnedAt,
-    pinnable: isPinnableSessionEntry(key, entry),
+    pinnedAt: isPinnableSessionEntry(key, entry) ? entry.pinnedAt : undefined,
     archivedAt: entry.archivedAt,
     label: entry.label,
     boardFace: entry.boardFace,
@@ -82,12 +94,9 @@ function captureRow(prepared: PreparedSelection, key: string): CompactSessionLis
     heartbeatIsolated: Boolean(entry.heartbeatIsolatedBaseSessionKey?.trim()),
     creatorId: entry.createdActor?.id,
     creatorProfileId: sessionCreatorProfileId(entry.createdActor),
-    owner: (context.identityProjection?.owner ?? projectSessionOwner)(
-      entry,
-      context.userProfileIdentityById,
-      prepared.cfg,
-      prepared.configuredAgentIds,
-    )?.actor,
+    ownerId: owner?.id,
+    ownerType: owner?.type,
+    ownerProfileId: owner?.identity?.type === "profile" ? owner.identity.id : undefined,
     visibility: resolveSessionVisibility(entry),
     incognito: entry.incognito === true || isIncognitoSessionKey(key),
     hasBoard,
@@ -245,9 +254,21 @@ function createIndex(projection: SelectionProjection) {
             ) {
               return undefined;
             }
-            const { keys, ...facets } = result;
+            const { keys, ownerKeys, ...facets } = result;
             return {
               ...facets,
+              // Display identities stay with the authoritative projection, not in every replica row.
+              ownerFacet: sortSessionOwnerFacet(
+                new Map(
+                  ownerKeys.map((key) => {
+                    const owner = captureOwner(
+                      currentPrepared,
+                      currentPrepared.getTarget(key)!.entry,
+                    )!;
+                    return [owner.id, owner];
+                  }),
+                ),
+              ),
               entries: keys.map((key): SessionEntryPair => [
                 key,
                 currentPrepared.getTarget(key)!.entry,

@@ -11,22 +11,15 @@ import type { SessionOwnerFacetIdentity } from "../shared/session-types.js";
 /** Published metadata only; no runtime records or full session entries cross this boundary. */
 export type CompactSessionListRow = {
   key: string;
-  agentId: string;
-  selection: {
-    isCronRun: boolean;
-    isCron: boolean;
-    isDock: boolean;
-    isSystem: boolean;
-    isSubagent: boolean;
-    isPhantom: boolean;
-    agentId?: string;
-  };
+  agentId?: string;
+  isCron: boolean;
+  isDock: boolean;
+  isSystem: boolean;
+  isSubagent: boolean;
   updatedAt?: number | null;
-  createdAt?: number;
   lastInteractionAt?: number;
   activityAt: number;
   pinnedAt?: number;
-  pinnable: boolean;
   archivedAt?: number;
   label?: string;
   boardFace?: string;
@@ -37,7 +30,9 @@ export type CompactSessionListRow = {
   heartbeatIsolated: boolean;
   creatorId?: string;
   creatorProfileId?: string;
-  owner?: SessionOwnerFacetIdentity;
+  ownerId?: string;
+  ownerType?: SessionOwnerFacetIdentity["type"];
+  ownerProfileId?: string;
   visibility: string;
   incognito: boolean;
 };
@@ -51,7 +46,7 @@ export type CompactSessionListAudience = {
 
 export type CompactSessionListSelection = {
   keys: string[];
-  ownerFacet: SessionOwnerFacetIdentity[];
+  ownerKeys: string[];
   totalCount: number;
   ownerCount: number;
   limitApplied?: number;
@@ -144,11 +139,10 @@ export function selectCompactSessionList({
   const label = normalizeOptionalString(opts.label);
   const creatorId = normalizeOptionalString(opts.creatorId);
   const ownerId = normalizeOptionalString(opts.ownerId);
-  const owners = new Map<string, SessionOwnerFacetIdentity>();
+  const owners = new Map<string, CompactSessionListRow>();
   const selected: CompactSessionListRow[] = [];
   let activityExpiresAt = Infinity;
   for (const row of rows) {
-    const facts = row.selection;
     if (
       (opts.archived !== "all" && (row.archivedAt !== undefined) !== (opts.archived === true)) ||
       (opts.requireLastInteraction &&
@@ -161,16 +155,14 @@ export function selectCompactSessionList({
       (opts.workspaceDir !== undefined && row.workspaceDir !== opts.workspaceDir) ||
       (opts.group !== undefined && (row.group ?? "") !== opts.group) ||
       !compactSessionListRowVisible(row, audience) ||
-      facts.isCronRun ||
-      (opts.excludeCron && facts.isCron) ||
-      (opts.excludeSystem && facts.isSystem) ||
-      (opts.excludeDock && facts.isDock) ||
-      (opts.excludeSubagents && facts.isSubagent) ||
+      (opts.excludeCron && row.isCron) ||
+      (opts.excludeSystem && row.isSystem) ||
+      (opts.excludeDock && row.isDock) ||
+      (opts.excludeSubagents && row.isSubagent) ||
       (!opts.includeGlobal && row.key === "global") ||
       (!opts.includeUnknown && row.key === "unknown") ||
-      (agentId && row.key !== "global" && facts.agentId !== agentId) ||
-      facts.isPhantom ||
-      (opts.pinned !== undefined && (row.pinnedAt !== undefined && row.pinnable) !== opts.pinned)
+      (agentId && row.key !== "global" && row.agentId !== agentId) ||
+      (opts.pinned !== undefined && (row.pinnedAt !== undefined) !== opts.pinned)
     ) {
       continue;
     }
@@ -182,21 +174,20 @@ export function selectCompactSessionList({
       }
       activityExpiresAt = Math.min(activityExpiresAt, expiresAt);
     }
-    const owner = row.owner;
-    if (owner) {
-      const existing = owners.get(owner.id);
-      if (!existing || (existing.type === "human" && owner.type === "agent")) {
-        owners.set(owner.id, owner);
+    if (row.ownerId) {
+      const existing = owners.get(row.ownerId);
+      if (!existing || (existing.ownerType === "human" && row.ownerType === "agent")) {
+        owners.set(row.ownerId, row);
       }
     }
-    if ((creatorId && row.creatorId !== creatorId) || (ownerId && owner?.id !== ownerId)) {
+    if ((creatorId && row.creatorId !== creatorId) || (ownerId && row.ownerId !== ownerId)) {
       continue;
     }
     selected.push(row);
   }
   selected.sort((a, b) => {
     if (sortBy === "updatedAt") {
-      const pinned = (b.pinnable ? (b.pinnedAt ?? 0) : 0) - (a.pinnable ? (a.pinnedAt ?? 0) : 0);
+      const pinned = (b.pinnedAt ?? 0) - (a.pinnedAt ?? 0);
       if (pinned) {
         return pinned;
       }
@@ -207,22 +198,14 @@ export function selectCompactSessionList({
   });
   const shared = selected.slice(offset, Math.min(offset + limit, Number.MAX_SAFE_INTEGER));
   const owned = ownerLimit
-    ? selected
-        .filter(
-          (row) =>
-            row.owner?.identity?.type === "profile" &&
-            row.owner.identity.id === ownerFirstProfileId,
-        )
-        .slice(0, ownerLimit)
+    ? selected.filter((row) => row.ownerProfileId === ownerFirstProfileId).slice(0, ownerLimit)
     : [];
   const ownedKeys = new Set(owned.map((row) => row.key));
   const nextOffset = offset + shared.length;
   const hasMore = nextOffset < selected.length;
   return {
     keys: [...owned, ...shared.filter((row) => !ownedKeys.has(row.key))].map((row) => row.key),
-    ownerFacet: [...owners.values()].toSorted(
-      (a, b) => (a.label ?? a.id).localeCompare(b.label ?? b.id) || a.id.localeCompare(b.id),
-    ),
+    ownerKeys: [...owners.values()].map((row) => row.key),
     totalCount: selected.length,
     ownerCount: owned.length,
     limitApplied: limit,
