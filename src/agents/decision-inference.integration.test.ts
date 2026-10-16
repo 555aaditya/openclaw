@@ -186,7 +186,7 @@ it.each(["plugin", "agent", "profile", "missing", "exchange"] as const)(
     };
     const env = {
       ...createColdPluginHermeticEnv(root, { bundledPluginsDir: emptyBundled }),
-      ...(profileState?.envVars ?? {}),
+      ...profileState?.envVars,
       OPENCLAW_DISABLE_BUNDLED_PLUGINS: "1",
       OPENCLAW_STATE_DIR: profileState?.stateDir ?? path.join(root, "state"),
     };

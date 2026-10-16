@@ -164,7 +164,9 @@ it("keeps explicit canonical identities authoritative over V1 input, including r
     }),
   );
   const result = loadPluginManifest(root);
-  if (!result.ok) throw new Error(result.error);
+  if (!result.ok) {
+    throw new Error(result.error);
+  }
   expect(result.manifest.modelCatalog?.providers?.fixture?.models).toEqual([
     {
       id: "native",

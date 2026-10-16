@@ -762,5 +762,7 @@ it.each([
     baseUrl: custom ? "https://custom.fixture.invalid/v1" : "https://catalog.fixture.invalid/v1",
     inference: custom ? { chat: false } : inference,
   });
-  if (custom) expect(rows[0]!.inference).not.toHaveProperty("decision");
+  if (custom) {
+    expect(rows[0]!.inference).not.toHaveProperty("decision");
+  }
 });
