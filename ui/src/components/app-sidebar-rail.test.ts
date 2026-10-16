@@ -257,9 +257,9 @@ describe("personal navigation rail", () => {
     await update(sidebar, { sidebarEntries: ["session:agent:main:mine"] });
     const pin = rail(sidebar, "session:agent:main:mine")!;
     const artwork = domProbe(pin);
-    expect({ label: artwork.attr("a", "aria-label"), title: pin.getAttribute("title") }).toEqual({
+    expect({ label: artwork.attr("a", "aria-label"), hint: pin.getAttribute("data-tooltip") }).toEqual({
       label,
-      title: label,
+      hint: label,
     });
     expect(artwork.text(".sidebar-rail__monogram")).toBe(monogram);
     if (icon?.startsWith("data:")) {
@@ -347,7 +347,10 @@ describe("personal navigation rail", () => {
     });
     source.focus();
     onTestFinished(installTitleTooltips(document));
+    const readStyle = vi.spyOn(window, "getComputedStyle");
     dispatchMousePointer(hovered, "pointerover");
+    expect(readStyle).not.toHaveBeenCalled();
+    readStyle.mockRestore();
     const hint = tooltip();
     hint.delay = 100;
     await hint.updateComplete;

@@ -345,7 +345,7 @@ function renderRailPin(
           drop()?.entry === serialized ? `sidebar-zone-entry--drop-${drop()?.position}` : undefined,
         ]}
         data-sidebar-entry={serialized}
-        title={host.sidebarMenus.railPinMenuPosition ? "" : label()}
+        data-tooltip={host.sidebarMenus.railPinMenuPosition ? "" : label()}
         draggable={!host.sidebarSnapshot ? "true" : "false"}
         onContextMenu={openMenu}
         onKeyDown={openMenu}
