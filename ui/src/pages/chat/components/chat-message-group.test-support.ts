@@ -2,7 +2,7 @@ import { createComponent, merge } from "solid-js";
 import type { MessageGroup as MessageGroupData } from "../../../lib/chat/chat-types.ts";
 import { LitContent, solidContent } from "../../../lit/solid-content.tsx";
 import type { RenderMessageGroupOptions } from "./chat-message-group-options.ts";
-import { ActivityGroup, MessageGroup } from "./chat-message-group-view.tsx";
+import { MessageGroup } from "./chat-message-group-view.tsx";
 export * from "./chat-message-group-view.tsx";
 
 function nativeProps<P extends { options: RenderMessageGroupOptions }>(props: P) {
@@ -22,20 +22,6 @@ function nativeProps<P extends { options: RenderMessageGroupOptions }>(props: P)
       };
     },
   });
-}
-function ActivityGroupContent(props: {
-  groups: readonly MessageGroupData[];
-  options: RenderMessageGroupOptions;
-  presentation: "standalone" | "continuation";
-}) {
-  return createComponent(ActivityGroup, nativeProps(props));
-}
-export function renderActivityGroup(
-  groups: readonly MessageGroupData[],
-  options: RenderMessageGroupOptions,
-  presentation: "standalone" | "continuation" = "standalone",
-) {
-  return solidContent(ActivityGroupContent, { groups, options, presentation });
 }
 function GroupContent(props: { group: MessageGroupData; options: RenderMessageGroupOptions }) {
   return createComponent(MessageGroup, nativeProps(props));
