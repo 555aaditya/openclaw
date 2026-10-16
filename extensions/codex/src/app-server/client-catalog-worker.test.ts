@@ -454,22 +454,57 @@ describe("Codex catalog worker transport", () => {
     await expect(request).resolves.toEqual({ data: [], nextCursor: "opaque-continuation" });
   });
 
-  it.each(["identity", "cursor", "cardinality"])(
+  it.each([64 * 1024 * 1024, 64 * 1024 * 1024 + 1])(
+    "bounds singleton worker parsing at 64 MiB for a %i-byte response",
+    async (bytes) => {
+      const harness = createHarness();
+      const submitted = vi.spyOn(WorkerTaskPool.prototype, "run");
+      const parse = vi.spyOn(messageDecoder, "parseCodexAppServerMessage");
+      const request = harness.client.request("thread/list", { limit: 1 }, { catalogPreview: true });
+      const expected = {
+        data: [{ id: "bounded", projectId: null, catalogError: "oversized-thread" }],
+        nextCursor: null,
+      };
+      const outcome =
+        bytes > 64 * 1024 * 1024
+          ? expect(request).rejects.toThrow("exceeds 8 MiB")
+          : expect(request).resolves.toEqual(expected);
+      const raw = JSON.stringify({
+        id: requestId(harness),
+        result: { data: [{ id: "bounded" }], nextCursor: null },
+      });
+      harness.process.stdout.write(`${raw}${" ".repeat(bytes - Buffer.byteLength(raw))}\n`);
+      await outcome;
+      expect(submitted).toHaveBeenCalledTimes(bytes > 64 * 1024 * 1024 ? 0 : 1);
+      expect(parse).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["identity", "cursor", "missing cursor", "cardinality", "JSON"])(
     "rejects oversized singleton recovery with invalid %s",
     async (invalid) => {
       const harness = createHarness();
       const request = harness.client.request("thread/list", { limit: 1 }, { catalogPreview: true });
       const rejected = expect(request).rejects.toThrow("exceeds 8 MiB");
-      harness.send({
+      const response = {
         id: requestId(harness),
         result: {
           data: [
             { id: invalid === "identity" ? "" : "huge", preview: "x".repeat(8 * 1024 * 1024) },
             ...(invalid === "cardinality" ? [{ id: "extra" }] : []),
           ],
-          nextCursor: invalid === "cursor" ? 42 : "opaque-continuation",
+          nextCursor:
+            invalid === "missing cursor"
+              ? undefined
+              : invalid === "cursor"
+                ? 42
+                : "opaque-continuation",
         },
-      });
+      };
+      const raw = JSON.stringify(response);
+      harness.process.stdout.write(
+        `${invalid === "JSON" ? raw.replace('"nextCursor":', '"unused":[1,],"nextCursor":') : raw}\n`,
+      );
       await rejected;
       expect(harness.client.getCloseError()).toBeUndefined();
     },
