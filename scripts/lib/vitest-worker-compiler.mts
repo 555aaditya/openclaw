@@ -14,7 +14,10 @@ import {
   standaloneRuntimeProcessBuildEntries,
 } from "./runtime-process-core-build-entries.mts";
 import { createSqliteSchemaAssetsPlugin } from "./sqlite-schema-assets.mts";
-import { createStateSchemaInlinePlugin } from "./state-schema-inline-plugin.mts";
+import {
+  createStateSchemaInlinePlugin,
+  STATE_SCHEMA_INLINE_PLUGIN_NAME,
+} from "./state-schema-inline-plugin.mts";
 import {
   hashVitestWorkerArtifact,
   verifyVitestWorkerArtifacts,
@@ -174,7 +177,7 @@ async function compileVitestWorkerArtifacts(directory: string): Promise<void> {
       "cli/update-cli/update-command-service-drain.js",
     ],
   ]);
-  const config: NonNullable<Parameters<typeof build>[0]> = {
+  const config = {
     config: false,
     cwd: root,
     entry: sharedRuntimeProcessBuildEntries(entry),
@@ -302,7 +305,7 @@ async function compileVitestWorkerArtifacts(directory: string): Promise<void> {
       },
       ...commonPlugins,
     ],
-  };
+  } satisfies NonNullable<Parameters<typeof build>[0]>;
   const compileShared = async () => {
     await build(config);
     reportPhase("shared entries compiled");
@@ -317,7 +320,7 @@ async function compileVitestWorkerArtifacts(directory: string): Promise<void> {
       });
     }
     reportPhase("standalone workers compiled");
-    for (const sealedConfig of createManagedHandoffBuildConfigs()) {
+    for (const sealedConfig of createManagedHandoffBuildConfigs(recordInput)) {
       await build({
         ...sealedConfig,
         config: false,
@@ -325,7 +328,13 @@ async function compileVitestWorkerArtifacts(directory: string): Promise<void> {
         outDir,
         clean: false,
         logLevel: config.logLevel,
-        plugins: config.plugins,
+        plugins: [
+          ...config.plugins,
+          // The compiler's schema plugin also records canonical SQL inputs.
+          ...sealedConfig.plugins.filter(
+            (plugin) => plugin.name !== STATE_SCHEMA_INLINE_PLUGIN_NAME,
+          ),
+        ],
       });
     }
     reportPhase("managed handoff compiled");

@@ -8,13 +8,16 @@ import { managedHandoffRuntimeEntrypoint } from "../../src/infra/update-managed-
 import { createStateSchemaInlinePlugin } from "./state-schema-inline-plugin.mts";
 
 /** The installed CLI and invocation compiler seal the same typed lease owner. */
-export function createManagedHandoffBuildConfigs() {
+export function createManagedHandoffBuildConfigs(recordInput?: (file: string) => void) {
   return [managedHandoffRuntimeEntrypoint, packageActivationRuntimeEntrypoint].map((entry) =>
-    createSealedRecoveryBuildConfig(entry),
+    createSealedRecoveryBuildConfig(entry, recordInput),
   );
 }
 
-function createSealedRecoveryBuildConfig(entry: typeof managedHandoffRuntimeEntrypoint) {
+function createSealedRecoveryBuildConfig(
+  entry: typeof managedHandoffRuntimeEntrypoint,
+  recordInput?: (file: string) => void,
+) {
   const identityReader = fileURLToPath(
     new URL("../../src/shared/freebsd-process-identity.ts", import.meta.url),
   );
@@ -47,6 +50,7 @@ function createSealedRecoveryBuildConfig(entry: typeof managedHandoffRuntimeEntr
             path.dirname(require.resolve("@openclaw/fs-safe/package.json")),
             "dist/windows-security-helper.exe",
           );
+          recordInput?.(helper);
           this.addWatchFile(helper);
           this.emitFile({
             type: "asset",
