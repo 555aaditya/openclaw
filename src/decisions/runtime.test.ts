@@ -37,7 +37,11 @@ afterEach(() => {
 
 describe("registered decision capability", () => {
   it.each([
-    { agentId: "specialist", llm: {}, reason: "cannot override the target agent" },
+    {
+      agentId: "specialist",
+      llm: { allowedCompletionModels: ["fixture/other"] },
+      reason: "not allowlisted",
+    },
     {
       agentId: undefined,
       llm: { allowedCompletionModels: ["fixture/other"] },
@@ -94,43 +98,51 @@ describe("registered decision capability", () => {
     },
   );
 
-  it("authorizes explicit SDK agents without creating a primary-model fallback", async () => {
-    const evaluate = vi.fn<DecisionProviderV1["evaluate"]>(async () => answer);
-    const host = registered(evaluate);
-    setRuntimeConfigSnapshot({
-      agents: {
-        defaults: { model: "fixture/primary" },
-        entries: {
-          specialist: { decisionModel: "fixture/specialist-v1" },
-          disabled: { decisionModel: "" },
+  it.each([undefined, false, true])(
+    "preserves owner-agent SDK calls without requiring override permission (%j)",
+    async (allowAgentIdOverride) => {
+      const evaluate = vi.fn<DecisionProviderV1["evaluate"]>(async () => answer);
+      const host = registered(evaluate);
+      setRuntimeConfigSnapshot({
+        agents: {
+          defaults: { model: "fixture/primary" },
+          entries: {
+            specialist: { decisionModel: "fixture/specialist-v1" },
+            disabled: { decisionModel: "" },
+          },
         },
-      },
-      plugins: {
-        entries: {
-          owner: {
-            llm: {
-              allowAgentIdOverride: true,
-              allowedCompletionModels: ["fixture/specialist-v1"],
+        plugins: {
+          entries: {
+            owner: {
+              llm: {
+                allowAgentIdOverride,
+                allowedCompletionModels: ["fixture/specialist-v1"],
+              },
             },
           },
         },
-      },
-    });
-    expect(
-      await host.api.runtime.decisions.evaluate(batch, { ...options(), agentId: " Specialist " }),
-    ).toMatchObject({ status: "ok" });
-    expect(evaluate.mock.calls[0]?.[1]).toMatchObject({
-      model: "specialist-v1",
-      agentId: "specialist",
-    });
-    for (const agentId of [undefined, "disabled"]) {
-      expect(await host.api.runtime.decisions.evaluate(batch, { ...options(), agentId })).toEqual({
-        status: "unavailable",
-        reason: "disabled",
       });
-    }
-    expect(evaluate).toHaveBeenCalledOnce();
-  });
+      expect(
+        await withGatewayToolCallerIdentity(
+          { agentId: "specialist", sessionKey: "agent:specialist:fixture" },
+          () => host.api.runtime.decisions.evaluate(batch, { ...options(), agentId: "specialist" }),
+        ),
+      ).toMatchObject({ status: "ok" });
+      expect(evaluate.mock.calls[0]?.[1]).toMatchObject({
+        model: "specialist-v1",
+        agentId: "specialist",
+      });
+      for (const agentId of [undefined, "disabled"]) {
+        expect(await host.api.runtime.decisions.evaluate(batch, { ...options(), agentId })).toEqual(
+          {
+            status: "unavailable",
+            reason: "disabled",
+          },
+        );
+      }
+      expect(evaluate).toHaveBeenCalledOnce();
+    },
+  );
 
   it.each(["consumer", "MixedConsumer"])(
     "uses registered consumer %s policy, not provider, ambient plugin or option identity",
@@ -173,7 +185,7 @@ describe("registered decision capability", () => {
       ).rejects.toThrow(`not allowlisted for completions for plugin "${consumerId}"`);
       await expect(
         api.runtime.decisions.evaluate(batch, { ...spoofed, agentId: "specialist" }),
-      ).rejects.toThrow("cannot override the target agent");
+      ).rejects.toThrow(`not allowlisted for completions for plugin "${consumerId}"`);
       expect(evaluate).not.toHaveBeenCalled();
       // Provider configuration is not consumer authorization either.
       expect(await host.api.runtime.decisions.evaluate(batch, options())).toMatchObject({

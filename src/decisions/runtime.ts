@@ -17,9 +17,7 @@ import { getPluginRegistryState } from "../plugins/runtime-state.js";
 import { getPluginRegistryForContext } from "../plugins/runtime/gateway-request-scope.js";
 import {
   assertAllowedCompletionModel,
-  resolveAllowAgentIdOverride,
   resolvePluginLlmPolicy,
-  resolveRequestedRuntimeAgentId,
 } from "../plugins/runtime/runtime-model-policy.js";
 import { modelKey } from "../shared/model-key.js";
 import { logDecisionEvaluation } from "./diagnostics.js";
@@ -79,14 +77,10 @@ export async function evaluateDecisionInRegistry(
   }
   // Registration supplies consumer identity; request fields cannot select another plugin's policy.
   const pluginPolicy = resolvePluginLlmPolicy(config, consumerId);
-  const agentId = consumerId
-    ? resolveRequestedRuntimeAgentId({
-        agentId: options.agentId,
-        allowAgentIdOverride: resolveAllowAgentIdOverride({ pluginPolicy }),
-      })
-    : options.agentId;
-  // Omission selects the global decision role, independently of the ambient agent.
-  const selected = resolveDecisionModelSetting(config, agentId);
+  // The public Decision contract takes the operation's owning agent explicitly.
+  // This runtime is consumer-bound, not agent-bound; applying LLM override policy
+  // here would reject owner-agent calls. Omission still selects the global role.
+  const selected = resolveDecisionModelSetting(config, options.agentId);
   if (!selected) {
     return skipped({ status: "unavailable", reason: "disabled" });
   }
@@ -167,7 +161,7 @@ export async function evaluateDecisionInRegistry(
     }
     const result = await entry.host.evaluate(
       submitted,
-      { ...options, agentId, signal },
+      { ...options, signal },
       selected.model,
       config,
       registry,
