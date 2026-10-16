@@ -94,7 +94,12 @@ type Request = ReturnType<
 >;
 type SourceEntry = { oid: string; mode: string; path: string; type: string };
 
-function localGit(root: string, args: string[], input?: Buffer | string) {
+function localGit(
+  root: string,
+  args: string[],
+  input?: Buffer | string,
+  maxBuffer = 64 * 1024 * 1024,
+) {
   return execFileSync("git", ["--no-lazy-fetch", "--no-replace-objects", "-C", root, ...args], {
     env: {
       PATH: process.env.PATH,
@@ -106,7 +111,7 @@ function localGit(root: string, args: string[], input?: Buffer | string) {
     },
     input,
     timeout: 120_000,
-    maxBuffer: 64 * 1024 * 1024,
+    maxBuffer,
     stdio: ["pipe", "pipe", "pipe"],
   });
 }
@@ -203,6 +208,9 @@ function retainSource(root: string, sha: string, store: string, tooling: boolean
     root,
     ["pack-objects", "--stdout", "--no-reuse-delta", "--no-reuse-object", "--window=0"],
     objectInput,
+    // Up to 8192 zlib streams and pack headers add overhead beyond the 64 MiB
+    // raw-object limit. Reserve 1 MiB for that framing, only for pack output.
+    65 * 1024 * 1024,
   );
   localGit(store, ["index-pack", "--stdin"], pack);
   return selected.filter((entry) => entry.type === "blob");
