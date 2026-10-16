@@ -23,7 +23,4 @@ export {
   createOpenClawCodingToolsAsync,
 } from "../agents/agent-tools.js";
 export { createCodexAppServerToolResultExtensionRunner } from "../agents/harness/codex-app-server-extensions.js";
-export {
-  prepareWebSearchToolPolicy,
-  resolveWebSearchToolPolicy,
-} from "../agents/web-search-tool-policy.js";
+export { resolveWebSearchToolPolicy } from "../agents/web-search-tool-policy.js";

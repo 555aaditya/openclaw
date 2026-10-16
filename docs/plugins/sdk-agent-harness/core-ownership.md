@@ -163,12 +163,19 @@ permission to remove a required sandbox or other configured restrictions.
 
 ### Native tool-policy enforcement
 
-For native web search, await `prepareWebSearchToolPolicy(params)` from
-`openclaw/plugin-sdk/agent-harness`. It prepares requester capability metadata
-through the core worker-read protocol and returns `{ allowed, persistentAllowed }`.
+For native web search, await
+`params.hostCapabilities.prepareWebSearchToolPolicy(options)`. This member of
+the version-1 host capability prepares requester metadata through the core
+worker-read protocol and returns `{ allowed, persistentAllowed }`. It checks
+the original host authority and captured attempt abort signal before preparation,
+on each worker-read replay, and before returning. Retained calls reject after
+the attempt closes; harnesses must also check currentness before publishing the result.
 `allowed` includes this turn's runtime tool allowlist; `persistentAllowed` keeps
 sender-independent policy for reusable native sessions. Preparation remains safe
 when another agent's deletion temporarily invalidates the shared session projection.
+The member is optional in the SDK type to preserve existing consumers' source
+compatibility. Harnesses that need it must require it and fail closed when absent;
+there is no ambient preparer or synchronous fallback. Bundled Codex requires it.
 The synchronous `resolveWebSearchToolPolicy(params)` signature is unchanged for
 callers that already provide prepared requester facts or a prepared capability-read scope.
 

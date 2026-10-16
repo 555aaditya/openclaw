@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { resolveWebSearchToolPolicy } from "openclaw/plugin-sdk/agent-harness";
 import type { EmbeddedRunAttemptParamsV2 as EmbeddedRunAttemptParams } from "openclaw/plugin-sdk/agent-harness-runtime";
 import {
   clearRuntimeConfigSnapshot,
@@ -26,20 +27,6 @@ const hoisted = vi.hoisted(() => ({
 
 export { hoisted };
 
-vi.mock("openclaw/plugin-sdk/agent-harness", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("openclaw/plugin-sdk/agent-harness")>();
-
-  return {
-    ...actual,
-    prepareWebSearchToolPolicy: (
-      ...args: Parameters<(typeof actual)["prepareWebSearchToolPolicy"]>
-    ) => {
-      hoisted.prepareWebSearchToolPolicy(...args);
-      return actual.prepareWebSearchToolPolicy(...args);
-    },
-  };
-});
-
 vi.mock("openclaw/plugin-sdk/agent-harness-runtime", async (importOriginal) => {
   const actual = await importOriginal<typeof import("openclaw/plugin-sdk/agent-harness-runtime")>();
   return {
@@ -59,7 +46,12 @@ vi.mock("openclaw/plugin-sdk/node-selection-runtime", async (importOriginal) => 
 
 export function createParams(sessionFile: string, workspaceDir: string): EmbeddedRunAttemptParams {
   return {
-    hostCapabilities: createCodexTestHostCapabilities(),
+    hostCapabilities: createCodexTestHostCapabilities({
+      prepareWebSearchToolPolicy: async (options) => {
+        hoisted.prepareWebSearchToolPolicy(options);
+        return resolveWebSearchToolPolicy(options);
+      },
+    }),
     prompt: "hello",
     sessionId: "session-1",
     sessionKey: "agent:main:session-1",

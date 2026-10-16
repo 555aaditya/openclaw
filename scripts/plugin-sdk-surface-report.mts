@@ -282,8 +282,7 @@ export function readPluginSdkSurfaceBudgets(env: NodeJS.ProcessEnv = process.env
       // +1: shared auth-patch application replaces manual plugin config merging.
       // +6: packaged Settings placement, snapshot, components, context, view, and
       // DoctorMemoryStatusPayload for the plugin-owned Memory overview.
-      // +1: approved async web-search policy preparation with retained sync compatibility.
-      3799,
+      3798,
       env,
     ),
     publicFunctionExports: readPluginSdkSurfaceBudgetEnv(
@@ -323,8 +322,7 @@ export function readPluginSdkSurfaceBudgets(env: NodeJS.ProcessEnv = process.env
       // +6: four lossless Decision codecs and two bounded V2 validators.
       // +1: the same boot-selected family lookup.
       // +1: the same shared auth-patch application.
-      // +1: the same approved web-search policy preparation.
-      2206,
+      2205,
       env,
     ),
     publicDeprecatedExports: readPluginSdkSurfaceBudgetEnv(

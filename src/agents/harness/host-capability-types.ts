@@ -3,6 +3,10 @@ import type {
   ApprovalTerminalReason,
 } from "../../../packages/gateway-protocol/src/schema/approvals.js";
 import type { AnyAgentTool } from "../tools/common.js";
+import type {
+  resolveWebSearchToolPolicy,
+  WebSearchToolPolicyParams,
+} from "../web-search-tool-policy.js";
 
 type AgentHarnessHostApprovalResult = Readonly<{
   decision: ApprovalDecision | null | undefined;
@@ -159,6 +163,10 @@ export type AgentHarnessHostCapabilities = Readonly<{
     options: AgentHarnessToolSurfaceOptions,
     bindingOptions?: Readonly<{ cwd?: string }>,
   ) => Promise<AnyAgentTool[]>;
+  /** Prepares web-search policy while this exact host and attempt remain active. */
+  prepareWebSearchToolPolicy?: (
+    options: WebSearchToolPolicyParams,
+  ) => Promise<ReturnType<typeof resolveWebSearchToolPolicy>>;
   /** Core-owned byte binding for a native command approval, scoped to this admitted run. */
   prepareMutableFileApproval?: (request: { command: string; cwd?: string }) => Promise<
     | {

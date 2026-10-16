@@ -9,7 +9,6 @@ import {
 } from "./scheduled-tool-policy.js";
 import { resolveSenderToolPolicy } from "./sender-tool-policy.js";
 import type { TrustedSubagentCompletionHandoff } from "./subagents/announce/subagent-announce-handoff.js";
-import { withPreparedSessionCapabilityRead } from "./subagents/spawn/subagent-session-store.js";
 import { isRuntimeToolAllowed, isToolAllowedByPolicies } from "./tool-policy-match.js";
 import { mergeAlsoAllowPolicy, resolveToolProfilePolicy } from "./tool-policy.js";
 
@@ -46,13 +45,6 @@ type WebSearchToolPolicyResolution = {
   allowed: boolean;
   persistentAllowed: boolean;
 };
-
-/** Prepares requester metadata before resolving managed or native web-search policy. */
-export function prepareWebSearchToolPolicy(
-  params: WebSearchToolPolicyParams,
-): Promise<WebSearchToolPolicyResolution> {
-  return withPreparedSessionCapabilityRead(() => resolveWebSearchToolPolicy(params));
-}
 
 /** Resolves current and sender-independent policy for the managed web_search tool. */
 export function resolveWebSearchToolPolicy(
