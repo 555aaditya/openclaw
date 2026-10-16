@@ -50,7 +50,7 @@ vi.mock("../../auto-reply/reply/agent-runner-execution.js", async (importOrigina
   executeAgentTurn: runtime.execute,
 }));
 
-it("refuses disabled cross-requester steering and admits only an explicit fresh followup", async ({
+it("refuses cross-requester steering by default and admits only an explicit fresh followup", async ({
   signal,
 }) => {
   const refusal =
@@ -67,7 +67,6 @@ it("refuses disabled cross-requester steering and admits only an explicit fresh 
     ...config.messages,
     queue: {
       mode: "steer",
-      allowCollaborativeSteering: false,
       debounceMsByChannel: { webchat: 0 },
     },
   };
