@@ -17,31 +17,50 @@ function capitalizeStandaloneLabel(value: string): string {
   return value.charAt(0).toLocaleUpperCase(getLocale()) + value.slice(1);
 }
 
+function timestampFormatter(options: Intl.DateTimeFormatOptions) {
+  let locale: string | undefined;
+  let formatter: Intl.DateTimeFormat | undefined;
+  return (date: Date) => {
+    const nextLocale = getLocale();
+    if (!formatter || locale !== nextLocale) {
+      locale = nextLocale;
+      // Preserve browser-local dates; language changes also retire the cached timezone.
+      formatter = new Intl.DateTimeFormat([], options);
+    }
+    return formatter.format(date);
+  };
+}
+
+const formatTimestampLabel = timestampFormatter({
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+  timeZoneName: "short",
+});
+const formatTimestampTitle = timestampFormatter({
+  weekday: "long",
+  month: "long",
+  day: "numeric",
+  year: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+  second: "2-digit",
+  timeZoneName: "short",
+});
+const formatTimestampDate = timestampFormatter({ month: "short", day: "numeric" });
+const formatTimestampDateWithYear = timestampFormatter({
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+});
+
 function prepareTimestamp(timestamp: number) {
   const date = new Date(timestamp);
   const valid = Number.isFinite(date.getTime());
-  const label = valid
-    ? date.toLocaleString([], {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-        timeZoneName: "short",
-      })
-    : t("chat.messages.unknownDate");
-  const title = valid
-    ? date.toLocaleString([], {
-        weekday: "long",
-        month: "long",
-        day: "numeric",
-        year: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-        second: "2-digit",
-        timeZoneName: "short",
-      })
-    : label;
+  const label = valid ? formatTimestampLabel(date) : t("chat.messages.unknownDate");
+  const title = valid ? formatTimestampTitle(date) : label;
   const nowMs = Date.now();
   const ageMs = nowMs - date.getTime();
   // Slightly-future messages clamp to "Just now"; older or distant-future ones use a date.
@@ -49,11 +68,9 @@ function prepareTimestamp(timestamp: number) {
     ? label
     : ageMs >= -CHAT_RELATIVE_TIMESTAMP_FUTURE_SKEW_MS && ageMs < CHAT_RELATIVE_TIMESTAMP_MAX_AGE_MS
       ? capitalizeStandaloneLabel(formatTimeAgo(Math.max(0, ageMs)))
-      : date.toLocaleDateString([], {
-          month: "short",
-          day: "numeric",
-          ...(date.getFullYear() === new Date(nowMs).getFullYear() ? {} : { year: "numeric" }),
-        });
+      : date.getFullYear() === new Date(nowMs).getFullYear()
+        ? formatTimestampDate(date)
+        : formatTimestampDateWithYear(date);
   return { dateTime: valid ? date.toISOString() : "", label, title, relativeLabel };
 }
 
