@@ -1,9 +1,11 @@
 .github/workflows/pr-crabbox-gate-publisher.yml
 cli-invocation.mjs
+cli-parent-lifetime.mjs
 cli-root-options.mjs
 config/ci-test-timings.json
 node-compile-cache.mjs
 gateway-prewarm.mjs
+gateway-shutdown-budget.mjs
 worker-heap-flag.mjs
 node-runtime-env.mjs
 node-sqlite.mjs
@@ -67,6 +69,7 @@ packages/memory-host-sdk/src/host/config-utils.ts
 packages/memory-host-sdk/src/host/embedding-vector.ts
 packages/memory-host-sdk/src/host/error-utils.ts
 packages/memory-host-sdk/src/host/memory-schema-base.ts
+packages/memory-host-sdk/src/host/memory-schema-catalog.ts
 packages/memory-host-sdk/src/host/memory-schema-provenance.ts
 packages/memory-host-sdk/src/host/memory-schema-recall.ts
 packages/memory-host-sdk/src/host/memory-schema-storage-migration.ts
@@ -1149,7 +1152,6 @@ src/infra/sqlite-schema-catalog-types.ts
 src/infra/sqlite-schema-catalog.ts
 src/infra/sqlite-schema-contract-assembly.ts
 src/infra/sqlite-schema-contract.ts
-src/infra/sqlite-schema-dynamic.ts
 src/infra/sqlite-schema-ensure.ts
 src/infra/sqlite-schema-facts.ts
 src/infra/sqlite-schema-fingerprint.ts
@@ -1199,6 +1201,7 @@ src/infra/sqlite-worker-contract.ts
 src/infra/sqlite-worker-database-admission-relay.ts
 src/infra/sqlite-worker-identity.ts
 src/infra/sqlite-worker-operation-admission.ts
+src/infra/sqlite-worker-operation-scope.ts
 src/infra/sqlite-worker-operation-settlement.ts
 src/infra/sqlite-worker-request-class.ts
 src/infra/sqlite-worker-request-custody.ts
@@ -1471,6 +1474,7 @@ src/plugins/manifest-config-groups.ts
 src/plugins/manifest-contract-eligibility.ts
 src/plugins/manifest-contract-keys.ts
 src/plugins/manifest-control-ui.ts
+src/plugins/manifest-decision-catalog.ts
 src/plugins/manifest-install-owner.ts
 src/plugins/manifest-metadata-scan.ts
 src/plugins/manifest-model-id-normalization.ts
@@ -1638,6 +1642,7 @@ src/plugins/web-search-install-catalog.ts
 src/process/child-process-tree.ts
 src/process/child-process.ts
 src/process/command-error.ts
+src/process/darwin-process-inspection.ts
 src/process/exec-output.ts
 src/process/exec-result.ts
 src/process/exec-runner.ts
@@ -1669,6 +1674,7 @@ src/process/spawn-broker/resource-protocol.ts
 src/process/spawn-diagnostics.ts
 src/process/spawn-utils.ts
 src/process/supervisor/cancellation-policy.ts
+src/process/supervisor/darwin-bun-process-census.ts
 src/process/supervisor/darwin-process-command.ts
 src/process/supervisor/service-child-group-ownership.ts
 src/process/windows-command-line.ts
@@ -1955,6 +1961,8 @@ src/state/postgres-schema.generated/sqlite-agent-catalogs.ts
 src/state/postgres-schema.generated/sqlite-catalogs.ts
 src/state/postgres-schema.generated/sqlite-daemon-catalogs.json
 src/state/postgres-schema.generated/sqlite-daemon-catalogs.ts
+src/state/postgres-schema.generated/sqlite-memory-catalogs.json
+src/state/postgres-schema.generated/sqlite-memory-catalogs.ts
 src/state/postgres-schema.generated/sqlite-state-catalogs.json
 src/state/postgres-schema.generated/sqlite-state-catalogs.ts
 src/state/openclaw-state-db.paths.ts

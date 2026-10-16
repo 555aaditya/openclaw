@@ -48,6 +48,9 @@ function provider() {
   plugin.register({ registerDecisionProvider } as unknown as OpenClawPluginApi);
   const registered = registerDecisionProvider.mock.calls[0]?.[0];
   assert(registered);
+  if (registered.contractVersion !== 1) {
+    throw new Error("Expected the SubQ V1 decision provider");
+  }
   return registered;
 }
 function mockFetch(response: Response) {

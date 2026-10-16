@@ -101,8 +101,8 @@ According to SubQ's public documentation, checked October 13, 2026:
   decoded and 8 MiB decoded total, within a 13 MiB request body. It does not accept
   video.
 
-**This adapter is text/JSON only.** The shared Decision API has no image field;
-it does not fetch URLs or reinterpret base64 in state as an image. Its host's
+**This V1 adapter is text/JSON only.** It does not expose the vendor API's image
+input, fetch URLs, or reinterpret base64 in state as an image. Its host's
 one-MiB input limit, 20,000 JSON-node limit, depth 32, and at-most-30-second deadline
 still apply. Do not assume the entire advertised context window fits these bounds.
 Use text, an object, or an array for state; null state is not part of the vendor's
