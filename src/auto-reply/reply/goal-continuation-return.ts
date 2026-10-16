@@ -7,7 +7,7 @@ import type { SessionEntry } from "../../config/sessions/types.js";
 import { registerAgentEventLifecycleRotationHandler } from "../../infra/agent-events.js";
 import { getAgentRunLifecycleGeneration } from "../../infra/agent-run-registry.js";
 import { resolveGlobalSingleton } from "../../shared/global-singleton.js";
-import type { GoalContinuation } from "./goal-continuation.js";
+import type { GoalContinuation } from "./goal-continuation.types.js";
 import { resolveFollowupAbortSignal, type FollowupRun } from "./queue/types.js";
 import type { ReplyOperation } from "./reply-run-registry.contracts.js";
 import { runAfterReplyOperationClear } from "./reply-run-registry.state.js";

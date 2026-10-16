@@ -6,15 +6,12 @@ import type { SessionEntry } from "../../config/sessions/types.js";
 import { formatSystemTurnPrompt } from "../../sessions/system-turn-prompt.js";
 import { SkillLibraryError } from "../../skills/skill-library-error.js";
 import { createGoalContinuationReturnScope } from "./goal-continuation-return.js";
+import type { GoalContinuation } from "./goal-continuation.types.js";
 import { refreshActiveGoalContext } from "./inbound-meta.js";
 import { scheduleFollowupDrain } from "./queue/drain.js";
 import { enqueueFollowupRun, getFollowupQueueDepth } from "./queue/enqueue.js";
 import { isFollowupRunAborted, type FollowupRun, type QueueSettings } from "./queue/types.js";
 import { runAfterReplyOperationClear, type ReplyOperation } from "./reply-run-registry.js";
-
-export type GoalContinuation = Pick<SessionEntry, "sessionId" | "lifecycleRevision"> & {
-  goalId: string;
-};
 
 export function isGoalContinuationCurrent(
   continuation: GoalContinuation,
