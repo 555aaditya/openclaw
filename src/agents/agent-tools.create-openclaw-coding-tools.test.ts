@@ -34,6 +34,7 @@ import {
 import * as openClawPluginTools from "./openclaw-plugin-tools.js";
 import { createOpenClawTools } from "./openclaw-tools.js";
 import type { ReadToolDetails } from "./sessions/tools/tool-contracts.js";
+import { createStubTool } from "./test-helpers/agent-tool-stubs.js";
 import {
   expectReadWriteEditTools,
   getTextContent as extractToolText,
@@ -468,14 +469,14 @@ describe("createOpenClawCodingTools", () => {
   it("applies the required ceiling after ring-zero and additive plugin grants", async () => {
     const config: OpenClawConfig = { tools: { gatewayPolicy: { allow: ["fixture_allowed"] } } };
     vi.mocked(createOpenClawTools).mockReturnValueOnce([
-      stubTool("fixture_allowed"),
-      stubTool("fixture_plugin"),
+      createStubTool("fixture_allowed"),
+      createStubTool("fixture_plugin"),
     ]);
     const conversationCapabilityProfile = await prepareConversationCapabilityProfile({
       config,
       runtimePluginToolGrant: { pluginId: "fixture", toolNames: ["fixture_plugin"] },
     });
-    const tools = runWithAgentRingZeroTools([stubTool("openclaw")], () =>
+    const tools = runWithAgentRingZeroTools([createStubTool("openclaw")], () =>
       createOpenClawCodingTools({
         config,
         conversationCapabilityProfile,

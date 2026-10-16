@@ -123,9 +123,11 @@ describe("worker Gateway tool runtime", () => {
         success,
       );
       setRuntimeConfigSnapshot({ tools: { gatewayPolicy: { allow: [] } } });
-      await expect(runtime.invoke(identity, request(surface, "denied"), sink)).rejects.toThrow(
-        "Gateway tool policy denies",
-      );
+      await expect(
+        runtime.invoke(identity, request(surface, "denied"), sink),
+      ).resolves.toMatchObject({
+        details: { status: "error", error: expect.stringContaining("Gateway tool policy denies") },
+      });
       expect(execute).toHaveBeenCalledTimes(1);
     } finally {
       await runtime.close();
