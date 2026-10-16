@@ -735,6 +735,25 @@ describe("agents.create", () => {
       });
     }
   });
+  it("persists a display name independently of the stable internal agent id", async () => {
+    const agentId = "bot-00000000-0000-4000-8000-000000000001";
+    const respond = await create({ agentId, name: "New Bot", emoji: "🤖" });
+
+    expectRespondOk(respond, { ok: true, agentId, name: "New Bot" });
+    expect(mocks.loadConfigReturn).toMatchObject({
+      agents: {
+        entries: {
+          [agentId]: { name: "New Bot", identity: { name: "New Bot", emoji: "🤖" } },
+        },
+      },
+    });
+    expect(getAgentList(mocks.loadConfigReturn).map((agent) => agent.id)).toEqual([
+      "main",
+      agentId,
+    ]);
+    expect(mocks.writeConfigFile).toHaveBeenCalledOnce();
+  });
+
   it("reports committed creation when deleted database reader revival fails", async () => {
     mocks.captureDeletedAgentDatabaseFences.mockReturnValue([
       ["/agents/test-agent/openclaw-agent.sqlite", "test-agent"],

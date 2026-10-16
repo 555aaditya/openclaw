@@ -99,6 +99,8 @@ export const AgentsListResultSchema = closedObject({
 /** Creates a configured agent; the server supplies an omitted workspace. */
 export const AgentsCreateParamsSchema = closedObject({
   name: NonEmptyString,
+  /** Stable internal identity, independent of the display name. Omission derives it from name. */
+  agentId: Type.Optional(NonEmptyString),
   expectedOwnerId: Type.Optional(NonEmptyString),
   workspace: Type.Optional(NonEmptyString),
   model: Type.Optional(NonEmptyString),

@@ -420,7 +420,7 @@ export async function revalidateStableSetupInferenceOwner(params: {
 
 type SetupInferenceRequestParams = {
   agentId?: string;
-  modelTarget?: "utility";
+  modelTarget?: "primary" | "utility";
   runtime: RuntimeEnv;
   timeoutMs?: number;
   deps?: ActivateSetupInferenceDeps;
@@ -598,7 +598,10 @@ export async function verifySetupInferenceConfig(
     return {
       ok: false,
       status: "unavailable",
-      error: "No agent model is configured. Run `openclaw onboard` first.",
+      error:
+        params.modelTarget === "primary"
+          ? "No primary model is configured for this agent. Choose one in Model Setup, then retry."
+          : "No agent model is configured. Run `openclaw onboard` first.",
     };
   }
   const route = params.agentDir

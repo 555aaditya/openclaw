@@ -10,6 +10,7 @@ import {
 import { upsertAuthProfile } from "../agents/auth-profiles/profiles.js";
 import { setRuntimeAuthProfileStoreSnapshot } from "../agents/auth-profiles/runtime-snapshots.js";
 import { ensureAuthProfileStore } from "../agents/auth-profiles/store-runtime.js";
+import { resolvePreparedRuntimeWorkspaces } from "../agents/embedded-agent-runner/run/prepared-runtime-context.js";
 import { fingerprintResolvedProviderAuth } from "../agents/execution-auth-binding.js";
 import { resolveManagedSecretRefRuntimeProviderAuth } from "../agents/model-auth-runtime-config.js";
 import { resolveApiKeyForProviderCore } from "../agents/model-auth.js";
@@ -121,6 +122,108 @@ afterEach(async () => {
   vi.unstubAllEnvs();
   await temp?.restore();
 });
+
+it.each(["utility-only", "primary failure", "primary success"] as const)(
+  "verifies an uncreated agent's inherited primary without creating it: %s",
+  async (scenario) => {
+    const agentId = "bot-00000000-0000-4000-8000-000000000001";
+    const config = (await readSnapshot()).sourceConfig;
+    config.meta = { ...config.meta, migrations: { utilityModelSeparation: true } };
+    const defaults = config.agents?.defaults;
+    const existingAgent = config.agents?.entries?.main;
+    assert(defaults && existingAgent);
+    defaults.utilityModel = "fixture/test-model";
+    if (scenario === "utility-only") {
+      delete defaults.model;
+    }
+    // An existing agent's override must not qualify the candidate's inherited route.
+    existingAgent.model = "fixture/existing-agent-model";
+    await fs.writeFile(configPath, JSON.stringify(config));
+    await activate();
+    const before = await fs.readFile(configPath, "utf8");
+    const runEmbeddedAgent = vi.fn<
+      NonNullable<
+        NonNullable<Parameters<typeof verifySetupInference>[0]["deps"]>["runEmbeddedAgent"]
+      >
+    >(async (params) => {
+      expect(params.agentId).toBe(agentId);
+      expect(params.model).toBe("test-model");
+      assert(params.sessionFile && params.config);
+      // Exercise the real runner's roster/workspace admission before replacing
+      // the external model turn. A route-only fake misses unconfigured owners.
+      const workspaces = resolvePreparedRuntimeWorkspaces({
+        ...params,
+        sessionFile: params.sessionFile,
+      });
+      expect(workspaces.requestedWorkspaceResolution).toMatchObject({
+        agentId,
+        workspaceDir: params.workspaceDir,
+        usedFallback: false,
+      });
+      expect(params.config.agents?.entries?.[agentId]).toEqual({});
+      expect(params.agentDir).toBe(resolveAgentDir(config, agentId));
+      expect(params.sessionPersistence).toBe("detached");
+      expect(params.authProfileStateMode).toBe("read-only");
+      const auth = await resolveApiKeyForProviderCore({
+        cfg: params.config,
+        provider: "fixture",
+        modelId: "test-model",
+        modelApi: "openai-responses",
+        agentDir: params.agentDir,
+        store: { version: 1, profiles: {} },
+        allowAuthProfileFallback: false,
+        secretSentinels: true,
+      });
+      expect(looksLikeSecretSentinel(auth.apiKey ?? "")).toBe(true);
+      expect(await fs.readFile(configPath, "utf8")).toBe(before);
+      if (scenario === "primary failure") {
+        throw new Error("Synthetic primary inference unavailable");
+      }
+      return {
+        meta: {
+          durationMs: 1,
+          finalAssistantVisibleText: "OK",
+          executionTrace: { winnerProvider: "fixture", winnerModel: "test-model" },
+        },
+      };
+    });
+    const result = await verifySetupInference({
+      agentId,
+      modelTarget: "primary",
+      runtime: { log() {}, error() {}, exit() {} },
+      deps: {
+        readConfigFileSnapshot: readSnapshot,
+        createTempDir: () => fs.mkdtemp(path.join(temp.home, "probe-")),
+        runEmbeddedAgent,
+      },
+    });
+
+    expect(result.ok).toBe(scenario === "primary success");
+    if (scenario === "utility-only") {
+      expect(result).toMatchObject({
+        ok: false,
+        status: "unavailable",
+        error: expect.stringContaining("No primary model"),
+      });
+      expect(runEmbeddedAgent).not.toHaveBeenCalled();
+    } else {
+      expect(runEmbeddedAgent).toHaveBeenCalledOnce();
+      expect(result).toMatchObject(
+        scenario === "primary success"
+          ? { ok: true, modelRef: "fixture/test-model" }
+          : {
+              ok: false,
+              error: expect.stringContaining("Synthetic primary inference unavailable"),
+            },
+      );
+    }
+    expect(await fs.readFile(configPath, "utf8")).toBe(before);
+    expect((await readSnapshot()).sourceConfig.agents?.entries).not.toHaveProperty(agentId);
+    await expect(fs.stat(path.dirname(resolveAgentDir(config, agentId)))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  },
+);
 
 it.each(["fixture", "unrelated"])(
   "scopes verified setup binding to its selected provider when %s requires migration",

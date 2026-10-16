@@ -105,6 +105,7 @@ export const agentsHandlers: GatewayRequestHandlers = {
       const result = await createAgentConfigEntry(
         {
           name: params.name,
+          ...(params.agentId ? { entry: { id: params.agentId, name: params.name } } : {}),
           workspace: params.workspace,
           model: params.model,
           emoji: params.emoji,

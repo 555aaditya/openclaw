@@ -274,6 +274,26 @@ describe("resolveSystemAgentConfiguredRouteFromConfig", () => {
     },
   );
 
+  it("admits an uncreated owner only for an explicit primary preflight", async () => {
+    const config = devConfig();
+    const before = structuredClone(config);
+    const agentId = "bot-uncreated";
+    const ordinary = await resolveSystemAgentConfiguredRouteFromConfig(config, agentId);
+    const candidate = await resolveSystemAgentConfiguredRouteFromConfig(config, agentId, {
+      modelTarget: "primary",
+    });
+    assert(ordinary && candidate);
+    expect(() =>
+      resolveRunWorkspaceDir({ workspaceDir: undefined, agentId, config: ordinary.runConfig }),
+    ).toThrow("not present in the configured roster");
+    expect(
+      resolveRunWorkspaceDir({ workspaceDir: undefined, agentId, config: candidate.runConfig })
+        .agentId,
+    ).toBe(agentId);
+    expect(candidate.sourceConfig).toBe(config);
+    expect(config).toEqual(before);
+  });
+
   it("keeps implicit harness selection fallible while forcing explicit policy", async () => {
     const supports = vi.fn((ctx: { modelProvider?: { requestTransportOverrides?: string } }) =>
       ctx.modelProvider?.requestTransportOverrides === "present"
