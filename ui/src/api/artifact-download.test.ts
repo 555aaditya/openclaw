@@ -109,8 +109,9 @@ describe("resolveArtifactDownloadSource", () => {
       const detached = new AbortController();
       const third = resolveArtifactDownloadSource(state, params, detached.signal);
       detached.abort();
-      if (fails) transfer.reject(new TypeError("Media route unavailable"));
-      else
+      if (fails) {
+        transfer.reject(new TypeError("Media route unavailable"));
+      } else {
         transfer.resolve(
           new Response("png", {
             headers: {
@@ -119,6 +120,7 @@ describe("resolveArtifactDownloadSource", () => {
             },
           }),
         );
+      }
       const [a, b, c] = await Promise.all([first, second, third]);
       expect(a).not.toBeNull();
       expect(b).toEqual(a);

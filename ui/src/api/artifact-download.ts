@@ -225,8 +225,12 @@ export async function resolveArtifactDownloadSource(
           if (source) {
             created.expiresAt = source.expiresAt ? Date.parse(source.expiresAt) || 0 : Infinity;
             for (const [oldKey, old] of entries) {
-              if (entries.size <= 64) break;
-              if (old.expiresAt !== undefined) entries.delete(oldKey);
+              if (entries.size <= 64) {
+                break;
+              }
+              if (old.expiresAt !== undefined) {
+                entries.delete(oldKey);
+              }
             }
           } else {
             entries.delete(key);
@@ -252,7 +256,9 @@ export async function resolveArtifactDownloadSource(
       ? source
       : null;
   } catch (error) {
-    if (signal?.aborted) return null;
+    if (signal?.aborted) {
+      return null;
+    }
     throw error;
   }
 }
