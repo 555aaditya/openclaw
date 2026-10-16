@@ -566,22 +566,18 @@ function* assembleOpenClawCodingTools(
   const subagentFiltered = messageInvocationPolicy.filter(capabilityProfile, onPolicyFilter);
   // Host-bound ring-zero tools carry their own authority checks. Agent policy
   // must not deadlock setup, but the tools still receive schema/hook wrappers.
-  const inheritableTools = applyGatewayToolPolicy(
-    applySwarmCollectorToolContract(
-      applyDelegationCapability(
-        mergeAgentRingZeroTools(ringZeroTools, subagentFiltered),
-        options?.delegationCapability,
-      ),
-      {
-        swarmCollector: options?.swarmCollector,
-        structuredOutputTool: swarmStructuredOutputTool,
-      },
+  const grantedTools = applySwarmCollectorToolContract(
+    applyDelegationCapability(
+      mergeAgentRingZeroTools(ringZeroTools, subagentFiltered),
+      options?.delegationCapability,
     ),
-    options?.config,
+    {
+      swarmCollector: options?.swarmCollector,
+      structuredOutputTool: swarmStructuredOutputTool,
+    },
   );
-  const authorizedTools = unavailablePublicationTool
-    ? inheritableTools.filter((tool) => tool !== unavailablePublicationTool)
-    : inheritableTools;
+  const inheritableTools = applyGatewayToolPolicy(grantedTools, options?.config);
+  const authorizedTools = inheritableTools.filter((tool) => tool !== unavailablePublicationTool);
   if (options?.inheritedPublicationToolRef) {
     options.inheritedPublicationToolRef.current = inheritableTools.find(
       (tool) => tool === unavailablePublicationTool,
