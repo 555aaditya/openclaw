@@ -84,3 +84,33 @@ it("preserves browser-local labels, full accessible titles and compact dates", (
   expect(view.container.querySelector("time")?.textContent).toBe("Unknown date");
   expect(view.container.querySelector("time")?.getAttribute("datetime")).toBe("");
 });
+
+it("picks up the current system time zone on the next render turn", async () => {
+  const NativeDateTimeFormat = Intl.DateTimeFormat;
+  let timeZone = "UTC";
+  vi.spyOn(Intl, "DateTimeFormat").mockImplementation(function (locales, options) {
+    return new NativeDateTimeFormat(locales, { ...options, timeZone });
+  });
+  const timestamp = Date.UTC(2026, 5, 24, 18, 30);
+  const first = mountSolid(ChatTimestamp, { timestamp, metadata: [<span>Usage</span>] });
+  mounts.push(first);
+  const label = first.container.querySelector(".msg-meta__time")?.textContent;
+
+  await Promise.resolve();
+  timeZone = "America/Los_Angeles";
+  const second = mountSolid(ChatTimestamp, { timestamp, metadata: [<span>Usage</span>] });
+  mounts.push(second);
+  const nextLabel = second.container.querySelector(".msg-meta__time")?.textContent;
+  expect(nextLabel).not.toBe(label);
+  expect(nextLabel).toBe(
+    new NativeDateTimeFormat([], {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      timeZoneName: "short",
+      timeZone,
+    }).format(timestamp),
+  );
+});

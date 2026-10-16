@@ -24,8 +24,11 @@ function timestampFormatter(options: Intl.DateTimeFormatOptions) {
     const nextLocale = getLocale();
     if (!formatter || locale !== nextLocale) {
       locale = nextLocale;
-      // Preserve browser-local dates; language changes also retire the cached timezone.
+      // Share within a render turn; the next turn picks up OS time-zone changes.
       formatter = new Intl.DateTimeFormat([], options);
+      queueMicrotask(() => {
+        formatter = undefined;
+      });
     }
     return formatter.format(date);
   };
