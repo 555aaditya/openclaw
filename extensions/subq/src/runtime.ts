@@ -15,6 +15,7 @@ import {
 import { readResponseWithLimit } from "openclaw/plugin-sdk/response-limit-runtime";
 import { parseRetryAfterHeaderSeconds } from "openclaw/plugin-sdk/retry-runtime";
 import { fetchWithSsrFGuard } from "openclaw/plugin-sdk/ssrf-runtime";
+import { isRecord } from "openclaw/plugin-sdk/string-coerce-runtime";
 import manifest from "../openclaw.plugin.json" with { type: "json" };
 
 const MODEL = manifest.decisionModels[0]!.id;
@@ -52,10 +53,10 @@ function supports(batch: DecisionBatch, model: string): boolean {
 }
 
 function record(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  if (!isRecord(value)) {
     throw new Error("Invalid SubQ response.");
   }
-  return value as Record<string, unknown>;
+  return value;
 }
 
 function probability(value: unknown): number {

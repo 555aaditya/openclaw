@@ -5,6 +5,7 @@ import { expect, it, vi } from "vitest";
 import plugin from "../index.js";
 
 // Opt-in only: use a disposable test key with credits; never read ambient keys in production.
+// mock-isolation: The live adapter test supplies its protected key without opening host secret state.
 vi.mock("openclaw/plugin-sdk/secret-input-runtime", () => ({
   getPreparedPluginSecretInput: () => ({ revision: 1, value: process.env.SUBQ_API_KEY }),
 }));

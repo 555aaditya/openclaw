@@ -5,6 +5,7 @@ import { getPreparedPluginSecretInput } from "openclaw/plugin-sdk/secret-input-r
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import plugin from "../index.js";
 
+// mock-isolation: Transport fixtures supply prepared credentials without opening host secret state.
 vi.mock("openclaw/plugin-sdk/secret-input-runtime", () => ({
   getPreparedPluginSecretInput: vi.fn(),
 }));
