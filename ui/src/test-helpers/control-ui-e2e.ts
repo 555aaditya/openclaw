@@ -10,6 +10,7 @@ import { buildControlUiSessionPath } from "@openclaw/session-url-contract";
 import type { Locator, Page } from "playwright";
 import type { InlineConfig, Plugin, PreviewServer, ViteDevServer } from "vite";
 import type { MigrationsMemoryPlanResult } from "../../../packages/gateway-protocol/src/schema/migrations.ts";
+import type { PluginsControlUiCatalog } from "../../../packages/gateway-protocol/src/schema/plugins.ts";
 import { GATEWAY_SERVER_CAPS } from "../../../packages/gateway-protocol/src/server-capabilities.js";
 import { PROTOCOL_VERSION } from "../../../packages/gateway-protocol/src/version.js";
 import { CONTROL_UI_BOOTSTRAP_CONFIG_PATH } from "../../../src/gateway/control-ui-contract.js";
@@ -368,6 +369,7 @@ export type ControlUiMockGatewayScenario = {
   awaitInitialRoster?: boolean;
   nativePlugins?: readonly NativeControlUiPluginFixture[];
   pluginAssetsRequireAuth?: boolean;
+  pluginSurfaceUrls?: Record<string, string>;
   attachmentMaxBytes?: number;
   agentModel?: string | null;
   assistantAgentId?: string;
@@ -882,6 +884,7 @@ function normalizeScenario(
       : basePathWithSlash;
   return {
     pluginAssetsRequireAuth: scenario.pluginAssetsRequireAuth ?? true,
+    pluginSurfaceUrls: scenario.pluginSurfaceUrls ?? {},
     attachmentMaxBytes: scenario.attachmentMaxBytes ?? DEFAULT_MOCK_ATTACHMENT_MAX_BYTES,
     automaticallyFetchFavicons: scenario.automaticallyFetchFavicons ?? false,
     communityInvite: scenario.communityInvite ?? false,
@@ -1815,6 +1818,7 @@ function installControlUiMockGateway(
           controlUiTabs: scenario.controlUiTabs,
           controlUiLinkReaders: scenario.controlUiLinkReaders ?? [],
           controlUiWidgetKinds: scenario.controlUiWidgetKinds,
+          pluginSurfaceUrls: scenario.pluginSurfaceUrls,
           protocol: protocolVersion,
           server: {
             buildId: serverBuildId,
@@ -2721,6 +2725,17 @@ export async function prepareControlUiMockGatewayScenario(
   const { catalog, assets } = await prepareNativeControlUiPluginFixtures(
     scenario.nativePlugins ?? [],
   );
+  // SAFETY: the test author supplies this fixed catalog beside native plugin fixtures.
+  const fixtureCatalog = scenario.methodResponses?.["plugins.controlUi.list"] as
+    | PluginsControlUiCatalog
+    | undefined;
+  const combinedCatalog = fixtureCatalog
+    ? {
+        revision: `${fixtureCatalog.revision}-${catalog.revision}`,
+        plugins: [...fixtureCatalog.plugins, ...catalog.plugins],
+        diagnostics: [...fixtureCatalog.diagnostics, ...catalog.diagnostics],
+      }
+    : catalog;
   const preparedScenario = catalog.plugins.length
     ? {
         ...scenario,
@@ -2733,7 +2748,7 @@ export async function prepareControlUiMockGatewayScenario(
         ],
         methodResponses: {
           ...scenario.methodResponses,
-          "plugins.controlUi.list": catalog,
+          "plugins.controlUi.list": combinedCatalog,
           "plugins.controlUi.report": { ok: true },
         },
       }

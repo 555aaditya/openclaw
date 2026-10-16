@@ -80,7 +80,6 @@ describe("native chat view session identity", () => {
       }),
       transcript: createTestTranscript(),
       error: null,
-      approvalCanGrant: false,
       onRefresh: vi.fn(),
       agentsList: null,
     };

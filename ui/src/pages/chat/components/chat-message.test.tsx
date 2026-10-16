@@ -2999,7 +2999,6 @@ describe("grouped chat rendering", () => {
       { id: "assistant-scoped-canvas" },
     );
     const options = {
-      canvasPluginSurfaceUrl: "http://127.0.0.1:19003/__openclaw__/cap/cap_123",
       sessionKey: "agent:main:canvas",
     };
     renderAssistantMessage(message, options);

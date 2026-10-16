@@ -2,6 +2,7 @@
 
 import { expectDefined } from "@openclaw/normalization-core";
 import { expect, it, onTestFinished, vi } from "vitest";
+import type { ControlUiHost } from "../../../../src/plugin-sdk/control-ui.js";
 import { localEditorFilePath } from "../../app/native-editor-locality.runtime.ts";
 import type {
   NativeGatewaysCapability,
@@ -163,6 +164,48 @@ it("parks and remounts presentation subscriptions using the runtime's context wi
   await pane.updateComplete;
   expect(subscriptions).toHaveBeenCalledTimes(acquired + 1);
   expect(rendered.at(-1)).toBe(true);
+});
+
+it("updates pane panel choices without rendering the pane for unrelated plugin publications", async () => {
+  const { pane } = createTestChatPane({ client: createGatewayBrowserClientFixture() });
+  const plugins = pane.context.plugins;
+  const registrations = vi.spyOn(plugins, "registrations").mockReturnValue([]);
+  const render = vi.fn(() => ({
+    layout: null,
+    capabilityDialogs: undefined,
+    providerReviewSource: undefined,
+  }));
+  pane.render = render;
+  onTestFinished(() => {
+    pane.disconnectedCallback();
+    vi.restoreAllMocks();
+  });
+  connectPaneTestView(pane);
+  await pane.updateComplete;
+  render.mockClear();
+
+  plugins.reportError("unrelated-widget", new Error("Widget refresh"));
+  flush();
+  expect(render).not.toHaveBeenCalled();
+
+  const panel = {
+    key: "example/panel" as const,
+    pluginId: "example",
+    value: { id: "panel", label: "Example panel", mount: () => undefined },
+    // SAFETY: This registration is only observed; no plugin host operation runs.
+    host: {} as ControlUiHost,
+    signal: new AbortController().signal,
+  };
+  registrations.mockReturnValue([panel]);
+  plugins.reportError("example", new Error("Panel registration"));
+  await pane.updateComplete;
+  expect(render).toHaveBeenCalledOnce();
+  render.mockClear();
+
+  registrations.mockReturnValue([]);
+  plugins.reportError("example", new Error("Panel retirement"));
+  await pane.updateComplete;
+  expect(render).toHaveBeenCalledOnce();
 });
 
 it("retires auth presentation once per event and releases the Gateway listener on disconnect", async () => {

@@ -5,7 +5,8 @@ import type {
   SessionSuggestion,
   SessionSuggestionResolution,
 } from "../../../../packages/gateway-protocol/src/index.js";
-import type { ExecApprovalDecision, ExecApprovalRequest } from "../../app/exec-approval.ts";
+import type { ExecApprovalRequest } from "../../app/exec-approval.ts";
+import type { ApplicationOverlays } from "../../app/overlays-types.ts";
 import type { ImageLightboxItem } from "../../components/image-lightbox.types.ts";
 import type {
   ChatAttachment,
@@ -15,7 +16,6 @@ import type {
 import type { PresentationValue } from "../../lib/presentation.ts";
 import { t } from "../../lib/reactive/i18n.ts";
 import { isSessionRunVisuallyActive } from "../../lib/session-run-state.ts";
-import { areUiSessionKeysEquivalent } from "../../lib/sessions/session-key.ts";
 import { showToast } from "../../lib/toast.ts";
 import { uploadsEnabled, uploadsDisabledMessage } from "../../lib/uploads.ts";
 import { releaseChatAttachmentPayloads } from "./attachment-payload-store.ts";
@@ -91,13 +91,10 @@ export type ChatProps = Omit<
     diskSpace?: SessionPlacementDiskSpace;
     workerRuntimeInstall?: SessionPlacementWorkerRuntimeInstall;
     inlineApproval?: ExecApprovalRequest | null;
-    approvalBusy?: boolean;
-    approvalCanGrant: boolean;
-    approvalErrors?: ReadonlyMap<string, string>;
-    onApprovalDecision?: (
-      approvalId: string,
-      decision: ExecApprovalDecision,
-    ) => void | Promise<void>;
+    approvalSource?: Pick<
+      ApplicationOverlays,
+      "snapshot" | "subscribeApprovals" | "decideApproval"
+    >;
     workspaceConflict?: WorkspaceResultConflict;
     onDismissWorkspaceConflict?: () => void;
     swarm?: ChatSwarmProgressProps;
@@ -134,13 +131,6 @@ const placementQueues = new WeakMap<
 >();
 
 export function createChatViewFrame(props: ChatProps) {
-  // The request session hosts the card; only sourceSessionKey names the requester.
-  const approvalSourceSessionKey = props.inlineApproval?.sourceSessionKey;
-  const approvalSourceSession = approvalSourceSessionKey
-    ? props.sessions?.sessions.find((row) =>
-        areUiSessionKeysEquivalent(row.key, approvalSourceSessionKey),
-      )
-    : undefined;
   const pendingInputs = props.historyState ? getChatPendingInputs(props.historyState) : undefined;
   const displayedPendingInputs = pendingInputs
     ? [...pendingInputs.page.items.filter((input) => !input.queued), ...pendingInputs.queuedInputs]
@@ -335,7 +325,6 @@ export function createChatViewFrame(props: ChatProps) {
     !props.stream &&
     queue.length === 0;
   return {
-    approvalSourceSession,
     pendingInputs,
     requestUpdate,
     asyncQuestions,

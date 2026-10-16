@@ -15,6 +15,14 @@ export function projectGateway(source: ApplicationGateway) {
   }));
 }
 
+export function projectCanvasSurface(source: ApplicationGateway | undefined) {
+  return projectSource(source, {
+    read: (gateway) => gateway?.snapshot.canvasPluginSurfaceUrl ?? null,
+    subscribe: (gateway, notify) => gateway?.subscribe(notify) ?? (() => {}),
+    equality: Object.is,
+  });
+}
+
 /** Acquiring this projection enables diagnostic capture; the last reader releases it. */
 export function projectGatewayEventLog(source: ApplicationGateway) {
   return projectSource(source, {
@@ -37,6 +45,16 @@ export function projectAgentSelection(source: AgentSelectionCapability) {
 
 export function projectOverlays(source: ApplicationOverlays) {
   return projectOwner(source, (overlays) => overlays.snapshot);
+}
+
+export function projectOverlayApprovals(
+  source: Pick<ApplicationOverlays, "snapshot" | "subscribeApprovals">,
+) {
+  return projectSource(source, {
+    read: (overlays) => overlays.snapshot,
+    subscribe: (overlays, notify) => overlays.subscribeApprovals(notify),
+    equality: "revision",
+  });
 }
 
 export function projectMentions(source: MentionsCapability) {

@@ -23,7 +23,10 @@ import {
   createControlUiStreamingReply,
   createStreamingReplyProbeInitScript,
 } from "../ui/src/test-helpers/control-ui-streaming-reply.ts";
-import { createControlUiTeamScaleFixture } from "../ui/src/test-helpers/control-ui-team-scale-fixture.ts";
+import {
+  createControlUiTeamScaleFixture,
+  TEAM_SCALE_PANE_FACT_METHODS,
+} from "../ui/src/test-helpers/control-ui-team-scale-fixture.ts";
 import {
   mapColdLoadCpuProfile,
   prepareColdLoadTraceEvent,
@@ -42,6 +45,7 @@ function readRigProbeSnapshot() {
     loaf: [...(perf?.loaf ?? [])],
     paints: [...(perf?.paints ?? [])],
     rpc: [...(Reflect.get(window, "__wsLog") ?? [])],
+    msgCost: Reflect.get(window, "__msgCost") ?? null,
   };
 }
 
@@ -183,6 +187,7 @@ const { values } = parseArgs({
     "sidebar-list-churn": { type: "boolean", default: false },
     "sidebar-live-churn": { type: "boolean", default: false },
     "duplicate-boot-reads": { type: "boolean", default: false },
+    "pane-facts": { type: "boolean", default: false },
     "sidebar-row-transfer": { type: "string", default: "full" },
     "bundle-dir": { type: "string" },
     runs: { type: "string", default: "3" },
@@ -262,6 +267,7 @@ const fixture = createControlUiTeamScaleFixture({
   sidebarListChurn: values["sidebar-list-churn"],
   sidebarLiveChurn: values["sidebar-live-churn"],
   duplicateBootReads: values["duplicate-boot-reads"],
+  paneFacts: values["pane-facts"],
 });
 const streamingReply = values["streaming-reply"] ? createControlUiStreamingReply() : undefined;
 const extraInitScripts = await Promise.all(
@@ -414,6 +420,13 @@ try {
         .frameLocator("iframe")
         .getByText("Team metric 12", { exact: true })
         .waitFor();
+      if (values["pane-facts"]) {
+        await page.getByText("Review synthetic dashboard", { exact: true }).waitFor();
+        await page
+          .frameLocator('iframe[src*="/canvas/team-scale-canvas/"]')
+          .getByText("Synthetic canvas surface ready", { exact: true })
+          .waitFor();
+      }
       await page.waitForFunction(
         (eventCount) => {
           const state = Reflect.get(window, "__coldLoad")?.read();
@@ -428,6 +441,19 @@ try {
         fixture.events.length,
         { timeout: 30_000 },
       );
+      if (values["pane-facts"]) {
+        const missing = await page.evaluate((methods) => {
+          const seen = new Set(
+            Reflect.get(window, "__coldLoad")
+              .read()
+              .rpcs.map((rpc: { method: string }) => rpc.method),
+          );
+          return methods.filter((method) => !seen.has(method));
+        }, TEAM_SCALE_PANE_FACT_METHODS);
+        if (missing.length) {
+          throw new Error(`Pane-fact fixture did not exercise: ${missing.join(", ")}`);
+        }
+      }
     } catch (error) {
       const diagnostics = await page.evaluate(() => Reflect.get(window, "__coldLoad")?.read());
       await writeFile(

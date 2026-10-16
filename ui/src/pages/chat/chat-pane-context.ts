@@ -78,7 +78,6 @@ import { reconcileWaitingApprovalsFromSnapshot } from "./tool-stream-status.ts";
 export abstract class ChatPaneContext extends ChatPaneLifecycle {
   protected widgetRenderOptions(state: ChatPageHost, boardProvider: BoardProvider | undefined) {
     return {
-      canvasPluginSurfaceUrl: state.canvasPluginSurfaceUrl,
       boardProvider,
       widgetLayout: createChatWidgetLayout(state.chatMessagesBySession, state, {
         sessionKey: state.sessionKey,
@@ -352,7 +351,7 @@ export abstract class ChatPaneContext extends ChatPaneLifecycle {
     return reconcileWaitingApprovalsFromSnapshot(state, queue);
   }
 
-  protected projectConversationAttention(state: ChatPageHost, agentId: string, visible: boolean) {
+  protected projectConversationQuestions(state: ChatPageHost, agentId: string, visible: boolean) {
     const matchesConversation = (request: {
       sessionKey?: string | null;
       agentId?: string | null;
@@ -373,17 +372,7 @@ export abstract class ChatPaneContext extends ChatPaneLifecycle {
         revisions: questions.map((prompt) => prompt.revision),
       };
     }
-    return {
-      gatewayQuestionPrompts: this.questionProjection.prompts,
-      // Session replay already owns the parent's presentation scope for delegated approvals.
-      inlineApproval: visible
-        ? (state.chatSessionApprovalQueue?.[0] ??
-          this.context.overlays?.snapshot?.approvalQueue?.find((approval) =>
-            matchesConversation(approval.request),
-          ) ??
-          null)
-        : null,
-    };
+    return this.questionProjection.prompts;
   }
 
   protected applyApplicationConfig(config: ApplicationContext["config"]["current"]) {
@@ -552,7 +541,6 @@ export abstract class ChatPaneContext extends ChatPaneLifecycle {
     if (!sourceChanged && mediaAuthChanged) {
       releaseChatMediaResourceSubscriber(state.requestUpdate);
     }
-    state.canvasPluginSurfaceUrl = snapshot.canvasPluginSurfaceUrl;
     state.terminalAvailable =
       this.context.config.current.terminalEnabled &&
       snapshot.phase === "connected" &&
@@ -668,7 +656,7 @@ export abstract class ChatPaneContext extends ChatPaneLifecycle {
       }
       this.headerWorktreePaths.clear();
       this.headerBranches.clear();
-      this.headerPlatform = null;
+      this.headerPlatform[1](null);
       if (catalogRouteKey) {
         void this.loadHeaderPlatform(startupClient, startupGeneration);
         void this.loadCatalogSession(catalogRouteKey, false);

@@ -88,7 +88,6 @@ export type ChatState = StreamCausalBoundaryState & {
   agentsSelectedId?: string | null;
   hello: GatewayHelloOk | null;
   selfUser?: AuthenticatedUser | null;
-  canvasPluginSurfaceUrl?: string | null;
   settings?: { chatPersistCommentary?: boolean; gatewayUrl?: string | null };
   sessions?: Partial<SessionCapability>;
   chatSessionMessageSubscriptionRequestedKey?: string | null;

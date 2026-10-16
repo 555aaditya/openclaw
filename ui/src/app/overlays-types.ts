@@ -47,6 +47,7 @@ export type ApplicationOverlaySnapshot = ApplicationUpdateOverlaySnapshot & {
 export type ApplicationOverlays = {
   readonly snapshot: ApplicationOverlaySnapshot;
   subscribe: (listener: (snapshot: ApplicationOverlaySnapshot) => void) => () => void;
+  subscribeApprovals: (listener: (snapshot: ApplicationOverlaySnapshot) => void) => () => void;
   refreshUpdateStatus: ReturnType<typeof createUpdateStatusRefresher>;
   acknowledgeUpdateRun: () => void;
   captureUpdateTarget: () => () => boolean;

@@ -2,6 +2,13 @@
 import { expectDefined } from "@openclaw/normalization-core";
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import type { ExecApprovalRequest } from "../../app/exec-approval.ts";
+import {
+  client,
+  createGatewayHarness,
+  flushMicrotasks,
+} from "../../app/overlays-access.test-support.ts";
+import type { ApplicationOverlaySnapshot } from "../../app/overlays-types.ts";
+import { createApplicationOverlays } from "../../app/overlays.ts";
 import type { SolidBridgeElement } from "../../lib/solid-bridge.ts";
 import { flush } from "../../test-helpers/solid-settle.ts";
 import { resetChatViewState } from "./chat-view-state.ts";
@@ -91,8 +98,53 @@ async function connectApprovalCard(container: HTMLElement) {
 }
 
 describe("inline approval card", () => {
+  it("updates from the approval owner without replacing the chat frame", async () => {
+    const harness = createGatewayHarness(
+      client(async (method) => {
+        if (method === "exec.approval.resolve") {
+          throw new Error("synthetic failure");
+        }
+        return [];
+      }),
+    );
+    const overlays = createApplicationOverlays(harness.gateway);
+    onTestFinished(() => overlays.dispose());
+    await flushMicrotasks();
+    const container = renderChatView({
+      sessionKey: "agent:main:current",
+      currentAgentId: "main",
+      approvalSource: overlays,
+    });
+    document.body.append(container);
+    onTestFinished(() => container.remove());
+    const transcript = container.querySelector(".chat-thread-viewport");
+
+    harness.emitEvent("exec.approval.requested", {
+      id: "live-approval",
+      createdAtMs: 1,
+      expiresAtMs: Date.now() + 60_000,
+      request: { command: "echo synthetic", sessionKey: "agent:main:current", agentId: "main" },
+    });
+    flush();
+    await connectApprovalCard(container);
+    expect(container.querySelector("[data-approval-id]")?.getAttribute("data-approval-id")).toBe(
+      "live-approval",
+    );
+
+    await overlays.decideApproval("allow-once", "live-approval");
+    flush();
+    expect(container.querySelector(".exec-approval-error")?.textContent).toContain(
+      "synthetic failure",
+    );
+    expect(container.querySelector(".chat-thread-viewport")).toBe(transcript);
+
+    harness.emitEvent("exec.approval.resolved", { id: "live-approval" });
+    flush();
+    expect(container.querySelector(".chat-inline-approval")).toBeNull();
+  });
+
   it("renders between the transcript and composer and enforces its grant projection", async () => {
-    const onApprovalDecision = vi.fn();
+    const decideApproval = vi.fn();
     const inlineApproval = {
       id: "approval-inline",
       kind: "exec",
@@ -111,9 +163,14 @@ describe("inline approval card", () => {
 
     const container = renderChatView({
       inlineApproval,
-      approvalCanGrant: false,
-      approvalErrors: new Map([["approval-inline", "Approval failed: gateway unavailable"]]),
-      onApprovalDecision,
+      approvalSource: {
+        snapshot: {
+          approvalCanGrant: false,
+          approvalErrors: new Map([["approval-inline", "Approval failed: gateway unavailable"]]),
+        } as ApplicationOverlaySnapshot,
+        subscribeApprovals: () => () => undefined,
+        decideApproval,
+      },
     });
 
     await connectApprovalCard(container);
@@ -140,15 +197,21 @@ describe("inline approval card", () => {
       ).every((button) => button.disabled),
     ).toBe(true);
     container.querySelector<HTMLButtonElement>(".exec-approval-actions button")?.click();
-    expect(onApprovalDecision).not.toHaveBeenCalled();
+    expect(decideApproval).not.toHaveBeenCalled();
 
     const authorizedContainer = renderChatView({
       inlineApproval,
-      approvalCanGrant: true,
-      onApprovalDecision,
+      approvalSource: {
+        snapshot: {
+          approvalCanGrant: true,
+          approvalErrors: new Map(),
+        } as ApplicationOverlaySnapshot,
+        subscribeApprovals: () => () => undefined,
+        decideApproval,
+      },
     });
     await connectApprovalCard(authorizedContainer);
     authorizedContainer.querySelector<HTMLButtonElement>(".exec-approval-actions button")?.click();
-    expect(onApprovalDecision).toHaveBeenCalledWith("approval-inline", "allow-once");
+    expect(decideApproval).toHaveBeenCalledWith("allow-once", "approval-inline", inlineApproval);
   });
 });

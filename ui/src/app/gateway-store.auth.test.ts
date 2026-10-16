@@ -546,9 +546,13 @@ describe("canvas capability renewal", () => {
 
   it("renews with operator.read and stops after a reconnect without read access", async () => {
     const { gateway, current } = createStore();
+    const snapshots = vi.fn();
+    const paneSnapshots = vi.fn();
+    gateway.subscribe(snapshots);
+    gateway.subscribe(paneSnapshots, { canvasSurface: false });
     gateway.start();
     const helloUrl = "https://canvas.test/__openclaw__/cap/hello";
-    const refreshedUrl = "https://canvas.test/__openclaw__/cap/refreshed";
+    let refreshedUrl = "https://canvas.test/__openclaw__/cap/refreshed";
     current().request.mockImplementation(async (method) => {
       if (method === "users.self") {
         return { profile: { id: "reader", emails: [] } };
@@ -566,12 +570,19 @@ describe("canvas capability renewal", () => {
     });
     await vi.dynamicImportSettled();
     expect(gateway.snapshot.canvasPluginSurfaceUrl).toBe(refreshedUrl);
+    snapshots.mockClear();
+    paneSnapshots.mockClear();
+    refreshedUrl = "https://canvas.test/__openclaw__/cap/rotated";
     await vi.advanceTimersByTimeAsync(45_000);
+    expect(gateway.snapshot.canvasPluginSurfaceUrl).toBe(refreshedUrl);
+    expect(snapshots).toHaveBeenCalledOnce();
+    expect(paneSnapshots).not.toHaveBeenCalled();
     expect(
       current().request.mock.calls.filter(([method]) => method === "plugin.surface.refresh"),
     ).toHaveLength(2);
 
     current().opts.onClose?.({ code: 1006, reason: "reconnect", willRetry: true });
+    expect(paneSnapshots).toHaveBeenCalled();
     current().request.mockClear();
     current().opts.onHello?.({
       ...HELLO,

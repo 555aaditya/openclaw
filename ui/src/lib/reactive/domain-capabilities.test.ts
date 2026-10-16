@@ -9,6 +9,7 @@ import { createChannelCapability } from "../channels/index.ts";
 import { createRuntimeConfigCapability } from "../config/runtime-config-capability.ts";
 import { createTestSessionCapability } from "../sessions/session-capability.test-support.ts";
 import {
+  projectAgentIdentity,
   projectAgents,
   projectChannels,
   projectRosterActivity,
@@ -16,6 +17,44 @@ import {
 } from "./domain-capabilities.ts";
 
 describe("domain capability projections", () => {
+  it("publishes identity changes only to the selected agent projection", async () => {
+    const source = createApplicationGateway();
+    const request = vi.fn(async () => ({ agentId: "main", name: "main", avatar: "" }));
+    const client = createTestGatewayClient(request);
+    source.publish({ ...source.gateway.snapshot, client, phase: "connected" });
+    const identities = createAgentIdentityCapability(source.gateway);
+    const main = projectAgentIdentity({ identities, agentId: "main" });
+    const other = projectAgentIdentity({ identities, agentId: "other" });
+    const mainChanged = vi.fn();
+    const otherChanged = vi.fn();
+    main.subscribe(mainChanged);
+    other.subscribe(otherChanged);
+    onTestFinished(() => {
+      main.dispose();
+      other.dispose();
+    });
+
+    await identities.ensure(["main"]);
+    expect(main.read()?.name).toBe("main");
+    expect(mainChanged).toHaveBeenCalledOnce();
+    expect(otherChanged).not.toHaveBeenCalled();
+
+    identities.invalidate(["other"]);
+    expect(mainChanged).toHaveBeenCalledOnce();
+    expect(otherChanged).toHaveBeenCalledOnce();
+    request.mockResolvedValue({ agentId: "other", name: "other", avatar: "" });
+    await identities.ensure(["other"]);
+    expect(other.read()?.name).toBe("other");
+    expect(otherChanged).toHaveBeenCalledTimes(2);
+    expect(mainChanged).toHaveBeenCalledOnce();
+
+    source.publish({ ...source.gateway.snapshot, phase: "reconnecting" });
+    expect(main.read()).toBeNull();
+    expect(other.read()).toBeNull();
+    expect(mainChanged).toHaveBeenCalledTimes(2);
+    expect(otherChanged).toHaveBeenCalledTimes(3);
+  });
+
   it("publishes mutable agent state", async () => {
     const source = createApplicationGateway();
     const client = createTestGatewayClient(async (method) => {

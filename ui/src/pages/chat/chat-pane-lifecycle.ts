@@ -368,7 +368,11 @@ export abstract class ChatPaneLifecycle extends ChatPaneSessionObservation {
       }),
     );
     chatState.addCleanup(
-      this.context.agentIdentity.subscribe(() => void pageState.loadAssistantIdentity()),
+      this.context.agentIdentity.subscribe((agentIds) => {
+        if (!agentIds || agentIds.includes(chatAvatars.resolveAgentIdForSession(pageState))) {
+          void pageState.loadAssistantIdentity();
+        }
+      }),
     );
     const creationComposer = takeCreatedComposer(
       this.context,
@@ -401,11 +405,14 @@ export abstract class ChatPaneLifecycle extends ChatPaneSessionObservation {
       window.removeEventListener(BROWSER_ANNOTATION_EVENT, handleBrowserAnnotation),
     );
     chatState.addCleanup(
-      this.context.gateway.subscribe((next) => {
-        this.applyGatewaySnapshot(next);
-        this.activateComposerPresentation();
-        this.synchronizeForegroundTranscript();
-      }),
+      this.context.gateway.subscribe(
+        (next) => {
+          this.applyGatewaySnapshot(next);
+          this.activateComposerPresentation();
+          this.synchronizeForegroundTranscript();
+        },
+        { canvasSurface: false },
+      ),
     );
     chatState.addCleanup(
       this.context.theme.subscribe(() => {
@@ -477,9 +484,20 @@ export abstract class ChatPaneLifecycle extends ChatPaneSessionObservation {
             state.mediaPolicyEpoch = (state.mediaPolicyEpoch ?? 0) + 1;
             state.requestUpdate?.();
           }
-          if (event.event === "config.changed" || event.event === "agent.identity.changed") {
+          const changedAgentId =
+            event.event === "agent.identity.changed"
+              ? asNonArrayRecord(event.payload).agentId
+              : undefined;
+          if (
+            event.event === "config.changed" ||
+            (typeof changedAgentId === "string" &&
+              (changedAgentId === chatAvatars.resolveAgentIdForSession(state) ||
+                state.senderAgentAvatars?.has(changedAgentId)))
+          ) {
             chatAvatars.invalidateChatAvatarCache(state);
-            void chatAvatars.refreshChatAvatar(state).finally(() => state.requestUpdate?.());
+            void chatAvatars
+              .refreshChatAvatar(state)
+              .finally(() => state.invalidateAssistantIdentity());
             void chatAvatars.refreshSenderAgentAvatars(state);
           }
           handleQuestionPromptEvent(this.questionPromptState, event);

@@ -45,7 +45,6 @@ type DetailPanel = HTMLElement & {
   onOpenSessionLink?: (target: { sessionKey: string; agentId: string }) => void;
   onOpenImage?: (item: { src: string; title: string }) => void;
   embedSandboxMode: "trusted";
-  canvasPluginSurfaceUrl: string;
 };
 
 let container: HTMLElement;
@@ -591,7 +590,6 @@ describe("markdown sidebar", () => {
   it("keeps a canvas scripts ceiling under a trusted global sandbox", async () => {
     const panel = document.createElement("openclaw-chat-detail-panel") as DetailPanel;
     panel.embedSandboxMode = "trusted";
-    panel.canvasPluginSurfaceUrl = "https://canvas.example";
     const content = {
       kind: "canvas",
       docId: "preview-1",

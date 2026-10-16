@@ -41,6 +41,32 @@ afterEach(() => {
 });
 
 describe("Control UI refresh nudge", () => {
+  it("keeps approval subscriptions scoped across update refreshes and approval mutations", async () => {
+    const harness = createGatewayHarness(client(async () => []));
+    const overlays = createApplicationOverlays(harness.gateway);
+    await flushMicrotasks();
+    const changed = vi.fn();
+    const stop = overlays.subscribeApprovals(changed);
+    try {
+      await overlays.refreshUpdateStatus();
+      overlays.closeDevicePairSetup();
+      expect(changed).not.toHaveBeenCalled();
+
+      harness.emitApproval("scoped-approval", 1);
+      expect(changed).toHaveBeenCalledTimes(1);
+      expect(changed.mock.lastCall?.[0].approvalQueue).toMatchObject([{ id: "scoped-approval" }]);
+      harness.update({ phase: "stopped" });
+      expect(changed.mock.lastCall?.[0].approvalQueue).toEqual([]);
+      stop();
+      changed.mockClear();
+      harness.emitApproval("retired-observer", 2);
+      expect(changed).not.toHaveBeenCalled();
+    } finally {
+      stop();
+      overlays.dispose();
+    }
+  });
+
   it.each([
     { surface: "a hosted Control UI", page: "https://control.example/", devProxy: false },
     { surface: "the ui:dev proxy", page: "http://localhost:5173/", devProxy: true },

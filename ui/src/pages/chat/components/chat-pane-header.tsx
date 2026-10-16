@@ -91,7 +91,7 @@ export type ChatPaneHeaderProps = ChatPaneLayoutMenuProps & {
   branch: string | null;
   branches: SessionBranch[];
   branchSwitchDisabledReason: string | null;
-  platform: string | null;
+  getPlatform: () => string | null;
   canReveal: boolean;
   copiedAction: ChatPaneHeaderAction | null;
   renameDisabledReason?: string;
@@ -273,7 +273,7 @@ function ProjectCrumb(props: ChatPaneHeaderProps) {
   const copied = () => props.copiedAction === "copy-path" || props.copiedAction === "copy-branch";
   const items = (): MenuItem[] => [
     ...(props.canReveal && props.workspaceRoot
-      ? [{ id: "reveal", label: revealLabel(props.platform) }]
+      ? [{ id: "reveal", label: revealLabel(props.getPlatform()) }]
       : []),
     ...(props.workspaceRoot
       ? [

@@ -30,6 +30,8 @@ import {
 } from "../../../lib/chat/tool-display.ts";
 import { isSvgImageMediaPath } from "../../../lib/media-file-extension.ts";
 import { shouldHandleNavigationClick } from "../../../lib/navigation-click.ts";
+import { projectCanvasSurface } from "../../../lib/reactive/application.ts";
+import { useOptionalApplication } from "../../../lib/reactive/context.ts";
 import { registerEnglishCatalog, t } from "../../../lib/reactive/i18n.ts";
 import { detectTextDirection } from "../../../lib/text-direction.ts";
 import {
@@ -319,7 +321,6 @@ export type SidebarPanelProps = {
   onClose: () => void;
   onOpenImage?: (item: ImageLightboxItem) => void;
   onViewRawText: () => void;
-  canvasPluginSurfaceUrl?: string | null;
   embedSandboxMode?: EmbedSandboxMode;
   allowExternalEmbedUrls?: boolean;
   githubRepo?: MarkdownRenderOptions["githubRepo"];
@@ -372,16 +373,16 @@ function RawButton(props: { onClick: () => void; class?: string; style?: SolidJS
 function CanvasPreview(props: {
   content: Extract<ChatDetailPanelContent, { kind: "canvas" }>;
   title: string;
-  canvasPluginSurfaceUrl?: string | null;
   embedSandboxMode?: EmbedSandboxMode;
   allowExternalEmbedUrls?: boolean;
 }) {
+  const canvasSurface = projectCanvasSurface(useOptionalApplication()?.gateway);
   const sandbox = () =>
     resolveEmbedSandbox(props.embedSandboxMode ?? "scripts", props.content.sandbox);
   const src = () =>
     resolveCanvasIframeUrl(
       props.content.entryUrl,
-      props.canvasPluginSurfaceUrl,
+      canvasSurface.read(),
       props.allowExternalEmbedUrls ?? false,
     );
   // A changed sandbox, URL, or height restarts the iframe, matching the original keyed preview.
@@ -506,7 +507,6 @@ export function SidebarPanel(props: SidebarPanelProps) {
                           <CanvasPreview
                             content={content()}
                             title={title()}
-                            canvasPluginSurfaceUrl={props.canvasPluginSurfaceUrl}
                             embedSandboxMode={props.embedSandboxMode}
                             allowExternalEmbedUrls={props.allowExternalEmbedUrls}
                           />

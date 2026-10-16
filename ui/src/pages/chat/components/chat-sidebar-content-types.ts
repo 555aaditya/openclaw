@@ -190,7 +190,6 @@ export type ChatDetailPanelProps = {
   execNode: string | null;
   attachmentRuntime: AttachmentSidebarRuntime;
   basePath: string;
-  canvasPluginSurfaceUrl: string | null;
   embedSandboxMode: EmbedSandboxMode;
   allowExternalEmbedUrls: boolean;
   githubContext: MarkdownGitHubContext;

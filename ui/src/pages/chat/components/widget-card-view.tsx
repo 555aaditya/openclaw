@@ -29,6 +29,8 @@ import {
   type EmbedSandboxMode,
 } from "../../../lib/chat/tool-display.ts";
 import { parseYouTubeVideoUrl } from "../../../lib/chat/youtube-video.ts";
+import { projectCanvasSurface } from "../../../lib/reactive/application.ts";
+import { useOptionalApplication } from "../../../lib/reactive/context.ts";
 import { t } from "../../../lib/reactive/i18n.ts";
 import { ContentPresentation } from "../../../lib/solid/presentation.ts";
 import { showToast } from "../../../lib/toast.ts";
@@ -46,7 +48,6 @@ registerMcpAppEnglish();
 
 type WidgetCardOptions = {
   rawText?: string | null;
-  canvasPluginSurfaceUrl?: string | null;
   embedSandboxMode?: EmbedSandboxMode;
   allowExternalEmbedUrls?: boolean;
   sessionKey?: string;
@@ -351,6 +352,7 @@ function WidgetContent(props: {
   sandbox: string;
   options?: WidgetCardOptions;
 }) {
+  const canvasSurface = projectCanvasSurface(useOptionalApplication()?.gateway);
   const mcp = () => props.preview.mcpApp;
   const managed = () =>
     props.preview.sandbox !== "strict" && isManagedCanvasDocumentPreview(props.preview);
@@ -366,7 +368,7 @@ function WidgetContent(props: {
                 title: props.preview.title?.trim() || t("chat.toolCards.canvas"),
                 src: resolveCanvasIframeUrl(
                   props.preview.url,
-                  props.options?.canvasPluginSurfaceUrl,
+                  canvasSurface.read(),
                   props.options?.allowExternalEmbedUrls ?? false,
                 ),
                 frameKey: props.preview.url?.trim() || props.preview.viewId?.trim(),

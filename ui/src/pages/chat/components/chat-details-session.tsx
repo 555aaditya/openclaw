@@ -79,7 +79,7 @@ export const ChatDetailsSession = defineSolidBridge<Props>(
                     }
                   }
                 : undefined,
-              publication: snapshot.githubPublication,
+              publication: snapshot.readGitHubPublication?.(),
               compact: true,
             };
           });

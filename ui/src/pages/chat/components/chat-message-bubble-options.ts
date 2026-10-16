@@ -49,7 +49,6 @@ export type GroupedMessageOptions = {
   onToggleToolExpanded?: (toolCardId: string, expanded?: boolean) => void;
   toolCardOverrides?: ReadonlyMap<ToolCard, ActivityOperationProps | null>;
   onRequestUpdate?: () => void;
-  canvasPluginSurfaceUrl?: string | null;
   resourceBasePath?: string;
   mediaPolicyKey?: string;
   connectionEpoch?: number;

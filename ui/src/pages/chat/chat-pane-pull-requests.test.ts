@@ -1,6 +1,7 @@
 /* @vitest-environment jsdom */
 
 import { setImmediate as nextFrame } from "node:timers/promises";
+import { createEffect, createRoot, flush } from "solid-js";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 import {
   CONTROL_UI_SESSION_PULL_REQUESTS_CHANGED_EVENT,
@@ -212,9 +213,9 @@ function createPublicationPane(
   const settled = async () => {
     await vi.waitFor(() => {
       pane.render();
-      expect(pane.chatProps?.githubPublication?.activity).toBeNull();
+      expect(pane.chatProps?.readGitHubPublication?.()?.activity).toBeNull();
     });
-    return pane.chatProps!.githubPublication!;
+    return pane.chatProps!.readGitHubPublication!()!;
   };
   const emitGatewayEvent = (event: string, payload: unknown) => {
     for (const listener of eventListeners) {
@@ -371,6 +372,28 @@ describe("chat pane pushed pull request state", () => {
     },
   );
 
+  it("publishes GitHub discovery to its controls without invalidating the pane", async () => {
+    const { pane } = createPublicationPane();
+    pane.render();
+    const requestUpdate = vi.spyOn(pane, "requestUpdate");
+    const views: Array<string | null | undefined> = [];
+    createRoot((dispose) => {
+      onTestFinished(dispose);
+      createEffect(
+        () => pane.chatProps?.readGitHubPublication?.()?.activity,
+        (activity) => {
+          views.push(activity);
+        },
+      );
+    });
+    flush();
+    await nextFrame();
+    flush();
+    expect(views).toEqual(["read", null]);
+    expect(pane.chatProps?.readGitHubPublication?.()?.options?.shared?.login).toBe("system-bot");
+    expect(requestUpdate).not.toHaveBeenCalled();
+  });
+
   it.each(["global", "per-sender"] as const)(
     "preserves the selected raw-global owner through publication RPCs in %s scope",
     async (scope) => {
@@ -411,7 +434,7 @@ describe("chat pane pushed pull request state", () => {
       });
       (await settled()).onSelect?.("personal");
       pane.render();
-      pane.chatProps!.githubPublication!.onPublish?.();
+      pane.chatProps!.readGitHubPublication!()!.onPublish?.();
       (await settled()).onConfirm?.();
       await settled();
       expect(
@@ -442,7 +465,7 @@ describe("chat pane pushed pull request state", () => {
         createPublicationPane();
       (await settled()).onSelect?.(source);
       pane.render();
-      pane.chatProps!.githubPublication!.onPublish?.();
+      pane.chatProps!.readGitHubPublication!()!.onPublish?.();
       let unknown = await settled();
       expect(unknown.locked).toBe(true);
       const first = request.mock.calls.find(([method]) => method === "sessions.github.publish");
@@ -462,7 +485,7 @@ describe("chat pane pushed pull request state", () => {
 
       pane.presented = false;
       pane.render();
-      expect(pane.chatProps?.githubPublication).toBeUndefined();
+      expect(pane.chatProps?.readGitHubPublication?.()).toBeUndefined();
       const hiddenRequests = request.mock.calls.length;
       unknown.onPublish?.();
       unknown.onRefresh();
@@ -482,7 +505,7 @@ describe("chat pane pushed pull request state", () => {
       returned.onRefresh();
       expect(request).toHaveBeenCalledTimes(beforeMissingRow);
       pane.render();
-      expect(pane.chatProps?.githubPublication).toBeUndefined();
+      expect(pane.chatProps?.readGitHubPublication?.()).toBeUndefined();
       state.sessionsResult = knownRoster;
       const restored = await settled();
       expect(restored.locked).toBe(true);
@@ -636,7 +659,7 @@ it.each([
   );
   if (access === "no read scope") {
     pane.render();
-    expect(pane.chatProps?.githubPublication).toBeUndefined();
+    expect(pane.chatProps?.readGitHubPublication?.()).toBeUndefined();
     expect(request.mock.calls.some(([method]) => method === "sessions.github.options")).toBe(false);
     return;
   }
@@ -676,7 +699,7 @@ it.each([
     idempotencyKey: expect.any(String),
     selection: { source: "shared", expected: shared },
   });
-  const previous = pane.chatProps!.githubPublication!;
+  const previous = pane.chatProps!.readGitHubPublication!()!;
   context.gateway.snapshot.hello = gatewayHelloForMethods(
     ["sessions.github.publish", "sessions.github.options"],
     ["operator.sessions.read"],

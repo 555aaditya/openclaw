@@ -1,3 +1,4 @@
+import { createSignal } from "solid-js";
 import type { ChatWorkContext } from "../../../../packages/gateway-protocol/src/chat-work-context.js";
 import type {
   SessionCatalogHost,
@@ -177,11 +178,10 @@ export abstract class ChatPaneBase extends ControllerHost {
     );
     this.activeChanged(this.active);
     this.chatState.addCleanup(
-      this.context.overlays?.subscribe((snapshot) => {
-        if (this.state) {
-          this.reconcileWaitingApprovalSnapshot(snapshot.approvalQueue);
+      this.context.overlays?.subscribeApprovals((snapshot) => {
+        if (this.state && this.reconcileWaitingApprovalSnapshot(snapshot.approvalQueue)) {
+          this.requestUpdate();
         }
-        this.requestUpdate();
       }) ?? (() => {}),
     );
     this.chatState.addCleanup(
@@ -520,7 +520,7 @@ export abstract class ChatPaneBase extends ControllerHost {
   protected headerSessionMutationAbortController = new AbortController();
 
   @viewState() protected headerRenameValue = "";
-  @viewState() protected headerPlatform: string | null = null;
+  protected readonly headerPlatform = createSignal<string | null>(null);
   @viewState() protected headerCopiedAction: ChatPaneHeaderAction | null = null;
   protected continueInTerminalDialog: {
     qualifiedSessionKey: string;

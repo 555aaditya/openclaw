@@ -29,6 +29,15 @@ owner; the grouped agent roster does not display catalog rows. Widgets use the p
 host on a separate loopback listener. Plugins are small synthetic modules exercising
 registration/loading, not replicas of any private plugin implementation.
 
+`--pane-facts` extends the same inventory with a GitHub-linked dashboard, publication
+account discovery, an existing discussion, the compiled native Workboard plugin
+and a visible board card, and a capability-scoped Canvas preview. The Canvas hello
+URL triggers the production lease renewal path. All four previously absent reads
+(`sessions.github.options`, `session.discussion.info`, `workboard.boards.list`, and
+`plugin.surface.refresh`) must finish during every reload; missing coverage fails
+the benchmark. Workboard is added alongside the six synthetic plugins. Use this
+same option for both baseline and candidate pane-invalidation measurements.
+
 `--latency-ms` sets the inbound message delay (default 35 ms). `--frame-gap-ms`
 sets the minimum separation between Gateway message deliveries (default 4 ms).
 Concurrent requests remain concurrent; replies share one serialized wire.

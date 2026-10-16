@@ -141,7 +141,7 @@ export function mountChatPaneHeader(
     branch: "feature/header",
     branches: [],
     branchSwitchDisabledReason: null,
-    platform: "darwin",
+    getPlatform: () => "darwin",
     canReveal: true,
     copiedAction: null,
     renameDisabledReason: undefined,

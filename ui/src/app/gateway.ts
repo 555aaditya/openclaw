@@ -63,7 +63,10 @@ export type ApplicationGateway = {
   setSessionKey: (sessionKey: string) => void;
   start: () => void;
   stop: () => void;
-  subscribe: (listener: (snapshot: ApplicationGatewaySnapshot) => void) => () => void;
+  subscribe: (
+    listener: (snapshot: ApplicationGatewaySnapshot) => void,
+    options?: { canvasSurface?: boolean },
+  ) => () => void;
   subscribeEventLog: (listener: (events: readonly EventLogEntry[]) => void) => () => void;
   subscribeEvents: (listener: GatewayEventListener) => () => void;
   loadSelfProfile: () => Promise<UserProfile | null>;

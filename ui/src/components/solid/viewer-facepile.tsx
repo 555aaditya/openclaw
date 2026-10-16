@@ -188,7 +188,8 @@ export function ParticipantAvatar(props: {
   };
   return (
     <Show
-      when={agent()}
+      when={agent()?.id}
+      keyed
       fallback={
         <ViewerAvatar
           user={props.user}
@@ -198,30 +199,28 @@ export function ParticipantAvatar(props: {
         />
       }
     >
-      {(identity) => {
+      {(agentId) => {
         const app = useOptionalApplication();
         const agents = app ? projectAgents(app.agents) : undefined;
         const agentIdentity = app
           ? projectAgentIdentity({
               identities: app.agentIdentity,
-              get agentId() {
-                return identity().id;
-              },
+              agentId,
             })
           : undefined;
         const avatar = createMemo(() => {
           const rosterAgent = agents
             ?.read()
-            .agentsList?.agents.find((entry) => entry.id === identity().id);
+            .agentsList?.agents.find((entry) => entry.id === agentId);
           const hydrated = agentIdentity?.read();
           const resolved = resolveAvatar({
-            identity: identity(),
+            identity: { type: "agent", id: agentId },
             id: props.user.id,
             name: props.user.name,
             profileAvatarUrl: props.user.avatarUrl,
           });
           return {
-            id: identity().id,
+            id: agentId,
             avatar: hydrated
               ? resolveAgentAvatarUrl(rosterAgent ?? {}, hydrated)
               : (resolveAgentAvatarUrl(rosterAgent ?? {}) ??

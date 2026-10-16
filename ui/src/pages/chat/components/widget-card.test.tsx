@@ -2,9 +2,12 @@
 
 import { createSignal } from "solid-js";
 import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
+import type { ApplicationContext } from "../../../app/context.ts";
 import { mcpAppWidgetNameForViewId, type BoardProvider } from "../../../lib/board/provider.ts";
 import { bumpCanvasWidgetFrameConnectionGeneration } from "../../../lib/chat/canvas-widget-frame-generation.ts";
+import { ApplicationProvider } from "../../../lib/reactive/context.ts";
 import { ContentPresentation } from "../../../lib/solid/presentation.ts";
+import { createApplicationGateway } from "../../../test-helpers/application-context.ts";
 import { mountSolid } from "../../../test-helpers/mount-solid.ts";
 import { flush, waitForSolid } from "../../../test-helpers/solid-settle.ts";
 import { ToolPreview } from "./widget-card.ts";
@@ -15,6 +18,12 @@ const canvasPreview = {
   render: "url",
 } as const;
 const widgetPorts: MessagePort[] = [];
+let canvasGateway: ReturnType<typeof createApplicationGateway> | undefined;
+function setCanvasSurface(url: string) {
+  canvasGateway ??= createApplicationGateway();
+  canvasGateway.publish({ ...canvasGateway.gateway.snapshot, canvasPluginSurfaceUrl: url });
+  flush();
+}
 type PreviewState = {
   preview: Parameters<typeof ToolPreview>[0]["preview"];
   options: Parameters<typeof ToolPreview>[0]["options"];
@@ -44,12 +53,19 @@ function mountWidget(
       () => {
         const [current, setCurrent] = createSignal(state);
         update = setCurrent;
-        return (
+        const preview = () => (
           <ToolPreview
             preview={current().preview}
             surface="chat_message"
             options={current().options}
           />
+        );
+        return canvasGateway ? (
+          <ApplicationProvider value={{ gateway: canvasGateway.gateway } as ApplicationContext}>
+            {preview()}
+          </ApplicationProvider>
+        ) : (
+          preview()
         );
       },
       { container: host },
@@ -83,6 +99,7 @@ afterEach(async () => {
   for (const host of widgets.keys()) {
     unmountWidget(host);
   }
+  canvasGateway = undefined;
   document.body.replaceChildren();
 });
 
@@ -95,48 +112,26 @@ describe("widget-card", () => {
     } as const;
     const host = document.createElement("div");
     document.body.append(host);
-    mountWidget(
-      firstPreview,
-      {
-        canvasPluginSurfaceUrl: "https://canvas.test/__openclaw__/cap/one",
-      },
-      host,
-    );
+    setCanvasSurface("https://canvas.test/__openclaw__/cap/one");
+    mountWidget(firstPreview, undefined, host);
     const originalFrame = host.querySelector<HTMLIFrameElement>("iframe");
     const originalSrc = originalFrame?.getAttribute("src");
     expect(originalSrc).toContain("/__openclaw__/cap/one/");
     initializeWidgetFrame(originalFrame!);
 
-    mountWidget(
-      firstPreview,
-      {
-        canvasPluginSurfaceUrl: "https://canvas.test/__openclaw__/cap/two",
-      },
-      host,
-    );
+    setCanvasSurface("https://canvas.test/__openclaw__/cap/two");
     expect(host.querySelector("iframe")).toBe(originalFrame);
     expect(host.querySelector("iframe")?.getAttribute("src")).toBe(originalSrc);
 
     unmountWidget(host);
-    mountWidget(
-      firstPreview,
-      {
-        canvasPluginSurfaceUrl: "https://canvas.test/__openclaw__/cap/two",
-      },
-      host,
-    );
+    mountWidget(firstPreview, undefined, host);
     const remountedFrame = host.querySelector("iframe");
     expect(remountedFrame).not.toBe(originalFrame);
     expect(remountedFrame?.getAttribute("src")).toContain("/__openclaw__/cap/two/");
 
     bumpCanvasWidgetFrameConnectionGeneration();
-    mountWidget(
-      firstPreview,
-      {
-        canvasPluginSurfaceUrl: "https://canvas.test/__openclaw__/cap/three",
-      },
-      host,
-    );
+    setCanvasSurface("https://canvas.test/__openclaw__/cap/three");
+    mountWidget(firstPreview, undefined, host);
     expect(host.querySelector("iframe")).not.toBe(remountedFrame);
     expect(host.querySelector("iframe")?.getAttribute("src")).toContain("/__openclaw__/cap/three/");
   });
@@ -151,14 +146,10 @@ describe("widget-card", () => {
       } as const;
       const host = document.createElement("div");
       document.body.append(host);
-      const show = (capability: string) =>
-        mountWidget(
-          preview,
-          {
-            canvasPluginSurfaceUrl: `https://canvas.test/__openclaw__/cap/${capability}`,
-          },
-          host,
-        );
+      const show = (capability: string) => {
+        setCanvasSurface(`https://canvas.test/__openclaw__/cap/${capability}`);
+        return mountWidget(preview, undefined, host);
+      };
 
       show("hello");
       const original = host.querySelector("iframe")!;
@@ -186,13 +177,8 @@ describe("widget-card", () => {
     } as const;
     const host = document.createElement("div");
     document.body.append(host);
-    mountWidget(
-      preview,
-      {
-        canvasPluginSurfaceUrl: "https://canvas.test/__openclaw__/cap/one",
-      },
-      host,
-    );
+    setCanvasSurface("https://canvas.test/__openclaw__/cap/one");
+    mountWidget(preview, undefined, host);
     const frame = host.querySelector<HTMLIFrameElement>("iframe");
     initializeWidgetFrame(frame!);
     window.dispatchEvent(
@@ -205,25 +191,13 @@ describe("widget-card", () => {
 
     // Re-render at the same URL so the style binding itself carries the
     // remembered height; only then can a later rotation clear it.
-    mountWidget(
-      preview,
-      {
-        canvasPluginSurfaceUrl: "https://canvas.test/__openclaw__/cap/one",
-      },
-      host,
-    );
+    mountWidget(preview, undefined, host);
     expect(frame?.getAttribute("style")).toContain("48px");
 
     // The in-frame reporter only posts when its own height changes, so a
     // rotation that lost the remembered height would strand the frame at its
     // default until the widget content happened to resize.
-    mountWidget(
-      preview,
-      {
-        canvasPluginSurfaceUrl: "https://canvas.test/__openclaw__/cap/two",
-      },
-      host,
-    );
+    setCanvasSurface("https://canvas.test/__openclaw__/cap/two");
     expect(host.querySelector("iframe")).toBe(frame);
     expect(frame?.getAttribute("style")).toContain("48px");
     host.remove();

@@ -62,11 +62,24 @@ function MountedChatPaneRuntime(props: { runtime: ChatPaneRuntime }) {
     cacheProgress();
     return stop;
   });
-  const sources = [
-    runtime.context.plugins,
-    runtime.context.navigation,
-    nativeGatewaysCapability(),
-  ].map((source) =>
+  const panePlugins = projectSource(runtime.context.plugins, {
+    read: (plugins) => ({
+      panels: plugins
+        .registrations("panels")
+        .map(({ key, value, signal }) => [key, value.label, signal] as const),
+      // Session action resolvers can read plugin-owned mutable state on each invalidation.
+      actions: plugins.registrations("actions").some(({ value }) => value.placement === "session"),
+    }),
+    subscribe: (plugins, notify) => plugins.subscribe(notify),
+    equality: (previous, next) =>
+      !previous.actions &&
+      !next.actions &&
+      previous.panels.length === next.panels.length &&
+      previous.panels.every((entry, index) =>
+        entry.every((value, field) => value === next.panels[index][field]),
+      ),
+  });
+  const sources = [runtime.context.navigation, nativeGatewaysCapability()].map((source) =>
     projectSource(source, {
       read: (capability) => capability,
       subscribe: (capability, notify) => capability?.subscribe(notify) ?? (() => {}),
@@ -81,6 +94,7 @@ function MountedChatPaneRuntime(props: { runtime: ChatPaneRuntime }) {
     presented: () => owner.read().presented && document.visibilityState !== "hidden",
     read: () => {
       progress.read();
+      panePlugins.read();
       i18nRevision();
       sources.forEach((source) => source.read());
       runtime.prepareRender();

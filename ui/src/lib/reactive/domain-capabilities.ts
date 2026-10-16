@@ -19,7 +19,7 @@ export type AgentIdentityProjectionSource = {
 export function projectAgentIdentity(source: AgentIdentityProjectionSource) {
   return projectSource(source, {
     read: ({ identities, agentId }) => identities.get(agentId),
-    subscribe: ({ identities }, notify) => identities.subscribe(notify),
+    subscribe: ({ identities, agentId }, notify) => identities.subscribe(notify, agentId),
     equality: "revision",
   });
 }

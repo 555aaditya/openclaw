@@ -1,3 +1,4 @@
+import { createSignal } from "@solidjs/signals";
 import { fetchAssistantIdentity } from "../../app/assistant-identity.ts";
 import {
   dispatchCommandClientPresentation,
@@ -47,7 +48,7 @@ import { handleSendChat } from "./chat-send-submit.ts";
 import { OFFLINE_QUEUE_STORAGE_ERROR } from "./chat-send-support.ts";
 import { retireChatModelSelectionOwnership } from "./chat-session.ts";
 import type { ChatPageHost } from "./chat-state-host.ts";
-import { selectedChatSessionRow } from "./chat-state-route.ts";
+import { resolveChatAvatarUrl, selectedChatSessionRow } from "./chat-state-route.ts";
 import { safeMediaAttachmentHref } from "./components/chat-attachment-href.ts";
 import {
   openSessionWorkspacePreview,
@@ -177,7 +178,7 @@ async function loadPageAssistantIdentity(state: ChatPageHost) {
     state.assistantAvatarStatus = identity.avatarStatus ?? null;
     state.assistantAvatarReason = identity.avatarReason ?? null;
     state.assistantAgentId = identity.agentId ?? null;
-    state.requestUpdate?.();
+    state.invalidateAssistantIdentity();
   } catch {
     // Keep the last known identity when the Gateway cannot answer.
   }
@@ -190,6 +191,7 @@ export function createPageState(
   chatMessagesBySession: ChatMessageCache = new Map(),
 ): ChatPageHost {
   const invalidate = () => renderLifecycle.invalidate();
+  const [identityRevision, setIdentityRevision] = createSignal(0, { ownedWrite: true });
   const settings = loadSettings();
   const initialSessionKey = page.sessionKey?.trim() || settings.sessionKey;
   const sidebarSessionKey = canonicalUiSessionKeyForPersistence(
@@ -228,6 +230,15 @@ export function createPageState(
     assistantAvatarStatus: bootstrapIdentity?.avatarStatus ?? null,
     assistantAvatarReason: bootstrapIdentity?.avatarReason ?? null,
     assistantIdentityRequestVersion: 0,
+    readAssistantIdentity: () => {
+      identityRevision();
+      return {
+        assistantName: state.assistantName,
+        assistantAvatar: state.assistantAvatar,
+        assistantAvatarUrl: resolveChatAvatarUrl(state),
+      };
+    },
+    invalidateAssistantIdentity: () => setIdentityRevision((revision) => revision + 1),
     userName: identity.name,
     userAvatar: identity.avatar,
     embedSandboxMode: appConfig.embedSandboxMode,
@@ -239,7 +250,6 @@ export function createPageState(
     mediaPolicyEpoch: 0,
     hello: null,
     selfUser: null,
-    canvasPluginSurfaceUrl: null,
     terminalAvailable: false,
     browserPanelAvailable: false,
     assistantAgentId: context.agentSelection.state.selectedId,

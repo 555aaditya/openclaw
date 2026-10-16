@@ -60,6 +60,7 @@ export function createApplicationOverlays(
     devicePairPendingCount: 0,
   };
   const listeners = new Set<(next: ApplicationOverlaySnapshot) => void>();
+  const approvalListeners = new Set<(next: ApplicationOverlaySnapshot) => void>();
   let disposed = false;
   let activeClient = gateway.snapshot.client;
   let connectedSource: NonNullable<typeof activeClient> | null = null; // Retries start a new source epoch.
@@ -91,17 +92,26 @@ export function createApplicationOverlays(
     snapshot = {
       ...snapshot,
       ...updates.snapshot,
-      approvalQueue: promptState.execApprovalQueue,
-      approvalBusy: promptState.execApprovalBusy,
-      approvalCanGrant: readGatewayOperatorAccess(gateway.snapshot).canGrantApprovals,
-      approvalErrors: new Map(promptState.execApprovalErrors),
       ...readDevicePairSetupSnapshot(devicePairSetupState),
     };
     for (const listener of listeners) {
       listener(snapshot);
     }
   }
-  promptState.execApprovalChanged = publish;
+  function publishApprovals() {
+    snapshot = {
+      ...snapshot,
+      approvalQueue: promptState.execApprovalQueue,
+      approvalBusy: promptState.execApprovalBusy,
+      approvalCanGrant: readGatewayOperatorAccess(gateway.snapshot).canGrantApprovals,
+      approvalErrors: new Map(promptState.execApprovalErrors),
+    };
+    publish();
+    for (const listener of approvalListeners) {
+      listener(snapshot);
+    }
+  }
+  promptState.execApprovalChanged = publishApprovals;
   const pairingPendingCount = createOverlayPairingPendingCount({
     gateway,
     state: devicePairSetupState,
@@ -130,7 +140,7 @@ export function createApplicationOverlays(
     canReview: () => operatorAccess.canReviewApprovals,
     isCurrentClient,
     isDisposed: () => disposed,
-    publish,
+    publish: publishApprovals,
   });
 
   const synchronizeGateway = (next: ApplicationGateway["snapshot"]) => {
@@ -187,6 +197,14 @@ export function createApplicationOverlays(
       promptState.execApprovalBusy = false;
       promptState.execApprovalErrors.clear();
       clearExecApprovalTimers(promptState);
+    }
+    if (
+      connectedSourceChanged ||
+      previousClient !== next.client ||
+      accessTransition.reviewChanged ||
+      accessTransition.grantChanged
+    ) {
+      publishApprovals();
     }
     if (!connected || !next.client) {
       if (next.phase !== "reload-required" && !next.client) {
@@ -261,13 +279,13 @@ export function createApplicationOverlays(
     const requestedApproval = parseApprovalRequestedEvent(event.event, event.payload);
     if (requestedApproval) {
       enqueueExecApprovalPrompt(promptState, requestedApproval);
-      publish();
+      publishApprovals();
       return;
     }
     const resolvedApproval = parseApprovalResolvedEvent(event.event, event.payload);
     if (resolvedApproval) {
       clearResolvedExecApprovalPrompt(promptState, resolvedApproval.id);
-      publish();
+      publishApprovals();
     }
   });
   synchronizeGateway(gateway.snapshot);
@@ -277,6 +295,7 @@ export function createApplicationOverlays(
       return snapshot;
     },
     subscribe: (listener) => registerListener(listeners, listener),
+    subscribeApprovals: (listener) => registerListener(approvalListeners, listener),
     refreshUpdateStatus: updates.refreshUpdateStatus,
     acknowledgeUpdateRun: updates.acknowledgeUpdateRun,
     captureUpdateTarget: updates.captureUpdateTarget,
@@ -296,12 +315,12 @@ export function createApplicationOverlays(
       const isProjectedApproval = active === projectedApproval;
       if (!client || gateway.snapshot.phase !== "connected") {
         promptState.execApprovalErrors.set(active.id, t("sessionsView.actionRequiresConnection"));
-        publish();
+        publishApprovals();
         return;
       }
       if (!readGatewayOperatorAccess(gateway.snapshot).canGrantApprovals) {
         promptState.execApprovalErrors.set(active.id, t("execApproval.reviewOnly"));
-        publish();
+        publishApprovals();
         return;
       }
       promptState.execApprovalBusy = true;
@@ -321,7 +340,7 @@ export function createApplicationOverlays(
         operation.grantGeneration === approvalGrantGeneration &&
         readGatewayOperatorAccess(gateway.snapshot).canGrantApprovals &&
         isCurrentClient(operation.client);
-      publish();
+      publishApprovals();
       try {
         await resolveApprovalRequest(client, active, decision);
         if (!isCurrentOperation()) {
@@ -354,7 +373,7 @@ export function createApplicationOverlays(
         if (approvalDecision === operation) {
           approvalDecision = null;
           promptState.execApprovalBusy = false;
-          publish();
+          publishApprovals();
         }
       }
     },
@@ -398,6 +417,7 @@ export function createApplicationOverlays(
       clearExecApprovalTimers(promptState);
       promptState.execApprovalErrors.clear();
       listeners.clear();
+      approvalListeners.clear();
     },
   };
 }

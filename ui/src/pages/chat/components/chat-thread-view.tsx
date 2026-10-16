@@ -1,4 +1,4 @@
-import { createEffect, createMemo, onCleanup } from "solid-js";
+import { createEffect, createMemo, merge, onCleanup } from "solid-js";
 import { handleMarkdownCodeBlockClick } from "../../../components/markdown-code-blocks.ts";
 import {
   linkReaderPrefetchRef as createLinkReaderPrefetchRef,
@@ -46,10 +46,25 @@ function navigateCronRunLink(event: Event, props: ChatThreadProps): boolean {
   return true;
 }
 
-export function ChatThread(input: {
+export function ChatThread(source: {
   props: ChatThreadProps;
   transcript: ChatTranscriptController;
 }) {
+  const identity = createMemo(() => source.props.readAssistantIdentity?.());
+  const props = merge(() => source.props, {
+    get assistantName() {
+      return identity()?.assistantName ?? source.props.assistantName;
+    },
+    get assistantAvatar() {
+      const current = identity();
+      return current ? current.assistantAvatar : source.props.assistantAvatar;
+    },
+    get assistantAvatarUrl() {
+      const current = identity();
+      return current ? current.assistantAvatarUrl : source.props.assistantAvatarUrl;
+    },
+  });
+  const input = merge(source, { props });
   let root: HTMLDivElement | undefined;
   const historyIntent = (event: Event) => input.props.onHistoryIntent?.(event);
   onCleanup(() => {

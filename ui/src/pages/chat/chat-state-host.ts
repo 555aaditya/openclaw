@@ -46,6 +46,11 @@ export type ChatPageHost = ChatHost &
     assistantAvatarStatus: "none" | "local" | "remote" | "data" | null;
     assistantAvatarReason: string | null;
     assistantIdentityRequestVersion: number;
+    readAssistantIdentity: () => Pick<
+      ChatProps,
+      "assistantName" | "assistantAvatar" | "assistantAvatarUrl"
+    >;
+    invalidateAssistantIdentity: () => void;
     userName: string | null;
     userAvatar: string | null;
     embedSandboxMode: EmbedSandboxMode;

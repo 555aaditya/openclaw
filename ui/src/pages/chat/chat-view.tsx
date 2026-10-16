@@ -3,7 +3,6 @@ import type { Component } from "solid-js";
 import { createEffect, createMemo, createSignal, Show, untrack } from "solid-js";
 import type { ControlUiSurfaceProps } from "../../../../src/plugin-sdk/control-ui.js";
 import type { ApplicationContext } from "../../app/context-types.ts";
-import { ExecApprovalCard } from "../../components/exec-approval-card-solid.tsx";
 import { Icon } from "../../components/solid/icon.tsx";
 import {
   KEYBOARD_SHORTCUT_COMBOS,
@@ -31,6 +30,7 @@ import { ComposerQueue } from "./components/chat-composer-regions.tsx";
 import { getChatComposerState, hasTerminalRunStatus } from "./components/chat-composer-state.ts";
 import { ChatComposer } from "./components/chat-composer.tsx";
 import { isImageLightboxEvent, openInlineChatImage } from "./components/chat-image-lightbox.ts";
+import { ChatInlineApproval } from "./components/chat-inline-approval.tsx";
 import { ChatPullRequests } from "./components/chat-pull-requests.tsx";
 import { ChatSelectionAnnotations } from "./components/chat-selection-annotations.tsx";
 import { ChatSessionSuggestions } from "./components/chat-session-suggestions.solid.tsx";
@@ -96,20 +96,8 @@ function ChatFooterContent(input: ChatViewInput) {
           <Show when={pendingInputs()?.before !== undefined}>{pendingButton("latest")}</Show>
         </div>
       </Show>
-      <Show when={input.props.inlineApproval && input.props.onApprovalDecision}>
-        <div class="chat-inline-approval">
-          <ExecApprovalCard
-            props={{
-              approval: input.props.inlineApproval!,
-              sourceSession: input.frame.approvalSourceSession,
-              busy: input.props.approvalBusy === true,
-              canGrant: input.props.approvalCanGrant,
-              error: input.props.approvalErrors?.get(input.props.inlineApproval!.id) ?? null,
-              variant: "inline",
-              onDecision: input.props.onApprovalDecision!,
-            }}
-          />
-        </div>
+      <Show when={input.props.approvalSource} keyed>
+        {(source) => <ChatInlineApproval source={source} view={input.props} />}
       </Show>
       <Show when={!input.props.detailsEnabled}>
         <ChatPullRequests
@@ -127,7 +115,7 @@ function ChatFooterContent(input: ChatViewInput) {
           onDismiss={(pullRequest) => input.props.onDismissPullRequest?.(pullRequest)}
           onDismissBranch={input.props.onDismissPullRequestsBranch}
           onOpenSessionDiff={input.props.onOpenSessionDiff}
-          publication={input.props.githubPublication}
+          publication={input.props.readGitHubPublication?.()}
         />
       </Show>
       <ChatSessionSuggestions
@@ -154,9 +142,11 @@ function ChatFooterContent(input: ChatViewInput) {
 }
 
 function ChatComposerView(input: ChatViewInput) {
+  const identity = createMemo(() => input.props.readAssistantIdentity?.());
   return (
     <ChatComposer
       {...input.props}
+      {...identity()}
       renderRevision={input.frame}
       progressCard={input.props.detailsEnabled ? null : input.props.progressCard}
       progressCardInitialLoading={

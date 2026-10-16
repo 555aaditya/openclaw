@@ -7,6 +7,7 @@ import {
 } from "../test-helpers/control-ui-e2e.ts";
 import {
   createControlUiTeamScaleFixture,
+  TEAM_SCALE_PANE_FACT_METHODS,
   TEAM_SCALE_SELF_INSTANCE_ID,
 } from "../test-helpers/control-ui-team-scale-fixture.ts";
 import { useCanvasSandboxFixture } from "./canvas-sandbox.test-support.ts";
@@ -22,6 +23,7 @@ suite.define(() => {
     const fixture = createControlUiTeamScaleFixture({
       baseUrl: suite.server.baseUrl,
       ...sandbox(""),
+      paneFacts: true,
     });
     await suite.withPage(
       {
@@ -31,14 +33,6 @@ suite.define(() => {
         permissions: ["local-network-access"],
       },
       async ({ page }) => {
-        await page.route("**/__openclaw__/**", async (route) => {
-          const asset = fixture.assets.get(new URL(route.request().url()).pathname);
-          if (asset) {
-            await route.fulfill({ status: 200, ...asset });
-          } else {
-            await route.fallback();
-          }
-        });
         await page.addInitScript(
           ({ key, entries }) => {
             if (window !== window.top) {
@@ -59,6 +53,14 @@ suite.define(() => {
           },
         );
         const gateway = await installMockGateway(page, fixture.scenario);
+        await page.route("**/__openclaw__/**", async (route) => {
+          const asset = fixture.assets.get(new URL(route.request().url()).pathname);
+          if (asset) {
+            await route.fulfill({ status: 200, ...asset });
+          } else {
+            await route.fallback();
+          }
+        });
         await page.goto(
           controlUiSessionUrl(suite.server.baseUrl, fixture.selectedSessionKey, "dashboard"),
         );
@@ -117,6 +119,14 @@ suite.define(() => {
           .frameLocator("iframe")
           .getByText("Team metric 12", { exact: true })
           .waitFor();
+        await page.getByText("Review synthetic dashboard", { exact: true }).waitFor();
+        await page
+          .frameLocator('iframe[src*="/canvas/team-scale-canvas/"]')
+          .getByText("Synthetic canvas surface ready", { exact: true })
+          .waitFor();
+        for (const method of TEAM_SCALE_PANE_FACT_METHODS) {
+          await gateway.waitForRequest(method);
+        }
 
         const rosterRequests = await gateway.getRequests("sessions.list");
         expect(rosterRequests.some((request) => asRecord(request.params)?.limit === 200)).toBe(

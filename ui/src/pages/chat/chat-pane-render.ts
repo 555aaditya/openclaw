@@ -1,3 +1,4 @@
+import { createSignal } from "solid-js";
 import { resolveArtifactDownloadSource } from "../../api/artifact-download.ts";
 import { resolveControlUiAuthToken } from "../../app/control-ui-auth.ts";
 import { gatewayPresentationScope } from "../../app/gateway-presentation-scope.ts";
@@ -71,7 +72,12 @@ import { resolveChatProjectionRunId } from "./tool-stream-status.ts";
 import { workspaceResultConflictFromPlacement } from "./workspace-conflict.ts";
 
 export class ChatPaneRuntime extends ChatPaneLayoutRender {
-  private readonly notify = () => this.requestUpdate();
+  private readonly publicationRevision = createSignal(0, { ownedWrite: true });
+  private readonly notifyPublication = () => this.publicationRevision[1]((value) => value + 1);
+  private readonly readGitHubPublication = () => {
+    this.publicationRevision[0]();
+    return this.githubPublication?.view();
+  };
 
   readProviderReviewState() {
     return this.state;
@@ -291,7 +297,7 @@ export class ChatPaneRuntime extends ChatPaneLayoutRender {
         this.githubPublication?.detach();
         this.githubPublication = this.context.sessions.githubPublication.attach(
           publicationRow,
-          this.notify,
+          this.notifyPublication,
           GitHubPublicationController,
         );
       }
@@ -361,7 +367,7 @@ export class ChatPaneRuntime extends ChatPaneLayoutRender {
     };
     const selfProfileId = selfUser?.identity?.type === "profile" ? selfUser.identity.id : null;
     const mentionsUnsupported = !nativeConversation || selectedSession?.incognito || !selfProfileId;
-    const { gatewayQuestionPrompts, inlineApproval } = this.projectConversationAttention(
+    const gatewayQuestionPrompts = this.projectConversationQuestions(
       state,
       currentAgentId,
       !catalogKey && !sessionParticipationBlocked,
@@ -503,15 +509,9 @@ export class ChatPaneRuntime extends ChatPaneLayoutRender {
       workerRuntimeInstall: placementComposer.workerRuntimeInstall,
       runError:
         catalogKey || providerPaused ? null : (state.chatRunError ?? placementComposer.runError),
-      inlineApproval,
-      approvalBusy: overlays?.snapshot?.approvalBusy,
-      approvalCanGrant: overlays?.snapshot?.approvalCanGrant ?? false,
-      approvalErrors: overlays?.snapshot?.approvalErrors,
-      onApprovalDecision:
-        overlays && !sessionParticipationBlocked
-          ? (approvalId, decision) =>
-              overlays.decideApproval(decision, approvalId, inlineApproval ?? undefined)
-          : undefined,
+      // Session replay owns the parent's presentation scope for delegated approvals.
+      inlineApproval: state.chatSessionApprovalQueue?.[0],
+      approvalSource: !catalogKey && !sessionParticipationBlocked ? overlays : undefined,
       workspaceConflict: visibleWorkspaceConflict,
       onDismissWorkspaceConflict:
         visibleWorkspaceConflict && selectedSession
@@ -567,7 +567,7 @@ export class ChatPaneRuntime extends ChatPaneLayoutRender {
       githubRepositories: projectCatalog.repositories,
 
       onOpenSessionDiff: sessionWorkspace.onOpenDiff,
-      githubPublication: this.githubPublication?.view(),
+      readGitHubPublication: this.readGitHubPublication,
       onOpenWorkspaceFile: (target) => openSessionWorkspaceFile(state, target),
       onOpenSessionLink: (target) => navigateMarkdownSession(this.context, target),
       onNavigate: (routeId, options) => this.context.navigate(routeId, options),
@@ -659,6 +659,7 @@ export class ChatPaneRuntime extends ChatPaneLayoutRender {
       onOpenImage: state.handleOpenImage,
       assistantName: state.assistantName,
       assistantAvatar: state.assistantAvatar,
+      readAssistantIdentity: state.readAssistantIdentity,
       senderAgentAvatars: state.senderAgentAvatars,
       mainKey,
       ...userPresentation,

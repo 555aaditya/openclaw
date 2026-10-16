@@ -125,7 +125,7 @@ export function createApplicationGateway(
   });
   const canvasSurface = createGatewayCanvasSurfaceLease(
     () => client,
-    (canvasPluginSurfaceUrl) => setSnapshot({ canvasPluginSurfaceUrl }),
+    (canvasPluginSurfaceUrl) => setSnapshot({ canvasPluginSurfaceUrl }, true),
   );
   // Session lineage belongs to the selected Gateway: once its hello succeeds,
   // transport drops render as "reconnecting" (shell + banner) instead of
@@ -148,6 +148,7 @@ export function createApplicationGateway(
   const { clearOfflineIndicatorTimer, setUnavailableDeadline, scheduleOfflineIndicator } =
     availability;
   const listeners = new Set<(next: ApplicationGatewaySnapshot) => void>();
+  const nonCanvasListeners = new Set<(next: ApplicationGatewaySnapshot) => void>();
   const eventListeners = new Set<GatewayEventListener>();
   const eventLogListeners = new Set<(events: readonly EventLogEntry[]) => void>();
   const eventLog = createGatewayEventLog();
@@ -161,7 +162,7 @@ export function createApplicationGateway(
       (current) => current === eventLog.entries,
     );
   };
-  const setSnapshot = (patch: Partial<ApplicationGatewaySnapshot>) => {
+  const setSnapshot = (patch: Partial<ApplicationGatewaySnapshot>, canvasOnly = false) => {
     const previous = snapshot;
     snapshot = { ...previous, ...patch };
     if (snapshot.phase !== "connecting" && snapshot.phase !== "reconnecting") {
@@ -187,7 +188,16 @@ export function createApplicationGateway(
       scheduleOfflineIndicator();
     }
     if (metadataObserver.synchronize(previous, snapshot)) {
-      notifyGatewayObservers(listeners, snapshot, "snapshot", (current) => current === snapshot);
+      const published = snapshot;
+      notifyGatewayObservers(listeners, published, "snapshot", (current) => current === snapshot);
+      if (!canvasOnly) {
+        notifyGatewayObservers(
+          nonCanvasListeners,
+          published,
+          "snapshot",
+          (current) => current === snapshot,
+        );
+      }
     }
   };
   const setConnectionSnapshot = (patch: Partial<ApplicationGatewaySnapshot>) =>
@@ -688,7 +698,8 @@ export function createApplicationGateway(
         assistantAgentId: null,
       });
     },
-    subscribe: (listener) => registerListener(listeners, listener),
+    subscribe: (listener, { canvasSurface = true } = {}) =>
+      registerListener(canvasSurface ? listeners : nonCanvasListeners, listener),
     subscribeEventLog: (listener) => {
       eventLogListeners.add(listener);
       return () => {

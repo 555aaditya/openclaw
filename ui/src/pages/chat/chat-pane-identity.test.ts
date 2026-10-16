@@ -300,6 +300,7 @@ describe("chat pane approval requester identity", () => {
           approvalErrors: new Map(),
         },
         decideApproval,
+        subscribeApprovals: () => () => undefined,
       } as unknown as ApplicationContext["overlays"],
       sessions: createSessionCapabilityFixture({
         presentation: {
@@ -541,6 +542,7 @@ describe("global chat pane feature ownership", () => {
           },
           decideApproval: vi.fn(),
           subscribe: () => () => undefined,
+          subscribeApprovals: () => () => undefined,
         },
       });
       for (const [id, target] of [

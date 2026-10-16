@@ -556,7 +556,7 @@ export abstract class ChatPaneHeader extends ChatPaneDiscussion {
       branch,
       branches: this.state ? displayedChatSessionBranches(this.state) : [],
       branchSwitchDisabledReason,
-      platform: this.headerPlatform,
+      getPlatform: this.headerPlatform[0],
       canReveal,
       copiedAction: this.headerCopiedAction,
       renameDisabledReason,

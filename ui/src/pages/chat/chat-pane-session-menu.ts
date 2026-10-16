@@ -179,7 +179,7 @@ export abstract class ChatPaneSessionMenu extends ChatPaneContext {
       this.connectedClient === client &&
       this.connectionGeneration === generation
     ) {
-      this.headerPlatform = platform;
+      this.headerPlatform[1](platform);
     }
   }
 
@@ -656,7 +656,9 @@ export abstract class ChatPaneSessionMenu extends ChatPaneContext {
       }
     }
     await Promise.all(loads);
-    this.requestUpdate();
+    if (loads.length > 1) {
+      this.requestUpdate();
+    }
   }
 
   protected showHeaderCopied(action: ChatPaneHeaderAction): void {

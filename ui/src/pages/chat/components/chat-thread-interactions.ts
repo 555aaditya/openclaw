@@ -161,6 +161,10 @@ export type ChatThreadProps = ChatSendStatusActions &
     sessionHost?: UiSessionDefaultsHost | null;
     assistantName: string;
     assistantAvatar: string | null;
+    readAssistantIdentity?: () => Pick<
+      ChatThreadProps,
+      "assistantName" | "assistantAvatar" | "assistantAvatarUrl"
+    >;
     senderAgentAvatars?: ReadonlyMap<string, string | null>;
     agents?: AgentsListResult["agents"];
     /** Configured main-session key; an agent's main source labels as the agent. */
@@ -180,7 +184,6 @@ export type ChatThreadProps = ChatSendStatusActions &
     connectionEpoch?: number;
     assistantAttachmentAuthToken?: string | null;
     resolveArtifactDownload?: ArtifactDownloadResolver;
-    canvasPluginSurfaceUrl?: string | null;
     embedSandboxMode?: EmbedSandboxMode;
     allowExternalEmbedUrls?: boolean;
     fetchLinkFavicon?: LinkFaviconFetcher;

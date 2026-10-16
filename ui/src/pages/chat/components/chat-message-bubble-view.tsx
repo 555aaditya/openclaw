@@ -262,7 +262,6 @@ function AssistantViews(props: ContentProps) {
               surface="chat_message"
               options={{
                 rawText: block().rawText ?? null,
-                canvasPluginSurfaceUrl: props.options.canvasPluginSurfaceUrl,
                 boardProvider: props.options.boardProvider,
                 widgetLayout: props.options.widgetLayout,
                 embedSandboxMode: props.options.embedSandboxMode ?? "scripts",

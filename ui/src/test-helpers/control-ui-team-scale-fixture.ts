@@ -18,21 +18,12 @@ import {
   prepareTeamScaleSidebarListChurn,
   type TeamScaleLiveEvent,
 } from "./control-ui-sidebar-list-fixture.ts";
-
-const TEAM_SCALE_COUNTS = {
-  sessions: 300,
-  firstPage: 200,
-  pinned: 30,
-  owners: 34,
-  people: 120,
-  agents: 6,
-  plugins: 6,
-  transcriptMessages: 240,
-  inlineWidgets: 12,
-  catalogHosts: 6,
-  catalogSessionsPerHost: 20,
-  presenceEvents: 12,
-} as const;
+import {
+  createTeamScalePaneFacts,
+  TEAM_SCALE_COUNTS,
+  widgetHtml,
+} from "./control-ui-team-scale-data.ts";
+export { TEAM_SCALE_PANE_FACT_METHODS } from "./control-ui-team-scale-data.ts";
 
 const TEAM_SCALE_CATALOG_PROGRESS_ID = "team-scale-progress";
 const TEAM_SCALE_LIVE_RUN_ID = "team-scale-live-run";
@@ -53,17 +44,11 @@ type FixtureOptions = {
   sidebarListChurn?: boolean;
   sidebarLiveChurn?: boolean;
   duplicateBootReads?: boolean;
+  paneFacts?: boolean;
 };
 
 function personId(index: number) {
   return `team-person-${String(index + 1).padStart(3, "0")}`;
-}
-
-function widgetHtml(index: number) {
-  return `<!doctype html><html><head><meta charset="utf-8"><title>Team metric ${index + 1}</title>
-<style>:root{color-scheme:dark light;font-family:system-ui}body{margin:0;padding:20px}h2{font-size:18px}progress{width:100%}</style></head>
-<body><h2>Team metric ${index + 1}</h2><p>Synthetic completed work: ${60 + index}%</p>
-<progress value="${60 + index}" max="100"></progress><p>All fixture systems are available.</p></body></html>`;
 }
 
 /** One deterministic inventory shared by browser benchmarks and focused UI proofs. */
@@ -71,7 +56,8 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
   const counts = TEAM_SCALE_COUNTS;
   const now = options.now ?? Date.now();
   const baseUrl = options.baseUrl ?? "http://127.0.0.1:19626/";
-  const assets = new Map<string, FixtureAsset>();
+  const paneFacts = options.paneFacts ? createTeamScalePaneFacts({ now, baseUrl }) : undefined;
+  const assets = new Map<string, FixtureAsset>(paneFacts?.assets);
   const agentNames = ["Harbor", "Forge", "Scout", "Atlas", "Cedar", "Beacon"];
   const agents: AgentsListResult = {
     defaultId: "main",
@@ -179,6 +165,9 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
   const selectedSessionKey = pinnedKeys[0]!;
   pinnedRows[0]!.sharingRole = "admin";
   pinnedRows[0]!.visibility = "shared";
+  if (paneFacts) {
+    pinnedRows[0]!.repository = paneFacts.repository;
+  }
   if (options.liveRun) {
     Object.assign(pinnedRows[0]!, {
       hasActiveRun: true,
@@ -244,6 +233,7 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
     __openclaw: { id, seq: index + 1 },
     timestamp: now - (counts.transcriptMessages - index) * 60_000,
     content: [
+      ...(paneFacts && index === counts.transcriptMessages - 1 ? [paneFacts.preview] : []),
       ...(options.duplicateBootReads && index === counts.transcriptMessages - 1
         ? Array.from({ length: 6 }, (_unused, alias) => ({
             type: "image",
@@ -383,6 +373,7 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
         viewGeneration: "0123456789abcdef0123456789abcdef",
         ...sandbox,
       },
+      ...(paneFacts ? [paneFacts.widget] : []),
     ],
   };
   const sidebarEntries = [
@@ -391,6 +382,7 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
     ...plugins.map((plugin) => `plugin:${plugin.pluginId}/overview`),
   ];
   const scenario: ControlUiMockGatewayScenario = {
+    ...paneFacts?.scenario,
     awaitInitialRoster: false,
     authMethod: "trusted-proxy",
     authMode: "trusted-proxy",
@@ -434,10 +426,12 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
       "board.get",
       "canvas.document.view",
       "progressCard.get",
+      ...(paneFacts?.scenario.featureMethods ?? []),
       ...(options.duplicateBootReads ? ["session.suggestions.list"] : []),
     ],
     methodResponses: {
       "question.list": { questions: [] },
+      ...paneFacts?.scenario.methodResponses,
       ...(options.duplicateBootReads
         ? {
             "session.suggestions.list": { suggestions: [], role: "owner" },
@@ -722,7 +716,9 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
           },
         }
       : undefined,
-    counts,
+    counts: options.paneFacts
+      ? { ...counts, plugins: counts.plugins + 1, inlineWidgets: counts.inlineWidgets + 1 }
+      : counts,
     assets,
   };
 }

@@ -82,6 +82,7 @@ it("keeps reassigned session cards current through events without polling", asyn
   try {
     await vi.advanceTimersByTimeAsync(0);
     expect(registrations.has("navigation/board-ops")).toBe(true);
+    expect(host.ui.invalidate).not.toHaveBeenCalled();
     const context = { sessionKey: session.key, session };
     expect([...registrations.keys()].filter((key) => key.startsWith("action/"))).toEqual([]);
 
@@ -107,6 +108,7 @@ it("keeps reassigned session cards current through events without polling", asyn
     fixture.emit("plugin.workboard.changed", { epoch: "catalog-epoch", revision: 1 });
     await vi.advanceTimersByTimeAsync(0);
     expect(container.textContent).toContain(currentCard.title);
+    expect(host.ui.invalidate).not.toHaveBeenCalled();
     expect(request).toHaveBeenCalledTimes(2);
     expect(request.mock.calls).toEqual(
       expect.arrayContaining([

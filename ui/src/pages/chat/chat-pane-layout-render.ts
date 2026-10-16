@@ -354,10 +354,19 @@ export abstract class ChatPaneLayoutRender extends ChatPaneBrowserAnnotationRend
               preview: () => !this.presented && this.connectionGeneration === connectionGeneration,
             },
           };
-    const avatar = resolveAssistantDisplayAvatar(chatProps);
     const region = renderSidebarRegion({
       presentationId: this.presentationId,
-      conversationTab: { label: chatProps.assistantName, avatar },
+      conversationTab: {
+        get label() {
+          return chatProps.readAssistantIdentity?.().assistantName ?? chatProps.assistantName;
+        },
+        get avatar() {
+          return resolveAssistantDisplayAvatar({
+            ...chatProps,
+            ...chatProps.readAssistantIdentity?.(),
+          });
+        },
+      },
       availableWidth: this.paneWidth,
       fetchFavicon: resolveChatLinkFaviconFetcher(state),
       callbacks,

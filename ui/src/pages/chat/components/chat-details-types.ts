@@ -53,5 +53,5 @@ export type ChatDetailsProps = Pick<
     onCompact?: () => void | Promise<unknown>;
     onDismissPullRequest?: (pullRequest: ControlUiSessionPullRequest) => void;
     onDismissPullRequestsBranch?: (branch: ControlUiSessionBranch) => void;
-    githubPublication?: GitHubPublicationView;
+    readGitHubPublication?: () => GitHubPublicationView | undefined;
   };

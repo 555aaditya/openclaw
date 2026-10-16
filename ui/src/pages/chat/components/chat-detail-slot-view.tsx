@@ -63,7 +63,6 @@ export function ChatDetailSlot(props: ChatDetailSlotProps) {
             resolveArtifactDownload: props.chat.resolveArtifactDownload,
           }}
           prop:basePath={props.chat.basePath ?? ""}
-          prop:canvasPluginSurfaceUrl={props.host.canvasPluginSurfaceUrl}
           prop:embedSandboxMode={props.host.embedSandboxMode}
           prop:allowExternalEmbedUrls={props.host.allowExternalEmbedUrls}
           prop:githubContext={{

@@ -104,11 +104,17 @@ export function createAgentIdentityCapability(gateway: AgentIdentityGateway) {
   let cachedConnected = gateway.snapshot.phase === "connected";
   let connectionGeneration = 0;
   const identities = new Map<string, AgentIdentityResult>();
-  const listeners = new Set<() => void>();
+  const listeners = new Set<(agentIds?: readonly string[]) => void>();
+  const agentListeners = new Map<string, Set<() => void>>();
 
-  const publish = () => {
+  const publish = (agentIds?: readonly string[]) => {
     for (const listener of listeners) {
-      listener();
+      listener(agentIds);
+    }
+    for (const agentId of agentIds ?? agentListeners.keys()) {
+      for (const listener of agentListeners.get(agentId) ?? []) {
+        listener();
+      }
     }
   };
 
@@ -138,7 +144,7 @@ export function createAgentIdentityCapability(gateway: AgentIdentityGateway) {
     }
     // Chat can hold a shared request without a capability snapshot.
     if (ids.length > 0) {
-      publish();
+      publish(ids);
     }
   };
 
@@ -195,20 +201,37 @@ export function createAgentIdentityCapability(gateway: AgentIdentityGateway) {
       ) {
         return;
       }
-      let changed = false;
+      const changed: string[] = [];
       for (const [agentId, identity] of results) {
         // Overlapping ensure calls share the request, so only its first
         // publication changes the snapshot observed by subscribers.
         if (identity && identities.get(agentId) !== identity) {
           identities.set(agentId, identity);
-          changed = true;
+          changed.push(agentId);
         }
       }
-      if (changed) {
-        publish();
+      if (changed.length > 0) {
+        publish(changed);
       }
     },
     invalidate,
-    subscribe: (listener: () => void) => registerListener(listeners, listener),
+    subscribe(listener: (agentIds?: readonly string[]) => void, agentId?: string | null) {
+      const id = agentId?.trim();
+      if (!id) {
+        return registerListener(listeners, listener);
+      }
+      let scoped = agentListeners.get(id);
+      if (!scoped) {
+        scoped = new Set();
+        agentListeners.set(id, scoped);
+      }
+      const remove = registerListener(scoped, listener);
+      return () => {
+        remove();
+        if (scoped.size === 0 && agentListeners.get(id) === scoped) {
+          agentListeners.delete(id);
+        }
+      };
+    },
   };
 }
