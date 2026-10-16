@@ -6,7 +6,10 @@ import type { CodexCatalogState, StoredCodexCatalogEntry } from "./session-catal
 
 const commandRpcMocks = vi.hoisted(() => ({ codexControlRequest: vi.fn() }));
 // Replace only external RPC acquisition; real client framing and the catalog owner remain intact.
-vi.mock("./command-rpc.js", () => commandRpcMocks);
+vi.mock("./command-rpc.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./command-rpc.js")>()),
+  ...commandRpcMocks,
+}));
 const config = {};
 
 function serveCatalog() {
