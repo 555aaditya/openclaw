@@ -5,11 +5,11 @@ const hues = [8, 32, 48, 82, 142, 174, 202, 232, 272, 322] as const;
 
 /** The agent ID keeps every feature stable across clients and render order. */
 export function AgentAvatarFace(props: { agentId: string }) {
+  const seed = createMemo(() => fnv1aUtf16(props.agentId));
   const face = createMemo(() => {
-    const seed = fnv1aUtf16(props.agentId);
-    const hue = hues[seed % hues.length];
+    const hue = hues[seed() % hues.length];
     // Consume separate digits so palette and expression can vary independently.
-    const eyeSeed = Math.floor(seed / hues.length);
+    const eyeSeed = Math.floor(seed() / hues.length);
     const mouthSeed = Math.floor(eyeSeed / 4);
     return {
       eye: eyeSeed % 4,

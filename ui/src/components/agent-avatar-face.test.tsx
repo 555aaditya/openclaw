@@ -12,13 +12,13 @@ function face(id: string) {
 }
 
 describe("default agent face", () => {
-  it("retains the glyph children when an equivalent identity snapshot arrives", () => {
+  it("does not mutate the artwork when an equivalent identity snapshot arrives", () => {
     const [agent, setAgent] = createSignal({ id: "forge" });
     const view = mountSolid(() => <AgentAvatarFace agentId={agent().id} />);
     const avatar = view.container.querySelector("svg")!;
     const artwork = avatar.outerHTML;
     const mutations = new MutationObserver(() => undefined);
-    mutations.observe(avatar, { subtree: true, childList: true });
+    mutations.observe(avatar, { subtree: true, childList: true, attributes: true });
     try {
       setAgent({ id: "forge" });
       flush();
