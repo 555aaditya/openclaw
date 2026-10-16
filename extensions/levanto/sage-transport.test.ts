@@ -1,14 +1,15 @@
 import assert from "node:assert/strict";
-import { lookup } from "node:dns/promises";
 import { createDeferred } from "openclaw/plugin-sdk/extension-shared";
+import type { LookupFn } from "openclaw/plugin-sdk/ssrf-runtime";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { executeSageRequest } from "./sage-transport.js";
 import type { SageBatchRequest, SageRequest } from "./sage-wire.js";
 
-vi.mock("node:dns/promises", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:dns/promises")>();
-  return { ...actual, lookup: vi.fn(actual.lookup) };
-});
+const { lookup } = vi.hoisted(() => ({ lookup: vi.fn<LookupFn>() }));
+vi.mock("node:dns/promises", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("node:dns/promises")>()),
+  lookup,
+}));
 
 const request: SageRequest = {
   content: "synthetic document",
@@ -35,7 +36,7 @@ function transport(fetchFn: typeof fetch) {
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
-  vi.mocked(lookup).mockReset();
+  lookup.mockReset();
 });
 
 describe("Sage through the real guarded provider HTTP helper", () => {
@@ -88,7 +89,7 @@ describe("Sage through the real guarded provider HTTP helper", () => {
   it("rechecks admission after DNS and preserves the authority error without fetching", async () => {
     const started = createDeferred<void>();
     const resolved = createDeferred<{ address: string; family: number }[]>();
-    vi.mocked(lookup).mockImplementationOnce(async () => {
+    lookup.mockImplementationOnce(async () => {
       started.resolve();
       return resolved.promise;
     });

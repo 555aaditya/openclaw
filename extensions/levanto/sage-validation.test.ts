@@ -152,7 +152,7 @@ describe("Sage native protocol", () => {
     [scale, { ...scaleResult, confidence: "0.5" }],
     [scale, { ...scaleResult, probabilities: undefined }],
     [scale, { ...scaleResult, probabilities: scaleResult.probabilities.slice(1) }],
-    [scale, { ...scaleResult, probabilities: [...scaleResult.probabilities].reverse() }],
+    [scale, { ...scaleResult, probabilities: scaleResult.probabilities.toReversed() }],
     [
       scale,
       {
