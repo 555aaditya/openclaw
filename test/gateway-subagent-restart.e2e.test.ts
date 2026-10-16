@@ -193,7 +193,7 @@ it.skipIf(process.platform === "win32").for([
       if (legacyFixture && shutdownMode !== "SIGKILL") {
         // The fixture hook has no turn signal; release it only after the owner aborts the turn.
         while (!/aborted \d+ active run\(s\) during restart shutdown/.test(instance.logs())) {
-          await once(child.stdout, "data", { signal });
+          await once(child.stderr, "data", { signal });
         }
         provider.releaseCheckpoint();
       }
