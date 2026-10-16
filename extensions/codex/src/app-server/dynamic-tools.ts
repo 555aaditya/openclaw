@@ -28,9 +28,11 @@ import {
   type MessagingToolSend,
 } from "openclaw/plugin-sdk/agent-harness-runtime";
 import {
+  applyGatewayToolPolicy,
   collectAgentHarnessMessagingMediaUrls,
   copyInternalToolResultState,
   createAgentHarnessToolExecutionBoundaryRegistry,
+  createGatewayToolPolicyAssertion,
   extractMessagingToolSourceReplyPayload,
   getCoreTtsToolResultMediaUrls,
   normalizeAcceptedSessionSpawnResult,
@@ -42,10 +44,6 @@ import {
 } from "openclaw/plugin-sdk/agent-harness-tool-runtime";
 import { emitTrustedDiagnosticEvent } from "openclaw/plugin-sdk/diagnostic-runtime";
 import type { RemoteWorkspaceFileReader } from "openclaw/plugin-sdk/file-access-runtime";
-import {
-  type JsonSchemaObject,
-  validateJsonSchemaValue,
-} from "openclaw/plugin-sdk/json-schema-runtime";
 import {
   asNonArrayRecord,
   asOptionalRecord,
@@ -64,6 +62,7 @@ import type { CodexDynamicToolsLoading } from "./config.js";
 import { createCodexAutomationsToolsAllowResolver } from "./dynamic-tool-automations-allowlist.js";
 import { finalizeCodexToolAvailability } from "./dynamic-tool-availability.js";
 import {
+  assertCodexDynamicToolInputMatchesSchema,
   createCodexDynamicToolSpecs,
   projectCodexDynamicTools,
   type CodexDynamicToolSchemaQuarantine,
@@ -83,7 +82,11 @@ import {
   applyCurrentMessageProvider,
   resolveCodexToolResultSourceReply,
 } from "./dynamic-tool-source-reply.js";
-import type { CodexDynamicToolCallParams, CodexDynamicToolSpec } from "./protocol.js";
+import type {
+  CodexDynamicToolCallParams,
+  CodexDynamicToolFunctionSpec,
+  CodexDynamicToolSpec,
+} from "./protocol.js";
 import { flattenCodexDynamicToolFunctions } from "./protocol.js";
 import {
   prepareCodexRemoteWorkspaceMessageMedia,
@@ -109,41 +112,6 @@ type CodexToolResultHookContext = Pick<
   CodexDynamicToolHookContext,
   "agentId" | "sessionId" | "sessionKey" | "runId" | "channelId"
 >;
-
-const MAX_CODEX_DYNAMIC_TOOL_VALIDATION_ERRORS = 4;
-const MAX_CODEX_DYNAMIC_TOOL_VALIDATION_ERROR_CHARS = 160;
-const CODEX_DYNAMIC_TOOL_VALIDATION_TRUNCATED_SUFFIX = " [detail truncated]";
-
-function assertCodexDynamicToolInputMatchesSchema(params: {
-  toolName: string;
-  schema: JsonSchemaObject;
-  value: unknown;
-}): void {
-  const validation = validateJsonSchemaValue({
-    schema: params.schema,
-    cacheKey: `codex-dynamic-tool-input:${params.toolName}:${JSON.stringify(params.schema)}`,
-    value: params.value,
-  });
-  if (validation.ok) {
-    return;
-  }
-  const visibleErrors = validation.errors.slice(0, MAX_CODEX_DYNAMIC_TOOL_VALIDATION_ERRORS);
-  const details = visibleErrors
-    .map((error) => {
-      if (error.text.length <= MAX_CODEX_DYNAMIC_TOOL_VALIDATION_ERROR_CHARS) {
-        return error.text;
-      }
-      return `${error.text.slice(
-        0,
-        MAX_CODEX_DYNAMIC_TOOL_VALIDATION_ERROR_CHARS -
-          CODEX_DYNAMIC_TOOL_VALIDATION_TRUNCATED_SUFFIX.length,
-      )}${CODEX_DYNAMIC_TOOL_VALIDATION_TRUNCATED_SUFFIX}`;
-    })
-    .join("; ");
-  const omitted = validation.errors.length - visibleErrors.length;
-  const omittedSuffix = omitted > 0 ? `; ${omitted} more violation(s) omitted` : "";
-  throw new Error(`Invalid arguments for tool "${params.toolName}": ${details}${omittedSuffix}.`);
-}
 
 export type CodexDynamicToolBridge = {
   /** Final executable tools after schema projection and hook-wrapper quarantine. */
@@ -201,7 +169,9 @@ export function createCodexDynamicToolBridge(params: {
     params.hookContext,
   );
   const registeredProjection = params.registeredTools
-    ? projectCodexDynamicTools(params.registeredTools)
+    ? projectCodexDynamicTools(
+        applyGatewayToolPolicy([...params.registeredTools], params.hookContext?.config),
+      )
     : availableProjection;
   // Supervised thread declarations are native-owned and fingerprinted. Narrow
   // executors below, but never rewrite the catalog checked by thread-lifecycle-run.
@@ -235,10 +205,18 @@ export function createCodexDynamicToolBridge(params: {
   }
   availableProjection.quarantinedTools.push(...finalized.quarantinedTools);
   const toolMap = new Map(availableTools.map((entry) => [entry.name, entry]));
-  const executionToolMap = new Map([
-    ...registeredFallbackTools.map((entry) => [entry.name, entry] as const),
-    ...toolMap,
-  ]);
+  const executionToolMap = new Map(
+    [...registeredFallbackTools, ...availableTools].map((entry) => [
+      entry.name,
+      {
+        ...entry,
+        assertGatewayToolPolicy: createGatewayToolPolicyAssertion(
+          entry.tool,
+          params.hookContext?.config,
+        ),
+      },
+    ]),
+  );
   const quarantinedAvailableToolNames = new Set(
     availableProjection.quarantinedTools.map((tool) => tool.tool),
   );
@@ -298,6 +276,23 @@ export function createCodexDynamicToolBridge(params: {
       directToolNames,
       functionToolsOnly: params.functionToolsOnly,
     });
+  // Saved native declarations remain fingerprinted. Only the current projection
+  // is narrowed; retained calls are checked again before execution below.
+  const inheritedAvailableSchemas = inheritedSpecs
+    ? new Map(
+        applyGatewayToolPolicy(
+          flattenCodexDynamicToolFunctions(inheritedSpecs).map((spec) => ({
+            name: spec.name,
+            parameters: spec.inputSchema,
+          })),
+          params.hookContext?.config,
+        ).map((entry) => [entry.name, entry.parameters]),
+      )
+    : undefined;
+  const availableInheritedFunction = (spec: CodexDynamicToolFunctionSpec) => {
+    const inputSchema = inheritedAvailableSchemas?.get(spec.name);
+    return toolMap.has(spec.name) && inputSchema ? [{ ...spec, inputSchema }] : [];
+  };
   const resolveAutomationsToolsAllow = createCodexAutomationsToolsAllowResolver(specs);
   let readRemoteWorkspaceFile: RemoteWorkspaceFileReader | undefined;
   return {
@@ -305,9 +300,9 @@ export function createCodexDynamicToolBridge(params: {
     availableSpecs: inheritedSpecs
       ? inheritedSpecs.flatMap<CodexDynamicToolSpec>((spec) => {
           if (spec.type === "function") {
-            return toolMap.has(spec.name) ? [spec] : [];
+            return availableInheritedFunction(spec);
           }
-          const tools = spec.tools.filter((tool) => toolMap.has(tool.name));
+          const tools = spec.tools.flatMap(availableInheritedFunction);
           return tools.length ? [{ ...spec, tools }] : [];
         })
       : createCodexDynamicToolSpecs({
@@ -425,13 +420,17 @@ export function createCodexDynamicToolBridge(params: {
               : undefined,
           };
         },
-        shouldValidateArguments: () => getPluginToolMeta(tool)?.mcp?.operation !== "tool",
-        validateArguments: (value) =>
+        validateArguments: (value) => {
+          toolEntry.assertGatewayToolPolicy(value);
+          if (getPluginToolMeta(tool)?.mcp?.operation === "tool") {
+            return;
+          }
           assertCodexDynamicToolInputMatchesSchema({
             toolName,
             schema: toolEntry.inputSchema,
             value,
-          }),
+          });
+        },
         beforeSnapshotResult: ({ rawResult, rawIsError, executedArguments: executedArgs }) => {
           executedArgsForPresentation = executedArgs;
           rawIsErrorForPresentation = rawIsError;
