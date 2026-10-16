@@ -524,6 +524,7 @@ describe("chat pane header", () => {
       };
       mounted.renderHeader();
       await ownerChip?.updateComplete;
+      expect(mounted.container.querySelector("openclaw-session-owner-chip")).toBe(ownerChip);
       expect(
         mounted.container
           .querySelector(".session-owner-chip--header")

@@ -16,7 +16,7 @@ import {
 } from "../../../components/person-activity-link.ts";
 import { Icon } from "../../../components/solid/icon.tsx";
 import { Menu, type MenuEntry } from "../../../components/solid/menu.tsx";
-import { renderSessionOwnerChip } from "../../../components/solid/session-presentation.tsx";
+import { SessionOwnerChip } from "../../../components/solid/session-owner-chip.tsx";
 import { registerSessionPeopleEnglish } from "../../../i18n/locales/en-session-people.ts";
 import { registerEnglishCatalog, t } from "../../../lib/reactive/i18n.ts";
 
@@ -294,7 +294,12 @@ export function useChatSessionSharingMenu(props: ChatSessionSharingProps): {
                   <span class="chat-pane__sharing-member-icon" aria-hidden="true">
                     <Show when={person().type === "human"} fallback={<Icon name="bot" />}>
                       <PersonAvatarLink link={ownerActivity()}>
-                        {renderSessionOwnerChip(person(), "header", "owned", props.ownerViewing)}
+                        <SessionOwnerChip
+                          owner={person()}
+                          size="header"
+                          attribution="owned"
+                          viewingNow={props.ownerViewing}
+                        />
                       </PersonAvatarLink>
                     </Show>
                   </span>
@@ -373,7 +378,7 @@ export function useChatSessionSharingMenu(props: ChatSessionSharingProps): {
         icon: (
           <span class="chat-pane__sharing-member-icon" aria-hidden="true">
             <Show when={identity.type === "human"} fallback={<Icon name="bot" />}>
-              {renderSessionOwnerChip(identity, "header")}
+              <SessionOwnerChip owner={identity} size="header" />
             </Show>
           </span>
         ),
@@ -454,7 +459,12 @@ export function ChatSessionSharing(props: ChatSessionSharingProps) {
                     person().label,
                   )}
                 >
-                  {renderSessionOwnerChip(person(), "header", "owned", props.ownerViewing)}
+                  <SessionOwnerChip
+                    owner={person()}
+                    size="header"
+                    attribution="owned"
+                    viewingNow={props.ownerViewing}
+                  />
                 </StandalonePersonLink>
               )}
             </Show>

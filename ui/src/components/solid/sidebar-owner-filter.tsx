@@ -1,8 +1,10 @@
+import { Show } from "solid-js";
 import { t } from "../../lib/reactive/i18n.ts";
 import type { SessionOwnerOption } from "../../lib/session-owner.ts";
 import { Icon } from "./icon.tsx";
 import type { MenuEntry, MenuItem } from "./menu.tsx";
-import { renderSessionOwnerAvatar, renderSessionOwnerChip } from "./session-presentation.tsx";
+import { SessionOwnerChip } from "./session-owner-chip.tsx";
+import { renderSessionOwnerAvatar } from "./session-presentation.tsx";
 
 export function SidebarMenuRadioItem(params: {
   value: string;
@@ -18,7 +20,9 @@ export function SidebarMenuRadioItem(params: {
     class: "sidebar-session-sort-menu__item",
     content: (
       <span class="row session-menu__label">
-        {params.owner ? renderSessionOwnerChip(params.owner, "row", "owned") : undefined}
+        <Show when={params.owner?.id}>
+          <SessionOwnerChip owner={params.owner} size="row" attribution="owned" />
+        </Show>
         <span class="session-menu__text">{params.label}</span>
       </span>
     ),

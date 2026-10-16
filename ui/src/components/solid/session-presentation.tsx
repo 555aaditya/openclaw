@@ -1,9 +1,6 @@
 import type { JSX } from "@solidjs/web";
 import { For, Match, Show, Switch, createEffect, createMemo, untrack } from "solid-js";
-import type {
-  SessionParticipant,
-  SessionParticipantIdentity,
-} from "../../../../packages/gateway-protocol/src/schema/session-participant.js";
+import type { SessionParticipantIdentity } from "../../../../packages/gateway-protocol/src/schema/session-participant.js";
 import {
   SESSION_ICON_GLYPH_IDS,
   SESSION_ICON_SVG_DATA_URL_PREFIX,
@@ -245,25 +242,6 @@ export function SidebarSessionSubtitle(props: SidebarSessionSubtitle) {
   );
 }
 
-export function renderSessionOwnerChip(
-  owner: SessionCreatedActor | null | undefined,
-  size: "row" | "header",
-  attribution: "created" | "owned" | "archived" = "created",
-  viewingNow?: boolean,
-  participants?: readonly SessionParticipant[],
-  participantCount?: number,
-): JSX.Element {
-  return owner?.id ? (
-    <SessionOwnerChip
-      owner={owner}
-      size={size}
-      attribution={attribution}
-      viewingNow={viewingNow}
-      participants={participants ?? []}
-      participantCount={participantCount ?? participants?.length ?? 0}
-    />
-  ) : undefined;
-}
 export function renderSessionOwnerAvatar(
   owner: Pick<SessionOwnerOption, "id" | "label" | "avatarUrl" | "identity">,
 ): JSX.Element {

@@ -22,7 +22,7 @@ export function AgentAvatarFace(props: { agentId: string }) {
   const stroke = (d: string) => (
     <path d={d} fill="none" stroke={face().ink} stroke-width="1.6" stroke-linecap="round" />
   );
-  const eyes = () => [
+  const eyes = [
     <>
       <circle cx="11" cy="13.5" r="1.6" />
       <circle cx="21" cy="13.5" r="1.6" />
@@ -40,7 +40,7 @@ export function AgentAvatarFace(props: { agentId: string }) {
       </g>
     </>,
   ];
-  const mouths = () => [
+  const mouths = [
     stroke("M11.5 20q4.5 4.5 9 0"),
     <>
       <path d="M11 19q5 1.5 10 0c-.5 4.5-3 6-5 6s-4.5-1.5-5-6Z" />
@@ -59,8 +59,8 @@ export function AgentAvatarFace(props: { agentId: string }) {
     >
       <circle cx="16" cy="16" r="16" fill={face().background} />
       <g fill={face().ink}>
-        {eyes()[face().eye]}
-        {mouths()[face().mouth]}
+        {eyes[face().eye]}
+        {mouths[face().mouth]}
       </g>
     </svg>
   );

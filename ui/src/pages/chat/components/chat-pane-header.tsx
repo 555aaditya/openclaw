@@ -18,7 +18,7 @@ import { SessionColorDot } from "../../../components/session-color.ts";
 import { isCloudWorkerPlacementState } from "../../../components/session-row-badges.ts";
 import { Icon } from "../../../components/solid/icon.tsx";
 import { Menu, type MenuItem } from "../../../components/solid/menu.tsx";
-import { renderSessionOwnerChip } from "../../../components/solid/session-presentation.tsx";
+import { SessionOwnerChip } from "../../../components/solid/session-owner-chip.tsx";
 import "../../../components/tooltip.ts";
 import "../../../components/workspace-icon.ts";
 import { SessionTitlePlaceholder } from "../../../components/solid/session-title-placeholder.tsx";
@@ -420,26 +420,24 @@ export function ChatPaneHeader(props: ChatPaneHeaderProps) {
             {(indicator) => <ChatSessionPublicIndicator {...indicator()} />}
           </Show>
           {props.mergedChrome || hasSharingControl() ? undefined : (
-            <StandalonePersonLink
-              link={
-                props.showOwnerChip
-                  ? personActivityLink(
-                      props.session?.owner?.actor.identity?.type === "profile"
-                        ? props.session.owner.actor.identity.id
-                        : undefined,
-                      props.personActivity,
-                      props.session?.owner?.actor.label,
-                    )
-                  : null
-              }
-            >
-              {renderSessionOwnerChip(
-                props.showOwnerChip ? props.session?.owner?.actor : undefined,
-                "header",
-                props.session?.owner?.assignedAt !== undefined ? "owned" : "created",
-                props.ownerViewing,
-              )}
-            </StandalonePersonLink>
+            <Show when={props.showOwnerChip && Boolean(props.session?.owner?.actor.id)}>
+              <StandalonePersonLink
+                link={personActivityLink(
+                  props.session?.owner?.actor.identity?.type === "profile"
+                    ? props.session.owner.actor.identity.id
+                    : undefined,
+                  props.personActivity,
+                  props.session?.owner?.actor.label,
+                )}
+              >
+                <SessionOwnerChip
+                  owner={props.session?.owner?.actor}
+                  size="header"
+                  attribution={props.session?.owner?.assignedAt !== undefined ? "owned" : "created"}
+                  viewingNow={props.ownerViewing}
+                />
+              </StandalonePersonLink>
+            </Show>
           )}
           {!props.mergedChrome && props.showOwnerChip && props.session?.participants?.length ? (
             <openclaw-viewer-facepile
