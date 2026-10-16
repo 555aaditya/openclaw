@@ -27,6 +27,7 @@ import {
   openApiKeyProvider,
   advanceUsageRetries,
   focusDocument,
+  sessionUsageResult,
 } from "./model-providers-page.test-support.tsx";
 
 afterEach(() => {
@@ -833,7 +834,7 @@ describe("ModelProvidersPage usage convergence", () => {
     expect(requestCount(harness.request, "sessions.usage")).toBe(1);
     expect(costSignal?.aborted).toBe(false);
 
-    pendingCost.resolve({ aggregates: { byProvider: [] } });
+    pendingCost.resolve(sessionUsageResult([]));
     await waitForSolid(() => expect(page.view.props.supplementalLoading).toBe(false));
   });
 
@@ -917,7 +918,7 @@ describe("ModelProvidersPage usage convergence", () => {
       providers: [{ ...replacementUsage, windows: [{ label: "stale", usedPercent: 1 }] }],
     });
     oldCost.resolve({
-      aggregates: { byProvider: [{ provider: "stale", totals: { totalCost: 1 } }] },
+      ...sessionUsageResult([{ provider: "stale", totals: { totalCost: 1 } }]),
     });
     await Promise.resolve();
     expect(page.view.props.cards.every((card) => !card.usage && !card.localCost)).toBe(true);

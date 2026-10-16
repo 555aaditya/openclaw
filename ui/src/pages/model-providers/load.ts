@@ -1,7 +1,11 @@
 // Fetches the gateway signals behind the Models settings page.
 // Each source degrades independently: unavailable usage data must not blank
 // the provider list.
-import type { SessionModelUsage } from "../../../../src/infra/session-cost-usage.types.js";
+import type {
+  SessionDailyModelUsage,
+  SessionModelUsage,
+} from "../../../../src/infra/session-cost-usage.types.js";
+import type { SessionsUsageResult } from "../../../../src/shared/usage-types.js";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import type { ModelAuthStatusResult, ModelCatalogProviderOutcome } from "../../api/types.ts";
 import { t } from "../../i18n/index.ts";
@@ -18,8 +22,18 @@ import { requestSessionUsage } from "../../lib/sessions/usage.ts";
 
 registerSettingsEnglish();
 
-/** Local session-spend window shown on each card. */
-export const MODEL_PROVIDERS_COST_DAYS = 30;
+export const MODEL_PROVIDERS_USAGE_RANGES = [7, 30, 90] as const;
+export type ModelProvidersUsageRange = (typeof MODEL_PROVIDERS_USAGE_RANGES)[number];
+
+/** Local session usage across every agent for the selected range. */
+export type ModelProviderLocalUsage = {
+  days: ModelProvidersUsageRange;
+  dates: string[];
+  byProvider: SessionModelUsage[];
+  byModel: SessionModelUsage[];
+  modelDaily: SessionDailyModelUsage[];
+  totals: SessionsUsageResult["totals"];
+};
 
 export type ModelProvidersData = {
   authStatus: ModelAuthStatusResult | null;
@@ -27,7 +41,7 @@ export type ModelProvidersData = {
   providerOutcomes: ModelCatalogProviderOutcome[];
   catalogError: string | null;
   providerUsage: ProviderUsageRequestResult | null;
-  costByProvider: SessionModelUsage[] | null;
+  localUsage: ModelProviderLocalUsage | null;
   updatedAt: number | null;
   error: string | null;
 };
@@ -39,7 +53,7 @@ export const EMPTY_MODEL_PROVIDERS_DATA: ModelProvidersData = {
   providerOutcomes: [],
   catalogError: null,
   providerUsage: null,
-  costByProvider: null,
+  localUsage: null,
   updatedAt: null,
   error: null,
 };
@@ -102,7 +116,7 @@ export async function loadModelProvidersData(
           ? modelCatalogRefreshError(catalog.result, t("modelProviders.defaults.discoverFailed"))
           : errorMessage(catalog.error),
     providerUsage: null,
-    costByProvider: null,
+    localUsage: null,
     updatedAt: Date.now(),
     // Auth status is the primary provider list; its failure is the only one
     // worth surfacing as a page-level error.
@@ -112,21 +126,29 @@ export async function loadModelProvidersData(
   };
 }
 
-export function loadModelProviderCost(
+export function loadModelProviderUsage(
   client: GatewayBrowserClient,
   signal: AbortSignal,
-): Promise<SessionModelUsage[] | null> {
+  days: ModelProvidersUsageRange,
+): Promise<ModelProviderLocalUsage | null> {
+  const dates = Array.from({ length: days }, (_, index) => localDate(days - 1 - index));
   return requestSessionUsage(
     client,
-    {
-      startDate: localDate(MODEL_PROVIDERS_COST_DAYS - 1),
-      endDate: localDate(0),
-      scope: "family",
-      timeZone: "local",
-    },
+    { startDate: dates[0]!, endDate: dates.at(-1)!, scope: "family", timeZone: "local" },
     { signal, projection: "overview" },
   )
-    .then((result) => result?.aggregates?.byProvider ?? null)
+    .then((result): ModelProviderLocalUsage | null =>
+      result?.aggregates
+        ? {
+            days,
+            dates,
+            byProvider: result.aggregates.byProvider,
+            byModel: result.aggregates.byModel,
+            modelDaily: result.aggregates.modelDaily ?? [],
+            totals: result.totals,
+          }
+        : null,
+    )
     .catch((error: unknown) => {
       if (signal.aborted) {
         throw error;

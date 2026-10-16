@@ -319,12 +319,32 @@ function startPointerDrag(params: {
   return cleanup;
 }
 
-function profileIdentity(profile: ProviderProfile, index: number): string {
-  return (
-    profile.email ||
-    profile.displayName ||
-    t("modelProviders.profiles.account", { number: String(index + 1) })
+const PROFILE_KIND_KEYS = {
+  api_key: "modelProviders.profiles.kindApiKey",
+  token: "modelProviders.profiles.kindToken",
+  oauth: "modelProviders.profiles.kindOauth",
+} as const;
+
+// Identities stay hidden from non-admin viewers; name the credential kind instead
+// of an opaque "Account N". Numbers follow saved inventory order within a kind.
+export function profileIdentity(
+  profile: ProviderProfile,
+  profiles: readonly ProviderProfile[],
+): string {
+  const named = profile.email || profile.displayName;
+  if (named) {
+    return named;
+  }
+  const kind = t(PROFILE_KIND_KEYS[profile.type]);
+  const sameKind = profiles.filter(
+    (candidate) => candidate.type === profile.type && !candidate.email && !candidate.displayName,
   );
+  return sameKind.length > 1
+    ? t("modelProviders.profiles.kindNumbered", {
+        kind,
+        number: String(sameKind.indexOf(profile) + 1),
+      })
+    : kind;
 }
 
 function ProfileIdentity(props: {
@@ -380,7 +400,7 @@ export function renderProviderAccountSummary(
       {profiles.length ? (
         <div role="list">
           <For each={profiles}>
-            {(entry, index) => (
+            {(entry) => (
               <div
                 class="model-provider-login__account"
                 role="listitem"
@@ -388,7 +408,10 @@ export function renderProviderAccountSummary(
               >
                 <ProfileIdentity
                   profile={entry.profile}
-                  identity={profileIdentity(entry.profile, index())}
+                  identity={profileIdentity(
+                    entry.profile,
+                    profiles.map((candidate) => candidate.profile),
+                  )}
                   showDetails={false}
                 />
                 {profileStatus(entry.profile, entry.authRejected)}
@@ -422,9 +445,9 @@ export function ProviderProfiles(props: ProviderProfilesViewProps & { card: Mode
   const identities = createMemo(
     () =>
       new Map(
-        card().profiles.map((profile, index) => [
+        card().profiles.map((profile) => [
           profile.profileId,
-          profileIdentity(profile, index),
+          profileIdentity(profile, card().profiles),
         ]),
       ),
   );

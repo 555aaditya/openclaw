@@ -12,6 +12,7 @@ import {
   openChatModelPicker,
   pickerValue as modelPickerValue,
 } from "../test-helpers/select-picker-e2e.ts";
+import { sessionsUsageResponse } from "../test-helpers/sessions-usage-response.ts";
 import { createControlUiE2eSuite } from "./control-ui-e2e-suite.test-support.ts";
 
 const suite = createControlUiE2eSuite({
@@ -451,7 +452,7 @@ suite.define(() => {
               },
             },
             "usage.status": { updatedAt: now, providers: [] },
-            "sessions.usage": { aggregates: { byProvider: [] } },
+            "sessions.usage": sessionsUsageResponse(),
           },
         });
         await page.goto(`${suite.server.baseUrl}settings/model-providers`);

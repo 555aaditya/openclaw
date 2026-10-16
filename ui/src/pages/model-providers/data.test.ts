@@ -1,4 +1,3 @@
-// @vitest-environment node
 import { expectDefined } from "@openclaw/normalization-core";
 import { describe, expect, it } from "vitest";
 import type {
@@ -14,6 +13,8 @@ import {
   readModelProviderConfig,
   resolveDefaultModelPresentation,
 } from "./data.ts";
+// @vitest-environment node
+import type { ModelProviderLocalUsage } from "./load.ts";
 
 function catalogEntry(overrides: Partial<ModelCatalogEntry> & { provider: string }) {
   return {
@@ -57,8 +58,19 @@ const EMPTY_INPUT = {
   authStatus: null,
   models: null,
   providerUsage: null,
-  costByProvider: null,
+  localUsage: null,
 };
+
+function localUsage(byProvider: ModelProviderLocalUsage["byProvider"]): ModelProviderLocalUsage {
+  return {
+    days: 30,
+    dates: [],
+    byProvider,
+    byModel: [],
+    modelDaily: [],
+    totals: byProvider[0]!.totals,
+  };
+}
 const redactedConfigValue = "[redacted]";
 
 describe("buildModelProviderCards", () => {
@@ -338,16 +350,16 @@ describe("buildModelProviderCards", () => {
           usage: { providerId: "anthropic", windows: [] },
         },
       ]),
-      costByProvider: [
+      localUsage: localUsage([
         { provider: "anthropic", count: 3, totals },
         { provider: "openrouter", count: 1, totals },
-      ],
+      ]),
     });
     expect(cards.map((card) => card.id)).toEqual(["anthropic", "openrouter"]);
     expect(firstCard(cards).localCost).toEqual({
-      totalCost: 0.42,
       totalTokens: 150,
       messageCount: 3,
+      incomplete: false,
     });
   });
 

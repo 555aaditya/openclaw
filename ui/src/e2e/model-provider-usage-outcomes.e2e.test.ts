@@ -5,6 +5,7 @@ import { expect, it } from "vitest";
 import { evaluateControlUiContext } from "../test-helpers/control-ui-e2e-context.ts";
 import { installMockGateway } from "../test-helpers/control-ui-e2e.ts";
 import { pickerValue } from "../test-helpers/select-picker-e2e.ts";
+import { sessionsUsageResponse } from "../test-helpers/sessions-usage-response.ts";
 import { createControlUiE2eSuite } from "./control-ui-e2e-suite.test-support.ts";
 
 const suite = createControlUiE2eSuite({
@@ -33,7 +34,7 @@ function providerUsageResponses(usageStatus: unknown) {
         },
       ],
     },
-    "sessions.usage": { aggregates: { byProvider: [] } },
+    "sessions.usage": sessionsUsageResponse(),
     "usage.status": usageStatus,
   };
 }
@@ -104,7 +105,9 @@ suite.define(() => {
         await expect
           .poll(async () => (await gateway.getRequests("usage.status")).length)
           .toBeGreaterThan(0);
-        await expect.poll(() => card.textContent()).toContain("provider API unavailable");
+        await expect
+          .poll(() => page.locator('.provider-row[data-provider-id="openai"]').textContent())
+          .toContain("provider API unavailable");
         await expect
           .poll(() => page.locator(".settings-page").textContent())
           .not.toContain(unavailableMessage);

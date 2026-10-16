@@ -228,6 +228,29 @@ describe("renderProviderProfiles", () => {
     expect(container.querySelectorAll(".model-providers__profile-grip")).toHaveLength(0);
   });
 
+  it("names hidden identities by credential kind, numbering only repeated kinds", () => {
+    const result = mount(
+      card({
+        profiles: [
+          { profileId: "openai:token-a", type: "token", status: "static", source: "saved" },
+          { profileId: "openai:oauth", type: "oauth", status: "ok", source: "saved" },
+          { profileId: "openai:token-b", type: "token", status: "static", source: "saved" },
+          { profileId: "openai:named", type: "token", status: "static", email: "ops@example.com" },
+        ],
+        profileOrders: {
+          openai: ["openai:token-a", "openai:oauth", "openai:token-b", "openai:named"],
+        },
+      }),
+      props(),
+    );
+
+    expect(
+      [...result.querySelectorAll(".model-providers__profile-copy strong")].map(
+        (identity) => identity.textContent,
+      ),
+    ).toEqual(["Access token 1", "Signed-in account", "Access token 2", "ops@example.com"]);
+  });
+
   it("keeps an environment API-key source visible beside account profiles", () => {
     const result = mount(
       card({

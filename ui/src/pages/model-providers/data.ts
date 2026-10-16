@@ -6,7 +6,6 @@ import type {
   ProviderUsageSnapshot,
   UsageSummary,
 } from "../../../../src/infra/provider-usage.types.js";
-import type { SessionModelUsage } from "../../../../src/infra/session-cost-usage.types.js";
 import type {
   AgentsListResult,
   FastMode,
@@ -37,13 +36,6 @@ export type ModelProviderAuthKind = "ok" | "expiring" | "expired" | "missing" | 
 type ModelProviderAuthSummary = {
   kind: ModelProviderAuthKind;
   expiryLabel?: string;
-};
-
-type ModelProviderLocalCost = {
-  usageReport?: SessionModelUsage["totals"]["usageReport"];
-  totalCost: number;
-  totalTokens: number;
-  messageCount: number;
 };
 
 export type ModelProviderLogoutTarget = {
@@ -91,8 +83,6 @@ export type ModelProviderCard = {
   checkingModels?: boolean;
   /** Live provider-reported usage (quota windows, billing, cost history). */
   usage?: ProviderUsageSnapshot;
-  /** Locally-computed session spend for the requested window. */
-  localCost?: ModelProviderLocalCost;
 };
 
 type ConfiguredModelProvider = { key: string; hasApiKey: boolean; authMode?: string };
@@ -104,7 +94,6 @@ type ModelProviderCardsInput = {
   pendingProviders?: readonly string[];
   configProviders?: ConfiguredModelProvider[];
   providerUsage: UsageSummary | null;
-  costByProvider: SessionModelUsage[] | null;
 };
 
 type CardDraft = {
@@ -357,20 +346,6 @@ export function buildModelProviderCards(input: ModelProviderCardsInput): ModelPr
     draft.card.usage = snapshot;
   }
 
-  for (const entry of input.costByProvider ?? []) {
-    const draft = providerDraft(entry.provider ?? "");
-    if (!draft) {
-      continue;
-    }
-    const cost = (draft.card.localCost ??= { totalCost: 0, totalTokens: 0, messageCount: 0 });
-    cost.totalCost += entry.totals.totalCost;
-    cost.totalTokens += entry.totals.totalTokens;
-    cost.messageCount += entry.count;
-    if (entry.totals.usageReport?.state === "unavailable") {
-      cost.usageReport = entry.totals.usageReport;
-    }
-  }
-
   return drafts
     .filter(
       (draft) =>
@@ -381,9 +356,7 @@ export function buildModelProviderCards(input: ModelProviderCardsInput): ModelPr
         Boolean(draft.card.usage) ||
         draft.card.modelCount > 0 ||
         Boolean(draft.catalogOutcome) ||
-        draft.card.checkingModels ||
-        (draft.card.localCost?.totalTokens ?? 0) > 0 ||
-        draft.card.localCost?.usageReport?.state === "unavailable",
+        draft.card.checkingModels,
     )
     .map((draft) => {
       const apiKeySupported = apiKeyCapabilities.get(draft.card.id);

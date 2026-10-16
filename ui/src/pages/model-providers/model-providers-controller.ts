@@ -672,7 +672,6 @@ export function createModelProviders(
     const props: ModelProvidersViewProps = {
       installedAgents: undefined,
       providerQuery: providerQuery(),
-      onProviderQueryChange: setProviderQuery,
       onConnectProvider: () => void login.connectProvider(values.configuredModels),
       usageClient: !mutationBlockedReason() && usageAvailable ? gatewaySnapshot.client : null,
       usageAgentId: state.selectedAgentId,
@@ -689,8 +688,17 @@ export function createModelProviders(
       refreshing: core.loading,
       error: rosterError ?? (noSelectableAgents ? t("agents.noAgents") : data.error),
       providerUsageFailed: data.providerUsage?.ok === false,
-      supplementalLoading: loaderPending || supplemental.loading,
+      // A refreshing Gateway snapshot is still being collected, not "no usage data".
+      supplementalLoading:
+        loaderPending ||
+        supplemental.loading ||
+        (data.providerUsage?.ok === true &&
+          data.providerUsage.value.refreshing === true &&
+          !refreshPolicy.incompleteUsageExhausted),
       updatedAt: data.updatedAt,
+      localUsage: data.localUsage,
+      usageRange: supplemental.usageRange,
+      onUsageRangeChange: (range) => supplemental.setUsageRange(range),
       credentialAgentLabel: agentLabel,
       cards: noSelectableAgents ? [] : installedAgents.filterProviders(cards),
       ...values,

@@ -1,6 +1,4 @@
-/* @vitest-environment jsdom */
-
-import { beforeEach, expect, it } from "vitest";
+import { expect, it } from "vitest";
 import {
   appendSessionUsageRollupContribution,
   buildSessionCostSummaryFromRollup,
@@ -8,13 +6,7 @@ import {
 } from "../../../../src/infra/session-cost-usage-rollup.js";
 import { createEmptyCostUsageTotals } from "../../../../src/infra/session-cost-usage-totals.js";
 import { createUsageAggregateAccumulator } from "../../../../src/shared/usage-aggregates.js";
-import { i18n } from "../../i18n/index.ts";
-import { buildModelProviderCards } from "./data.ts";
-import { mount, props, text } from "./view.test-support.tsx";
-
-beforeEach(async () => {
-  await i18n.setLocale("en");
-});
+import { buildUsageOverview, isLowerBound, isUnpriced } from "./usage-overview-model.ts";
 
 it.each([
   {
@@ -46,7 +38,7 @@ it.each([
     messageCount: 3,
   },
 ])(
-  "labels real local-cost contributions as messages across $name",
+  "rolls real local usage up to one provider row across $name",
   ({ sessions, models, sessionCount, messageCount }) => {
     const accumulator = createUsageAggregateAccumulator();
     const start = Date.UTC(2026, 0, 1);
@@ -92,21 +84,48 @@ it.each([
     expect(aggregates.byProvider.reduce((total, entry) => total + entry.count, 0)).toBe(
       messageCount,
     );
-    const cards = buildModelProviderCards({
-      authStatus: null,
-      models: null,
-      providerUsage: null,
-      costByProvider: aggregates.byProvider,
+    const overview = buildUsageOverview({
+      days: 30,
+      dates: ["2026-01-01"],
+      byProvider: aggregates.byProvider,
+      byModel: aggregates.byModel,
+      modelDaily: aggregates.modelDaily ?? [],
+      totals: aggregates.byProvider[0]!.totals,
     });
-    expect(cards).toHaveLength(1);
-    expect(cards[0]?.localCost).toMatchObject({
-      totalTokens: messageCount * 100,
-      totalCost: messageCount,
-    });
-    const container = mount(props({ cards }));
-    const row = container.querySelector('[data-provider-id="anthropic"]');
-    expect(text(row?.querySelector(".model-providers__local-cost-detail") ?? null)).toBe(
-      `${messageCount * 100} tokens · ${messageCount} messages`,
-    );
+    expect(overview.providers).toMatchObject([
+      { id: "anthropic", tokens: messageCount * 100, cost: messageCount, messages: messageCount },
+    ]);
+    expect(overview.providers[0]!.dailyTokens).toEqual([messageCount * 100]);
   },
 );
+
+it.each([
+  {
+    name: "priced",
+    entry: { cost: 12, unpriced: 0, incomplete: false },
+    unpriced: false,
+    lowerBound: false,
+  },
+  {
+    name: "never priced",
+    entry: { cost: 0, unpriced: 2, incomplete: false },
+    unpriced: true,
+    lowerBound: true,
+  },
+  {
+    name: "zero-priced plus unpriced",
+    entry: { cost: 0, unpriced: 1, incomplete: false },
+    unpriced: true,
+    lowerBound: true,
+  },
+  {
+    name: "interrupted turns",
+    entry: { cost: 12, unpriced: 0, incomplete: true },
+    unpriced: false,
+    lowerBound: true,
+  },
+])("never presents $name usage as free or complete when it is not", (row) => {
+  const entry = { tokens: 1_000, messages: 2, ...row.entry };
+  expect(isUnpriced(entry)).toBe(row.unpriced);
+  expect(isLowerBound(entry)).toBe(row.lowerBound);
+});

@@ -5,7 +5,11 @@ import {
   type ProviderUsageRequestResult,
 } from "../../lib/provider-usage-request.ts";
 import { UsageRefreshPolicy } from "../usage/refresh-policy.ts";
-import { loadModelProviderCost, type ModelProvidersData } from "./load.ts";
+import {
+  loadModelProviderUsage,
+  type ModelProvidersData,
+  type ModelProvidersUsageRange,
+} from "./load.ts";
 
 type SupplementalOptions = {
   isCoreLoading: () => boolean;
@@ -43,7 +47,7 @@ export class ModelProviderSupplementalLoader {
     this.options.setData({
       ...data,
       providerUsage: previous?.providerUsage ?? data.providerUsage,
-      costByProvider: previous?.costByProvider ?? data.costByProvider,
+      localUsage: previous?.localUsage ?? data.localUsage,
     });
     this.options.setDataClient(client);
     if (data.providerUsage !== null) {
@@ -61,7 +65,7 @@ export class ModelProviderSupplementalLoader {
       !this.loading &&
       (previous?.providerUsage == null || this.forceReload) &&
       data.providerUsage === null &&
-      data.costByProvider === null
+      data.localUsage === null
     ) {
       this.forceReload = false;
       void this.loadRequests(client, true);
@@ -103,6 +107,18 @@ export class ModelProviderSupplementalLoader {
     return this.loadRequests(undefined, false);
   }
 
+  /** Days of local usage the overview shows; it outlives reloads and agent changes. */
+  usageRange: ModelProvidersUsageRange = 30;
+
+  /** A range change re-reads local usage only; provider usage keeps its refresh policy. */
+  setUsageRange(range: ModelProvidersUsageRange): void {
+    this.usageRange = range;
+    const gateway = this.options.getGateway();
+    if (gateway.connected && gateway.client) {
+      void this.loadSupplement("cost", gateway.client, gateway.epoch);
+    }
+  }
+
   private async loadRequests(
     explicitClient: GatewayBrowserClient | undefined,
     includeCost: boolean,
@@ -134,10 +150,12 @@ export class ModelProviderSupplementalLoader {
     try {
       const patch:
         | { providerUsage: ProviderUsageRequestResult }
-        | { costByProvider: Awaited<ReturnType<typeof loadModelProviderCost>> } =
+        | { localUsage: Awaited<ReturnType<typeof loadModelProviderUsage>> } =
         kind === "usage"
           ? { providerUsage: await requestProviderUsage(client, { signal: request.signal }) }
-          : { costByProvider: await loadModelProviderCost(client, request.signal) };
+          : {
+              localUsage: await loadModelProviderUsage(client, request.signal, this.usageRange),
+            };
       if (this.requests.get(kind) !== request) {
         return;
       }

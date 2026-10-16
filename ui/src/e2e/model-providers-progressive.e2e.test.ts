@@ -17,6 +17,7 @@ import {
   type ControlUiE2eServer,
 } from "../test-helpers/control-ui-e2e.ts";
 import { pickerValue } from "../test-helpers/select-picker-e2e.ts";
+import { sessionsUsageResponse } from "../test-helpers/sessions-usage-response.ts";
 import { requestRaw, resolveConfigMutation } from "./model-providers.test-support.ts";
 
 const chromiumExecutablePath = resolvePlaywrightChromiumExecutablePath(chromium.executablePath());
@@ -747,17 +748,9 @@ describeControlUiE2e("Control UI progressive Model Providers loading", () => {
             updatedAt: now,
             providers: [{ provider: "openai", displayName: "OpenAI", plan: "Pro", windows: [] }],
           },
-          "sessions.usage": {
-            aggregates: {
-              byProvider: [
-                {
-                  provider: "openai",
-                  count: 1,
-                  totals: { totalTokens: 100, totalCost: 1.25 },
-                },
-              ],
-            },
-          },
+          "sessions.usage": sessionsUsageResponse([
+            { provider: "openai", count: 1, totals: { totalTokens: 100, totalCost: 1.25 } },
+          ]),
         },
       });
 
@@ -769,9 +762,7 @@ describeControlUiE2e("Control UI progressive Model Providers loading", () => {
           await waitForControlUiRoute(page, { routeId: "appearance" });
           await page.locator('a[href="/settings/model-providers"]').first().click();
           await waitForControlUiRoute(page, { routeId: "model-providers" });
-          await expect
-            .poll(() => page.locator('[data-provider-id="openai"]').textContent())
-            .toContain("$1.25");
+          await expect.poll(() => page.locator(".usage-overview").textContent()).toContain("$1.25");
           await page.locator('a[href="/settings/appearance"]').first().click();
           await waitForControlUiRoute(page, { routeId: "appearance" });
           await gateway.deferNext("usage.status");
@@ -813,7 +804,7 @@ describeControlUiE2e("Control UI progressive Model Providers loading", () => {
             .poll(() => page.locator('[data-provider-id="openai"]').textContent())
             .toContain("Credentials configured");
           await expect
-            .poll(() => page.locator('[data-provider-id="openai"]').textContent())
+            .poll(() => page.locator(".usage-overview").textContent())
             .toContain("Loading");
         }
         if (recordVisuals) {
@@ -833,7 +824,8 @@ describeControlUiE2e("Control UI progressive Model Providers loading", () => {
         const provider = page.locator('[data-provider-id="openai"]');
         await provider.waitFor();
         await expect.poll(async () => provider.textContent()).toContain("Credentials configured");
-        await expect.poll(async () => provider.textContent()).toContain("Loading");
+        const overview = page.locator(".usage-overview");
+        await expect.poll(async () => overview.textContent()).toContain("Loading");
         expect(await gateway.getRequests("usage.status")).toHaveLength(previousLoads + 1);
         expect(await gateway.getRequests("sessions.usage")).toHaveLength(previousLoads + 1);
         if (recordVisuals) {
@@ -845,7 +837,7 @@ describeControlUiE2e("Control UI progressive Model Providers loading", () => {
 
         await gateway.resolveDeferred("usage.status");
         await expect.poll(async () => provider.textContent()).toContain("Pro");
-        expect(await provider.textContent()).not.toContain("$1.25");
+        expect(await overview.textContent()).not.toContain("$1.25");
         if (recordVisuals) {
           await writeFile(
             path.join(artifactDir, "usage-ready.png"),
@@ -854,7 +846,7 @@ describeControlUiE2e("Control UI progressive Model Providers loading", () => {
         }
 
         await gateway.resolveDeferred("sessions.usage");
-        await expect.poll(async () => provider.textContent()).toContain("$1.25");
+        await expect.poll(async () => overview.textContent()).toContain("$1.25");
         expect(await gateway.getRequests("usage.status")).toHaveLength(previousLoads + 1);
         expect(await gateway.getRequests("sessions.usage")).toHaveLength(previousLoads + 1);
         expect(await page.locator('[data-provider-id="unknown-provider"]').count()).toBe(0);

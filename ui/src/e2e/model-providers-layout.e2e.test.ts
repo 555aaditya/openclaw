@@ -2,6 +2,7 @@ import path from "node:path";
 import { expect, it } from "vitest";
 import { installMockGateway } from "../test-helpers/control-ui-e2e.ts";
 import { openPicker } from "../test-helpers/select-picker-e2e.ts";
+import { sessionsUsageResponse } from "../test-helpers/sessions-usage-response.ts";
 import { createControlUiE2eSuite } from "./control-ui-e2e-suite.test-support.ts";
 
 const suite = createControlUiE2eSuite({ name: "Models settings layout and discovery" });
@@ -72,7 +73,7 @@ suite.define(() => {
                 ],
               },
               "usage.status": { updatedAt: Date.now(), providers: [] },
-              "sessions.usage": { aggregates: { byProvider: [] } },
+              "sessions.usage": sessionsUsageResponse(),
             },
           });
           await page.goto(`${suite.server.baseUrl}settings/model-providers`);

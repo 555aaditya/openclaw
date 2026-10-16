@@ -1,5 +1,6 @@
 /* @vitest-environment jsdom */
 
+import { flush } from "solid-js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { i18n } from "../../i18n/index.ts";
 import { choosePickerValue, openPicker, updatePickers } from "../../test-helpers/select-picker.ts";
@@ -491,7 +492,6 @@ describe("renderModelProviders", () => {
     );
     const provider = container.querySelector('[data-provider-id="openai"]');
     expect(text(provider)).toContain("Credentials for Writer");
-    expect(text(provider)).toContain("Global usage and cost");
     expect(text(provider)).toContain("API key from environment (OPENAI_API_KEY)");
     expect(text(provider?.querySelector(".model-providers__probe-summary") ?? null)).toBe(
       "Connected",
@@ -570,23 +570,6 @@ describe("renderModelProviders", () => {
       );
     },
   );
-
-  it("labels provider usage and session cost as global", () => {
-    const container = mount(
-      props({
-        cards: [
-          card({
-            localCost: { totalCost: 12, totalTokens: 1_000, messageCount: 2 },
-          }),
-        ],
-      }),
-    );
-
-    const provider = container.querySelector('[data-provider-id="openai"]');
-    expect(text(provider)).toContain("Credentials for Writer");
-    expect(text(provider)).toContain("Global usage and cost");
-    expect(text(provider)).toContain("Global session spend · 30d");
-  });
 
   it("does not invent config key provenance when auth status is unavailable", () => {
     const container = mount(
@@ -857,14 +840,12 @@ describe("renderModelProviders", () => {
 });
 
 it("filters provider access without hiding global defaults and exposes an empty result", () => {
-  const onProviderQueryChange = vi.fn();
   const viewProps = props({
     cards: [
       card(),
       card({ id: "anthropic", displayName: "Anthropic", credentialProviderIds: ["anthropic"] }),
     ],
     providerQuery: " ANTHROPIC ",
-    onProviderQueryChange,
   });
   const container = mount(viewProps);
   expect(container.querySelectorAll("[data-provider-id]")).toHaveLength(1);
@@ -875,8 +856,7 @@ it("filters provider access without hiding global defaults and exposes an empty 
   search.focus();
   search.value = "missing";
   search.dispatchEvent(new Event("input", { bubbles: true }));
-  expect(onProviderQueryChange).toHaveBeenCalledExactlyOnceWith("missing");
-  mount({ ...viewProps, providerQuery: "missing" }, container);
+  flush();
   expect(container.querySelector('input[type="search"]')).toBe(search);
   expect(document.activeElement).toBe(search);
   expect(text(container)).toContain("No providers match your search.");

@@ -39,6 +39,16 @@ export function hasProviderCredentials(card: ModelProviderCard): boolean {
   return card.hasConfigApiKey || Boolean(card.apiKey) || card.profiles.length > 0;
 }
 
+/**
+ * Usable through OpenClaw: credentials it stores, or a catalog that reports the
+ * provider ready (for example a CLI backend or plugin that owns its own login).
+ */
+export function isProviderUsable(card: ModelProviderCard): boolean {
+  return (
+    hasProviderCredentials(card) || card.availableModelCount > 0 || card.catalogStatus === "ready"
+  );
+}
+
 function needsAuthAttention(card: ModelProviderCard): boolean {
   return (
     card.auth?.kind === "expired" || card.auth?.kind === "missing" || card.auth?.kind === "expiring"
@@ -73,7 +83,7 @@ export function renderProviderStatus(card: ModelProviderCard) {
   if (card.catalogStatus === "unavailable") {
     return <SettingsStatus kind={"warn"} label={t("modelProviders.status.modelsUnavailable")} />;
   }
-  if (!hasProviderCredentials(card)) {
+  if (!isProviderUsable(card)) {
     return renderAuthStatus(card);
   }
   const verified = hasVerifiedProvider(card);

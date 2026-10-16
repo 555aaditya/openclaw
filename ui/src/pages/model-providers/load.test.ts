@@ -5,7 +5,7 @@ import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import { peekModelCatalog } from "../../lib/model-catalog-store.ts";
 import { requestProviderUsage } from "../../lib/provider-usage-request.ts";
 import { createTestGatewayClient } from "../../test-helpers/gateway-client.ts";
-import { loadModelProviderCost, loadModelProvidersData } from "./load.ts";
+import { loadModelProviderUsage, loadModelProvidersData } from "./load.ts";
 
 describe("loadModelProvidersData", () => {
   it("reads the refreshed catalog after failed auth publication", async () => {
@@ -173,7 +173,7 @@ describe("loadModelProvidersData", () => {
     expect(result.providerOutcomes).toEqual([]);
     expect(result.catalogError).toBeNull();
     expect(result.providerUsage).toBeNull();
-    expect(result.costByProvider).toBeNull();
+    expect(result.localUsage).toBeNull();
     expect(result.error).toBeNull();
     malformed = false;
     expect((await loadModelProvidersData(client, { agentId: "main" })).authStatus).toEqual({
@@ -201,7 +201,7 @@ describe("loadModelProvidersData", () => {
     const controller = new AbortController();
     const loading = Promise.allSettled([
       requestProviderUsage(client, { signal: controller.signal }),
-      loadModelProviderCost(client, controller.signal),
+      loadModelProviderUsage(client, controller.signal, 30),
     ]);
     try {
       expect(sent.map(({ method }) => method)).toEqual(["usage.status", "sessions.usage"]);

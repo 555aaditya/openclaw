@@ -24,7 +24,7 @@ function windowRank(label: string): number {
   return /\b(?:week|168h)\b/iu.test(label) ? 1 : 2;
 }
 
-function groupUsageWindows(windows: UsageWindow[]): Map<string, UsageWindow[]> {
+export function groupUsageWindows(windows: UsageWindow[]): Map<string, UsageWindow[]> {
   const groups = Map.groupBy(windows, (window) => window.groupLabel ?? "");
   for (const group of groups.values()) {
     group.sort((left, right) => windowRank(left.label) - windowRank(right.label));
@@ -32,7 +32,7 @@ function groupUsageWindows(windows: UsageWindow[]): Map<string, UsageWindow[]> {
   return groups;
 }
 
-function createProviderAmountFormatter(unit: string): (amount: number) => string {
+export function createProviderAmountFormatter(unit: string): (amount: number) => string {
   const normalizedUnit = unit.trim().toUpperCase();
   if (["USD", "EUR", "GBP", "CNY", "JPY"].includes(normalizedUnit)) {
     const formatter = new Intl.NumberFormat(undefined, {

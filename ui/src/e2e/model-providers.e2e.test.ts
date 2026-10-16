@@ -17,6 +17,7 @@ import {
   pickerValue as modelPickerValue,
   selectPickerValue as selectModelPicker,
 } from "../test-helpers/select-picker-e2e.ts";
+import { sessionsUsageResponse } from "../test-helpers/sessions-usage-response.ts";
 import {
   requestRaw,
   resolveConfigMutation,
@@ -122,7 +123,7 @@ describeControlUiE2e("Control UI Models mocked Gateway E2E", () => {
           setupComplete: false,
         },
         "usage.status": { updatedAt: NOW, providers: [] },
-        "sessions.usage": { aggregates: { byProvider: [] } },
+        "sessions.usage": sessionsUsageResponse(),
       },
     });
 
@@ -231,7 +232,7 @@ describeControlUiE2e("Control UI Models mocked Gateway E2E", () => {
         },
         "models.authStatus": { ts: NOW, providers: [] },
         "usage.status": { updatedAt: NOW, providers: [] },
-        "sessions.usage": { aggregates: { byProvider: [] } },
+        "sessions.usage": sessionsUsageResponse(),
       },
     });
 
@@ -317,7 +318,7 @@ describeControlUiE2e("Control UI Models mocked Gateway E2E", () => {
         "sessions.usage": {
           updatedAt: NOW,
           sessions: [],
-          totals: null,
+          totals: sessionsUsageResponse().totals,
           aggregates: {
             messages: {
               total: 0,
@@ -376,8 +377,13 @@ describeControlUiE2e("Control UI Models mocked Gateway E2E", () => {
       await expect
         .poll(async () => claudeCard.locator(".model-providers__profile").textContent())
         .toContain("Expired");
-      await expect.poll(async () => claudeCard.textContent()).toContain("$4.20");
-      await claudeCard.locator(".provider-usage-progress").first().waitFor();
+      const usageRow = (name: string) =>
+        page.locator(".usage-overview__providers li", { hasText: name });
+      await expect.poll(async () => usageRow("Claude").textContent()).toContain("$4.20");
+      await page
+        .locator('.provider-row[data-provider-id="anthropic"] .provider-limit')
+        .first()
+        .waitFor();
       await expect.poll(() => page.getByText("Model auth expired: Claude").count()).toBe(0);
 
       if (recordVisuals) {
@@ -390,7 +396,11 @@ describeControlUiE2e("Control UI Models mocked Gateway E2E", () => {
       expect(await openrouterCard.locator(".model-providers__profile").textContent()).toContain(
         "openrouter:default",
       );
-      await expect.poll(async () => openrouterCard.textContent()).toContain("$12.34");
+      await expect
+        .poll(async () =>
+          page.locator('.provider-row[data-provider-id="openrouter"]').textContent(),
+        )
+        .toContain("$12.34");
 
       // openai qualifies via its available catalog model despite having no
       // auth row; the shared label map renders "OpenAI", not "Openai".
@@ -584,7 +594,7 @@ describeControlUiE2e("Control UI Models mocked Gateway E2E", () => {
           results: [{ label: "Config API key", status: "ok", latencyMs: 87 }],
         },
         "usage.status": { updatedAt: NOW, providers: [] },
-        "sessions.usage": { aggregates: { byProvider: [] } },
+        "sessions.usage": sessionsUsageResponse(),
       },
     });
 
@@ -767,7 +777,7 @@ describeControlUiE2e("Control UI Models mocked Gateway E2E", () => {
         "config.get": snapshot(),
         "models.authStatus": { ts: NOW, providers: [] },
         "usage.status": { updatedAt: NOW, providers: [] },
-        "sessions.usage": { aggregates: { byProvider: [] } },
+        "sessions.usage": sessionsUsageResponse(),
       },
     });
     const observations: unknown[] = [];
@@ -893,7 +903,7 @@ describeControlUiE2e("Control UI Models mocked Gateway E2E", () => {
           ],
         },
         "usage.status": { updatedAt: NOW, providers: [] },
-        "sessions.usage": { aggregates: { byProvider: [] } },
+        "sessions.usage": sessionsUsageResponse(),
       },
     });
 
