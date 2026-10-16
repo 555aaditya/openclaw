@@ -6,6 +6,10 @@ import {
   getActiveDiagnosticTraceContext,
 } from "../../infra/diagnostic-trace-context.js";
 import { formatErrorMessage } from "../../infra/errors.js";
+import {
+  attachProviderAuthAuthority,
+  getProviderAuthAuthority,
+} from "../../plugins/provider-auth-authority.js";
 import type { ProviderRuntimeModel } from "../../plugins/provider-runtime-model.types.js";
 import { prepareProviderRuntimeAuth } from "../../plugins/provider-runtime.js";
 import { resolveUserPath } from "../../utils.js";
@@ -17,7 +21,6 @@ import { projectModelThinkingCompat } from "../model-catalog-lookup.js";
 import type { PreparedModelRuntimeSnapshot } from "../prepared-model-runtime.js";
 import { applyPreparedRuntimeAuthToModel } from "../provider-request-config.js";
 import { protectPreparedProviderRuntimeAuth } from "../provider-runtime-auth-protection.js";
-import { unwrapSecretSentinelsForProviderEgress } from "../provider-secret-egress.js";
 import { materializePreparedRuntimeModel } from "../runtime-plan/materialize-model.js";
 import {
   resolvePreparedRuntimeAuthAttempts,
@@ -242,8 +245,11 @@ export async function prepareDirectCompactionAttempt(
   } catch (err) {
     return { ok: false as const, result: fail(formatErrorMessage(err), err) };
   }
-  let runtimeModel: ProviderRuntimeModel = resolvedAuthAttempt.model;
   const apiKeyInfo = resolvedAuthAttempt.auth;
+  let runtimeModel: ProviderRuntimeModel = attachProviderAuthAuthority(
+    resolvedAuthAttempt.model,
+    getProviderAuthAuthority(apiKeyInfo),
+  );
   const resolvedRuntimeAuthPlan = resolvedAuthAttempt.plan;
   let hasRuntimeAuthExchange = false;
   try {
@@ -261,10 +267,7 @@ export async function prepareDirectCompactionAttempt(
           provider: runtimeModel.provider,
           modelId,
           model: runtimeModel,
-          apiKey: unwrapSecretSentinelsForProviderEgress(
-            apiKeyInfo.apiKey,
-            "provider runtime auth exchange",
-          ),
+          apiKey: apiKeyInfo.apiKey,
           authMode: apiKeyInfo.mode,
           profileId: apiKeyInfo.profileId,
         },
