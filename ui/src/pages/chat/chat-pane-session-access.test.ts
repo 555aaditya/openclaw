@@ -21,6 +21,43 @@ import {
 } from "./chat-pane.test-support.ts";
 import { renderPaneHeaderInto } from "./components/chat-pane-header.test-support.ts";
 
+async function createHeaderDraftPane(row: GatewaySessionRow) {
+  const fixture = createTestChatPane({
+    client: createGatewayBrowserClientFixture({
+      request: async (method) => {
+        switch (method) {
+          case "agents.list":
+            return {
+              defaultId: "main",
+              mainKey: "main",
+              scope: "per-sender",
+              agents: [{ id: "main" }],
+            };
+          case "sessions.list":
+            return sessionsResult([row], 1);
+          case "sessions.describe":
+            return { session: row };
+          case "chat.startup":
+            return { messages: [] };
+          default:
+            return {};
+        }
+      },
+    }),
+  });
+  fixture.state.loadAssistantIdentity = vi.fn(async () => undefined);
+  fixture.state.sessionsResult = await fixture.sessions.list({ agentId: "main" });
+  fixture.state.sessionsResultAgentId = "main";
+  const patch = vi.spyOn(fixture.sessions, "patch").mockResolvedValue({
+    ok: true,
+    path: "",
+    key: row.key,
+    entry: { sessionId: row.sessionId ?? "current-session" },
+  });
+  const groupsPut = vi.spyOn(fixture.sessions, "groupsPut").mockResolvedValue("completed");
+  return { ...fixture, patch, groupsPut };
+}
+
 describe("chat pane session access", () => {
   it("refuses ordinary session creation for read-only operators", async () => {
     const sessions = {
@@ -150,18 +187,14 @@ describe("chat pane session access", () => {
     expect(patch).not.toHaveBeenCalled();
   });
 
-  it("retains inline rename text through a blip without submitting offline", () => {
-    const patch = vi.fn(async () => ({}));
-    const sessions = createSessionCapabilityFixture({ patch });
-    const client = { request: vi.fn(async () => ({})) } as unknown as GatewayBrowserClient;
-    const { pane, state } = createTestChatPane({ client, sessions });
-    state.loadAssistantIdentity = vi.fn(async () => undefined);
-    const connected = { ...pane.context.gateway.snapshot };
+  it("retains inline rename text through a blip without submitting offline", async () => {
     const session = {
-      key: state.sessionKey,
+      key: "agent:main:current",
       kind: "direct",
       updatedAt: 0,
     } satisfies GatewaySessionRow;
+    const { pane, patch } = await createHeaderDraftPane(session);
+    const connected = { ...pane.context.gateway.snapshot };
     pane.beginHeaderRename(session);
     pane.headerRenameValue = "Still editing";
 
@@ -186,70 +219,83 @@ describe("chat pane session access", () => {
     expect(patch).not.toHaveBeenCalled();
   });
 
-  it("keeps the header new-group draft through reconnect and retires it with identity", async () => {
-    const modal = createModalDialogTestFixture();
-    const row: GatewaySessionRow = {
-      key: "agent:main:current",
-      sessionId: "current-session",
-      kind: "direct",
-      sharingRole: "owner",
-    };
-    const groupsPut = vi.fn(async () => "completed" as const);
-    const patch = vi.fn(async () => row);
-    const { pane, state } = createTestChatPane({
-      client: createGatewayBrowserClientFixture(),
-      sessions: createSessionCapabilityFixture({
-        groupsPut,
-        patch,
-        state: { groups: [], result: sessionsResult([row], 1) },
-      }),
-    });
-    state.loadAssistantIdentity = vi.fn(async () => undefined);
-    const connected = { ...pane.context.gateway.snapshot };
-    const open = () => modal.track(pane.handleHeaderSessionAction({ kind: "new-group" }, row));
-    try {
-      const completion = open();
-      const input = await waitForInputDialog();
-      input.value = "Unsent group";
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-      pane.applyGatewaySnapshot({ ...connected, phase: "reconnecting", hello: null });
-      flush();
-      expect(document.body.querySelector("openclaw-modal-dialog input")).toBe(input);
-      expect(input.value).toBe("Unsent group");
-      expect(input.disabled).toBe(false);
-      expect(
-        input.closest("form")?.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled,
-      ).toBe(true);
-      input
-        .closest("form")
-        ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
-      expect(groupsPut).not.toHaveBeenCalled();
-      expect(patch).not.toHaveBeenCalled();
-
+  it.each(["client", "account", "recovery scope"] as const)(
+    "keeps header drafts through reconnect and retires them with %s identity",
+    async (change) => {
+      const modal = createModalDialogTestFixture();
+      const row: GatewaySessionRow = {
+        key: "agent:main:current",
+        sessionId: "current-session",
+        kind: "direct",
+        sharingRole: "owner",
+      };
+      const { pane, patch, groupsPut } = await createHeaderDraftPane(row);
+      const connected = {
+        ...pane.context.gateway.snapshot,
+        selfUser: { id: "alice", name: "Alice" },
+      };
       pane.applyGatewaySnapshot(connected);
-      await submitInputDialog("Unsent group");
-      await completion;
-      expect(groupsPut).toHaveBeenCalledWith(["Unsent group"]);
-      expect(patch).toHaveBeenCalledWith(
-        row.key,
-        { category: "Unsent group" },
-        { agentId: "main", expectedSessionId: row.sessionId },
-      );
+      const open = () => modal.track(pane.handleHeaderSessionAction({ kind: "new-group" }, row));
+      try {
+        const completion = open();
+        const input = await waitForInputDialog();
+        input.value = "Unsent group";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        pane.applyGatewaySnapshot({ ...connected, phase: "reconnecting", hello: null });
+        flush();
+        expect(document.body.querySelector("openclaw-modal-dialog input")).toBe(input);
+        expect(input.value).toBe("Unsent group");
+        expect(input.disabled).toBe(false);
+        expect(
+          input.closest("form")?.querySelector<HTMLButtonElement>('button[type="submit"]')
+            ?.disabled,
+        ).toBe(true);
+        input
+          .closest("form")
+          ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+        expect(groupsPut).not.toHaveBeenCalled();
+        expect(patch).not.toHaveBeenCalled();
 
-      const retired = open();
-      await waitForInputDialog();
-      pane.applyGatewaySnapshot({
-        ...connected,
-        client: createGatewayBrowserClientFixture(),
-        phase: "reconnecting",
-        hello: null,
-      });
-      await retired;
-      expect(document.body.querySelector("openclaw-modal-dialog")).toBeNull();
-    } finally {
-      await modal.cleanup();
-    }
-  });
+        pane.applyGatewaySnapshot(connected);
+        await submitInputDialog("Unsent group");
+        await completion;
+        expect(groupsPut).toHaveBeenCalledWith(["Unsent group"]);
+        expect(patch).toHaveBeenCalledWith(
+          row.key,
+          { category: "Unsent group" },
+          { agentId: "main", expectedSessionId: row.sessionId },
+        );
+
+        const retired = open();
+        await waitForInputDialog();
+        pane.beginHeaderRename(row);
+        pane.headerRenameValue = "Private title";
+        pane.applyGatewaySnapshot({
+          ...connected,
+          ...(change === "client"
+            ? {
+                client: createGatewayBrowserClientFixture(),
+                phase: "reconnecting" as const,
+                hello: null,
+              }
+            : change === "account"
+              ? { selfUser: { id: "bob", name: "Bob" } }
+              : {
+                  selfUser: undefined,
+                  hello: {
+                    ...connected.hello!,
+                    auth: { ...connected.hello!.auth!, recoveryScope: "bob-scope" },
+                  },
+                }),
+        });
+        await retired;
+        expect(document.body.querySelector("openclaw-modal-dialog")).toBeNull();
+        expect(pane.headerRenameSession).toBeNull();
+      } finally {
+        await modal.cleanup();
+      }
+    },
+  );
 
   it.each(["failed", "stale"] as const)(
     "keeps the header group draft after a %s assignment",
@@ -260,15 +306,7 @@ describe("chat pane session access", () => {
         sessionId: "current-session",
         kind: "direct",
       };
-      const patch = vi.fn();
-      const { pane } = createTestChatPane({
-        client: createGatewayBrowserClientFixture(),
-        sessions: createSessionCapabilityFixture({
-          groupsPut: async () => "completed",
-          patch,
-          state: { groups: [], result: sessionsResult([row], 1) },
-        }),
-      });
+      const { pane, patch } = await createHeaderDraftPane(row);
       patch.mockImplementationOnce(async () => {
         if (outcome === "stale") {
           pane.applyGatewaySnapshot({
@@ -281,7 +319,7 @@ describe("chat pane session access", () => {
         throw new Error("Assignment rejected");
       });
       try {
-        modal.track(pane.handleHeaderSessionAction({ kind: "new-group" }, row));
+        void modal.track(pane.handleHeaderSessionAction({ kind: "new-group" }, row));
         await submitInputDialog("Keep this group");
         await vi.waitFor(() =>
           expect(document.body.querySelector("openclaw-modal-dialog [role=alert]")).not.toBeNull(),

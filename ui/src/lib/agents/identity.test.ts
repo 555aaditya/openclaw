@@ -21,7 +21,7 @@ it.each(["account", "recovery scope"])(
     const request = vi.fn().mockResolvedValueOnce(original).mockReturnValue(pending.promise);
     const source = createApplicationGateway();
     const hello = gatewayHelloForMethods(["agent.identity.get"], ["operator.read"]);
-    hello.auth!.recoveryScope = "alice-scope";
+    hello.auth!.recoveryScope = "test-recovery-scope";
     source.publish({
       ...source.gateway.snapshot,
       client: createTestGatewayClient(request),

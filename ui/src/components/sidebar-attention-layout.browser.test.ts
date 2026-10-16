@@ -66,8 +66,9 @@ function inboxMention(id: string): MentionInboxItem {
 }
 
 function panelParams(entries: readonly SidebarInboxEntry[]): SidebarAttentionPanelParams {
-  const { gateway, update } = createGatewayHarness(client(vi.fn(async () => ({}))));
-  update({
+  const harness = createGatewayHarness(client(vi.fn(async () => ({}))));
+  const { gateway } = harness;
+  harness.update({
     hello: {
       ...gateway.snapshot.hello!,
       auth: { role: "operator", scopes: ["operator.read"] },

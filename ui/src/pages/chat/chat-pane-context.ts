@@ -473,9 +473,9 @@ export abstract class ChatPaneContext extends ChatPaneLifecycle {
       this.presencePayload = presence ? { presence } : undefined;
     }
     const rename = this.headerRenameSession;
+    const draftOwnerChanged = state.client !== snapshot.client || pairingOwnerChanged;
     if (
-      clientChanged ||
-      pairingOwnerChanged ||
+      draftOwnerChanged ||
       (snapshot.phase === "connected" &&
         !readSessionMethodAccess(snapshot, {
           method: "sessions.groups.put",
@@ -485,8 +485,7 @@ export abstract class ChatPaneContext extends ChatPaneLifecycle {
       this.retireHeaderSessionDrafts();
     }
     if (
-      clientChanged ||
-      pairingOwnerChanged ||
+      draftOwnerChanged ||
       (rename &&
         snapshot.phase === "connected" &&
         !readSessionMethodAccess(snapshot, {

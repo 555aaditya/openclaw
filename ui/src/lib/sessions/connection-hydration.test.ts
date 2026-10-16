@@ -89,7 +89,7 @@ describe("session connection hydration", () => {
         ["sessions.list", "sessions.subscribe", "sessions.groups.list"],
         ["operator.read"],
       );
-      hello.auth!.recoveryScope = "alice-scope";
+      hello.auth!.recoveryScope = "test-recovery-scope";
       source.publish({
         ...source.gateway.snapshot,
         phase: "connected",
@@ -214,11 +214,13 @@ describe("session connection hydration", () => {
         "sessions.list",
         expect.objectContaining({
           agentId: "main",
-          ownerFirst: true,
           limit: SIDEBAR_SESSION_ROSTER_LIMIT,
         }),
       ),
     );
+    expect(
+      request.mock.calls.find(([method]) => method === "sessions.list")?.[1]?.ownerFirst,
+    ).toBeUndefined();
     expect(request).toHaveBeenCalledWith(
       "sessions.subscribe",
       {},

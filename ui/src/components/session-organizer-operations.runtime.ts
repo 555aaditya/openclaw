@@ -306,10 +306,9 @@ export async function renameSession(
         sessionScope: true,
         handleError: (error) => {
           const message = formatUiError(error);
-          failure = /^label already in use:/iu.test(message)
-            ? t("sessionsView.sessionNameInUse")
-            : message;
-          return true;
+          const duplicateName = /^label already in use:/iu.test(message);
+          failure = duplicateName ? t("sessionsView.sessionNameInUse") : message;
+          return duplicateName;
         },
       });
       return result === "completed"

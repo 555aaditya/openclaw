@@ -1,7 +1,11 @@
 /* @vitest-environment jsdom */
 import { flush } from "solid-js";
 import { expect, it, vi } from "vitest";
-import { createGatewayHarness, createSessions, mountSidebar } from "../test-helpers/app-sidebar.ts";
+import {
+  createGatewayHarness,
+  createSessionsHarness,
+  mountSidebar,
+} from "../test-helpers/app-sidebar.ts";
 import {
   createGatewayRequestMock,
   createTestGatewayClient,
@@ -16,7 +20,7 @@ import "./app-sidebar.tsx";
 
 async function fixture() {
   const gateway = createGatewayHarness(createTestGatewayClient(createGatewayRequestMock()));
-  const sessions = createSessions("main", ["agent:main:draft"]);
+  const sessions = createSessionsHarness("main", ["agent:main:draft"]);
   const { sidebar } = await mountSidebar(gateway.gateway, sessions.sessions);
   sidebar.connected = true;
   await sidebar.updateComplete;
@@ -103,7 +107,7 @@ it.each(["failed", "stale"] as const)(
       throw new Error("Rename rejected");
     });
     try {
-      modal.track(
+      void modal.track(
         sidebar.sessionOrganizer.renameSession(
           sidebar.findSidebarSessionByKey("agent:main:draft")!,
         ),

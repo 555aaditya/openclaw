@@ -33,7 +33,7 @@ export function InputDialogView(props: {
   const paint = () => setRevision((value) => value + 1);
   async function submit(event: SubmitEvent) {
     event.preventDefault();
-    if (submitting || submitBlocked(input.value)) {
+    if (settled() || submitting || submitBlocked(input.value)) {
       return;
     }
     const value = entryValue(input.value);

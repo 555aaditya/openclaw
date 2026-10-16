@@ -32,7 +32,7 @@ function harness() {
       auth: {
         role: "operator",
         scopes: ["operator.read", "operator.write"],
-        recoveryScope: "principal-a",
+        recoveryScope: "test-recovery-scope",
       },
     },
     sessionKey: "agent:main:first",

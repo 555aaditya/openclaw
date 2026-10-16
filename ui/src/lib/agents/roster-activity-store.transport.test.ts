@@ -132,7 +132,7 @@ afterEach(() => {
 });
 
 it.each(["client", "account", "recovery scope"])(
-  "keeps the loaded roster through a blip and retires it with %s identity",
+  "keeps loaded roster activity through a blip and retires it with %s identity",
   async (change) => {
     const f = fixture();
     const hello = gatewayHelloForMethods(
@@ -168,7 +168,15 @@ it.each(["client", "account", "recovery scope"])(
               hello: { ...hello, auth: { ...hello.auth!, recoveryScope: "bob-scope" } },
             }),
     });
-    expect(f.store.snapshot.cards).toEqual([]);
+    expect(f.store.snapshot.result).toBeNull();
+    expect(f.store.snapshot.membershipReady).toBe(false);
+    if (change === "client") {
+      expect(f.store.snapshot.cards).toEqual([]);
+    } else {
+      expect(f.store.snapshot.cards).toMatchObject([
+        { id: "main", preview: undefined, activeNow: false, unreadCount: 0, lastActiveAt: 0 },
+      ]);
+    }
   },
 );
 

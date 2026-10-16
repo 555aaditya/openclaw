@@ -499,7 +499,7 @@ describe("MemoryImportPage", () => {
       });
       const context = createContext(request);
       context.gateway.snapshot.selfUser = { id: "first", name: "First" };
-      const hello = gatewayHelloForMethods([]);
+      const hello = gatewayHelloForMethods(["memory.sessionBackfill.preview"]);
       context.gateway.snapshot.hello = {
         ...hello,
         auth: { ...hello.auth, recoveryScope: "first" },
