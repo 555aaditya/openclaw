@@ -1,6 +1,6 @@
 // Separate Gateway processes recover quiet children and yielded legacy completions.
 import { once } from "node:events";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { asRecord, isRecord } from "@openclaw/normalization-core/record-coerce";
 import { expect, it, onTestFailed, vi } from "vitest";
@@ -66,6 +66,8 @@ it.skipIf(process.platform === "win32").for([
   ) => {
     const provider = await startProvider(signal, legacy);
     const model = buildMockOpenAiResponsesProvider(provider.baseUrl, "gpt-5.4");
+    const { buildId } = asRecord(JSON.parse(await readFile("dist/build-info.json", "utf8")));
+    expect(typeof buildId).toBe("string");
     const instance = await createOpenClawTestInstance({
       name: "gateway-quiet-subagent-restart",
       port: provider.gatewayPort,
@@ -151,6 +153,7 @@ it.skipIf(process.platform === "win32").for([
           url: instance.url,
           token: instance.gatewayToken,
           clientName: legacy ? "openclaw-control-ui" : "gateway-client",
+          clientBuildId: legacy && typeof buildId === "string" ? buildId : undefined,
           mode: legacy ? "webchat" : "backend",
           ...(legacy ? { origin: `http://127.0.0.1:${instance.port}` } : {}),
           scopes: ["operator.admin", "operator.read", "operator.write"],
