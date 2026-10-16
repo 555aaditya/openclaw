@@ -29,6 +29,7 @@ import { resolvePluginCatalogIconUrl } from "./presentation.ts";
 export type PluginDiscoveryIntent = "all" | "bundled" | "trending" | "official" | "featured";
 
 export type PluginCatalogResultsProps = {
+  registerIcon?: (readId: () => string) => () => void;
   connected: boolean;
   loading: boolean;
   result: PluginDiscoveryResult | null;
@@ -209,6 +210,7 @@ function CatalogIcon(props: {
   );
   return (
     <PluginArtTile
+      registerIcon={props.state.registerIcon}
       slug={props.plugin.local.pluginId ?? props.plugin.id}
       name={props.plugin.catalog.name}
       iconUrl={iconUrl() ?? undefined}
