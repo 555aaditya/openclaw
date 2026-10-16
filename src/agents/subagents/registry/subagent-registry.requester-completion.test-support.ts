@@ -28,6 +28,7 @@ import {
   withPluginRuntimeGatewayRequestScope,
 } from "../../../plugins/runtime/gateway-request-scope.js";
 import { createPluginRecord } from "../../../plugins/status.test-helpers.js";
+import { setUserProfileRole } from "../../../state/user-profile-writes.worker.js";
 import { withOpenClawTestState } from "../../../test-utils/openclaw-test-state.js";
 import { createAdmittedRunOperatorAuthority } from "../../admitted-run-context.js";
 import * as delivery from "../announce/subagent-announce-delivery.js";
@@ -67,6 +68,8 @@ export function registerRequesterCompletionCustodyTests({
     "legacy with parent source",
     "legacy mixed with parent source",
     "legacy revoked parent source",
+    "legacy changed parent role",
+    "legacy later parent admission",
     "missing source",
     "missing parent source",
     "mismatched source",
@@ -78,7 +81,9 @@ export function registerRequesterCompletionCustodyTests({
     async (recovery) => {
       const legacy = recovery.startsWith("legacy ");
       const legacyUnrestorable =
-        recovery === "missing source" || recovery === "legacy revoked parent source";
+        recovery === "missing source" ||
+        recovery === "legacy revoked parent source" ||
+        recovery === "legacy changed parent role";
       const overloaded = recovery.startsWith("overloaded");
       const unavailablePolicy = recovery === "unavailable policy then current";
       const deferred = overloaded || unavailablePolicy;
@@ -92,6 +97,7 @@ export function registerRequesterCompletionCustodyTests({
         recovery === "overloaded then current" ||
         recovery === "legacy with parent source" ||
         recovery === "legacy mixed with parent source" ||
+        recovery === "legacy later parent admission" ||
         unavailablePolicy;
       await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
         const cfg = { session: { store: state.path("sessions.json") } };
@@ -207,7 +213,13 @@ export function registerRequesterCompletionCustodyTests({
                   sessionId,
                   lifecycleRevision,
                   updatedAt: 1,
-                  restartRecoveryOperatorSource: admitted?.operatorRecoverySource,
+                  restartRecoveryOperatorSource:
+                    recovery === "legacy later parent admission"
+                      ? {
+                          ...expectDefined(admitted?.operatorRecoverySource, "parent admission"),
+                          sourceRunId: "later-parent-turn",
+                        }
+                      : admitted?.operatorRecoverySource,
                 },
               );
             }
@@ -257,6 +269,9 @@ export function registerRequesterCompletionCustodyTests({
           grantCurrent =
             recovery !== "revoked grant" && recovery !== "legacy revoked parent source";
           policyReady = !unavailablePolicy;
+          if (recovery === "legacy changed parent role") {
+            setUserProfileRole(source.authority.profileId, "changed-parent-role");
+          }
           if (recovery === "replaced requester") {
             await upsertSessionEntryCore(
               { storePath: cfg.session.store, sessionKey: requesterSessionKey, agentId: "main" },

@@ -41,15 +41,18 @@ const legacyCases = [
 ] as const;
 
 it.skipIf(process.platform === "win32").for([
-  ...quietCases.map((testCase) => ({
-    ...testCase,
+  ...quietCases.map(({ outcome, replaceChild }) => ({
+    outcome,
+    replaceChild,
     legacy: false,
     shutdown: "managed" as const,
     missingParentSource: false,
     restartDuringRecovery: false,
   })),
-  ...legacyCases.map((testCase) => ({
-    ...testCase,
+  ...legacyCases.map(({ shutdown, missingParentSource, restartDuringRecovery }) => ({
+    shutdown,
+    missingParentSource,
+    restartDuringRecovery,
     legacy: true,
     outcome: "complete" as const,
     replaceChild: false,
@@ -147,8 +150,9 @@ it.skipIf(process.platform === "win32").for([
         {
           url: instance.url,
           token: instance.gatewayToken,
-          clientName: "gateway-client",
-          mode: "backend",
+          clientName: legacy ? "openclaw-control-ui" : "gateway-client",
+          mode: legacy ? "webchat" : "backend",
+          ...(legacy ? { origin: `http://127.0.0.1:${instance.port}` } : {}),
           scopes: ["operator.admin", "operator.read", "operator.write"],
           deviceIdentity: loadOrCreateDeviceIdentity({
             path: instance.state.path("proof-device.sqlite"),
@@ -274,7 +278,9 @@ it.skipIf(process.platform === "win32").for([
       phase = "after-startup";
       observations.afterStartup = persistedChild({ sessionKey: String(observations.childKey) });
       expect(instance.child?.pid).not.toBe(child.pid);
-      client = await connect();
+      if (!legacy) {
+        client = await connect();
+      }
     };
     await runQaGatewayFixture(
       async () => {
@@ -362,7 +368,10 @@ it.skipIf(process.platform === "win32").for([
             },
             gateway: {
               mode: "local",
-              controlUi: { enabled: false },
+              controlUi: {
+                enabled: false,
+                ...(legacy ? { allowedOrigins: [`http://127.0.0.1:${instance.port}`] } : {}),
+              },
               bind: "loopback",
               port: instance.port,
               auth: { mode: "token", token: instance.gatewayToken },
@@ -385,6 +394,9 @@ it.skipIf(process.platform === "win32").for([
             { expectFinal: false },
           );
           originalRunId = accepted.runId;
+          if (legacy) {
+            expect(persisted(PARENT_KEY)?.restartRecoveryOperatorSource).toBeDefined();
+          }
           phase = "waiting-for-child-start";
           await withinTest(Promise.race([provider.childPending, provider.failed]), signal);
           phase = "waiting-for-parent-yield";
@@ -401,16 +413,16 @@ it.skipIf(process.platform === "win32").for([
           }
           const { runId: childRunId } = await vi.waitFor(
             () => {
-              expect(persisted(PARENT_KEY)).toMatchObject({
-                ...(legacy
+              expect(persisted(PARENT_KEY)).toMatchObject(
+                legacy
                   ? { endedAt: expect.any(Number) }
-                  : {
-                      status: "done",
-                      lastRunId: originalRunId,
-                    }),
-              });
+                  : { status: "done", lastRunId: originalRunId },
+              );
               const entry = persistedChild({ sessionKey: child.key });
               expect(entry).toMatchObject({ execution: { status: "running" } });
+              if (legacy) {
+                expect(entry?.operatorRecoverySource).toBeDefined();
+              }
               if (!entry) {
                 throw new Error("Child registry row is missing");
               }
@@ -554,6 +566,9 @@ it.skipIf(process.platform === "win32").for([
               { timeout: 30_000 },
             );
           }
+          if (legacy) {
+            client = await connect();
+          }
           if (outcome === "complete" && !replaceChild) {
             const history = await client!.request<{ messages: unknown[] }>("chat.history", {
               sessionKey: child.key,
@@ -577,6 +592,11 @@ it.skipIf(process.platform === "win32").for([
               vi.waitFor(
                 async () => {
                   expect(recoveryPasses()).toBeGreaterThan(priorRecoveryPasses);
+                  if (legacy) {
+                    expect(persisted(PARENT_KEY)?.status).not.toBe("running");
+                    expect(persisted(child.key)?.status).not.toBe("running");
+                    return;
+                  }
                   const sessions = await client!.request<SessionsListResult>("sessions.list", {
                     agentId: "main",
                   });
@@ -592,6 +612,9 @@ it.skipIf(process.platform === "win32").for([
             ]),
             signal,
           );
+          if (legacy) {
+            client = await connect();
+          }
           expect(persistedChild({ runId: childRunId })?.requesterSettleWake).toBeUndefined();
           if (replaceChild) {
             expect(persisted(child.key)).toEqual(replacementChild);

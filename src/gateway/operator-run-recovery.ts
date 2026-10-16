@@ -12,6 +12,7 @@ import { loadPairedDevicePairingStoreRecordReadOnly } from "../infra/device-pair
 import { onSessionIdentityMutation } from "../sessions/session-lifecycle-events.js";
 import { onUserProfilesChanged } from "../state/user-profile-events.js";
 import { prepareUserProfileIdentity } from "../state/user-profile-list.js";
+import { UserProfileNotFoundError } from "../state/user-profiles-schema.js";
 import { isGatewayAuthGrantCurrent } from "./auth-policy.js";
 import {
   captureGatewayDeviceRevocation,
@@ -32,6 +33,14 @@ import {
   type OperatorRunRecoverySnapshot,
 } from "./operator-run-recovery-source.js";
 import type { GatewayRequestContext } from "./server-methods/shared-types.js";
+
+/** Saved admission evidence that current policy can no longer authorize. */
+export class GatewayOperatorRecoverySourceRevokedError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "GatewayOperatorRecoverySourceRevokedError";
+  }
+}
 
 export type OperatorRecoveryTarget = {
   agentId: string;
@@ -168,7 +177,10 @@ export async function restoreGatewayOperatorSource(params: {
   const signal = new AbortController();
   const revoke = (cause?: unknown) =>
     signal.abort(
-      new Error("Restart recovery operator authority changed; start a new user turn.", { cause }),
+      new GatewayOperatorRecoverySourceRevokedError(
+        "Restart recovery operator authority changed; start a new user turn.",
+        { cause },
+      ),
     );
   const assertOwner = () => {
     if (references === 0) {
@@ -207,7 +219,9 @@ export async function restoreGatewayOperatorSource(params: {
     const generationOwner = context.sharedGatewaySessionGenerationState;
     if (snapshot.sharedGeneration !== undefined) {
       if (!generationOwner || generationOwner.requiredGeneration !== snapshot.sharedGeneration) {
-        throw new Error("Restart recovery authentication owner changed; start a new user turn.");
+        throw new GatewayOperatorRecoverySourceRevokedError(
+          "Restart recovery authentication owner changed; start a new user turn.",
+        );
       }
       subscriptions.push(
         generationOwner.onInvalidated(snapshot.sharedGeneration, revoke, snapshot.authPolicy),
@@ -239,7 +253,9 @@ export async function restoreGatewayOperatorSource(params: {
         (snapshot.sharedGeneration !== undefined &&
           context.sharedGatewaySessionGenerationState !== generationOwner)
       ) {
-        throw new Error("Restart recovery operator source policy changed.");
+        throw new GatewayOperatorRecoverySourceRevokedError(
+          "Restart recovery operator source policy changed.",
+        );
       }
       return cfg;
     };
@@ -277,7 +293,9 @@ export async function restoreGatewayOperatorSource(params: {
         (profile.githubLogin ?? null) !== snapshot.githubLogin ||
         githubAccountIds?.some((accountId) => !profile.githubAccountIds?.includes(accountId))
       ) {
-        throw new Error("Restart recovery operator identity changed.");
+        throw new GatewayOperatorRecoverySourceRevokedError(
+          "Restart recovery operator identity changed.",
+        );
       }
       githubAccountIds ??= profile.githubAccountIds ?? [];
       return { cfg, profile };
@@ -351,6 +369,9 @@ export async function restoreGatewayOperatorSource(params: {
     return { authority, controlUiAdmin: snapshot.controlUiAdmin, release };
   } catch (error) {
     release();
+    if (error instanceof UserProfileNotFoundError) {
+      throw new GatewayOperatorRecoverySourceRevokedError(error.message, { cause: error });
+    }
     throw error;
   }
 }

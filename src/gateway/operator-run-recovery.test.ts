@@ -37,6 +37,7 @@ import {
 import { retireDeviceTokenClients } from "./device-token-client-lifecycle.js";
 import { captureGatewayOperatorRunAuthority } from "./operator-run-authority.js";
 import {
+  GatewayOperatorRecoverySourceRevokedError,
   readGatewayOperatorRecoverySource,
   restoreGatewayOperatorSource,
 } from "./operator-run-recovery.js";
@@ -621,9 +622,9 @@ describe("restart recovery authenticated operator source", () => {
           "both",
         );
       }
-      await expect(fixture.restore()).rejects.toThrow(
-        /Restart recovery operator|user profile not found/,
-      );
+      const restoration = fixture.restore();
+      await expect(restoration).rejects.toThrow(GatewayOperatorRecoverySourceRevokedError);
+      await expect(restoration).rejects.toThrow(/Restart recovery operator|user profile not found/);
     });
   });
 

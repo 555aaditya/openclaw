@@ -247,7 +247,12 @@ async function restoreSubagentCompletionSource(
       deferredCompletionSources.add(runtimeKey);
       return;
     }
-    if (error instanceof GatewayOperatorAccessDeniedError) {
+    const { GatewayOperatorRecoverySourceRevokedError } =
+      await import("../../../gateway/operator-run-recovery.js");
+    if (
+      error instanceof GatewayOperatorAccessDeniedError ||
+      error instanceof GatewayOperatorRecoverySourceRevokedError
+    ) {
       if (settleLegacy) {
         await settleLegacy("The parent's operator no longer has access to this child completion");
         return;
