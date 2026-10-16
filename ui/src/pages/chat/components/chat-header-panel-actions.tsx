@@ -176,29 +176,32 @@ export function ChatPaneLayoutMenu(props: ChatPaneLayoutMenuProps) {
       <Show when={model().sideHeaderLink}>{(link) => <ExternalPanelLink {...link()} />}</Show>
     </Show>
   );
-  const items = createMemo((): MenuEntry[] => {
-    const { actions, panelActions } = model();
-    const primary = props.mobile ? panelActions : actions;
-    const secondary = props.mobile ? actions : panelActions;
-    return [
-      ...primary.map((action) => chatQuickActionEntry(action, action.id, true)),
-      ...(primary.length && secondary.length
-        ? [
-            {
-              kind: "content" as const,
-              id: "panel-actions",
-              content: <div class="session-menu__separator" role="separator" />,
-            },
-          ]
-        : []),
-      ...secondary.map((action) => chatQuickActionEntry(action, action.id, true)),
-      {
-        kind: "content",
-        id: "header-actions",
-        content: headerActions,
-      },
-    ];
-  });
+  const items = createMemo(
+    (): MenuEntry[] => {
+      const { actions, panelActions } = model();
+      const primary = props.mobile ? panelActions : actions;
+      const secondary = props.mobile ? actions : panelActions;
+      return [
+        ...primary.map((action) => chatQuickActionEntry(action, action.id, true)),
+        ...(primary.length && secondary.length
+          ? [
+              {
+                kind: "content" as const,
+                id: "panel-actions",
+                content: <div class="session-menu__separator" role="separator" />,
+              },
+            ]
+          : []),
+        ...secondary.map((action) => chatQuickActionEntry(action, action.id, true)),
+        {
+          kind: "content",
+          id: "header-actions",
+          content: headerActions,
+        },
+      ];
+    },
+    { lazy: true },
+  );
   return (
     <Show
       when={

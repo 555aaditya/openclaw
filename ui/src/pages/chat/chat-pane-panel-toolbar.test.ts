@@ -13,8 +13,37 @@ import {
   mountChatPaneHeader,
   renderPaneHeaderInto,
 } from "./components/chat-pane-header.test-support.ts";
+import type { HeaderMenuQuickAction } from "./components/chat-quick-action.tsx";
 import type { SidebarPanelDefinition } from "./components/chat-sidebar-region-types.ts";
 import { openSlot, promoteSidebarPanel, setSidebarOpen } from "./sidebar-layout.ts";
+
+it("does not construct closed Layout action SVGs when header props refresh", async () => {
+  const activate = vi.fn();
+  const mounted = mountChatPaneHeader([], { onClosePane: vi.fn() });
+  onTestFinished(() => mounted.container.remove());
+  const createElement = vi.spyOn(document, "createElementNS");
+  onTestFinished(() => createElement.mockRestore());
+  const actions = Array.from({ length: 20 }, (_, index): HeaderMenuQuickAction => ({
+    id: `panel-${index}`,
+    label: `Panel ${index}`,
+    icon: "x",
+    onActivate: () => activate(index),
+  }));
+
+  mounted.update({ title: "Streaming reply", layoutMenuActions: actions });
+  expect(
+    createElement.mock.calls.filter(([namespace]) => namespace === "http://www.w3.org/2000/svg"),
+  ).toHaveLength(0);
+
+  const menu = mounted.container.querySelector(".chat-pane__layout-menu")!;
+  const panel = menu.querySelector<HTMLElement>(".oc-menu")!;
+  menu.querySelector<HTMLButtonElement>(".chat-pane__layout-trigger")!.click();
+  await waitForSolid(() => expect(panel.matches(":popover-open")).toBe(true));
+  const action = panel.querySelector<HTMLButtonElement>('[data-value="panel-19"]')!;
+  expect(action.textContent).toContain("Panel 19");
+  action.click();
+  expect(activate).toHaveBeenCalledExactlyOnceWith(19);
+});
 
 it("keeps content actions and focus in Layout across plugin panel swaps", async () => {
   const { pane, state } = createTestChatPane({
