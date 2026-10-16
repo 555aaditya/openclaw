@@ -16,8 +16,7 @@ import type { InstalledPluginDetailTab } from "./detail-tabs.ts";
 import type { PluginSettingsField } from "./settings-editor.tsx";
 
 /** The page publishes its loaded selection; the existing Ask store owns conversation state. */
-export function createPluginHelp() {
-  let context: ApplicationContext | undefined;
+export function createPluginHelp(context: ApplicationContext) {
   let plugin: PluginHelpReference | undefined;
   let release: (() => void) | undefined;
 
@@ -31,7 +30,6 @@ export function createPluginHelp() {
     },
 
     update(model: {
-      context: ApplicationContext;
       connected: boolean;
       result: PluginListResult | null;
       detail: {
@@ -42,11 +40,6 @@ export function createPluginHelp() {
       catalogDetail: { result: PluginDiscoveryDetailResult | null } | null;
       installedDetailTab: InstalledPluginDetailTab;
     }): void {
-      const nextContext = model.context;
-      if (nextContext !== context) {
-        release?.();
-        context = nextContext;
-      }
       const installed = model.result?.plugins.find(
         (candidate) => candidate.installed && candidate.id === model.detail?.pluginId,
       );
@@ -68,7 +61,7 @@ export function createPluginHelp() {
         : undefined;
       plugin =
         model.connected &&
-        canCallGatewayMethod(nextContext.gateway.snapshot, "openclaw.chat", "operator.admin")
+        canCallGatewayMethod(context.gateway.snapshot, "openclaw.chat", "operator.admin")
           ? installed
             ? {
                 id: installed.id,
@@ -87,14 +80,14 @@ export function createPluginHelp() {
         return;
       }
       // Each release is tied to its publication; a retiring page cannot clear a newer page.
-      release = publishPluginHelpContext(nextContext, help, plugin, {
+      release = publishPluginHelpContext(context, help, plugin, {
         installed: Boolean(installed),
         overview: !installed || model.installedDetailTab !== "configuration",
       });
     },
 
     get ask(): (field?: PluginSettingsField) => Promise<void> {
-      if (!context || !plugin) {
+      if (!plugin) {
         return async () => {};
       }
       const request = createPluginHelpRequest(context, plugin);

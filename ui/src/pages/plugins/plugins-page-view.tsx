@@ -80,7 +80,6 @@ export function PluginsPageView(props: { page: PluginsPageModel }) {
   };
   const ask = createMemo(() => {
     page().help.update({
-      context: page().context,
       connected: page().gateway.connected,
       result: page().state.result,
       detail: page().state.detail,
@@ -350,13 +349,7 @@ export function PluginsPageView(props: { page: PluginsPageModel }) {
         )}
       </SettingsWorkspace>
       <PluginSkillPreview preview={page().skillPreview} state={page().skillPreview.state} />
-      <WizardLogin
-        controller={props.page.mcpLogin.dialog}
-        revision={() => {
-          page();
-          return 0;
-        }}
-      />
+      <WizardLogin controller={props.page.mcpLogin.dialog} />
       <Show when={page().consent.read().consent}>
         {(consent) => {
           const icon = createMemo(() => {

@@ -8,10 +8,10 @@ import { createPluginHelp } from "./plugin-help.ts";
 import { createDiscoveryDetail, createPlugin, createResult } from "./plugins-page.test-support.ts";
 import type { PluginSettingsField } from "./settings-editor.tsx";
 
-function createHelp() {
+function createHelp(context: Parameters<typeof createPluginHelp>[0]) {
   return createRoot((dispose) => {
     onTestFinished(dispose);
-    return { help: createPluginHelp(), dispose };
+    return { help: createPluginHelp(context), dispose };
   });
 }
 
@@ -25,10 +25,9 @@ it.each(["plugin", "route", "connection", "disconnect"])(
   async (change) => {
     const { context, setPathname, setGatewayToken } = createContext(vi.fn());
     setPathname("/settings/plugins/first");
-    const { help, dispose } = createHelp();
+    const { help, dispose } = createHelp(context);
     const model = (id: string) =>
       ({
-        context,
         connected: true,
         result: { plugins: [{ id, name: id, installed: true }] },
         detail: { pluginId: id },
@@ -92,7 +91,7 @@ it.each<{
   ({ id, name, local, contracts, install }) => {
     const { context, setPathname } = createContext(vi.fn());
     setPathname(`/plugins/${id}`);
-    const { help, dispose } = createHelp();
+    const { help, dispose } = createHelp(context);
     const catalog = createDiscoveryDetail(createPlugin({ id, name }));
     catalog.plugin.id = "catalog-workboard";
     catalog.plugin.local.pluginId = local ? id : undefined;
@@ -107,7 +106,6 @@ it.each<{
       readme: "Do not inject this document.",
     };
     const model: Parameters<ReturnType<typeof createPluginHelp>["update"]>[0] = {
-      context,
       connected: true,
       result: createResult([]),
       detail: null,
@@ -167,9 +165,8 @@ it.each([
   async ({ path, label, value, expected, sensitive }) => {
     const { context, setPathname } = createContext(vi.fn());
     setPathname("/settings/plugins/workboard");
-    const { help, dispose } = createHelp();
+    const { help, dispose } = createHelp(context);
     help.update({
-      context,
       connected: true,
       result: { plugins: [{ id: "workboard", name: "Workboard", installed: true }] },
       detail: { pluginId: "workboard" },

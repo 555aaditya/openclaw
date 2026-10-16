@@ -97,7 +97,7 @@ export function createPluginsPage(options: {
   }
 
   let installRequestGeneration = 0;
-  const help = createPluginHelp();
+  const help = createPluginHelp(context);
   let pluginConfigEditPending = false;
   let routeDataConsumed = false;
   let pluginGeneration: number | undefined;
@@ -121,7 +121,7 @@ export function createPluginsPage(options: {
     onSnapshot: handleGatewaySnapshot,
   });
   const skillPreview = createPluginPreview(gateway, publish);
-  const mcpLogin = createPluginMcpLogin(publish, gateway, {
+  const mcpLogin = createPluginMcpLogin(gateway, {
     getDetail: () => state.detail,
     getName: (pluginId) => state.result?.plugins.find((plugin) => plugin.id === pluginId)?.name,
     canSignIn: () => canCallGatewayMethod(gateway.snapshot, "mcp.authLogin", "operator.admin"),
