@@ -1,15 +1,16 @@
 import type { JSX } from "@solidjs/web";
 import { createMemo, Show } from "solid-js";
 import { togglePinnedAgent } from "../app/bootstrap-navigation-preferences.ts";
+import { createApplicationAgent } from "../app/create-agent.ts";
 import { gatewayPresentationScope } from "../app/gateway-presentation-scope.ts";
 import { isMobileNavLayout } from "../app/mobile-nav-layout.ts";
 import { patchSettings } from "../app/settings.ts";
-import { normalizeAgentLabel } from "../lib/agents/display.ts";
 import { openEditor } from "../lib/editor-links.ts";
 import { isGatewayMethodAdvertised } from "../lib/gateway-methods.ts";
 import type { IdentityAvatars } from "../lib/identity-avatar-loader.ts";
 import { openExternalUrlSafe } from "../lib/open-external-url.ts";
 import { projectOverlays } from "../lib/reactive/application.ts";
+import { projectAgents } from "../lib/reactive/domain-capabilities.ts";
 import { t } from "../lib/reactive/i18n.ts";
 import { categoryClearReturnsToGroups } from "../lib/sessions/grouping.ts";
 import {
@@ -107,22 +108,21 @@ export function renderSidebarAgentMenuForController(
     return undefined;
   }
   const trigger = controller.agentMenuTrigger;
+  const agentState = createMemo(() => {
+    const source = host.sessionDataContext?.agents;
+    return source && projectAgents(source);
+  });
   const chipAgent = createMemo(() => host.activeChipAgent()),
     activeId = () => chipAgent().activeId,
     agent = () => chipAgent().agent,
     agents = () => chipAgent().agents,
     identities = () => chipAgent().identities;
-  const activeName = createMemo(() => {
-    const current = chipAgent();
-    return current.agent ? normalizeAgentLabel(current.agent, current.identity) : "";
-  });
   return (
     <SidebarAgentMenu
       {...{
         position,
         basePath: host.basePath,
         activeId: agent() ? activeId() : "",
-        activeName: activeName(),
         agents: agents(),
         identities: identities(),
         pinnedAgentIds: host.pinnedAgentIds,
@@ -162,7 +162,14 @@ export function renderSidebarAgentMenuForController(
           }
           host.switchChipAgent(agentId);
         },
-        onAskCapabilities: (agentId) => host.askAgentCapabilities(agentId),
+        creationPhase: agentState()?.read().agentCreationPhase,
+        onCreateAgent: async () => {
+          const context = host.sessionDataContext;
+          if (context) {
+            await createApplicationAgent(context);
+            controller.closeAgentMenu();
+          }
+        },
         anchor: trigger ?? undefined,
         onClose: (restoreFocus) => {
           if (controller.agentMenuPosition !== position) {

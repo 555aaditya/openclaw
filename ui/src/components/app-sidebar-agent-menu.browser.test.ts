@@ -1,5 +1,5 @@
 import { flush } from "solid-js";
-import { afterEach, describe, expect, it, onTestFinished } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import type { GatewayBrowserClient } from "../api/gateway.ts";
 import { mountSolid } from "../test-helpers/mount-solid.ts";
 import "../test-helpers/load-styles.ts";
@@ -54,6 +54,7 @@ describe.runIf("__vitest_browser__" in globalThis)("sidebar agent menu layout", 
               resolveAvatarUrl: (url) => url,
               avatarErrorHandler: () => () => {},
               agentUnreadCount: () => 0,
+              onAgentSettings: () => {},
             }),
           }),
         { container: root },
@@ -140,6 +141,8 @@ describe.runIf("__vitest_browser__" in globalThis)("sidebar agent menu layout", 
         sidebar.pinnedAgentIds = snapshot.pinnedAgentIds;
       }),
     );
+    const navigate = vi.fn();
+    sidebar.onNavigate = navigate;
     sidebar.connected = true;
     await sidebar.updateComplete;
     // Focus is ready before the dropdown's opening animation finishes.
@@ -193,9 +196,9 @@ describe.runIf("__vitest_browser__" in globalThis)("sidebar agent menu layout", 
       const avatarBox = avatar.getBoundingClientRect();
       const labelBox = label.getBoundingClientRect();
       const rowBox = tile.getBoundingClientRect();
-      expect(rowBox.height).toBe(56);
-      expect(avatarBox.width).toBe(40);
-      expect(labelBox.left - avatarBox.right).toBe(12);
+      expect(rowBox.height).toBeGreaterThanOrEqual(44);
+      expect(avatarBox.width).toBe(28);
+      expect(labelBox.left - avatarBox.right).toBe(10);
       expect(
         Math.abs(avatarBox.y + avatarBox.height / 2 - (rowBox.y + rowBox.height / 2)),
       ).toBeLessThanOrEqual(1);
@@ -212,6 +215,17 @@ describe.runIf("__vitest_browser__" in globalThis)("sidebar agent menu layout", 
     expect(all?.getAttribute("aria-current")).toBe("true");
     await userEvent.keyboard("{ArrowDown}");
     expect(document.activeElement).toBe(sidebar.querySelector('[data-value="agent:main"]'));
+    await userEvent.keyboard("{ArrowDown}");
+    await userEvent.tab();
+    await userEvent.tab();
+    expect(document.activeElement).toBe(
+      sidebar.querySelector('[data-value="agent:release"] .sidebar-agent-menu__settings'),
+    );
+    await userEvent.keyboard("{Enter}");
+    expect(navigate).toHaveBeenCalledExactlyOnceWith("agents", {
+      pathname: "/settings/agents/release",
+    });
+    expect(context.agentSelection.state.selectedId).toBe("main");
   });
 
   it.each([

@@ -40,13 +40,15 @@ const IDENTITY_MENU_LINKS: ReadonlyArray<{
 
 export const COMMAND_VALUE_PREFIX = "command:";
 const LINK_VALUE_PREFIX = "link:";
-type SidebarAgentMenuParams = Omit<SidebarAgentMenuSwitcherParams, "allAgentsScope"> & {
+type SidebarAgentMenuParams = Omit<
+  SidebarAgentMenuSwitcherParams,
+  "allAgentsScope" | "onAgentSettings"
+> & {
   position: { x: number; top: number };
   anchor?: HTMLElement;
   tabFocusTarget?: (backward: boolean) => HTMLElement | undefined;
   basePath: string;
   rosterMode: boolean;
-  activeName: string;
   connected: boolean;
   onQueryChange: (query: string) => void;
   onShowAllAgents: () => void;
@@ -54,7 +56,8 @@ type SidebarAgentMenuParams = Omit<SidebarAgentMenuSwitcherParams, "allAgentsSco
   onPointerLeave: () => void;
   onAfterShow: () => void;
   onSwitchAgent: (agentId: string) => void;
-  onAskCapabilities: (agentId: string) => void;
+  creationPhase?: "checking" | "creating";
+  onCreateAgent: () => Promise<void>;
   onClose: (restoreFocus?: boolean) => void;
   onNavigate: (routeId: NavigationRouteId, options?: ApplicationNavigationOptions) => void;
 };
@@ -106,14 +109,11 @@ export function selectSidebarHelpLink(value: string): boolean {
 
 export function renderSidebarAgentMenu(params: SidebarAgentMenuParams): JSX.Element {
   const position = params.position;
-  const activeId = () => params.activeId;
-  const activeName = () => params.activeName;
   const menuLabel = createMemo(() =>
     t(params.rosterMode ? "agentChip.workspaceMenuLabel" : "agentChip.menuLabel"),
   );
   const agentsTitle = <div class="sidebar-customize-menu__title">{t("agentChip.agents")}</div>;
   const agentsSeparator = <div class="sidebar-customize-menu__separator" role="separator" />;
-  const settingsSeparator = <div class="sidebar-customize-menu__separator" role="separator" />;
   const items = (): MenuEntry[] => [
     ...(params.agents.length > 0
       ? [
@@ -152,6 +152,12 @@ export function renderSidebarAgentMenu(params: SidebarAgentMenuParams): JSX.Elem
       items: renderSidebarAgentMenuSwitcher({
         ...params,
         allAgentsScope: params.rosterMode && params.agents.length > 1,
+        onAgentSettings: (agentId) => {
+          params.onClose(false);
+          params.onNavigate("agents", {
+            pathname: pathForAgentPanel(agentId, null, params.basePath),
+          });
+        },
       }),
     },
     ...(params.agents.length > 0
@@ -163,31 +169,34 @@ export function renderSidebarAgentMenu(params: SidebarAgentMenuParams): JSX.Elem
           },
         ]
       : []),
-    renderSidebarMenuAction("command:new-agent", t("custodian.newAgent"), "userPlus"),
-    renderSidebarMenuAction("command:agents-directory", t("agentChip.seeAllAgents"), "list"),
     {
-      kind: "content",
-      id: "settings-separator",
-      content: settingsSeparator,
+      id: "command:new-agent",
+      label: t("agentChip.createAgent"),
+      class: "sidebar-customize-menu__item sidebar-agent-menu__create",
+      disabled: !params.connected || Boolean(params.creationPhase),
+      closeOnSelect: false,
+      content: (
+        <span class="sidebar-agent-menu__agent-row">
+          <span class="sidebar-agent-menu__create-icon" aria-hidden="true">
+            <Icon name="circlePlus" />
+          </span>
+          <span class="agent-select__option-copy">
+            <span
+              class="agent-select__option-label"
+              role={params.creationPhase ? "status" : undefined}
+            >
+              {t(
+                params.creationPhase === "checking"
+                  ? "agentChip.checkingInference"
+                  : params.creationPhase === "creating"
+                    ? "agentChip.creatingBot"
+                    : "agentChip.createAgent",
+              )}
+            </span>
+          </span>
+        </span>
+      ),
     },
-    ...(activeId()
-      ? [
-          renderSidebarMenuAction(
-            "command:capabilities",
-            t("agentChip.whatCanAgentDo", { name: activeName() }),
-            "circleQuestionMark",
-            { disabled: !params.connected },
-          ),
-        ]
-      : []),
-    renderSidebarMenuAction(
-      "command:agent-settings",
-      activeId()
-        ? t("agentChip.namedSettings", { name: activeName() })
-        : t("agentChip.agentSettings"),
-      "settings",
-      { disabled: !activeId() },
-    ),
   ];
   return (
     <SidebarDropdown
@@ -206,6 +215,10 @@ export function renderSidebarAgentMenu(params: SidebarAgentMenuParams): JSX.Elem
         if (value === "search") {
           return;
         }
+        if (value === "command:new-agent") {
+          void params.onCreateAgent();
+          return;
+        }
         params.onClose(value === "scope:all" && params.rosterMode);
         if (value.startsWith(AGENT_VALUE_PREFIX)) {
           params.onSwitchAgent(decodeURIComponent(value.slice(AGENT_VALUE_PREFIX.length)));
@@ -214,20 +227,6 @@ export function renderSidebarAgentMenu(params: SidebarAgentMenuParams): JSX.Elem
         switch (value) {
           case "scope:all":
             params.onShowAllAgents();
-            break;
-          case `${COMMAND_VALUE_PREFIX}agents-directory`:
-            params.onNavigate("agents-home");
-            break;
-          case `${COMMAND_VALUE_PREFIX}new-agent`:
-            params.onNavigate("custodian", { search: "?intent=new-agent" });
-            break;
-          case `${COMMAND_VALUE_PREFIX}capabilities`:
-            params.onAskCapabilities(activeId());
-            break;
-          case `${COMMAND_VALUE_PREFIX}agent-settings`:
-            params.onNavigate("agents", {
-              pathname: pathForAgentPanel(activeId(), null, params.basePath),
-            });
             break;
         }
       }}

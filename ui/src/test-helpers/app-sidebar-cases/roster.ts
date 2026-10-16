@@ -86,7 +86,7 @@ describe("AppSidebar agent roster", () => {
           [...(menu?.querySelectorAll(':scope > [role^="menuitem"]') ?? [])].map((item) =>
             item.textContent?.trim(),
           ),
-        ).toEqual(["New agent", "See all agents", "What can Harbor do?", "Harbor settings"]);
+        ).toEqual(["Create new agent"]);
         expect(
           menu?.querySelectorAll('.sidebar-agent-menu__agent-list [role^="menuitem"]'),
         ).toHaveLength(4);

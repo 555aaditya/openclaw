@@ -182,7 +182,7 @@ suite.define(() => {
         await expect.poll(() => root.locator("[data-chat-model-option]").count()).toBe(2);
         const trigger = root.locator('.new-session-page__composer [data-chat-model-select="true"]');
         await expect.poll(() => trigger.textContent()).toContain("Retained one");
-        await navigateInApp(page, "agents-home");
+        await navigateInApp(page, "sessions");
         await expect.poll(() => root.count()).toBe(0);
         await page.evaluate(
           ({ key, value }) =>
@@ -305,12 +305,12 @@ suite.define(() => {
           await page.goto(`${suite.server.baseUrl}new?agent=main`);
           await expect.poll(() => rows.count()).toBe(2);
           const reads = (await gateway.getRequests("models.list")).length;
-          await navigateInApp(page, "agents-home");
+          await navigateInApp(page, "sessions");
           await expect.poll(() => root.count()).toBe(0);
           await navigateInApp(page, "new-session", "?agent=main");
           await expect.poll(() => rows.count()).toBe(2);
           expect(await gateway.getRequests("models.list")).toHaveLength(reads);
-          await navigateInApp(page, "agents-home");
+          await navigateInApp(page, "sessions");
           await expect.poll(() => root.count()).toBe(0);
           await page.evaluate(
             ({ key, value }) =>

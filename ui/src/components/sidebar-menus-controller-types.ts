@@ -92,7 +92,6 @@ export interface SidebarMenusControllerHost extends SessionOrganizerControllerHo
     identities: ReadonlyMap<string, AgentIdentityResult>;
   };
   agentUnreadCount(agentId: string): number;
-  askAgentCapabilities(agentId: string): void;
   getRouteSessionKey(): string;
   findSidebarMenuSessionByKey(sessionKey: string): SidebarRecentSession | undefined;
   getSessionNavigationState(): { selectedAgentId: string };

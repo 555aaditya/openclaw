@@ -33,6 +33,7 @@ const enAgentsHome = {
     loading: "Loading Claws...",
     empty: "No Claws found.",
     unavailable: "ClawHub discovery is unavailable. Try again.",
+    disabled: "Claws is disabled. Enable it in Settings → Labs to explore Claws.",
     retry: "Retry",
     add: "Add",
     adding: "Adding...",

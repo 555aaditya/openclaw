@@ -475,11 +475,11 @@ suite.define(() => {
           return { height: bounds.height, width: bounds.width, gap: label.left - avatar.right };
         });
       });
-      expect(rowLayout.map((row) => row.height)).toEqual([56, 56, 56, 56, 56]);
+      expect(rowLayout.map((row) => row.height)).toEqual([44, 44, 44, 44, 44]);
       expect(new Set(rowLayout.map((row) => row.width)).size).toBe(1);
-      expect(rowLayout.map((row) => row.gap)).toEqual([12, 12, 12, 12, 12]);
-      const capabilities = menu.getByRole("menuitem", {
-        name: "What can Scheduled Automations do?",
+      expect(rowLayout.map((row) => row.gap)).toEqual([10, 10, 10, 10, 10]);
+      const createAgent = menu.getByRole("menuitem", {
+        name: "Create new agent",
         exact: true,
       });
       for (const scale of [1, 1.4]) {
@@ -489,10 +489,10 @@ suite.define(() => {
         await captureSidebarUiProof(suite, page, `agent-menu-long-label-${scale}.png`);
         await expect
           .poll(() =>
-            capabilities.evaluate((item) => {
-              const label = item.querySelector(".sidebar-customize-menu__text");
+            createAgent.evaluate((item) => {
+              const label = item.querySelector(".agent-select__option-label");
               if (!label) {
-                throw new Error("Capabilities label is missing");
+                throw new Error("Create agent label is missing");
               }
               return label.getBoundingClientRect().right - item.getBoundingClientRect().right;
             }),

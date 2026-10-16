@@ -8,6 +8,8 @@ import type {
   AgentsListResult,
   ToolsCatalogResult,
 } from "../../api/types.ts";
+import { t } from "../../i18n/index.ts";
+import { MODEL_SETUP_VERIFY_TIMEOUT_MS } from "../../pages/model-setup/state.ts";
 import { formatUiError } from "../format-error.ts";
 import type { GatewayConnectionSnapshot } from "../gateway-connection-lifecycle.ts";
 import {
@@ -64,6 +66,7 @@ type AgentCapabilityState = {
   agentsLoading: boolean;
   agentsError: string | null;
   agentsList: AgentsListResult | null;
+  agentCreationPhase?: "checking" | "creating";
 };
 
 export type AgentCapability = ReturnType<typeof createAgentCapability>;
@@ -187,6 +190,7 @@ export function createAgentCapability(gateway: AgentGateway) {
   const listeners = new Set<(state: AgentCapabilityState) => void>();
   let disposed = false;
   let agentsRequest: Promise<AgentsListResult | null> | null = null;
+  let creatingAgentId: string | null = null;
 
   const retireAgentsRequest = () => {
     agentsRequest = null;
@@ -314,6 +318,8 @@ export function createAgentCapability(gateway: AgentGateway) {
     state.client = snapshot.client;
     state.connected = connected;
     if (connectionChanged && (clientChanged || !connected)) {
+      creatingAgentId = null;
+      state.agentCreationPhase = undefined;
       retireAgentsRequest();
       fileRequests.clear();
       for (const status of files.values()) {
@@ -334,6 +340,65 @@ export function createAgentCapability(gateway: AgentGateway) {
     },
     ensureList: () => loadList(false),
     refreshList: () => loadList(true),
+    async create(name: string): Promise<string | null> {
+      const client = state.client;
+      if (!client || !state.connected || disposed || state.agentCreationPhase) {
+        return null;
+      }
+      const agentId = `bot-${crypto.randomUUID()}`;
+      creatingAgentId = agentId;
+      const isCurrent = () =>
+        !disposed && state.client === client && state.connected && creatingAgentId === agentId;
+      state.agentCreationPhase = "checking";
+      publish();
+      try {
+        // Check the new agent's inherited primary route, not the selected agent's
+        // override or Crestodian's utility model, before creating persistent state.
+        const verification = await client.request<{ ok: boolean; error?: string }>(
+          "openclaw.setup.verify",
+          { agentId, modelTarget: "primary" },
+          { timeoutMs: MODEL_SETUP_VERIFY_TIMEOUT_MS },
+        );
+        if (!isCurrent()) {
+          return null;
+        }
+        if (!verification.ok) {
+          throw new Error(verification.error || t("agentChip.inferenceUnavailable"));
+        }
+        const previous = state.agentsList ?? (await loadList(false));
+        if (!isCurrent()) {
+          return null;
+        }
+        if (!previous) {
+          throw new Error(state.agentsError || t("agentChip.rosterUnavailable"));
+        }
+        state.agentCreationPhase = "creating";
+        publish();
+        const created = await client.request<{ agentId: string; name: string }>("agents.create", {
+          agentId,
+          name,
+        });
+        if (!isCurrent()) {
+          return null;
+        }
+        const refreshed = await loadList(true);
+        if (isCurrent() && !refreshed) {
+          // The create receipt is authoritative even if the following roster read
+          // fails. Keep its display name so a successful create never shows an ID.
+          state.agentsList = {
+            ...previous,
+            agents: [...previous.agents, { id: created.agentId, name: created.name }],
+          };
+        }
+        return isCurrent() ? created.agentId : null;
+      } finally {
+        if (creatingAgentId === agentId) {
+          creatingAgentId = null;
+          state.agentCreationPhase = undefined;
+          publish();
+        }
+      }
+    },
     files(agentId: string | null | undefined) {
       const normalized = normalizeOptionalString(agentId);
       return normalized

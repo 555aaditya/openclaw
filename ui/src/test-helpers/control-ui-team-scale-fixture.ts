@@ -388,7 +388,7 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
     ],
   };
   const sidebarEntries = [
-    "route:agents-home",
+    "route:sessions",
     ...pinnedKeys.map((key) => `session:${key}`),
     ...plugins.map((plugin) => `plugin:${plugin.pluginId}/overview`),
   ];

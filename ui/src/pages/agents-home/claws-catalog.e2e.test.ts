@@ -43,7 +43,7 @@ const config = { gateway: { controlUi: { experimental: { claws: true } } } };
 let browser: Browser;
 let server: ControlUiE2eServer;
 
-describe.skipIf(!browserAvailable)("Claws Add in Agents", () => {
+describe.skipIf(!browserAvailable)("Claws discovery and Add", () => {
   beforeAll(async () => {
     server = await startControlUiE2eServer(undefined, { source: true });
     browser = await chromium.launch({ executablePath });
@@ -148,7 +148,7 @@ describe.skipIf(!browserAvailable)("Claws Add in Agents", () => {
       const page = await context.newPage();
       const gateway = await fixture(page);
       try {
-        await page.goto(`${server.baseUrl}agents`);
+        await page.goto(`${server.baseUrl}claws`);
         const card = page.locator("[data-claws-explore] [data-claws-entry]").first();
         await card.waitFor();
         expect(await card.getByRole("button", { name: "Add" }).count()).toBe(1);
@@ -157,7 +157,7 @@ describe.skipIf(!browserAvailable)("Claws Add in Agents", () => {
         expect(await card.textContent()).not.toContain("@openclaw/workflow-operator");
         expect(await page.locator("[data-claws-attention]").count()).toBe(0);
         await card.getByRole("button", { name: "Add" }).click();
-        await page.waitForURL(/\/agents\/claws\/workflow-operator$/u);
+        await page.waitForURL(/\/claws\/workflow-operator$/u);
         const detail = page.locator(".plugin-catalog-detail");
         await detail.getByRole("heading", { name: "Skills" }).waitFor();
         const publisher = detail.locator(".plugin-catalog-detail__publisher");
@@ -241,7 +241,7 @@ describe.skipIf(!browserAvailable)("Claws Add in Agents", () => {
     const page = await context.newPage();
     const gateway = await fixture(page);
     try {
-      await page.goto(`${server.baseUrl}agents`);
+      await page.goto(`${server.baseUrl}claws`);
       await page
         .locator("[data-claws-explore] [data-claws-entry]")
         .first()

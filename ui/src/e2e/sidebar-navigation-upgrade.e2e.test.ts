@@ -13,7 +13,7 @@ import { createControlUiE2eSuite } from "./control-ui-e2e-suite.test-support.ts"
 
 const suite = createControlUiE2eSuite({ name: "Rail shortcut storage upgrade" });
 const legacyEntries = [
-  "route:agents-home",
+  "route:sessions",
   "route:dashboards",
   "route:systems",
   "route:usage",
@@ -43,7 +43,7 @@ suite.define(() => {
           realtimeTalkInputDeviceId: "synthetic-microphone",
           pinnedAgentIds: ["research"],
           sidebarEntries: legacyEntries,
-          sidebarPinnedRoutes: ["agents-home", "dashboards", "systems", "usage"],
+          sidebarPinnedRoutes: ["sessions", "dashboards", "systems", "usage"],
           navigationByProfile: { alex: { sidebarEntries: legacyEntries } },
         };
         await page.addInitScript(
@@ -125,7 +125,7 @@ suite.define(() => {
             storageKey,
             JSON.stringify({
               sidebarEntries: entries,
-              sidebarPinnedRoutes: ["agents-home", "dashboards", "systems", "usage"],
+              sidebarPinnedRoutes: ["sessions", "dashboards", "systems", "usage"],
             }),
           );
         },

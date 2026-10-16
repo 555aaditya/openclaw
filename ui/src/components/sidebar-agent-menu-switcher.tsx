@@ -20,6 +20,7 @@ export type SidebarAgentMenuSwitcherParams = {
   resolveAvatarUrl: (url: string) => string | null;
   avatarErrorHandler: (url: string) => () => void;
   agentUnreadCount: (agentId: string) => number;
+  onAgentSettings: (agentId: string) => void;
 };
 function renderAgentAvatar(
   readAgent: () => GatewayAgentRow,
@@ -88,7 +89,6 @@ function renderAgentRow(
   readAgent: () => GatewayAgentRow,
   params: SidebarAgentMenuSwitcherParams,
   readAutofocus: () => boolean,
-  readDuplicateName: () => boolean,
 ) {
   const agentId = createMemo(() => normalizeAgentId(readAgent().id));
   const identity = createMemo(() => params.identities.get(agentId()) ?? null);
@@ -101,14 +101,11 @@ function renderAgentRow(
   const unread = createMemo(() =>
     agentId() === params.activeId ? 0 : params.agentUnreadCount(agentId()),
   );
-  const description = () => (readDuplicateName() ? agentId() : undefined);
   return {
     as: "div",
     id: `${AGENT_VALUE_PREFIX}${encodeURIComponent(agentId())}`,
     get label() {
-      return [label(), description(), unread() > 0 ? t("sessionsView.unread") : null]
-        .filter(Boolean)
-        .join(" ");
+      return [label(), unread() > 0 ? t("sessionsView.unread") : null].filter(Boolean).join(" ");
     },
     get class() {
       return [
@@ -132,9 +129,6 @@ function renderAgentRow(
           <span class="agent-select__option-heading">
             <span class="agent-select__option-label">{label()}</span>
           </span>
-          {description() ? (
-            <span class="agent-select__option-description">{description()}</span>
-          ) : undefined}
         </span>
         <span class="sidebar-agent-menu__agent-status">
           {params.agents.length > 3 ? (
@@ -172,6 +166,21 @@ function renderAgentRow(
           {unread() > 0 ? (
             <span class="session-unread-dot" role="img" aria-label={t("sessionsView.unread")} />
           ) : undefined}
+          <button
+            type="button"
+            class="sidebar-agent-menu__settings"
+            aria-label={t("agentChip.namedSettings", { name: label() })}
+            title={t("agentChip.namedSettings", { name: label() })}
+            tabindex="-1"
+            data-form-control
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              params.onAgentSettings(agentId());
+            }}
+          >
+            <Icon name="settings" />
+          </button>
         </span>
       </span>
     ),
@@ -187,14 +196,6 @@ export function renderSidebarAgentMenuSwitcher(params: SidebarAgentMenuSwitcherP
     );
   });
   const query = createMemo(() => params.query.trim().toLocaleLowerCase());
-  const nameCounts = createMemo(() => {
-    const counts = new Map<string, number>();
-    for (const agent of agents()) {
-      const label = normalizeAgentLabel(agent, params.identities.get(normalizeAgentId(agent.id)));
-      counts.set(label, (counts.get(label) ?? 0) + 1);
-    }
-    return counts;
-  });
   const visibleAgents = createMemo(() =>
     agents().filter((agent) => {
       const label = normalizeAgentLabel(agent, params.identities.get(normalizeAgentId(agent.id)));
@@ -245,10 +246,6 @@ export function renderSidebarAgentMenuSwitcher(params: SidebarAgentMenuSwitcherP
         () => agent,
         params,
         () => agent === autofocusAgent(),
-        () =>
-          (nameCounts().get(
-            normalizeAgentLabel(agent, params.identities.get(normalizeAgentId(agent.id))),
-          ) ?? 0) > 1,
       ),
     );
   }

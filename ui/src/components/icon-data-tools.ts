@@ -220,6 +220,10 @@ export const toolIconData = {
   bookmark: strokeIconData([
     ["path", { d: "m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" }],
   ]),
+  circlePlus: strokeIconData([
+    ["circle", { cx: "12", cy: "12", r: "9" }],
+    ["path", { d: "M8 12h8M12 8v8" }],
+  ]),
   plus: strokeIconData([["path", { d: "M5 12h14M12 5v14" }]]),
   gitBranch: strokeIconData([
     ["circle", { cx: "6", cy: "5", r: "2" }],
