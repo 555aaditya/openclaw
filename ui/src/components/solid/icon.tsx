@@ -1,5 +1,4 @@
-import { dynamic, type JSX } from "@solidjs/web";
-import { For } from "solid-js";
+import { dynamic, isServer, type JSX } from "@solidjs/web";
 import { brandIconData, type BrandIconName } from "../icon-data-brand.ts";
 import { keyboardIconData, type KeyboardIconSymbol } from "../icon-data-tools.ts";
 import { strokeIconData, type IconData, type IconNode } from "../icon-data-types.ts";
@@ -15,13 +14,31 @@ type IconPresentation = {
   "aria-label"?: string;
 };
 
-function IconShape(props: { node: IconNode }) {
-  const Shape = dynamic(() => props.node[0]);
-  return (
-    <Shape {...props.node[1]}>
-      <For each={props.node[2]}>{(node) => <IconShape node={node} />}</For>
-    </Shape>
-  );
+// Keyboard icons wrap their data on each read; the immutable child array is the cache identity.
+const iconShapes = new WeakMap<readonly IconNode[], readonly SVGElement[]>();
+
+function createIconShape([tag, attributes, children]: IconNode): SVGElement {
+  const shape = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const [name, value] of Object.entries(attributes)) {
+    shape.setAttribute(name, String(value));
+  }
+  shape.append(...(children?.map(createIconShape) ?? []));
+  return shape;
+}
+
+function renderIconShapes(nodes: readonly IconNode[]): JSX.Element {
+  if (isServer) {
+    return nodes.map(([tag, attributes, children]) => {
+      const Shape = dynamic(() => tag, { static: true });
+      return <Shape {...attributes}>{children && renderIconShapes(children)}</Shape>;
+    });
+  }
+  let shapes = iconShapes.get(nodes);
+  if (!shapes) {
+    shapes = nodes.map(createIconShape);
+    iconShapes.set(nodes, shapes);
+  }
+  return shapes.map((shape) => shape.cloneNode(true));
 }
 
 function IconSvg(props: IconPresentation & { data: IconData }) {
@@ -34,7 +51,7 @@ function IconSvg(props: IconPresentation & { data: IconData }) {
       aria-label={props["aria-label"]}
       role={props["aria-label"] ? "img" : undefined}
     >
-      <For each={props.data.children}>{(node) => <IconShape node={node} />}</For>
+      {renderIconShapes(props.data.children)}
     </svg>
   );
 }
