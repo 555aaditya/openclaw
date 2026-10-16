@@ -93,6 +93,109 @@ afterEach(async () => {
 });
 
 describe("update readiness generation", () => {
+  it.each(
+    (["npm", "pnpm", "bun"] as const).flatMap((mode) =>
+      (
+        [
+          "ready",
+          "starting",
+          "old-version",
+          "old-build",
+          "missing-build",
+          "retained-identity",
+        ] as const
+      ).map((state) => ({ mode, state })),
+    ),
+  )(
+    "observes a package watcher restart without failing --no-restart ($mode, $state)",
+    async ({ mode, state }) => {
+      const verified = state === "ready" || state === "retained-identity";
+      mockProcessPlatform("linux");
+      vi.spyOn(gatewayService, "resolveGatewayService").mockReturnValue(
+        makeGatewayService({ status: "running", pid: 8000 }),
+      );
+      inspectPortUsage.mockImplementation(async (port) => ({
+        port,
+        status: "busy",
+        listeners: [{ pid: 8000, commandLine: "openclaw-gateway" }],
+        hints: [],
+      }));
+      callGateway.mockImplementation(
+        state === "starting"
+          ? async () => {
+              throw new Error("gateway timeout after 3000ms");
+            }
+          : gatewayHealthResponse({
+              server: {
+                version:
+                  state === "old-version" || state === "retained-identity"
+                    ? "2026.9.7"
+                    : "2026.9.8",
+                buildId:
+                  state === "missing-build"
+                    ? undefined
+                    : state === "old-build"
+                      ? "previous-build"
+                      : state === "retained-identity"
+                        ? "retained-build"
+                        : "candidate",
+                bootId: "watcher-successor",
+              },
+            }),
+      );
+      const result: UpdateRunResult = {
+        status: "ok",
+        mode,
+        after: { version: "2026.9.8", buildId: "candidate" },
+        steps: [],
+        durationMs: 0,
+      };
+      const outcome = await maybeRestartService({
+        result,
+        opts: { json: true, restart: false, run: { runId: "watcher-restart", env: {} } },
+        shouldRestart: false,
+        observePackageReplacement: true,
+        expectedGatewayIdentity:
+          state === "retained-identity"
+            ? { version: "2026.9.7", buildId: "retained-build" }
+            : undefined,
+        refreshServiceEnv: false,
+        serviceEnv: { HOME: "/synthetic-home" },
+        gatewayPort: await listen(),
+        timeoutMs: 1000,
+      });
+      expect(outcome).toBe("ok");
+      expect(runUpdatedInstallGatewayCommand).not.toHaveBeenCalled();
+      expect(result.status).toBe("ok");
+      expect(result.steps).toHaveLength(1);
+      expect(result.steps[0]?.failureFacts).toBeUndefined();
+      expect(result.steps[0]?.termination).toBeUndefined();
+      expect(result.steps[0]?.advisory?.message).toEqual(
+        verified ? undefined : expect.stringContaining("--no-restart"),
+      );
+      expect(recordUpdateRunVerification).toHaveBeenCalledWith(
+        "watcher-restart",
+        expect.objectContaining({
+          versionMatch: state === "starting" ? undefined : verified,
+        }),
+        expect.anything(),
+      );
+      const facts = vi.mocked(recordUpdateRunVerification).mock.calls.at(-1)?.[1];
+      expect(facts && isUpdateRunVerificationConfirmed(facts)).toBe(verified);
+      if (state === "old-build") {
+        expect(facts?.runningBuildId).toBe("previous-build");
+        expect(result.steps[0]?.advisory?.message).toContain("candidate");
+        expect(result.steps[0]?.advisory?.message).toContain("previous-build");
+        expect(
+          renderUpdateRunReport({
+            ...updateRunReportInputFromResult(result),
+            verification: facts ?? {},
+          }).markdown,
+        ).toContain("build mismatch");
+      }
+    },
+  );
+
   it.each(["transient-timeout", "mixed"])(
     "records collection and channel probe warnings after core verification (%s)",
     async (kind) => {
