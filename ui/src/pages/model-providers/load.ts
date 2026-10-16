@@ -24,6 +24,7 @@ registerSettingsEnglish();
 
 export const MODEL_PROVIDERS_USAGE_RANGES = [7, 30, 90] as const;
 export type ModelProvidersUsageRange = (typeof MODEL_PROVIDERS_USAGE_RANGES)[number];
+export const DEFAULT_MODEL_PROVIDERS_USAGE_RANGE: ModelProvidersUsageRange = 30;
 
 /** Local session usage across every agent for the selected range. */
 export type ModelProviderLocalUsage = {
@@ -80,7 +81,13 @@ function settleRequest<T>(promise: Promise<T>): Promise<RequestResult<T>> {
 
 export async function loadModelProvidersData(
   client: GatewayBrowserClient,
-  opts: { agentId: string; refresh?: boolean; signal?: AbortSignal },
+  opts: {
+    agentId: string;
+    refresh?: boolean;
+    signal?: AbortSignal;
+    /** Reads local usage beside the core sources, so the first paint has it. */
+    usageDays?: ModelProvidersUsageRange;
+  },
 ): Promise<ModelProvidersData> {
   const loadConfiguredCatalog = (refresh = false) =>
     settleRequest(
@@ -100,10 +107,13 @@ export async function loadModelProvidersData(
         refreshResult.ok ? refreshResult : loadConfiguredCatalog(),
       )
     : loadConfiguredCatalog();
-  const [authStatus, catalog, refreshResult] = await Promise.all([
+  const [authStatus, catalog, refreshResult, localUsage] = await Promise.all([
     authStatusLoad,
     catalogLoad,
     catalogRefresh ?? Promise.resolve(undefined),
+    opts.usageDays && opts.signal
+      ? loadModelProviderUsage(client, opts.signal, opts.usageDays)
+      : Promise.resolve(null),
   ]);
   return {
     authStatus:
@@ -116,7 +126,7 @@ export async function loadModelProvidersData(
           ? modelCatalogRefreshError(catalog.result, t("modelProviders.defaults.discoverFailed"))
           : errorMessage(catalog.error),
     providerUsage: null,
-    localUsage: null,
+    localUsage,
     updatedAt: Date.now(),
     // Auth status is the primary provider list; its failure is the only one
     // worth surfacing as a page-level error.
@@ -135,7 +145,8 @@ export function loadModelProviderUsage(
   return requestSessionUsage(
     client,
     { startDate: dates[0]!, endDate: dates.at(-1)!, scope: "family", timeZone: "local" },
-    { signal, projection: "overview" },
+    // Only the aggregates feed this page; the session list is one row, not a page of 50.
+    { signal, limit: 1 },
   )
     .then((result): ModelProviderLocalUsage | null =>
       result?.aggregates

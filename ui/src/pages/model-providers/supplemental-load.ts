@@ -6,6 +6,7 @@ import {
 } from "../../lib/provider-usage-request.ts";
 import { UsageRefreshPolicy } from "../usage/refresh-policy.ts";
 import {
+  DEFAULT_MODEL_PROVIDERS_USAGE_RANGE,
   loadModelProviderUsage,
   type ModelProvidersData,
   type ModelProvidersUsageRange,
@@ -47,7 +48,7 @@ export class ModelProviderSupplementalLoader {
     this.options.setData({
       ...data,
       providerUsage: previous?.providerUsage ?? data.providerUsage,
-      localUsage: previous?.localUsage ?? data.localUsage,
+      localUsage: data.localUsage ?? previous?.localUsage ?? null,
     });
     this.options.setDataClient(client);
     if (data.providerUsage !== null) {
@@ -64,11 +65,11 @@ export class ModelProviderSupplementalLoader {
       !this.options.isCoreLoading() &&
       !this.loading &&
       (previous?.providerUsage == null || this.forceReload) &&
-      data.providerUsage === null &&
-      data.localUsage === null
+      data.providerUsage === null
     ) {
       this.forceReload = false;
-      void this.loadRequests(client, true);
+      // The core load normally carries local usage; read it here only when it did not.
+      void this.loadRequests(client, data.localUsage === null && previous?.localUsage == null);
     }
   }
 
@@ -108,7 +109,7 @@ export class ModelProviderSupplementalLoader {
   }
 
   /** Days of local usage the overview shows; it outlives reloads and agent changes. */
-  usageRange: ModelProvidersUsageRange = 30;
+  usageRange: ModelProvidersUsageRange = DEFAULT_MODEL_PROVIDERS_USAGE_RANGE;
 
   /** A range change re-reads local usage only; provider usage keeps its refresh policy. */
   setUsageRange(range: ModelProvidersUsageRange): void {

@@ -129,6 +129,7 @@ export function createModelProviders(
       core.resetCatalog();
       supplemental.adoptCoreData(client, data);
     },
+    usageDays: () => supplemental.usageRange,
     onCatalogComplete: (result) => {
       if (state.data) {
         setState("data", {

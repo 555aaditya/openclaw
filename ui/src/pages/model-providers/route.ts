@@ -34,7 +34,11 @@ async function loadModelProvidersRouteData(
   const selectionIntentRevision = selection.intentRevision;
   const owner = { gateway, gatewaySnapshot, selectionIntentRevision, connect, provider };
   let agentId = selection.state.selectedId;
-  const { EMPTY_MODEL_PROVIDERS_DATA, loadModelProvidersData } = await import("./load.ts");
+  const {
+    DEFAULT_MODEL_PROVIDERS_USAGE_RANGE,
+    EMPTY_MODEL_PROVIDERS_DATA,
+    loadModelProvidersData,
+  } = await import("./load.ts");
   const client = gatewaySnapshot.phase === "connected" ? gatewaySnapshot.client : null;
   // Both awaits can outlive the route or its Gateway/agent owner. Metadata-only
   // snapshot publications preserve the client and hello, so remain valid.
@@ -58,7 +62,11 @@ async function loadModelProvidersRouteData(
     if (agentId && isCurrent()) {
       return {
         ...owner,
-        data: await loadModelProvidersData(client, { agentId, signal: options.signal }),
+        data: await loadModelProvidersData(client, {
+          agentId,
+          signal: options.signal,
+          usageDays: DEFAULT_MODEL_PROVIDERS_USAGE_RANGE,
+        }),
         client,
         agentId,
       };
