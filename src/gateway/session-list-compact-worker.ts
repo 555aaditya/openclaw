@@ -16,14 +16,10 @@ import {
   type CompactSessionListRow,
   type CompactSessionListSelection,
 } from "./session-list-compact.js";
-import type { SessionEntrySelection } from "./session-list-filters.js";
+import type { SessionEntrySelection, SessionListFilterParams } from "./session-list-filters.js";
 import type { SessionEntryPair } from "./session-list-order.js";
-import type { SessionRowProjection } from "./session-row-projection.js";
+import type { SelectionChange } from "./session-row-projection-record.js";
 import { resolveSessionVisibility } from "./session-sharing-policy.js";
-import type {
-  prepareProjectedSessionList,
-  prepareSessionRowSelection,
-} from "./session-utils-list.js";
 
 export type CompactSessionListCommand =
   | { kind: "reset" }
@@ -36,10 +32,28 @@ export type CompactSessionListCommand =
       ownerFirstProfileId?: string;
     };
 export type CompactSessionListReply = CompactSessionListSelection | undefined;
-type PreparedSelection = ReturnType<typeof prepareSessionRowSelection>;
-type PreparedList = ReturnType<typeof prepareProjectedSessionList>;
+type PreparedSelection = Pick<
+  SessionListFilterParams,
+  "cfg" | "entries" | "configuredAgentIds" | "getTarget" | "getRowContext"
+> & { scope: object };
+type PreparedList = {
+  prepared: PreparedSelection;
+  filters: Pick<SessionListFilterParams, "now">;
+  presentation: {
+    cachedSelection: (opts: SessionsListParams) => SessionEntrySelection | undefined;
+    sharing: { listAudience: CompactSessionListAudience | undefined; cacheKey: string };
+  };
+};
+type SelectionProjection = {
+  onSelectionChange: (listener: (change: SelectionChange) => void) => void;
+  state: {
+    revision: object;
+    cfg: PreparedSelection["cfg"];
+    rowContext: ReturnType<PreparedSelection["getRowContext"]>;
+  };
+};
 
-const indexes = new WeakMap<SessionRowProjection, ReturnType<typeof createIndex>>();
+const indexes = new WeakMap<SelectionProjection, ReturnType<typeof createIndex>>();
 const log = createSubsystemLogger("gateway/session-selection");
 
 function captureRow(prepared: PreparedSelection, key: string): CompactSessionListRow | undefined {
@@ -80,9 +94,10 @@ function captureRow(prepared: PreparedSelection, key: string): CompactSessionLis
   };
 }
 
-function createIndex(projection: SessionRowProjection) {
+function createIndex(projection: SelectionProjection) {
   let pool: WorkerTaskPool<CompactSessionListCommand, CompactSessionListReply> | undefined;
-  let source: PreparedSelection | undefined;
+  let source: Pick<PreparedSelection, "scope" | "cfg"> | undefined;
+  let seeding: PreparedSelection | undefined;
   let identityRevision: object | undefined;
   let ready = false;
   let stopped = false;
@@ -92,6 +107,7 @@ function createIndex(projection: SessionRowProjection) {
     epoch++;
     ready = false;
     source = undefined;
+    seeding = undefined;
     dirty.clear();
   };
   projection.onSelectionChange((change) => {
@@ -111,13 +127,18 @@ function createIndex(projection: SessionRowProjection) {
     });
     return pool.run(input, { timeoutMs: 10_000 });
   };
-  const flush = async (prepared: PreparedSelection) => {
+  const captureRows = (prepared: PreparedSelection, keys: string[]) =>
+    keys.map((key): [string, CompactSessionListRow | undefined] => [
+      key,
+      captureRow(prepared, key),
+    ]);
+  const flush = (prepared: PreparedSelection) => {
     if (!dirty.size) {
-      return;
+      return undefined;
     }
     const keys = [...dirty];
     dirty.clear();
-    await run({ kind: "update", rows: keys.map((key) => [key, captureRow(prepared, key)]) });
+    return run({ kind: "update", rows: captureRows(prepared, keys) });
   };
   const retire = () => {
     reset();
@@ -133,6 +154,36 @@ function createIndex(projection: SessionRowProjection) {
     source?.scope === prepared.scope &&
     source.cfg === prepared.cfg &&
     identityRevision === prepared.getRowContext().identityProjection?.revision;
+  const seedRows = async (generation: number) => {
+    // Keep preparation in cancellable owner state, never in a frame awaiting worker IPC.
+    await yieldToRequests();
+    if (generation !== epoch || !seeding) {
+      return;
+    }
+    await run({ kind: "reset" });
+    if (generation !== epoch || !seeding) {
+      return;
+    }
+    // Accepted changes splice the retained order; snapshot keys without retaining entries.
+    const keys = Array.from(seeding.entries("all"), ([key]) => key);
+    for (let offset = 0; offset < keys.length; offset += 256) {
+      if (generation !== epoch || !seeding) {
+        return;
+      }
+      await run({ kind: "update", rows: captureRows(seeding, keys.slice(offset, offset + 256)) });
+      if (offset + 256 < keys.length) {
+        await yieldToRequests();
+      }
+    }
+    if (generation !== epoch || !seeding) {
+      return;
+    }
+    await flush(seeding);
+    if (generation === epoch) {
+      seeding = undefined;
+      ready = true;
+    }
+  };
   return {
     // One active federation scope bounds the replica independently of arbitrary caller queries.
     // A cold or changed scope continues through the existing synchronous selector.
@@ -141,44 +192,10 @@ function createIndex(projection: SessionRowProjection) {
         return;
       }
       reset();
-      source = prepared;
+      source = { scope: prepared.scope, cfg: prepared.cfg };
+      seeding = prepared;
       identityRevision = prepared.getRowContext().identityProjection?.revision;
-      const generation = epoch;
-      void (async () => {
-        // Start only after the response; each bounded transfer yields to foreground requests.
-        await yieldToRequests();
-        if (stopped || generation !== epoch) {
-          return;
-        }
-        await run({ kind: "reset" });
-        // Accepted changes splice the retained order while transfers yield.
-        const entries = Array.from(prepared.entries("all"));
-        let batch: Array<[string, CompactSessionListRow | undefined]> = [];
-        for (const [key] of entries) {
-          if (stopped || generation !== epoch) {
-            return;
-          }
-          batch.push([key, captureRow(prepared, key)]);
-          if (batch.length === 256) {
-            await run({ kind: "update", rows: batch });
-            batch = [];
-            await yieldToRequests();
-          }
-        }
-        if (batch.length) {
-          if (stopped || generation !== epoch) {
-            return;
-          }
-          await run({ kind: "update", rows: batch });
-        }
-        if (stopped || generation !== epoch) {
-          return;
-        }
-        await flush(prepared);
-        if (!stopped && generation === epoch) {
-          ready = true;
-        }
-      })().catch(failed);
+      void seedRows(epoch).catch(failed);
     },
     prepare(prepare: () => PreparedList, opts: SessionsListParams, client?: GatewayClient | null) {
       if (!ready || !supportsCompactSessionList(opts)) {
@@ -250,7 +267,7 @@ function createIndex(projection: SessionRowProjection) {
   };
 }
 
-export function compactSessionListIndex(projection: SessionRowProjection) {
+export function compactSessionListIndex(projection: SelectionProjection) {
   let index = indexes.get(projection);
   if (!index) {
     index = createIndex(projection);
@@ -259,7 +276,7 @@ export function compactSessionListIndex(projection: SessionRowProjection) {
   return index;
 }
 
-export function disposeCompactSessionListIndex(projection: SessionRowProjection) {
+export function disposeCompactSessionListIndex(projection: SelectionProjection) {
   indexes.get(projection)?.dispose();
   indexes.delete(projection);
 }
