@@ -64,7 +64,10 @@ describe("audit writer shared worker", () => {
     expect(writer.record(first)).toBe(true);
     expect(writer.record(last)).toBe(true);
     await writer.stop();
-    const page = await listAuditEvents({ database: { env: { OPENCLAW_STATE_DIR: stateDir } } });
+    const page = await listAuditEvents({
+      database: { env: { OPENCLAW_STATE_DIR: stateDir } },
+      limit: 10,
+    });
     expect(page.events.map((event) => event.runId)).toEqual(["last", "first"]);
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain("sourceSequence");
