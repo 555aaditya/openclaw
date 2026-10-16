@@ -1,3 +1,4 @@
+import { MEDIA_TICKET_REFRESH_SKEW_MS } from "../../../api/artifact-download.ts";
 import { fetchControlUiResource, subscribeBrowserAuthRestored } from "../../../app/browser-http.ts";
 import { t } from "../../../i18n/index.ts";
 import { formatUiExternalText } from "../../../lib/format-error.ts";
@@ -44,7 +45,6 @@ type AssistantAttachmentAvailability =
 
 export const ASSISTANT_ATTACHMENT_UNAVAILABLE_RETRY_MS = 5_000;
 const ASSISTANT_ATTACHMENT_METADATA_FETCH_TIMEOUT_MS = 30_000;
-export const ASSISTANT_ATTACHMENT_MEDIA_TICKET_REFRESH_SKEW_MS = 30_000;
 export const ASSISTANT_ATTACHMENT_MEDIA_TICKET_MAX_REFRESH_RETRIES = 2;
 
 export function resolveAssistantAttachmentAvailability(
@@ -90,7 +90,7 @@ export function resolveAssistantAttachmentAvailability(
       (cached.refreshAfter !== undefined
         ? cached.refreshAfter <= now
         : !cached.mediaTicketExpiresAt ||
-          cached.mediaTicketExpiresAt - now <= ASSISTANT_ATTACHMENT_MEDIA_TICKET_REFRESH_SKEW_MS)
+          cached.mediaTicketExpiresAt - now <= MEDIA_TICKET_REFRESH_SKEW_MS)
     ) {
       if (resource.pending) {
         return cached;
@@ -445,7 +445,7 @@ function scheduleAssistantAttachmentRefresh(
           availability.mediaTicket &&
           availability.mediaTicketExpiresAt
         ? (availability.refreshAfter ??
-          availability.mediaTicketExpiresAt - ASSISTANT_ATTACHMENT_MEDIA_TICKET_REFRESH_SKEW_MS)
+          availability.mediaTicketExpiresAt - MEDIA_TICKET_REFRESH_SKEW_MS)
         : undefined;
   scheduleChatMediaResourceRefresh(resource, refreshAt, () => {
     if (resource.value !== availability) {

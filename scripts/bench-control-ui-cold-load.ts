@@ -232,6 +232,9 @@ if (values["warm-reload"] && !values["probe-dir"]) {
 if (values["sidebar-list-churn"] && !values["live-events"]) {
   throw new Error("sidebar-list-churn requires live-events");
 }
+if (values["artifact-http-failure"] && !values["artifact-source-reads"]) {
+  throw new Error("artifact-http-failure requires artifact-source-reads");
+}
 if (values["sidebar-list-churn"] && values.untraced) {
   throw new Error("sidebar-list-churn requires tracing for response task attribution");
 }

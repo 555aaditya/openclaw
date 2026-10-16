@@ -7,6 +7,8 @@ import { subscribeToSharedRequest } from "../lib/shared-request-subscription.ts"
 import type { GatewayBrowserClient } from "./gateway.ts";
 import type { ArtifactDownloadResult } from "./types.ts";
 
+export const MEDIA_TICKET_REFRESH_SKEW_MS = 30_000;
+
 type ArtifactDownloadHost = {
   connected: boolean;
   client?: GatewayBrowserClient | null;
@@ -199,7 +201,10 @@ export async function resolveArtifactDownloadSource(
     params.variant === "thumbnail" ? (params.previewWidth ?? 960) : undefined,
   ]);
   let entry = entries.get(key);
-  if (entry?.expiresAt !== undefined && entry.expiresAt <= Date.now()) {
+  if (
+    entry?.expiresAt !== undefined &&
+    entry.expiresAt <= Date.now() + MEDIA_TICKET_REFRESH_SKEW_MS
+  ) {
     entries.delete(key);
     entry = undefined;
   }

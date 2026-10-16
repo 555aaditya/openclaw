@@ -1,7 +1,7 @@
+import { MEDIA_TICKET_REFRESH_SKEW_MS } from "../../../api/artifact-download.ts";
 import { t } from "../../../i18n/index.ts";
 import {
   ASSISTANT_ATTACHMENT_MEDIA_TICKET_MAX_REFRESH_RETRIES,
-  ASSISTANT_ATTACHMENT_MEDIA_TICKET_REFRESH_SKEW_MS,
   ASSISTANT_ATTACHMENT_UNAVAILABLE_RETRY_MS,
   isManagedOutgoingMediaSource,
   resolveAssistantAttachmentAvailability,
@@ -79,8 +79,7 @@ function setManagedAttachmentAvailability(
         ? scheduleExpiryOnly
           ? availability.expiresAt
           : Math.min(
-              availability.refreshAfter ??
-                availability.expiresAt - ASSISTANT_ATTACHMENT_MEDIA_TICKET_REFRESH_SKEW_MS,
+              availability.refreshAfter ?? availability.expiresAt - MEDIA_TICKET_REFRESH_SKEW_MS,
               availability.expiresAt,
             )
         : availability.status === "unavailable" && !resource.retryAttempted
@@ -155,7 +154,7 @@ function resolveManagedAttachmentAvailability(
       cached.refreshAfter ??
       (cached.expiresAt === undefined
         ? undefined
-        : cached.expiresAt - ASSISTANT_ATTACHMENT_MEDIA_TICKET_REFRESH_SKEW_MS);
+        : cached.expiresAt - MEDIA_TICKET_REFRESH_SKEW_MS);
     if (refreshAt === undefined || refreshAt > now) {
       return setManagedAttachmentAvailability(resource, cached);
     }
@@ -198,7 +197,7 @@ function resolveManagedAttachmentAvailability(
             expiresAt,
           };
           availability =
-            expiresAt - resolvedAt > ASSISTANT_ATTACHMENT_MEDIA_TICKET_REFRESH_SKEW_MS
+            expiresAt - resolvedAt > MEDIA_TICKET_REFRESH_SKEW_MS
               ? incoming
               : retryManagedAttachment(
                   refreshAttempts >= ASSISTANT_ATTACHMENT_MEDIA_TICKET_MAX_REFRESH_RETRIES &&

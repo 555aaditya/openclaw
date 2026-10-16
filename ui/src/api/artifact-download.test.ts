@@ -138,7 +138,7 @@ describe("resolveArtifactDownloadSource", () => {
       const request = vi.fn().mockResolvedValue({
         artifact,
         url: "https://image.test/one.png",
-        expiresAt: new Date(now + 1000).toISOString(),
+        expiresAt: new Date(now + 60_000).toISOString(),
       });
       const state = {
         connected: true,
@@ -169,7 +169,7 @@ describe("resolveArtifactDownloadSource", () => {
       Object.assign(state.client, { connectionGeneration: 2 });
       await resolveArtifactDownloadSource(state, params);
       expect(request).toHaveBeenCalledTimes(8);
-      vi.setSystemTime(now + 1000);
+      vi.setSystemTime(now + 60_000);
       await resolveArtifactDownloadSource(state, params);
       expect(request).toHaveBeenCalledTimes(9);
       await resolveArtifactDownloadSource(state, params, undefined, "changed-policy");
