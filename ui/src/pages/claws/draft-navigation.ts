@@ -18,8 +18,8 @@ export type ClawDraftTarget = {
 export function canCreateClawDraft(context: ApplicationContext): boolean {
   return Boolean(
     clawsLab &&
-    resolveLabFeatureState(currentConfigObject(context.runtimeConfig.state), clawsLab).enabled &&
-    canCallGatewayMethod(context.gateway.snapshot, "claws.drafts.create", "operator.admin"),
+    canCallGatewayMethod(context.gateway.snapshot, "claws.drafts.create", "operator.admin") &&
+    resolveLabFeatureState(currentConfigObject(context.runtimeConfig.state), clawsLab).enabled,
   );
 }
 
