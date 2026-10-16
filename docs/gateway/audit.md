@@ -95,6 +95,13 @@ operational warning and never abort the run. Normal Gateway and direct-local
 CLI shutdown flushes accepted work when the writer lifecycle permits, but
 abrupt termination can still lose queued evidence.
 
+The writer sends up to 32 already-queued records in one worker request without
+waiting to fill a batch. Records keep their FIFO order, independent writes, and
+individual storage-error handling. Lock contention retries the unsettled suffix.
+If a worker request fails with an unknown outcome, the submitted batch is dropped
+without replay because a prefix may already have committed; later queued records
+can still drain.
+
 When identity collection is enabled, restart recovery stores only the safe
 execution/context/run ids and timestamp with its existing private recovery
 owner. A later ambiguous retry references that token instead of rebuilding

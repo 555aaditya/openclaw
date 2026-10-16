@@ -77,27 +77,37 @@ export const auditOperations = {
     }
     return results;
   },
-  "audit.writer.process": (request: AuditWriterRequest, context) =>
-    executeAuditAttempt(
-      context,
-      (database) => {
-        if (request.type === "record-event") {
-          if (isOutboundMessageProgressInput(request.input)) {
-            recordOutboundMessageProgressInDatabase(request.input, database);
+  "audit.writer.process": (requests: AuditWriterRequest[], context) => {
+    const results: AuditWriterResult[] = [];
+    for (const request of requests) {
+      const result = executeAuditAttempt(
+        context,
+        (database) => {
+          if (request.type === "record-event") {
+            if (isOutboundMessageProgressInput(request.input)) {
+              recordOutboundMessageProgressInDatabase(request.input, database);
+            } else {
+              recordAuditEventInDatabase(request.input, database);
+            }
+          } else if (request.type === "record-execution-identity") {
+            processExecutionIdentityAdmissionWorkInDatabase(request.work, database);
+          } else if (request.type === "record-execution-decision-work") {
+            processExecutionDecisionWorkInDatabase(request.work, database);
           } else {
-            recordAuditEventInDatabase(request.input, database);
+            recordExecutionDecisionFactInDatabase(request.receipt, database);
           }
-        } else if (request.type === "record-execution-identity") {
-          processExecutionIdentityAdmissionWorkInDatabase(request.work, database);
-        } else if (request.type === "record-execution-decision-work") {
-          processExecutionDecisionWorkInDatabase(request.work, database);
-        } else {
-          recordExecutionDecisionFactInDatabase(request.receipt, database);
-        }
-        return { status: "settled" };
-      },
-      (error) => formatAuditWriterRequestError(request, error),
-    ),
+          return { status: "settled" };
+        },
+        (error) => formatAuditWriterRequestError(request, error),
+      );
+      results.push(result);
+      // Records retain independent commits and failures; contention retains the FIFO suffix.
+      if (result.status === "retry") {
+        break;
+      }
+    }
+    return results;
+  },
 } satisfies WorkerOperationHandlers;
 
 export type AuditWorkerOperations = WorkerOperations<typeof auditOperations>;

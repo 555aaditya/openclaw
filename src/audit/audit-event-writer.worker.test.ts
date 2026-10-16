@@ -48,6 +48,28 @@ afterEach(async () => {
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
 
 describe("audit writer shared worker", () => {
+  it("preserves FIFO rows around an invalid event and duplicate in a submitted batch", async () => {
+    const stateDir = tempDirs.make("openclaw-audit-batch-errors-");
+    const errors: string[] = [];
+    const writer = createAuditEventWriter({
+      scheduler: createTestGatewayScheduler(),
+      stateDir,
+      onError: (error) => errors.push(error),
+    });
+    await writer.ready;
+    const first = { ...input(), sourceId: "first", runId: "first" };
+    const last = { ...input(), sourceId: "last", runId: "last" };
+    expect(writer.record(first)).toBe(true);
+    expect(writer.record({ ...input(), sourceId: "invalid", sourceSequence: -1 })).toBe(true);
+    expect(writer.record(first)).toBe(true);
+    expect(writer.record(last)).toBe(true);
+    await writer.stop();
+    const page = await listAuditEvents({ database: { env: { OPENCLAW_STATE_DIR: stateDir } } });
+    expect(page.events.map((event) => event.runId)).toEqual(["last", "first"]);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("sourceSequence");
+  });
+
   it.each(["cold", "existing shared actor"] as const)(
     "flushes the %s audit FIFO without host SQLite",
     async (mode) => {
