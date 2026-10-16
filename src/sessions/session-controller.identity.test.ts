@@ -373,7 +373,12 @@ it("holds uncertain injection and source cleanup through clear while allowing a 
   const injection = createDeferredCore<boolean>();
   const settle = vi.fn(injection.resolve);
   input.phase = "injecting";
-  input.injection = { predecessor: Promise.resolve(true), settled: injection.promise, settle };
+  input.injection = {
+    awaits: [],
+    predecessor: Promise.resolve(true),
+    settled: injection.promise,
+    settle,
+  };
   clearSessionControllerMailbox(input.mailbox, () => {});
   expect(settle).not.toHaveBeenCalled();
   expect(input.mailbox.entries).toContain(input);

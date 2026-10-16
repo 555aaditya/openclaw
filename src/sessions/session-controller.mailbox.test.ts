@@ -387,6 +387,51 @@ describe("early source injection custody", () => {
     steer?.fallback();
   });
 
+  it("claims a command waiting behind a settled turn before a later steer ordered behind it", async () => {
+    const active = createReplyOperation({
+      sessionKey: key,
+      sessionId: "busy-turn",
+      resetTriggered: false,
+    });
+    active.setPhase("running");
+    // A non-active-run-safe command waits for its own turn, like `/acp cancel` mid-turn.
+    const command = reserveSessionControllerSource(key, {
+      protocolRunId: "command",
+      policy: { mode: "steer" },
+    });
+    const commandClaim = claimSessionControllerTask(command, () => {});
+    const dispatched: string[] = [];
+    const later = source("later steer");
+    const steer = reserveSteerCandidate(
+      key,
+      later,
+      { mode: "steer", debounceMs: 0 },
+      async (run) => {
+        dispatched.push(run.prompt);
+      },
+    );
+    expect(steer).toBeDefined();
+    const steerAdmission = steer!.admit();
+    try {
+      active.complete();
+      // The settled turn wakes the selector, which must claim the older command.
+      expect(command.phase).toBe("claimed");
+      const claim = await commandClaim;
+      expect(claim.inputs).toEqual([command]);
+      // Its claim releases the later steer, whose captured turn has ended.
+      await expect(steerAdmission).resolves.toBe("steer");
+      steer!.fallback();
+      expect(dispatched).toEqual([]);
+      releaseSessionControllerClaim(claim);
+      await claim.settlement.promise;
+      expect(dispatched).toEqual(["later steer"]);
+    } finally {
+      retireSessionControllerInput(command);
+      steer!.fallback();
+      await Promise.allSettled([commandClaim, steerAdmission]);
+    }
+  });
+
   it("keeps injection FIFO when an older reservation is still preparing", async () => {
     const first = earlySource();
     const second = earlySource();

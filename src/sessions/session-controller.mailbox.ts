@@ -219,13 +219,16 @@ function pumpSessionControllerMailbox(mailbox: SessionControllerMailbox): void {
     registeredEntry: sessionControllers.get(owner.id),
     selectedInput: first,
   });
+  // An injection whose older reservations settled may hand off natively, and its outcome
+  // decides its order, so it holds selection. One still awaiting an older reservation
+  // cannot, and that reservation may itself be waiting for this selection to claim it.
   if (
     !admission.admitted ||
     first.retirementRequested ||
     first.phase !== "waiting" ||
     first.injection ||
     first.withdrawalHolds > 0 ||
-    eligible.some((input) => input.injection) ||
+    eligible.some((input) => input.injection?.awaits.every((order) => order.done)) ||
     (!first.ready &&
       !first.task &&
       (!mailbox.dispatchEnabled || !mailbox.dispatch || !first.source))

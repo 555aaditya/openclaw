@@ -51,6 +51,8 @@ export type SessionControllerInput = {
   readonly injectionOrder: {
     settled: Promise<boolean>;
     settle(consumed: boolean): void;
+    /** Synchronous view of `settled`, for the selector. */
+    done?: true;
   };
   injectionAttempted?: true;
   injection?: {
@@ -58,6 +60,8 @@ export type SessionControllerInput = {
     settled: Promise<boolean>;
     settle(accepted: boolean): void;
     accepted?: boolean;
+    /** Older reservations' orders this injection waits on before its native handoff. */
+    awaits: readonly SessionControllerInput["injectionOrder"][];
   };
   claim?: SessionControllerMailboxClaim;
   ready?: (claim: SessionControllerMailboxClaim) => void;

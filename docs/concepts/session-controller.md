@@ -167,7 +167,9 @@ reserves a steer input on the exact turn's own mailbox. That input waits until
 each older input is accepted by the native owner, claimed, or settled, then
 injects into the turn it captured. It does not wait for an older steer's
 transcript commit, which can depend on later input such as a question's answer.
-A refusal retires the reservation and leaves the caller's own fallback in charge.
+While it waits, it does not hold turn selection: an older input waiting for its
+own turn, such as a command sent mid-turn, is still claimed when the active turn
+settles, and the steer then finds its captured turn gone and queues after it. A refusal retires the reservation and leaves the caller's own fallback in charge.
 A detached attempt has no turn, so nothing can steer it.
 
 Collecting or steering requires compatible sender authority, tool permissions,

@@ -50,6 +50,7 @@ export function settleSessionControllerSourceInjectionOrder(
   consumed: boolean,
 ): void {
   input.injectionAttempted = true;
+  input.injectionOrder.done = true;
   input.injectionOrder.settle(consumed);
 }
 
@@ -76,13 +77,15 @@ export function beginSessionControllerSourceInjection(
       (entry) =>
         entry.sequence < input.sequence && entry.phase !== "consumed" && entry.claim === undefined,
     )
-    .map((entry) => entry.injectionOrder.settled);
+    .map((entry) => entry.injectionOrder);
+  const awaits = input.policy.mode === "interrupt" ? [] : olderReservations;
   const predecessor =
-    input.policy.mode === "interrupt" || olderReservations.length === 0
+    awaits.length === 0
       ? Promise.resolve(true)
-      : Promise.all(olderReservations).then(() => true);
+      : Promise.all(awaits.map((order) => order.settled)).then(() => true);
   const outcome = createDeferredCore<boolean>();
   const pending: NonNullable<SessionControllerInput["injection"]> = {
+    awaits,
     predecessor,
     settled: predecessor.then(() => outcome.promise),
     settle: outcome.resolve,
