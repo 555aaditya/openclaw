@@ -11,13 +11,17 @@ import {
   runWithOwnedSessionTranscriptWrite,
   withOwnedSessionTranscriptWrites,
 } from "../../../config/sessions/transcript-write-context.js";
+import { unwrapGatewayMethodDispatchResponse } from "../../../gateway/server-in-process-dispatch.js";
 import type { GatewayRecoveryRuntime } from "../../../gateway/server-instance-runtime.types.js";
+import { workAdmissionUnavailableError } from "../../../gateway/server-request-lifecycle.js";
 import type { AgentEventPayload } from "../../../infra/agent-events.js";
 import { createEmptyPluginRegistry } from "../../../plugins/registry-empty.js";
 import { getPluginRuntimeGatewayRequestScope } from "../../../plugins/runtime/gateway-request-scope.js";
 import {
   getActiveGatewayRootWorkCount,
+  markGatewayRestartDraining,
   resetGatewayWorkAdmission,
+  runWithGatewayIndependentRootWorkAdmission,
   tryBeginGatewaySuspendAdmission,
 } from "../../../process/gateway-work-admission.js";
 vi.mocked(cleanupBrowserSessionsForLifecycleEnd).mockReset();
@@ -1315,6 +1319,54 @@ describe("subagent registry seam flow", () => {
     const run = findRequesterRun("run-interrupted-wait");
     expect(run?.execution.endedAt).toBeUndefined();
     expect(run?.execution.outcome).toBeUndefined();
+  });
+
+  it("keeps a running child owed to restart recovery when shutdown cancels its wait", async () => {
+    const runId = "run-restart-cancelled-wait";
+    let waits = 0;
+    mocks.callGateway.mockImplementation(async (request: { method?: string }) => {
+      if (request.method !== "agent.wait") {
+        return {};
+      }
+      waits += 1;
+      if (waits > 1) {
+        return { status: "pending" };
+      }
+      // SIGTERM lands while the registry observes the child; drain cancels that observer.
+      markGatewayRestartDraining("stop (SIGTERM)");
+      // The in-process facade rejects with the same typed refusal a live drain produces.
+      unwrapGatewayMethodDispatchResponse("agent.wait", {
+        ok: false,
+        error: workAdmissionUnavailableError("agent.wait"),
+      });
+      throw new Error("expected the drain refusal to reject agent.wait");
+    });
+    // The spawning turn's admitted root outlives the cancelled observation, as in a live drain.
+    const spawnTurn = createDeferred();
+    const spawn = runWithGatewayIndependentRootWorkAdmission(async () => {
+      await mod.registerSubagentRun({
+        runId,
+        task: "outlive the closing Gateway",
+        expectsCompletionMessage: true,
+      });
+      await spawnTurn.promise;
+    }, "sessions_spawn");
+    try {
+      await waitForFast(() =>
+        expect(waits > 1 || findRequesterRun(runId)?.execution.endedAt !== undefined).toBe(true),
+      );
+    } finally {
+      spawnTurn.resolve();
+      await spawn;
+    }
+
+    expect(findRequesterRun(runId)?.execution.outcome).toBeUndefined();
+    expect(findRequesterRun(runId)).toMatchObject({
+      execution: { status: "running" },
+      cleanupHandled: false,
+    });
+    expect(findRequesterRun(runId)?.endedReason).toBeUndefined();
+    expect(mocks.runSubagentAnnounceFlow).not.toHaveBeenCalled();
   });
 
   it("detaches subagent completion from a disposed requester transcript owner", async () => {

@@ -8,6 +8,7 @@ import {
   MAX_TIMER_TIMEOUT_MS,
 } from "@openclaw/normalization-core/number-coercion";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { GatewayClientRequestError } from "../../packages/gateway-client/src/request-error.js";
 import * as gatewayCallRuntime from "../gateway/call.js";
 import {
   markGatewayRestartDraining,
@@ -349,6 +350,44 @@ describe("waitForAgentRun", () => {
       error,
       retryableTransportError: true,
     });
+  });
+
+  it.each([
+    {
+      name: "a suspended Gateway's typed observation refusal",
+      draining: false,
+      cause: new GatewayClientRequestError({
+        code: "UNAVAILABLE",
+        message: "agent.wait unavailable during gateway suspension",
+        retryable: true,
+      }),
+      retryable: true,
+    },
+    {
+      name: "a closed instance's refusal during restart drain",
+      draining: true,
+      cause: new Error("Gateway instance dispatch unavailable for agent.wait"),
+      retryable: true,
+    },
+    {
+      name: "the same refusal outside restart drain",
+      draining: false,
+      cause: new Error("Gateway instance dispatch unavailable for agent.wait"),
+      retryable: false,
+    },
+  ])("classifies $name as a lost observation only when it is one", async (entry) => {
+    resetGatewayWorkAdmission();
+    if (entry.draining) {
+      markGatewayRestartDraining("stop (SIGTERM)");
+    }
+    try {
+      callGatewayMock.mockRejectedValueOnce(entry.cause);
+      const result = await waitForAgentRun({ runId: "run-observed", timeoutMs: 500 });
+      expect(result.status).toBe("error");
+      expect(result.retryableTransportError).toBe(entry.retryable ? true : undefined);
+    } finally {
+      resetGatewayWorkAdmission();
+    }
   });
 
   it.each([

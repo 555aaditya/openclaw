@@ -13,10 +13,14 @@ import {
 } from "@openclaw/normalization-core/number-coercion";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { normalizeStringEntries } from "@openclaw/normalization-core/string-normalization";
+import { GatewayProtocolRequestError } from "../../packages/gateway-client/src/protocol-request.js";
 import type { callGateway } from "../gateway/call.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import { hasRetryableConnectionErrorCode } from "../infra/retryable-network-errors.js";
-import { getGatewayRestartDrainSignal } from "../process/gateway-work-admission.js";
+import {
+  getGatewayRestartDrainSignal,
+  isGatewayRestartDraining,
+} from "../process/gateway-work-admission.js";
 import { normalizeBlockedLivenessWaitStatus } from "../shared/agent-liveness.js";
 import { getAsyncWorkSignal } from "../shared/async-work-scope.js";
 import {
@@ -128,7 +132,17 @@ const RECOVERABLE_AGENT_WAIT_ERROR_PATTERNS: readonly RegExp[] = [
 ];
 
 /** Return true for transient gateway/transport failures that callers may retry. */
-function isRecoverableAgentWaitError(error: string | undefined): boolean {
+function isRecoverableAgentWaitError(cause: unknown, error: string | undefined): boolean {
+  // A refused or cancelled observation carries no terminal fact about the observed run.
+  // Restart drain cancels and refuses every observer until this process exits.
+  if (
+    isGatewayRestartDraining() ||
+    (cause instanceof GatewayProtocolRequestError &&
+      cause.gatewayCode === "UNAVAILABLE" &&
+      cause.retryable)
+  ) {
+    return true;
+  }
   const message = error?.trim();
   if (!message) {
     return false;
@@ -238,7 +252,9 @@ export async function waitForAgentRun(params: {
           ? "timeout"
           : "error",
       error,
-      ...(isRecoverableAgentWaitError(error) ? { retryableTransportError: true as const } : {}),
+      ...(isRecoverableAgentWaitError(err, error)
+        ? { retryableTransportError: true as const }
+        : {}),
     };
   }
 }
