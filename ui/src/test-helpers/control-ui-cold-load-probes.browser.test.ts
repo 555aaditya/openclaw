@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createColdLoadProbeInitScript } from "./control-ui-cold-load-probes.ts";
 
 describe("serialized cold-load probes", () => {
-  it("captures Solid owners without changing native prototypes and restores live instrumentation", async () => {
+  it("captures imperative owners beside a native Solid page and restores live instrumentation", async () => {
     const iframe = document.createElement("iframe");
     document.body.append(iframe);
     try {
@@ -29,11 +29,6 @@ describe("serialized cold-load probes", () => {
           requestUpdate() { return this; }, prepareRender() { return this; }, commitRender() { return this; }
         };
         map.set(sidebar, owner);
-        const pageOwner = {
-          host: page, isConnected: true,
-          requestUpdate() { return this; }, performUpdate() { return this; }, render() { return this; }, afterCommit() { return this; }
-        };
-        map.set(page, pageOwner);
         const paneOwner = {
           element: pane, isConnected: true,
           requestUpdate() { return this; }, performUpdate() { return this; }, render() { return this; },
@@ -44,9 +39,8 @@ describe("serialized cold-load probes", () => {
         __coldLoad.startLive();
         const receiverPreserved = owner.requestUpdate() === owner &&
           owner.sessionData.requestSessionDataUpdate() === owner.sessionData &&
-          pageOwner.requestUpdate() === pageOwner && paneOwner.requestUpdate() === paneOwner;
+          paneOwner.requestUpdate() === paneOwner;
         owner.prepareRender(); owner.commitRender();
-        pageOwner.performUpdate(); pageOwner.render();
         paneOwner.performUpdate(); paneOwner.render();
         globalThis.probeDone = new Promise(resolve => {
           requestAnimationFrame(() => {
@@ -71,7 +65,7 @@ describe("serialized cold-load probes", () => {
         nativeRestored: true,
         storedOwner: true,
         sidebarMethods: ["requestUpdate", "prepareRender", "commitRender"],
-        chatPasses: ["openclaw-chat-page", "openclaw-chat-pane"],
+        chatPasses: ["openclaw-chat-pane"],
         frameCount: 1,
       });
     } finally {

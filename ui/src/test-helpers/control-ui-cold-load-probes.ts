@@ -76,18 +76,13 @@ function installColdLoadProbes(
         typeof owner.performUpdate === "function" &&
         "render" in owner &&
         typeof owner.render === "function" &&
-        ((host.localName === "openclaw-chat-page" &&
-          "host" in owner &&
-          owner.host === host &&
-          "afterCommit" in owner &&
-          typeof owner.afterCommit === "function") ||
-          (host.localName === "openclaw-chat-pane" &&
-            "element" in owner &&
-            owner.element === host &&
-            "prepareRender" in owner &&
-            typeof owner.prepareRender === "function" &&
-            "commitRender" in owner &&
-            typeof owner.commitRender === "function"))
+        host.localName === "openclaw-chat-pane" &&
+        "element" in owner &&
+        owner.element === host &&
+        "prepareRender" in owner &&
+        typeof owner.prepareRender === "function" &&
+        "commitRender" in owner &&
+        typeof owner.commitRender === "function"
       );
     },
     record(tag: string, method: string, ms = 0) {
@@ -141,14 +136,12 @@ function installColdLoadProbes(
       }
     },
     install() {
-      for (const tag of ["openclaw-chat-page", "openclaw-chat-pane"]) {
-        for (const host of document.querySelectorAll(tag)) {
-          if (!(host instanceof HTMLElement)) {
-            continue;
-          }
-          if (!chatOwners.has(host) && typeof Reflect.get(host, "performUpdate") !== "function") {
-            throw new Error(`Solid ${tag} owner registration was not captured`);
-          }
+      for (const host of document.querySelectorAll("openclaw-chat-pane")) {
+        if (!(host instanceof HTMLElement)) {
+          continue;
+        }
+        if (!chatOwners.has(host) && typeof Reflect.get(host, "performUpdate") !== "function") {
+          throw new Error("Solid openclaw-chat-pane owner registration was not captured");
         }
       }
       for (const record of chatOwners.values()) {
@@ -159,12 +152,8 @@ function installColdLoadProbes(
           "render",
           "prepareRender",
           "commitRender",
-          "afterCommit",
         ] as const) {
           const original = owner[method];
-          if (!original) {
-            continue;
-          }
           record.originals.set(method, original);
           owner[method] = function (this: ProbeInit.ChatProbeOwner, ...args: unknown[]) {
             const connected = this.isConnected;
@@ -262,7 +251,7 @@ function installColdLoadProbes(
     },
     read() {
       return {
-        measurement: "owner-requests-publications-projection-passes-and-commits",
+        measurement: "chat-pane-owner-requests-publications-projection-passes-and-commits",
         lifecycle: Object.fromEntries(
           [...chatLifecycle].map(([tag, kinds]) => [
             tag,
@@ -341,7 +330,6 @@ function installColdLoadProbes(
       }
       if (
         solidSidebarOwner &&
-        [...chatOwners.keys()].some((chatHost) => chatHost.localName === "openclaw-chat-page") &&
         [...chatOwners.keys()].some((chatHost) => chatHost.localName === "openclaw-chat-pane")
       ) {
         sidebarRegistration.restore();
@@ -371,7 +359,6 @@ function installColdLoadProbes(
     "openclaw-app-sidebar",
     "openclaw-sidebar-agent-card",
     "openclaw-sidebar-attention",
-    "openclaw-chat-page",
     "openclaw-chat-pane",
     "openclaw-app-shell",
   ]);

@@ -11,21 +11,14 @@ export type SolidSidebarProbeOwner = {
 };
 export type SidebarLifecycle = "requestUpdate" | "prepareRender" | "commitRender";
 export type ProbeMethod = (...args: unknown[]) => unknown;
-type ChatMethod =
-  | "requestUpdate"
-  | "performUpdate"
-  | "render"
-  | "prepareRender"
-  | "commitRender"
-  | "afterCommit";
+type ChatMethod = "requestUpdate" | "performUpdate" | "render" | "prepareRender" | "commitRender";
 export type ChatProbeOwner = {
   readonly isConnected: boolean;
   requestUpdate: ProbeMethod;
   performUpdate: ProbeMethod;
   render: ProbeMethod;
-  prepareRender?: ProbeMethod;
-  commitRender?: ProbeMethod;
-  afterCommit?: ProbeMethod;
+  prepareRender: ProbeMethod;
+  commitRender: ProbeMethod;
 };
 export type ChatOwnerRecord = {
   host: HTMLElement;
