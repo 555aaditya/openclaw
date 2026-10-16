@@ -971,6 +971,12 @@ const reviewedOperations = new Map([
     "src/infra/gateway-boot-lifecycle.kernel.ts",
     [
       {
+        tier: "W",
+        operations: ["readGatewayLastShutdownInDatabase"],
+        evidence:
+          "Private reader called only by gatewayBootReadOperations in the state read worker. Daemon status and update inspection both dispatch through readGatewayLastShutdownAsync; no synchronous caller remains.",
+      },
+      {
         tier: "T2",
         operations: [
           "inspectGatewayCrashLoopBreakerInDatabase",
@@ -3089,6 +3095,7 @@ const reviewedOperations = new Map([
   ],
 ]);
 const workerModules = new Set([
+  "extensions/memory-core/src/memory/manager-publication-postgres.ts", // Only manager-publication.worker.ts binds this adapter to the admitted agent execution worker connection.
   "src/infra/database-engine/postgres-vector.ts", // Accepts only an admitted PostgresSqlConnection; the shared executor dispatches through PostgresSyncConnection to postgres-sync/bridge.worker.ts, never native SQLite.
   "src/plugin-state/plugin-state.worker.ts", // Only openclaw-state.worker.ts imports and calls this command dispatcher; its nested callbacks share that worker ownership.
   "src/config/sessions/session-suggestion-store.kernel.ts", // session-sharing-store.worker.ts owns add/claim/release/finalize; session-transcript.worker.ts owns list. The host read facade imports only its type.

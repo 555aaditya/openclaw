@@ -21,6 +21,7 @@ import { projectModelThinkingCompat } from "../model-catalog-lookup.js";
 import type { PreparedModelRuntimeSnapshot } from "../prepared-model-runtime.js";
 import { applyPreparedRuntimeAuthToModel } from "../provider-request-config.js";
 import { protectPreparedProviderRuntimeAuth } from "../provider-runtime-auth-protection.js";
+import { unwrapSecretSentinelsForProviderEgress } from "../provider-secret-egress.js";
 import { materializePreparedRuntimeModel } from "../runtime-plan/materialize-model.js";
 import {
   resolvePreparedRuntimeAuthAttempts,
@@ -250,6 +251,7 @@ export async function prepareDirectCompactionAttempt(
     resolvedAuthAttempt.model,
     getProviderAuthAuthority(apiKeyInfo),
   );
+  let runtimeApiKey = apiKeyInfo.apiKey;
   const resolvedRuntimeAuthPlan = resolvedAuthAttempt.plan;
   let hasRuntimeAuthExchange = false;
   try {
@@ -267,7 +269,10 @@ export async function prepareDirectCompactionAttempt(
           provider: runtimeModel.provider,
           modelId,
           model: runtimeModel,
-          apiKey: apiKeyInfo.apiKey,
+          apiKey: unwrapSecretSentinelsForProviderEgress(
+            apiKeyInfo.apiKey,
+            "provider runtime auth exchange",
+          ),
           authMode: apiKeyInfo.mode,
           profileId: apiKeyInfo.profileId,
         },
@@ -278,7 +283,7 @@ export async function prepareDirectCompactionAttempt(
         preparedAuth: runtimeAuth,
       });
       runtimeModel = applyPreparedRuntimeAuthToModel(runtimeModel, preparedAuth);
-      const runtimeApiKey = preparedAuth?.apiKey ?? apiKeyInfo.apiKey;
+      runtimeApiKey = preparedAuth?.apiKey ?? apiKeyInfo.apiKey;
       hasRuntimeAuthExchange = Boolean(preparedAuth?.apiKey);
       if (!runtimeApiKey) {
         throw new Error(`Provider "${runtimeModel.provider}" runtime auth returned no apiKey.`);
@@ -380,6 +385,7 @@ export async function prepareDirectCompactionAttempt(
         modelRegistry,
         runtimeModel,
         apiKeyInfo,
+        runtimeApiKey,
         resolvedRuntimeAuthPlan,
         hasRuntimeAuthExchange,
         resolvedWorkspace,
