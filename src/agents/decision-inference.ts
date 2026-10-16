@@ -14,6 +14,7 @@ import type {
 } from "../decisions/types-v2.js";
 import { validateDecisionResultV2 } from "../decisions/validation-v2.js";
 import {
+  assertProviderAuthAuthority,
   attachProviderAuthAuthority,
   getProviderAuthAuthority,
 } from "../plugins/provider-auth-authority.js";
@@ -137,12 +138,12 @@ export async function executePreparedDecision(params: {
   const selected = splitTrailingAuthProfile(params.modelId);
   const modelId = selected.model;
   const profileId = params.profileId ?? selected.profile;
-  return withPreparedModelInference(
+  return withPreparedModelInference<ProviderDecisionOutcomeV2>(
     { cfg: params.config, agentId: params.options.agentId, signal: params.signal },
     { provider: params.registration.provider.id, modelId },
     async (context) => {
       const prepared = context.preparedModelRuntime;
-      let assertAuthAuthority: (() => void) | undefined;
+      let auth: ResolvedProviderAuth | undefined;
       const assertPrepared = () => {
         if (!assertCurrent()) {
           return false;
@@ -150,7 +151,7 @@ export async function executePreparedDecision(params: {
         if (!prepared.isCurrent()) {
           throw new Error("Decision model generation is no longer current.");
         }
-        assertAuthAuthority?.();
+        assertProviderAuthAuthority(auth);
         return true;
       };
       if (!assertPrepared()) {
@@ -238,7 +239,6 @@ export async function executePreparedDecision(params: {
           prepared.config,
         );
       }
-      let auth: ResolvedProviderAuth;
       try {
         if (canonical.provider.prepareRuntimeAuth) {
           // Existing exchange hooks have a chat Model contract. Never fabricate its costs or limits.
@@ -296,7 +296,7 @@ export async function executePreparedDecision(params: {
         assertPrepared();
         return { status: "unavailable", reason: "credentials-unavailable" };
       }
-      assertAuthAuthority = getProviderAuthAuthority(auth);
+      const assertAuthAuthority = getProviderAuthAuthority(auth);
       model = attachProviderAuthAuthority(model, assertAuthAuthority);
       if (!assertPrepared()) {
         return { status: "unavailable", reason: "unsupported-input" };
