@@ -28,6 +28,7 @@ type Trace = {
   work?: Promise<void>;
   authenticated: boolean;
   modelKeys?: string[];
+  modelContextWindow?: number;
   resultReads?: number;
   modelBilling?: unknown;
   modelBaseUrl?: string;
@@ -69,6 +70,9 @@ it.each(["plugin", "agent", "profile", "missing", "exchange"] as const)(
           providers: {
             [id]: {
               authScope: authScope === "plugin" ? "plugin" : "agent",
+              ...(authScope === "plugin"
+                ? {}
+                : { api: "openai-completions", baseUrl: "https://catalog.fixture.invalid/v1" }),
               models: [
                 {
                   id: "native",
@@ -118,7 +122,7 @@ it.each(["plugin", "agent", "profile", "missing", "exchange"] as const)(
             ? 'normalizeResolvedModel(context) { return { ...context.model, api: "openai-responses" }; }, prepareRuntimeAuth(context) { trace.preparedApi=context.model.api; return { apiKey: context.apiKey, baseUrl: "https://entitlement.fixture.invalid/v1", request: { headers: { "x-fixture-entitlement": "synthetic-entitlement" }, auth: { mode: "header", headerName: "x-fixture-auth", value: "synthetic-exchanged-header" } } }; },'
             : "") +
           "} ,",
-        'async evaluate(batch, context) { trace.calls++; trace.onDispatch?.(); await trace.work; trace.authenticated = context.auth.apiKey === "synthetic-prepared-token"; trace.modelKeys = Object.keys(context.model); trace.modelBilling=context.model.inference?.decision?.billing; trace.modelBaseUrl=context.model.baseUrl; trace.modelHeaders=context.model.headers; trace.modelRequest=context.model[Symbol.for("openclaw.modelProviderRequestTransport")]; trace.modelApi=context.model.api; let reads = 0; return { status: "ok", get result() { trace.resultReads = ++reads; return { model: context.model.id, answers: { q: reads === 1 ? { type: "boolean", answer: null } : { type: "boolean", probabilityTrue: 0.75 } }, usage: { inputTokens: 1, costUsd: 0.002 } }; } }; }',
+        'async evaluate(batch, context) { trace.calls++; trace.onDispatch?.(); await trace.work; trace.authenticated = context.auth.apiKey === "synthetic-prepared-token"; trace.modelKeys = Object.keys(context.model); trace.modelContextWindow = context.model.contextWindow; trace.modelBilling=context.model.inference?.decision?.billing; trace.modelBaseUrl=context.model.baseUrl; trace.modelHeaders=context.model.headers; trace.modelRequest=context.model[Symbol.for("openclaw.modelProviderRequestTransport")]; trace.modelApi=context.model.api; let reads = 0; return { status: "ok", get result() { trace.resultReads = ++reads; return { model: context.model.id, answers: { q: reads === 1 ? { type: "boolean", answer: null } : { type: "boolean", probabilityTrue: 0.75 } }, usage: { inputTokens: 1, costUsd: 0.002 } }; } }; }',
         "}); trace.evaluate = api.runtime.decisions.evaluateV2; } };",
       ].join("\n"),
     );
@@ -155,18 +159,7 @@ it.each(["plugin", "agent", "profile", "missing", "exchange"] as const)(
                       id: "native",
                       name: "Native fixture",
                       headers: { "x-model": "model", "X-PRECEDENCE": "model" },
-                      ...(authScope === "exchange"
-                        ? { contextWindow: 4096 }
-                        : {
-                            inference: {
-                              chat: false,
-                              decision: {
-                                protocol: "fixture",
-                                input: ["text"],
-                                questions: { boolean: { probabilities: "none", abstention: true } },
-                              },
-                            },
-                          }),
+                      ...(authScope === "exchange" ? { contextWindow: 4096 } : {}),
                       maxTokens: 256,
                       reasoning: false,
                       input: ["text"],
@@ -261,7 +254,7 @@ it.each(["plugin", "agent", "profile", "missing", "exchange"] as const)(
       } else {
         expect(trace.modelKeys).not.toContain("cost");
         expect(trace.modelKeys).not.toContain("maxTokens");
-        expect(trace.modelKeys).not.toContain("contextWindow");
+        expect(trace.modelContextWindow).toBeUndefined();
       }
       if (authScope === "agent" || authScope === "profile") {
         expect(trace.modelHeaders).toEqual({
