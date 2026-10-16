@@ -2,7 +2,7 @@ import { bufferToBlobPart } from "openclaw/plugin-sdk/blob-runtime";
 import { PlatformMessageNotDispatchedError } from "openclaw/plugin-sdk/error-runtime";
 import { sleepWithAbort } from "openclaw/plugin-sdk/retry-runtime";
 import { asOptionalRecord as record } from "openclaw/plugin-sdk/string-coerce-runtime";
-import type { XAssertActive } from "./api.js";
+import type { XAssertActive } from "./fetch.js";
 
 // https://docs.x.com/x-api/media/quickstart/media-upload-chunked
 // Stay below X's recommended 5 MB segment size, including multipart overhead.

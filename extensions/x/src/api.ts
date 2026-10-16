@@ -1,6 +1,6 @@
 import { PlatformMessageNotDispatchedError } from "openclaw/plugin-sdk/error-runtime";
 import { asOptionalRecord as record } from "openclaw/plugin-sdk/string-coerce-runtime";
-import { fetchXService } from "./fetch.js";
+import { fetchXService, type XAssertActive } from "./fetch.js";
 import { uploadXMedia, type XMediaUploadParams } from "./media-api.js";
 import { X_POST_READ_MICRO_USD, X_USER_READ_MICRO_USD, xReadCost, xReplyCost } from "./pricing.js";
 import { XBudgetExceededError, type XSpend } from "./spend.js";
@@ -14,7 +14,6 @@ export type XPage = ReturnType<typeof parsePage>;
 export type XPostEnvelope = { post: XPost; users: XUser[]; recipientPending?: true };
 export type XFetch = (input: string, init?: RequestInit) => Promise<Response>;
 export type XTokenState = "idle" | "refreshing" | "ready" | "error";
-export type XAssertActive = () => void | (() => void) | Promise<void | (() => void)>;
 
 export class XApiError extends Error {
   constructor(

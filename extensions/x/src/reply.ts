@@ -1,5 +1,6 @@
 import { PlatformMessageNotDispatchedError } from "openclaw/plugin-sdk/error-runtime";
-import type { XApiClient, XAssertActive } from "./api.js";
+import type { XApiClient } from "./api.js";
+import type { XAssertActive } from "./fetch.js";
 import type { XMedia } from "./media.js";
 import { normalizeXReplyTarget } from "./target.js";
 import { findXUrls } from "./urls.js";
