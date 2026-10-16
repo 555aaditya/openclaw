@@ -235,7 +235,8 @@ export async function assembleModelCatalogBundle(options: {
     sourceCommit: options.sourceCommit,
     providers,
   };
-  const validateBundle = options.validateBundle ?? (await loadClientBundleValidator());
+  const validateBundle: BundleValidator =
+    options.validateBundle ?? (await loadClientBundleValidator());
   const validated = validateBundle(bundle);
   // The assembly is canonical source data, not a legacy wire projection. Preserve
   // validated task declarations until v1/v2 and v3 are projected separately.

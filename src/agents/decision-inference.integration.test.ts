@@ -89,7 +89,7 @@ it.each(["plugin", "agent", "exchange"] as const)(
                       billing: {
                         unit: "tokens",
                         source: "provider-catalog",
-                        usdPerMillion: { input: 2 },
+                        usdPerMillion: { input: 2, output: 0 },
                       },
                       input: ["text"],
                       questions: { boolean: { probabilities: "none", abstention: true } },

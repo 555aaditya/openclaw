@@ -241,15 +241,17 @@ describe("remote model catalog refresh", () => {
     const config = {
       models: { catalogRefresh: { url: "https://mirror.example.test/v3/catalog.json" } },
     };
+    const fetchImpl = vi.fn<typeof fetch>(async () => Response.json(downloaded));
     await expect(
       refreshRemoteModelCatalog({
         config,
         databaseOptions,
         force: true,
         bundledGeneratedAt: () => bundle.generatedAt - 1,
-        fetchImpl: async () => Response.json(downloaded),
+        fetchImpl,
       }),
     ).resolves.toMatchObject({ status: "updated", models: 1 });
+    expect(fetchImpl).toHaveBeenCalledOnce();
     expect(JSON.parse(readRemoteModelCatalog(databaseOptions)?.bundle_json ?? "null")).toEqual(
       downloaded,
     );
