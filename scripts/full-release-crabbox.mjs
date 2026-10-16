@@ -57,7 +57,15 @@ async function pages(path, key) {
   }
 }
 
-// Baseline labels remain a capacity contract; unknown shapes must not land on a smaller VM.
+function capacityBaseline(capacity, label) {
+  if (typeof capacity !== "string" || !capacity.startsWith(`${label}-`)) {
+    return null;
+  }
+  const baseline = capacity.slice(label.length + 1);
+  return Object.hasOwn(profiles, baseline) ? baseline : null;
+}
+
+// Capacity is campaign-scoped so ordinary jobs cannot claim these one-job runners.
 export function planRunnerAdmissions(jobs, label, leases, maximum) {
   const demand = new Map();
   for (const job of jobs) {
@@ -67,12 +75,13 @@ export function planRunnerAdmissions(jobs, label, leases, maximum) {
     const baseline = job.labels.filter(
       (entry) => entry !== label && entry !== "self-hosted" && entry !== "crabbox",
     );
-    if (baseline.length !== 1 || !profiles[baseline[0]]) {
+    const capacity = baseline.length === 1 ? capacityBaseline(baseline[0], label) : null;
+    if (!capacity) {
       throw new Error(
         `Unsupported Crabbox runner labels for job ${job.id}: ${baseline.join(", ")}`,
       );
     }
-    demand.set(baseline[0], (demand.get(baseline[0]) || 0) + 1);
+    demand.set(capacity, (demand.get(capacity) || 0) + 1);
   }
   for (const lease of leases) {
     if (!jobs.some((job) => job.runner_name === lease.name && job.status === "in_progress")) {
@@ -216,24 +225,34 @@ async function main() {
         runs.filter(
           (run) => run.head_sha === context.request.workflowSha && run.status !== "completed",
         );
-      const runs = active(await pages(path, "workflow_runs"));
-      for (const run of runs) {
-        // Reconcile cancellation racing completion before deciding it failed.
-        try {
-          await command("gh", [
-            "api",
-            `repos/${repository}/actions/runs/${run.id}/cancel`,
-            "--method",
-            "POST",
-          ]);
-        } catch (error) {
-          if ((await github(`repos/${repository}/actions/runs/${run.id}`)).status !== "completed") {
-            throw error;
-          }
-        }
-      }
+      const cancelled = new Set();
       const deadline = Date.now() + 5 * 60_000;
-      while (active(await pages(path, "workflow_runs")).length) {
+      for (;;) {
+        const runs = active(await pages(path, "workflow_runs"));
+        if (!runs.length) {
+          return;
+        }
+        // Dispatch can settle after the first inventory; cancel each newly visible child.
+        for (const run of runs) {
+          if (cancelled.has(run.id)) {
+            continue;
+          }
+          try {
+            await command("gh", [
+              "api",
+              `repos/${repository}/actions/runs/${run.id}/cancel`,
+              "--method",
+              "POST",
+            ]);
+          } catch (error) {
+            if (
+              (await github(`repos/${repository}/actions/runs/${run.id}`)).status !== "completed"
+            ) {
+              throw error;
+            }
+          }
+          cancelled.add(run.id);
+        }
         if (Date.now() >= deadline) {
           throw new Error("Release cancellation has not settled after five minutes");
         }
@@ -323,7 +342,10 @@ async function main() {
               continue;
             }
             const id = runner.name.slice(runLabel.length + 1);
-            const baseline = runner.labels.find((entry) => profiles[entry.name])?.name;
+            const capacities = runner.labels
+              .map((entry) => capacityBaseline(entry.name, runLabel))
+              .filter(Boolean);
+            const baseline = capacities.length === 1 ? capacities[0] : null;
             if (
               !runner.name.startsWith(`${runLabel}-`) ||
               !/^cbx_[a-f0-9]{12}$/u.test(id) ||
@@ -502,7 +524,7 @@ async function main() {
               "--name",
               lease.name,
               "--labels",
-              `${runLabel},${admission.baseline}`,
+              `${runLabel},${runLabel}-${admission.baseline}`,
               "--ephemeral=true",
             ],
             { inherit: true, timeout: 10 * 60_000 },

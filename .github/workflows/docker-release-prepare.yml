@@ -65,7 +65,7 @@ jobs:
   resolve:
     runs-on: &linux_ubuntu_runner >-
       ${{ inputs.crabbox_runner_label && fromJSON(format('["self-hosted","crabbox",{0},{1}]',
-      toJSON(inputs.crabbox_runner_label), toJSON(('ubuntu-24.04')))) || (vars.OPENCLAW_RELEASE_RUNNER_GROUP !=
+      toJSON(inputs.crabbox_runner_label), toJSON(format('{0}-{1}', inputs.crabbox_runner_label, ('ubuntu-24.04'))))) || (vars.OPENCLAW_RELEASE_RUNNER_GROUP !=
       '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP),
       toJSON('ubuntu-24.04'))) || ('ubuntu-24.04')) }}
     outputs:
@@ -128,7 +128,7 @@ jobs:
   build:
     name: Prepare Docker images (${{ matrix.architecture }})
     needs: resolve
-    runs-on: ${{ inputs.crabbox_runner_label && (startsWith(matrix.runner, 'ubuntu-') || contains(matrix.runner, '-ubuntu-')) && fromJSON(format('["self-hosted","crabbox",{0},{1}]', toJSON(inputs.crabbox_runner_label), toJSON((matrix.runner)))) || (vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), toJSON(matrix.runner))) || (matrix.runner)) }}
+    runs-on: ${{ inputs.crabbox_runner_label && (startsWith(matrix.runner, 'ubuntu-') || contains(matrix.runner, '-ubuntu-')) && fromJSON(format('["self-hosted","crabbox",{0},{1}]', toJSON(inputs.crabbox_runner_label), toJSON(format('{0}-{1}', inputs.crabbox_runner_label, (matrix.runner))))) || (vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), toJSON(matrix.runner))) || (matrix.runner)) }}
     timeout-minutes: 60
     strategy:
       fail-fast: false

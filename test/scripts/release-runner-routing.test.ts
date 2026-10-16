@@ -177,7 +177,7 @@ describe("release runner reservation", () => {
   });
 
   it("routes full validation Linux workers to an isolated Crabbox pool and retains native runners", () => {
-    const label = "crabbox-frv-123";
+    const label = "crabbox-frv-012345abcdef";
     const native = /(?:windows|macos|xcode)/u;
     const graph = new Set([
       "full-release-validation",
@@ -236,7 +236,7 @@ describe("release runner reservation", () => {
                   ? "ubuntu-24.04"
                   : native.test(String(baseline)) || credentialed(name, job)
                     ? baseline
-                    : ["self-hosted", "crabbox", label, baseline],
+                    : ["self-hosted", "crabbox", label, `${label}-${baseline}`],
               );
             }
           }

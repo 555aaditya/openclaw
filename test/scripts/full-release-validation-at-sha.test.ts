@@ -1146,7 +1146,7 @@ describe("full-release-validation-at-sha", () => {
     const payload = fixture.readPayload();
     expect(payload.body.ref).toBe(branch.slice("refs/heads/".length));
     expect(payload.body.inputs).not.toHaveProperty("crabbox_runner_label");
-    expect(JSON.parse(payload.body.inputs.trusted_workflow_json)).toHaveProperty(
+    expect(JSON.parse(payload.body.inputs.trusted_workflow_json ?? "{}")).toHaveProperty(
       "crabboxRunnerLabel",
       "crabbox-frv-012345abcdef",
     );

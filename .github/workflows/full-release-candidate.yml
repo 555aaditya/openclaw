@@ -67,8 +67,8 @@ jobs:
     name: Find trusted release candidate
     runs-on: &linux_4cpu_runner >-
       ${{ inputs.crabbox_runner_label && fromJSON(format('["self-hosted","crabbox",{0},{1}]',
-      toJSON(inputs.crabbox_runner_label), toJSON((github.repository == 'openclaw/openclaw' &&
-      vars.OPENCLAW_CI_RUNNER_BACKEND == 'hybrid' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04')))) ||
+      toJSON(inputs.crabbox_runner_label), toJSON(format('{0}-{1}', inputs.crabbox_runner_label, (github.repository == 'openclaw/openclaw' &&
+      vars.OPENCLAW_CI_RUNNER_BACKEND == 'hybrid' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04'))))) ||
       (vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}',
       toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), toJSON(github.repository == 'openclaw/openclaw' &&
       vars.OPENCLAW_CI_RUNNER_BACKEND == 'hybrid' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04'))) ||

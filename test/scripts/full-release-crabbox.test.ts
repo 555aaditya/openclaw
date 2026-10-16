@@ -7,7 +7,7 @@ const sixteen = "blacksmith-16vcpu-ubuntu-2404";
 const queued = (id: number, baseline = four) => ({
   id,
   status: "queued",
-  labels: ["self-hosted", label, baseline],
+  labels: ["self-hosted", "crabbox", label, `${label}-${baseline}`],
 });
 
 describe("release Crabbox runner admission", () => {
@@ -64,9 +64,33 @@ describe("release Crabbox runner admission", () => {
     },
   );
 
+  it("refuses raw shared capacity labels even when the campaign label is present", () => {
+    expect(() =>
+      planRunnerAdmissions(
+        [{ ...queued(1), labels: ["self-hosted", "crabbox", label, four] }],
+        label,
+        [],
+        10,
+      ),
+    ).toThrow("Unsupported Crabbox runner labels");
+    expect(() =>
+      planRunnerAdmissions(
+        [{ ...queued(1), labels: [label, `crabbox-frv-ffffffffffff-${four}`] }],
+        label,
+        [],
+        10,
+      ),
+    ).toThrow("Unsupported Crabbox runner labels");
+  });
+
   it("refuses ambiguous capacity requirements instead of choosing one", () => {
     expect(() =>
-      planRunnerAdmissions([{ ...queued(1), labels: [label, four, sixteen] }], label, [], 10),
+      planRunnerAdmissions(
+        [{ ...queued(1), labels: [label, `${label}-${four}`, `${label}-${sixteen}`] }],
+        label,
+        [],
+        10,
+      ),
     ).toThrow("Unsupported Crabbox runner labels");
   });
 });

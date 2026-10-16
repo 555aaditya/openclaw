@@ -86,7 +86,9 @@ source identities, admission, witness verification, and final evidence checks
 still apply. Use tooling with `FULL_RELEASE_CRABBOX_RUNNER_CONTRACT=1` and selected child
 workflows that declare `crabbox_runner_label`. The controller supplies a unique
 `crabbox-frv-<hex>` label, provisions runners as matching jobs queue, and limits
-active task-owned leases to `--max-runners` (default 10). Each runner accepts one
+active task-owned leases to `--max-runners` (default 10). Capacity labels also carry
+that unique prefix; raw Ubuntu and Blacksmith capacity labels are never registered,
+so ordinary CI jobs cannot claim these runners. Each runner accepts one
 job, and the controller stops its lease after completion. Parent orchestration
 jobs and the Telegram QA dispatcher use GitHub-hosted Ubuntu runners so jobs
 waiting for children cannot exhaust the worker pool. Native macOS and

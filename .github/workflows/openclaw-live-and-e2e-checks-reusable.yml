@@ -641,9 +641,9 @@ jobs:
   validate_selected_ref:
     runs-on: &linux_4cpu_runner >-
       ${{ inputs.crabbox_runner_label && fromJSON(format('["self-hosted","crabbox",{0},{1}]',
-      toJSON(inputs.crabbox_runner_label), toJSON((!inputs.use_github_hosted_runners && github.repository ==
+      toJSON(inputs.crabbox_runner_label), toJSON(format('{0}-{1}', inputs.crabbox_runner_label, (!inputs.use_github_hosted_runners && github.repository ==
       'openclaw/openclaw' && vars.OPENCLAW_CI_RUNNER_BACKEND == 'hybrid' && 'blacksmith-4vcpu-ubuntu-2404' ||
-      'ubuntu-24.04')))) || (inputs.runner_group != '' && fromJSON(format('{{"group":{0},"labels":{1}}}',
+      'ubuntu-24.04'))))) || (inputs.runner_group != '' && fromJSON(format('{{"group":{0},"labels":{1}}}',
       toJSON(inputs.runner_group), toJSON(!inputs.use_github_hosted_runners && github.repository ==
       'openclaw/openclaw' && vars.OPENCLAW_CI_RUNNER_BACKEND == 'hybrid' && 'blacksmith-4vcpu-ubuntu-2404' ||
       'ubuntu-24.04'))) || (!inputs.use_github_hosted_runners && github.repository == 'openclaw/openclaw' &&
@@ -1217,7 +1217,7 @@ jobs:
 
   plan_release_workflow_matrices:
     needs: validate_selected_ref
-    runs-on: ${{ inputs.crabbox_runner_label && fromJSON(format('["self-hosted","crabbox",{0},{1}]', toJSON(inputs.crabbox_runner_label), toJSON(('ubuntu-24.04')))) || (inputs.runner_group != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(inputs.runner_group), toJSON('ubuntu-24.04'))) || ('ubuntu-24.04')) }}
+    runs-on: ${{ inputs.crabbox_runner_label && fromJSON(format('["self-hosted","crabbox",{0},{1}]', toJSON(inputs.crabbox_runner_label), toJSON(format('{0}-{1}', inputs.crabbox_runner_label, ('ubuntu-24.04'))))) || (inputs.runner_group != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(inputs.runner_group), toJSON('ubuntu-24.04'))) || ('ubuntu-24.04')) }}
     timeout-minutes: 10
     outputs:
       live_docker_count: ${{ steps.plan.outputs.live_docker_count }}
@@ -1288,8 +1288,8 @@ jobs:
     if: (!inputs.prepare_only) && inputs.include_live_suites && !inputs.live_models_only && (inputs.live_suite_filter == '' || inputs.live_suite_filter == 'live-cache')
     runs-on: &linux_8cpu_runner >-
       ${{ inputs.crabbox_runner_label && fromJSON(format('["self-hosted","crabbox",{0},{1}]',
-      toJSON(inputs.crabbox_runner_label), toJSON((inputs.use_github_hosted_runners && 'ubuntu-24.04' ||
-      'blacksmith-8vcpu-ubuntu-2404')))) || (inputs.runner_group != '' &&
+      toJSON(inputs.crabbox_runner_label), toJSON(format('{0}-{1}', inputs.crabbox_runner_label, (inputs.use_github_hosted_runners && 'ubuntu-24.04' ||
+      'blacksmith-8vcpu-ubuntu-2404'))))) || (inputs.runner_group != '' &&
       fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(inputs.runner_group),
       toJSON(inputs.use_github_hosted_runners && 'ubuntu-24.04' || 'blacksmith-8vcpu-ubuntu-2404'))) ||
       (inputs.use_github_hosted_runners && 'ubuntu-24.04' || 'blacksmith-8vcpu-ubuntu-2404')) }}
@@ -1420,8 +1420,8 @@ jobs:
     if: (!inputs.prepare_only) && inputs.include_repo_e2e && (inputs.live_suite_filter == '' || inputs.live_suite_filter == 'openshell-e2e')
     runs-on: &linux_32cpu_runner >-
       ${{ inputs.crabbox_runner_label && fromJSON(format('["self-hosted","crabbox",{0},{1}]',
-      toJSON(inputs.crabbox_runner_label), toJSON((inputs.use_github_hosted_runners && 'ubuntu-24.04' ||
-      'blacksmith-32vcpu-ubuntu-2404')))) || (inputs.runner_group != '' &&
+      toJSON(inputs.crabbox_runner_label), toJSON(format('{0}-{1}', inputs.crabbox_runner_label, (inputs.use_github_hosted_runners && 'ubuntu-24.04' ||
+      'blacksmith-32vcpu-ubuntu-2404'))))) || (inputs.runner_group != '' &&
       fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(inputs.runner_group),
       toJSON(inputs.use_github_hosted_runners && 'ubuntu-24.04' || 'blacksmith-32vcpu-ubuntu-2404'))) ||
       (inputs.use_github_hosted_runners && 'ubuntu-24.04' || 'blacksmith-32vcpu-ubuntu-2404')) }}
@@ -2080,7 +2080,7 @@ jobs:
   plan_docker_lane_groups:
     needs: validate_selected_ref
     if: (!inputs.prepare_only) && inputs.docker_lanes != ''
-    runs-on: ${{ inputs.crabbox_runner_label && fromJSON(format('["self-hosted","crabbox",{0},{1}]', toJSON(inputs.crabbox_runner_label), toJSON((inputs.use_github_hosted_runners && 'ubuntu-24.04' || 'blacksmith-4vcpu-ubuntu-2404')))) || (inputs.runner_group != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(inputs.runner_group), toJSON(inputs.use_github_hosted_runners && 'ubuntu-24.04' || 'blacksmith-4vcpu-ubuntu-2404'))) || (inputs.use_github_hosted_runners && 'ubuntu-24.04' || 'blacksmith-4vcpu-ubuntu-2404')) }}
+    runs-on: ${{ inputs.crabbox_runner_label && fromJSON(format('["self-hosted","crabbox",{0},{1}]', toJSON(inputs.crabbox_runner_label), toJSON(format('{0}-{1}', inputs.crabbox_runner_label, (inputs.use_github_hosted_runners && 'ubuntu-24.04' || 'blacksmith-4vcpu-ubuntu-2404'))))) || (inputs.runner_group != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(inputs.runner_group), toJSON(inputs.use_github_hosted_runners && 'ubuntu-24.04' || 'blacksmith-4vcpu-ubuntu-2404'))) || (inputs.use_github_hosted_runners && 'ubuntu-24.04' || 'blacksmith-4vcpu-ubuntu-2404')) }}
     timeout-minutes: 90
     outputs:
       groups_json: ${{ steps.groups.outputs.groups_json }}
@@ -2430,7 +2430,7 @@ jobs:
     needs: [validate_selected_ref, prepare_docker_e2e_image]
     if: (!inputs.prepare_only) && inputs.include_openwebui && inputs.docker_lanes == '' && (inputs.release_test_profile == 'stable' || inputs.release_test_profile == 'full')
     name: Docker E2E (openwebui)
-    runs-on: ${{ inputs.crabbox_runner_label && fromJSON(format('["self-hosted","crabbox",{0},{1}]', toJSON(inputs.crabbox_runner_label), toJSON(((vars.OPENCLAW_CI_RUNNER_BACKEND == 'github' || inputs.use_github_hosted_runners) && 'ubuntu-24.04' || 'blacksmith-32vcpu-ubuntu-2404')))) || (inputs.runner_group != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(inputs.runner_group), toJSON((vars.OPENCLAW_CI_RUNNER_BACKEND == 'github' || inputs.use_github_hosted_runners) && 'ubuntu-24.04' || 'blacksmith-32vcpu-ubuntu-2404'))) || ((vars.OPENCLAW_CI_RUNNER_BACKEND == 'github' || inputs.use_github_hosted_runners) && 'ubuntu-24.04' || 'blacksmith-32vcpu-ubuntu-2404')) }}
+    runs-on: ${{ inputs.crabbox_runner_label && fromJSON(format('["self-hosted","crabbox",{0},{1}]', toJSON(inputs.crabbox_runner_label), toJSON(format('{0}-{1}', inputs.crabbox_runner_label, ((vars.OPENCLAW_CI_RUNNER_BACKEND == 'github' || inputs.use_github_hosted_runners) && 'ubuntu-24.04' || 'blacksmith-32vcpu-ubuntu-2404'))))) || (inputs.runner_group != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(inputs.runner_group), toJSON((vars.OPENCLAW_CI_RUNNER_BACKEND == 'github' || inputs.use_github_hosted_runners) && 'ubuntu-24.04' || 'blacksmith-32vcpu-ubuntu-2404'))) || ((vars.OPENCLAW_CI_RUNNER_BACKEND == 'github' || inputs.use_github_hosted_runners) && 'ubuntu-24.04' || 'blacksmith-32vcpu-ubuntu-2404')) }}
     timeout-minutes: 60
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

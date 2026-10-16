@@ -165,8 +165,8 @@ jobs:
     name: Authorize workflow actor
     runs-on: &linux_8cpu_runner >-
       ${{ inputs.crabbox_runner_label && fromJSON(format('["self-hosted","crabbox",{0},{1}]',
-      toJSON(inputs.crabbox_runner_label), toJSON((vars.OPENCLAW_CI_RUNNER_BACKEND == 'github' &&
-      'ubuntu-24.04' || 'blacksmith-8vcpu-ubuntu-2404')))) || (inputs.runner_group != '' &&
+      toJSON(inputs.crabbox_runner_label), toJSON(format('{0}-{1}', inputs.crabbox_runner_label, (vars.OPENCLAW_CI_RUNNER_BACKEND == 'github' &&
+      'ubuntu-24.04' || 'blacksmith-8vcpu-ubuntu-2404'))))) || (inputs.runner_group != '' &&
       fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(inputs.runner_group),
       toJSON(vars.OPENCLAW_CI_RUNNER_BACKEND == 'github' && 'ubuntu-24.04' || 'blacksmith-8vcpu-ubuntu-2404')))
       || (vars.OPENCLAW_CI_RUNNER_BACKEND == 'github' && 'ubuntu-24.04' || 'blacksmith-8vcpu-ubuntu-2404')) }}
@@ -302,8 +302,8 @@ jobs:
     if: (inputs.expected_sha == '' || inputs.run_mock_parity) && (github.event_name != 'workflow_dispatch' || (inputs.scenario == '' && inputs.matrix_scenario == ''))
     runs-on: &linux_16cpu_runner >-
       ${{ inputs.crabbox_runner_label && fromJSON(format('["self-hosted","crabbox",{0},{1}]',
-      toJSON(inputs.crabbox_runner_label), toJSON((vars.OPENCLAW_CI_RUNNER_BACKEND == 'github' &&
-      'ubuntu-24.04' || 'blacksmith-16vcpu-ubuntu-2404')))) || (inputs.runner_group != '' &&
+      toJSON(inputs.crabbox_runner_label), toJSON(format('{0}-{1}', inputs.crabbox_runner_label, (vars.OPENCLAW_CI_RUNNER_BACKEND == 'github' &&
+      'ubuntu-24.04' || 'blacksmith-16vcpu-ubuntu-2404'))))) || (inputs.runner_group != '' &&
       fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(inputs.runner_group),
       toJSON(vars.OPENCLAW_CI_RUNNER_BACKEND == 'github' && 'ubuntu-24.04' ||
       'blacksmith-16vcpu-ubuntu-2404'))) || (vars.OPENCLAW_CI_RUNNER_BACKEND == 'github' && 'ubuntu-24.04' ||

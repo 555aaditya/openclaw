@@ -63,7 +63,7 @@ jobs:
     name: Validate artifact producer request
     runs-on: &linux_ubuntu_runner >-
       ${{ inputs.crabbox_runner_label && fromJSON(format('["self-hosted","crabbox",{0},{1}]',
-      toJSON(inputs.crabbox_runner_label), toJSON(('ubuntu-24.04')))) || (vars.OPENCLAW_RELEASE_RUNNER_GROUP !=
+      toJSON(inputs.crabbox_runner_label), toJSON(format('{0}-{1}', inputs.crabbox_runner_label, ('ubuntu-24.04'))))) || (vars.OPENCLAW_RELEASE_RUNNER_GROUP !=
       '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP),
       toJSON('ubuntu-24.04'))) || ('ubuntu-24.04')) }}
     timeout-minutes: 5

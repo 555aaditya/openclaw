@@ -87,7 +87,7 @@ jobs:
     if: github.event_name != 'schedule' || (github.repository == 'openclaw/openclaw' && github.ref == 'refs/heads/main')
     runs-on: &linux_ubuntu_runner >-
       ${{ inputs.crabbox_runner_label && fromJSON(format('["self-hosted","crabbox",{0},{1}]',
-      toJSON(inputs.crabbox_runner_label), toJSON(('ubuntu-24.04')))) || (vars.OPENCLAW_RELEASE_RUNNER_GROUP !=
+      toJSON(inputs.crabbox_runner_label), toJSON(format('{0}-{1}', inputs.crabbox_runner_label, ('ubuntu-24.04'))))) || (vars.OPENCLAW_RELEASE_RUNNER_GROUP !=
       '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP),
       toJSON('ubuntu-24.04'))) || ('ubuntu-24.04')) }}
     timeout-minutes: 5
@@ -557,7 +557,7 @@ jobs:
     name: ${{ matrix.check_name || 'plugin-prerelease-static-shard' }}
     needs: [resolve_target, preflight]
     if: needs.preflight.outputs.run_plugin_prerelease_static == 'true'
-    runs-on: ${{ inputs.crabbox_runner_label && fromJSON(format('["self-hosted","crabbox",{0},{1}]', toJSON(inputs.crabbox_runner_label), toJSON((github.event_name == 'workflow_dispatch' && 'ubuntu-24.04' || 'blacksmith-8vcpu-ubuntu-2404')))) || (vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), toJSON(github.event_name == 'workflow_dispatch' && 'ubuntu-24.04' || 'blacksmith-8vcpu-ubuntu-2404'))) || (github.event_name == 'workflow_dispatch' && 'ubuntu-24.04' || 'blacksmith-8vcpu-ubuntu-2404')) }}
+    runs-on: ${{ inputs.crabbox_runner_label && fromJSON(format('["self-hosted","crabbox",{0},{1}]', toJSON(inputs.crabbox_runner_label), toJSON(format('{0}-{1}', inputs.crabbox_runner_label, (github.event_name == 'workflow_dispatch' && 'ubuntu-24.04' || 'blacksmith-8vcpu-ubuntu-2404'))))) || (vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), toJSON(github.event_name == 'workflow_dispatch' && 'ubuntu-24.04' || 'blacksmith-8vcpu-ubuntu-2404'))) || (github.event_name == 'workflow_dispatch' && 'ubuntu-24.04' || 'blacksmith-8vcpu-ubuntu-2404')) }}
     timeout-minutes: 45
     strategy:
       fail-fast: false
@@ -594,7 +594,7 @@ jobs:
     name: ${{ matrix.check_name || 'plugin-prerelease-node-shard' }}
     needs: [resolve_target, preflight]
     if: needs.preflight.outputs.run_plugin_prerelease_node == 'true'
-    runs-on: ${{ inputs.crabbox_runner_label && (startsWith(matrix.runner, 'ubuntu-') || contains(matrix.runner, '-ubuntu-')) && fromJSON(format('["self-hosted","crabbox",{0},{1}]', toJSON(inputs.crabbox_runner_label), toJSON((github.event_name == 'workflow_dispatch' && 'ubuntu-24.04' || (matrix.runner || 'ubuntu-24.04'))))) || (vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), toJSON(github.event_name == 'workflow_dispatch' && 'ubuntu-24.04' || (matrix.runner || 'ubuntu-24.04')))) || (github.event_name == 'workflow_dispatch' && 'ubuntu-24.04' || (matrix.runner || 'ubuntu-24.04'))) }}
+    runs-on: ${{ inputs.crabbox_runner_label && (startsWith(matrix.runner, 'ubuntu-') || contains(matrix.runner, '-ubuntu-')) && fromJSON(format('["self-hosted","crabbox",{0},{1}]', toJSON(inputs.crabbox_runner_label), toJSON(format('{0}-{1}', inputs.crabbox_runner_label, (github.event_name == 'workflow_dispatch' && 'ubuntu-24.04' || (matrix.runner || 'ubuntu-24.04')))))) || (vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), toJSON(github.event_name == 'workflow_dispatch' && 'ubuntu-24.04' || (matrix.runner || 'ubuntu-24.04')))) || (github.event_name == 'workflow_dispatch' && 'ubuntu-24.04' || (matrix.runner || 'ubuntu-24.04'))) }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -680,7 +680,7 @@ jobs:
     name: ${{ matrix.check_name || 'plugin-prerelease-extension-shard' }}
     needs: [resolve_target, preflight]
     if: needs.preflight.outputs.run_plugin_prerelease_extensions == 'true'
-    runs-on: ${{ inputs.crabbox_runner_label && (startsWith(matrix.runner, 'ubuntu-') || contains(matrix.runner, '-ubuntu-')) && fromJSON(format('["self-hosted","crabbox",{0},{1}]', toJSON(inputs.crabbox_runner_label), toJSON((github.event_name == 'workflow_dispatch' && 'ubuntu-24.04' || matrix.runner)))) || (vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), toJSON(github.event_name == 'workflow_dispatch' && 'ubuntu-24.04' || matrix.runner))) || (github.event_name == 'workflow_dispatch' && 'ubuntu-24.04' || matrix.runner)) }}
+    runs-on: ${{ inputs.crabbox_runner_label && (startsWith(matrix.runner, 'ubuntu-') || contains(matrix.runner, '-ubuntu-')) && fromJSON(format('["self-hosted","crabbox",{0},{1}]', toJSON(inputs.crabbox_runner_label), toJSON(format('{0}-{1}', inputs.crabbox_runner_label, (github.event_name == 'workflow_dispatch' && 'ubuntu-24.04' || matrix.runner))))) || (vars.OPENCLAW_RELEASE_RUNNER_GROUP != '' && fromJSON(format('{{"group":{0},"labels":{1}}}', toJSON(vars.OPENCLAW_RELEASE_RUNNER_GROUP), toJSON(github.event_name == 'workflow_dispatch' && 'ubuntu-24.04' || matrix.runner))) || (github.event_name == 'workflow_dispatch' && 'ubuntu-24.04' || matrix.runner)) }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
