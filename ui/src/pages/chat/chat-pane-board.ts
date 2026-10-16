@@ -36,11 +36,10 @@ import {
   resolveUiConversationIdentity,
 } from "../../lib/sessions/session-key.ts";
 import { showToast } from "../../lib/toast.ts";
-import { emptyLegacyContent, solidContent } from "../../lit/solid-content.tsx";
 import { ensureBoardViewElement } from "./board-session-surface.tsx";
 import { ChatPaneHistory } from "./chat-pane-history.ts";
 import type { ResolvedBoardView } from "./chat-pane-shared.ts";
-import { ChatBoardPanel } from "./chat-pane-surfaces.tsx";
+import type { ChatBoardPanel } from "./chat-pane-surfaces.tsx";
 import type { ChatPageHost } from "./chat-state-host.ts";
 import { requestChatPageUpdate } from "./chat-state-render.ts";
 import { selectedChatSessionRow } from "./chat-state-route.ts";
@@ -624,17 +623,20 @@ export abstract class ChatPaneBoard extends ChatPaneHistory {
     };
   }
 
-  protected renderBoardPanel(board: ResolvedBoardView, layout: SidebarLayout) {
+  protected renderBoardPanel(
+    board: ResolvedBoardView,
+    layout: SidebarLayout,
+  ): Parameters<typeof ChatBoardPanel>[0] | null {
     const session = this.resolveBoardConversation();
     if (!this.isBoardPanelAvailable(board)) {
-      return emptyLegacyContent;
+      return null;
     }
     const error = !board.provider.hasLoadedSnapshot && board.provider.loadError$.value;
     // Only the loaded board acknowledgment supplies a missing owner; its display key
     // must not replace the original session target (notably global versus a literal key).
     session.agentId ??= parseAgentSessionKey(board.snapshot.sessionKey)?.agentId;
     const connectionGeneration = this.connectionGeneration;
-    return solidContent(ChatBoardPanel, {
+    return {
       error: error || undefined,
       elementReady: Boolean(customElements.get("openclaw-board-view")),
       surface: {
@@ -664,7 +666,7 @@ export abstract class ChatPaneBoard extends ChatPaneHistory {
         } satisfies BoardViewCallbacks,
         widgetFrameUrl: (name, revision) => board.provider.widgetFrameUrl(name, revision),
       },
-    });
+    };
   }
 
   protected showDashboard(expanded: boolean): void {

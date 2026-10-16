@@ -84,7 +84,7 @@ function renderFact(fact: IdentityFact) {
       <dt>
         <span>{fact.label}</span>
         <span
-          class={`run-inspector__state run-inspector__state--${fact.state}`}
+          class={["run-inspector__state", `run-inspector__state--${fact.state}`]}
           role="img"
           aria-label={t("activity.runInspector.evidenceStateLabel", {
             state: stateLabel,
@@ -310,7 +310,7 @@ function renderReady(
   return (
     <>
       <div
-        class={`run-inspector__coverage run-inspector__coverage--${result.coverage.state}`}
+        class={["run-inspector__coverage", `run-inspector__coverage--${result.coverage.state}`]}
         role="status"
         aria-label={t("activity.runInspector.coverageStatusLabel", {
           state: currentCoverageLabel,

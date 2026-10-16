@@ -7,15 +7,14 @@ import {
   isStaleChunkImportError,
   retryStaleChunkReloadWhenReachable,
 } from "../../app/stale-chunk-reload.ts";
-import { LazyViewError } from "../../components/solid/lazy-view-error.tsx";
+import type { LazyViewError } from "../../components/solid/lazy-view-error.tsx";
 import type { BoardProvider } from "../../lib/board/provider.ts";
 import { parseCatalogSessionKey } from "../../lib/sessions/catalog-key.ts";
 import { scopedAgentParamsForSession } from "../../lib/sessions/navigation.ts";
 import { uiConversationMatches } from "../../lib/sessions/session-key.ts";
-import { solidContent } from "../../lit/solid-content.tsx";
 import { sidebarPanelDefinitions } from "./chat-pane-embedded-panels.ts";
 import type { ResolvedBoardView } from "./chat-pane-shared.ts";
-import { SidebarRegionView, type SidebarRegionParams } from "./chat-pane-sidebar-view.tsx";
+import type { SidebarRegionParams } from "./chat-pane-sidebar-view.tsx";
 import type { ChatPageHost } from "./chat-state-host.ts";
 import { resolveChatAgentId, selectedChatSessionRow } from "./chat-state-route.ts";
 import type { SidebarFullMessageLoader } from "./components/chat-sidebar-content-types.ts";
@@ -95,7 +94,7 @@ export function ensureLazySidebarElement(key: LazyElementKey, requestUpdate: () 
   const runtime = lazyRuntimes.get(key) ?? { listeners: new Set() };
   lazyRuntimes.set(key, runtime);
   if (runtime.error !== undefined) {
-    return solidContent(LazyViewError, runtime.error);
+    return runtime.error;
   }
   runtime.listeners.add(requestUpdate);
   if (runtime.pending) {
@@ -178,17 +177,20 @@ export function renderSidebarRegion(params: SidebarRegionParams) {
     if (lazyState !== undefined) {
       panelDefinitions = panelDefinitions.map((definition) =>
         definition.slot === panel.slot
-          ? { ...definition, content: lazyState ?? definition.loading }
+          ? {
+              ...definition,
+              loadState: lazyState,
+            }
           : definition,
       );
     }
   }
-  return solidContent(SidebarRegionView, {
+  return {
     ...params,
     panelIdPrefix,
     panelDefinitions,
     regionError,
-  });
+  };
 }
 
 export function chatWidgetRenderOptions(

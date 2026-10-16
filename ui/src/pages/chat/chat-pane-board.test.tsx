@@ -1,6 +1,6 @@
 /* @vitest-environment jsdom */
 
-import { createSignal, flush } from "solid-js";
+import { flush, Show } from "solid-js";
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import { createApplicationTheme } from "../../app/bootstrap-theme.ts";
@@ -16,7 +16,6 @@ import {
   type BoardProvider,
 } from "../../lib/board/provider.ts";
 import type { SessionCapability } from "../../lib/sessions/index.ts";
-import { emptyLegacyContent, LitContent } from "../../lit/solid-content.tsx";
 import { createMockBoardProvider } from "../../test-helpers/board-provider.ts";
 import { sessionMutationGatewayHello } from "../../test-helpers/gateway-methods.ts";
 import { installDialogPolyfill } from "../../test-helpers/modal-dialog.ts";
@@ -25,6 +24,8 @@ import { createStorageMock } from "../../test-helpers/storage.ts";
 import { ChatPaneRuntime } from "./chat-pane-render.ts";
 import { createPaneTestHost } from "./chat-pane-runtime.test-support.ts";
 import type { ResolvedBoardView } from "./chat-pane-shared.ts";
+import { type ChatBoardPanel, ChatBoardResetConfirmation } from "./chat-pane-surfaces.tsx";
+import { mountBoardPanel } from "./chat-pane.test-support.ts";
 import { createInitialChatRealtimeState } from "./chat-realtime.ts";
 import type { ChatPageHost } from "./chat-state-host.ts";
 import {
@@ -88,8 +89,11 @@ type TestChatPane = HTMLElement & {
   showDashboard: (expanded: boolean) => void;
   resolveBoardProvider: () => BoardProvider;
   resolveBoardView: () => ResolvedBoardView;
-  renderBoardPanel: (board: ResolvedBoardView, layout: ChatPageHost["sidebarLayout"]) => unknown;
-  renderResetConfirmation: () => unknown;
+  renderBoardPanel: (
+    board: ResolvedBoardView,
+    layout: ChatPageHost["sidebarLayout"],
+  ) => Parameters<typeof ChatBoardPanel>[0] | null;
+  renderResetConfirmation: () => Parameters<typeof ChatBoardResetConfirmation>[0] | null;
   syncRetainedBoardSession: (board: ResolvedBoardView) => void;
   refreshSwarmRoster: () => void;
   requestUpdate: () => void;
@@ -614,7 +618,11 @@ describe("chat pane board shell", () => {
       const pane = createTestPane();
       pane.boardProvider = createMockBoardProvider(pane.state.sessionKey);
       const pending = pane.confirmConversationReset();
-      const mounted = mountSolid(() => <LitContent value={pane.renderResetConfirmation()} />);
+      const mounted = mountSolid(() => (
+        <Show when={pane.renderResetConfirmation()}>
+          {(current) => <ChatBoardResetConfirmation {...current()} />}
+        </Show>
+      ));
       flush();
       try {
         const modal = mounted.container.querySelector("openclaw-modal-dialog")!;
@@ -773,12 +781,8 @@ describe("chat pane board shell", () => {
     pane.boardProvider = createMockBoardProvider(pane.state.sessionKey);
     const container = document.body.appendChild(document.createElement("div"));
     const layout = openSlot({ columns: [] }, "dashboard");
-    const [content, setContent] = createSignal<unknown>(emptyLegacyContent);
-    const mounted = mountSolid(() => <LitContent value={content()} />, { container });
-    const draw = () => {
-      setContent(pane.renderBoardPanel(pane.resolveBoardView(), layout));
-      flush();
-    };
+    const mounted = mountBoardPanel(pane, layout, container);
+    const draw = () => mounted.draw();
     try {
       pane.visuallyPresented = true;
       draw();
@@ -812,12 +816,8 @@ describe("chat pane board shell", () => {
       request.mockResolvedValue(snapshot);
       const container = document.createElement("div");
       const layout = openSlot({ columns: [] }, "dashboard");
-      const [content, setContent] = createSignal<unknown>(emptyLegacyContent);
-      const mounted = mountSolid(() => <LitContent value={content()} />, { container });
-      const draw = () => {
-        setContent(pane.renderBoardPanel(pane.resolveBoardView(), layout));
-        flush();
-      };
+      const mounted = mountBoardPanel(pane, layout, container);
+      const draw = () => mounted.draw();
       const target = () =>
         (
           container.querySelector("openclaw-board-view") as
