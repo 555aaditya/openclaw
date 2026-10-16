@@ -20,6 +20,7 @@ import { GatewayClientRegistry } from "./server/client-registry.js";
 import { SessionAncestorReferences } from "./session-ancestor-references.js";
 import { prepareSessionEventProjection } from "./session-event-projection.js";
 import { resolveSessionEventAgentScope } from "./session-request-agent.js";
+import { releaseSessionRowViewer } from "./session-row-presentation.js";
 import type { SessionRowProjection } from "./session-row-projection.js";
 import { canReceiveSessionEvent, prepareProjectedSessionSharing } from "./session-sharing.js";
 
@@ -35,6 +36,9 @@ export function createGatewayConnectionState(params: {
   let ancestorReferences = new WeakMap<GatewayClient, SessionAncestorReferences>();
   const clients = new GatewayClientRegistry(undefined, (client) => {
     ancestorReferences.delete(client);
+    if (sessionRowProjection) {
+      releaseSessionRowViewer(sessionRowProjection, client);
+    }
   });
   const forgetConnectionAncestors = (connId: string) => {
     const client = clients.getByConnectionId(connId);
@@ -55,7 +59,13 @@ export function createGatewayConnectionState(params: {
   };
   const sessionEventSubscribers = createSessionEventSubscriberRegistry(
     isConnectionActive,
-    forgetConnectionAncestors,
+    (connId, subscribed) => {
+      forgetConnectionAncestors(connId);
+      const client = clients.getByConnectionId(connId);
+      if (!subscribed && client && sessionRowProjection) {
+        releaseSessionRowViewer(sessionRowProjection, client);
+      }
+    },
   );
   const sessionMessageSubscribers = createSessionMessageSubscriberRegistry(
     isConnectionActive,

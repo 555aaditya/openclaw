@@ -22,7 +22,13 @@ import {
   projectSessionProfileInvolvements,
 } from "./session-identity-projection.js";
 import type { SessionEntrySelection } from "./session-list-filters.js";
-import type { SessionListSelectionState } from "./session-list-selection.js";
+import {
+  getSessionListView,
+  selectSessionListIndex,
+  type SessionListIndexes,
+  type SessionListView,
+  type SessionListSelectionState,
+} from "./session-list-selection.js";
 import { tryResolveSessionCompatibilityOwnerAgentId } from "./session-request-agent.js";
 import type { SessionRowReadView } from "./session-row-prepared-read.js";
 import type * as records from "./session-row-projection-record.js";
@@ -73,17 +79,8 @@ type PublicationRows = WeakMap<
 type Publication = {
   factsRevision: number;
   rows: PublicationRows;
-  lists: Map<
-    string,
-    {
-      rows?: GatewaySessionRow[];
-      previousRows?: GatewaySessionRow[];
-      selection?: SessionEntrySelection;
-      selectedAt?: number;
-      activityExpiresAt?: number;
-      incremental?: SessionListSelectionState;
-    }
-  >;
+  lists: Map<string, SessionListView>;
+  indexes: SessionListIndexes;
 };
 type PublicationView = () => Publication;
 
@@ -96,6 +93,16 @@ const publications = new WeakMap<
   } & Publication
 >();
 const encodings = new WeakMap<GatewaySessionRow, string>();
+
+/** Connection/subscription retirement releases private pages, not shared candidate indexes. */
+export function releaseSessionRowViewer(projection: SessionRowProjection, client: GatewayClient) {
+  const lists = publications.get(projection)?.lists;
+  for (const [key, view] of lists ?? []) {
+    if (view.client === client) {
+      lists!.delete(key);
+    }
+  }
+}
 /** Immutable row identities own field preparation; fact indexes stay response-local. */
 function createSessionRowFactSharing<T extends GatewaySessionRow>() {
   const prepared = new WeakMap<T, [string, Partial<T>][]>();
@@ -237,22 +244,27 @@ export function prepareSessionRowPublication(
         factsRevision: 0,
         rows: new WeakMap(),
         lists: new Map(),
+        indexes: new Map(),
       };
       publications.set(projection, publication);
       const retained = publication;
       projection.onSelectionChange((change) => {
         if (change.kind === "reset") {
           retained.lists.clear();
+          retained.indexes.clear();
           return;
         }
         // Unaffected immutable vectors remain comparison witnesses after selection retires.
         retained.revision = undefined;
         for (const list of retained.lists.values()) {
           list.selection = undefined;
-          list.incremental?.changed.add(change.key);
-          // Dormant views retire rather than accumulating an unbounded publication backlog.
-          if ((list.incremental?.changed.size ?? 0) >= 1024) {
-            list.incremental = undefined;
+        }
+        for (const { state } of retained.indexes.values()) {
+          state.changed.add(change.key);
+          // Dormant indexes retire rather than retain an unbounded publication backlog.
+          if (state.changed.size >= 1024) {
+            state.current = undefined;
+            state.changed.clear();
           }
         }
       });
@@ -276,6 +288,7 @@ export function prepareSessionRowPublication(
         publication.identityRevision !== identityRevision
       ) {
         publication.lists.clear();
+        publication.indexes.clear();
       }
       publication.revision = revision;
       publication.cfg = cfg;
@@ -342,32 +355,13 @@ export function prepareProjectedSessionPresentation(
   const profileId = profile
     ? projectSessionParticipant({ type: "profile", id: profile.id }, profiles).identity.id
     : undefined;
-  const listView = (opts: SessionsListParams, selection = false) => {
-    const { source: _source, ifRowsRevision: _ifRowsRevision, ...query } = opts;
-    if (selection) {
-      delete query.rowMode;
-      delete query.includeDerivedTitles;
-      delete query.includeLastMessage;
-      delete query.includeActivitySummary;
-    }
-    const key = JSON.stringify([
-      client === undefined,
-      sharing.cacheKey,
-      presentFastMode("ultrafast"),
-      Object.entries(query).toSorted(([left], [right]) => left.localeCompare(right)),
-    ]);
-    const lists = publicationState?.lists;
-    let view = lists?.get(key);
-    if (!view) {
-      view = {};
-      // A revision can receive arbitrary paging/search queries; retain bounded recent views.
-      if (lists && lists.size >= 32) {
-        lists.delete(lists.keys().next().value!);
-      }
-      lists?.set(key, view);
-    }
-    return view;
-  };
+  const listAudience = JSON.stringify([
+    client === undefined,
+    sharing.cacheKey,
+    presentFastMode("ultrafast"),
+  ]);
+  const listView = (opts: SessionsListParams, selection = false) =>
+    getSessionListView(publicationState?.lists, opts, client, listAudience, selection);
   const viewer = (value: SessionSharingTarget) => ({
     visibility: resolveSessionVisibility(value.entry),
     ...(profileId && !value.entry.incognito && !isIncognitoSessionKey(value.canonicalKey)
@@ -674,15 +668,16 @@ export function prepareProjectedSessionPresentation(
         (now < view.selectedAt || now > (view.activityExpiresAt ?? Infinity))
       ) {
         view.selection = undefined;
-        view.incremental = undefined;
       }
       if (!view.selection) {
         // Person resolution and counts require the whole visible roster.
         const incremental =
           !opts.includePeople && !opts.involvingProfileId && !opts.includeOwnerSessionCounts;
-        const { entries, ownerSessionProfiles, ...facets } = select(
-          incremental ? (view.incremental ??= { changed: new Set() }) : undefined,
-        );
+        const retained =
+          incremental && publicationState
+            ? selectSessionListIndex(publicationState.indexes, opts)
+            : undefined;
+        const { entries, ownerSessionProfiles, ...facets } = select(retained);
         Object.freeze(entries);
         view.selection = Object.freeze({
           ...freezeJsonSnapshot(facets),
@@ -696,7 +691,7 @@ export function prepareProjectedSessionPresentation(
     },
     list(rows: GatewaySessionRow[], opts: SessionsListParams) {
       // Current authorization and temporal presentation precede reuse. The retained vector
-      // owns bytes only; it never retains a connection or grants permission to a later read.
+      // owns bytes only; its connection lifetime never grants permission to a later read.
       const view = listView(opts);
       const previous = view.rows;
       if (previous?.length === rows.length && rows.every((row, index) => row === previous[index])) {

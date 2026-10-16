@@ -458,7 +458,7 @@ type SessionMessageSubscriptionOwners = Map<string | undefined, ProvisionalSubsc
 /** Create the broad sessions.changed subscriber registry. */
 export function createSessionEventSubscriberRegistry(
   isConnectionActive?: (connId: string) => boolean,
-  onSubscriptionChange?: (connId: string) => void,
+  onSubscriptionChange?: (connId: string, subscribed: boolean) => void,
 ): SessionEventSubscriberRegistry {
   const connIds = new Set<string>();
   const empty = new Set<string>();
@@ -469,7 +469,7 @@ export function createSessionEventSubscriberRegistry(
       if (!normalized || isConnectionActive?.(normalized) === false) {
         return;
       }
-      onSubscriptionChange?.(normalized);
+      onSubscriptionChange?.(normalized, true);
       connIds.add(normalized);
     },
     unsubscribe: (connId: string) => {
@@ -477,7 +477,7 @@ export function createSessionEventSubscriberRegistry(
       if (!normalized) {
         return;
       }
-      onSubscriptionChange?.(normalized);
+      onSubscriptionChange?.(normalized, false);
       connIds.delete(normalized);
     },
     getAll: () => (connIds.size > 0 ? connIds : empty),

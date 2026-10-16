@@ -366,7 +366,7 @@ test("refreshes cached lists after placement readiness and refuses disposed resp
   });
 });
 
-test("shares concurrent list selection across row modes and refilters only published rows", async () => {
+test("shares the incremental index across viewers, modes, and pages with exact personal filters", async () => {
   await withStateDirEnv("openclaw-list-selection-repeat-", async () => {
     resetPluginRuntimeStateForTest();
     setActivePluginRegistry(createEmptyPluginRegistry());
@@ -375,6 +375,8 @@ test("shares concurrent list selection across row modes and refilters only publi
     setRuntimeConfigSnapshot(cfg);
     const alice = viewer(ensureProfileForEmail("alice@selection.example").id);
     const bob = viewer(ensureProfileForEmail("bob@selection.example").id);
+    alice.connect.scopes = ["operator.admin"];
+    const otherAdmin = { ...bob, connect: { ...bob.connect, scopes: ["operator.admin"] } };
     const now = 1_800_000_000_000;
     const clock = vi.spyOn(Date, "now").mockReturnValue(now);
     const store = Object.fromEntries(
@@ -411,9 +413,18 @@ test("shares concurrent list selection across row modes and refilters only publi
       const owner = vi.spyOn(projection.state.rowContext.identityProjection!, "owner");
       try {
         const repeated = await Promise.all(
-          Array.from({ length: 8 }, (_, i) => read(i % 2 ? "compact" : "sidebar")),
+          Array.from({ length: 8 }, (_, i) =>
+            read(i % 2 ? "compact" : "sidebar", i % 2 ? alice : otherAdmin),
+          ),
         );
         expect(repeated.map((result) => result.totalCount)).toEqual(Array(8).fill(128));
+        const next = await listProjectedSessions({
+          projection,
+          client: otherAdmin,
+          acceptsSerializedJson: true,
+          opts: { ...opts, limit: 1, offset: 1 },
+        });
+        expect(next.sessions.map((row) => row.sessionId)).toEqual(["s126"]);
         expect(owner).not.toHaveBeenCalled();
         replaceSessionEntrySync(
           { agentId: "main", sessionKey: "agent:main:selection-0" },
@@ -435,6 +446,21 @@ test("shares concurrent list selection across row modes and refilters only publi
         const other = await read("compact", bob);
         expect(other.sessions.map((row) => row.sessionId)).toEqual(["s127", "s126"]);
         expect(other.totalCount).toBe(127);
+        for (const personal of [
+          { ownerId: bob.authenticatedUserProfile!.profileId },
+          { involvingMe: true },
+        ]) {
+          const filtered = await listProjectedSessions({
+            projection,
+            client: bob,
+            acceptsSerializedJson: true,
+            opts: { ...opts, ...personal, rowMode: "compact" },
+          });
+          expect(filtered.sessions.map((row) => row.sessionId)).toEqual(["s127"]);
+          expect(filtered.totalCount).toBe(1);
+          expect(filtered.owners).toHaveLength(2);
+        }
+        expect((await read("compact", otherAdmin)).totalCount).toBe(128);
         // An exact publication must not hide an expired retained selection.
         clock.mockReturnValue(now + 60_128);
         replaceSessionEntrySync(

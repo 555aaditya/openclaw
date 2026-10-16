@@ -33,6 +33,7 @@ import { bindSessionListRowRead } from "./session-list-read-result.js";
 import {
   updateSessionListSelection,
   type SessionListSelectionState,
+  type SharedSessionListParams,
 } from "./session-list-selection.js";
 import { withReadySessionRows } from "./session-row-prepared-read.js";
 import {
@@ -52,7 +53,7 @@ import { getSessionDefaults } from "./session-utils-model.js";
 import type { GatewaySessionRow, SessionsListResult } from "./session-utils.types.js";
 
 export function* selectSessionEntries(
-  params: SessionListFilterParams & {
+  params: SharedSessionListParams & {
     defaultLimit?: number;
     retained?: SessionListSelectionState;
   },
@@ -64,15 +65,14 @@ export function* selectSessionEntries(
       ? Math.min(limit ?? SESSIONS_LIST_OWNER_LIMIT, SESSIONS_LIST_OWNER_LIMIT)
       : 0;
   const filteredResult = params.retained
-    ? yield* updateSessionListSelection(params, params.retained)
+    ? yield* updateSessionListSelection(params, params.retained, { offset, limit, ownerLimit })
     : yield* filterSessionEntries(
         params,
         params.entriesSorted ? { offset, limit, ownerLimit } : undefined,
       );
   const { ownerEntries, entries: filtered, ...facets } = filteredResult;
-  const sharedEntries = params.retained
-    ? filtered.slice(offset, limit === undefined ? undefined : offset + limit)
-    : params.entriesSorted
+  const sharedEntries =
+    params.retained || params.entriesSorted
       ? filtered
       : (yield* sortAndLimitSessionEntries(
           filtered,
@@ -83,9 +83,8 @@ export function* selectSessionEntries(
   let entries = sharedEntries;
   let ownerCount = 0;
   if (ownerLimit > 0) {
-    const owned = params.retained
-      ? ownerEntries.slice(0, ownerLimit)
-      : params.entriesSorted
+    const owned =
+      params.retained || params.entriesSorted
         ? ownerEntries
         : yield* sortAndLimitSessionEntries(
             ownerEntries,
@@ -388,7 +387,7 @@ export function prepareProjectedSessionList(params: {
   const { getTarget } = prepared;
   const { active } = presentation;
   const identity = gatewayClientSessionCreator(client ?? null)?.id;
-  const filters: SessionListFilterParams = {
+  const filters: SharedSessionListParams = {
     ...prepared,
     identityNames: params.searchIdentities?.names,
     entriesSorted: true,
@@ -398,6 +397,11 @@ export function prepareProjectedSessionList(params: {
     projectActiveRun: context
       ? (key, entry, agentId) => active(getTarget(key)?.key ?? key, entry, agentId)!
       : undefined,
+    viewerFiltered: client !== undefined && presentation.sharing.entryFilter !== undefined,
+    sharedEntryFilter:
+      opts.hasBoard === undefined
+        ? undefined
+        : (_key, _entry, row) => row.hasBoard === opts.hasBoard,
     entryFilter: (key, entry, row) => {
       const storeKey = row.storeKey ?? key;
       let visible = params.visibility?.get(entry);

@@ -1,10 +1,14 @@
+import { EventEmitter } from "node:events";
 import { setImmediate as nextTurn } from "node:timers/promises";
 import { queryObjects } from "node:v8";
 import { expect, it } from "vitest";
 import { setRuntimeConfigSnapshot } from "../config/config.js";
 import { replaceSessionEntrySync } from "../config/sessions/session-accessor.js";
 import { sessionChanges } from "../sessions/session-row-changes.js";
+import { createTestGatewayScheduler } from "../test-utils/gateway-scheduler-clock.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
+import { createGatewayConnectionState } from "./server-connection-state.js";
+import type { GatewayWsClient } from "./server/ws-types.js";
 import { retainSessionListForegroundWork } from "./session-projection-work.js";
 import { ready } from "./session-row-projection-record.js";
 import { createSessionRowProjection } from "./session-row-projection.js";
@@ -14,7 +18,7 @@ function createCollectionControl() {
   return new WeakRef({});
 }
 
-it("collects superseded resident rows and their materializations after metadata refreshes", async () => {
+it("collects retired viewer pages and superseded resident rows after metadata refreshes", async () => {
   await withOpenClawTestState({ scenario: "minimal" }, async () => {
     const cfg = { agents: { entries: { main: {} } } };
     setRuntimeConfigSnapshot(cfg);
@@ -75,8 +79,71 @@ it("collects superseded resident rows and their materializations after metadata 
         keys.map(() => `Revision ${revision}`),
       );
     }
+    async function proveViewerRetirement() {
+      const connection = createGatewayConnectionState({
+        scheduler: createTestGatewayScheduler(),
+        bootId: "list-retention",
+        cfg,
+      });
+      const detach = connection.attachSessionRowProjection(projection);
+      const peers: GatewayWsClient[] = ["unsubscribe", "disconnect", "survivor"].map((connId) => ({
+        connId,
+        usesSharedGatewayAuth: true,
+        connect: {
+          minProtocol: 1,
+          maxProtocol: 1,
+          client: { id: "openclaw-control-ui", version: "test", platform: "web", mode: "webchat" },
+          scopes: ["operator.admin"],
+        },
+        socket: Object.assign(new EventEmitter(), {
+          readyState: 1,
+          bufferedAmount: 0,
+          send() {},
+          close() {},
+          terminate() {},
+        }),
+      }));
+      const page = async (client: GatewayWsClient) =>
+        (
+          await listProjectedSessions({
+            projection,
+            client,
+            opts: { rowMode: "compact", limit: 2 },
+            acceptsSerializedJson: true,
+          })
+        ).sessions;
+      try {
+        for (const client of peers) {
+          connection.clients.add(client);
+          connection.sessionEventSubscribers.subscribe(client.connId);
+        }
+        const [unsubscribed, disconnected, survivor] = peers;
+        const livePage = await page(survivor!);
+        const retiredPages = [
+          new WeakRef(await page(unsubscribed!)),
+          new WeakRef(await page(disconnected!)),
+        ];
+        connection.sessionEventSubscribers.subscribe(survivor!.connId);
+        expect(await page(survivor!)).toBe(livePage);
+        connection.sessionEventSubscribers.unsubscribe(unsubscribed!.connId);
+        connection.clients.delete(disconnected!);
+        await nextTurn();
+        queryObjects(WeakRef);
+        expect(retiredPages.map((retiredPage) => retiredPage.deref())).toEqual([
+          undefined,
+          undefined,
+        ]);
+        expect(connection.clients.has(unsubscribed!)).toBe(true);
+        expect(await page(survivor!)).toBe(livePage);
+      } finally {
+        connection.clients.clear();
+        detach();
+        await connection.mentionInbox.dispose();
+      }
+    }
     try {
       await projection.ensureMaterialized();
+      await proveViewerRetirement();
       for (let revision = 1; revision <= 4; revision++) {
         refreshEntries(revision);
         await projection.ensureMaterialized();
