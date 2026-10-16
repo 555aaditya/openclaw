@@ -137,7 +137,7 @@ jobs:
     needs: scope
     name: Security High (${{ matrix.category }})
     if: ${{ ((github.event_name != 'schedule' || github.repository == 'openclaw/openclaw') && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'workflow_dispatch' || inputs.profile == 'all' || inputs.profile == 'security')) }}
-    runs-on: ${{ github.event_name == 'workflow_dispatch' && inputs.crabbox_runner_label != '' && startsWith(matrix.runs_on, 'ubuntu-') && fromJSON(format('["self-hosted","crabbox",{0},{1}]', toJSON(inputs.crabbox_runner_label), toJSON(matrix.runs_on))) || (matrix.runs_on) }}
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && inputs.crabbox_runner_label != '' && startsWith(matrix.runs_on, 'ubuntu-') && fromJSON(format('["self-hosted","crabbox",{0},{1}]', toJSON(inputs.crabbox_runner_label), toJSON(format('{0}-{1}', inputs.crabbox_runner_label, matrix.runs_on)))) || (matrix.runs_on) }}
     timeout-minutes: ${{ matrix.timeout_minutes }}
     strategy:
       fail-fast: false

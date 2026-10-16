@@ -324,7 +324,9 @@ describe("release runner reservation", () => {
               expect(
                 evaluateWorkflowRunner(job["runs-on"], { ...ordinary, crabboxRunnerLabel: label }),
                 `${name}/${jobName}/${eventName}/${runnerBackend}/${runner}`,
-              ).toEqual(eligible ? ["self-hosted", "crabbox", label, baseline] : baseline);
+              ).toEqual(
+                eligible ? ["self-hosted", "crabbox", label, `${label}-${baseline}`] : baseline,
+              );
             }
           }
         }

@@ -82,8 +82,7 @@ jobs:
   linux-docker:
     runs-on: &linux_runner >-
       ${{ github.event_name == 'workflow_dispatch' && inputs.crabbox_runner_label != '' &&
-      fromJSON(format('["self-hosted","crabbox",{0},{1}]', toJSON(inputs.crabbox_runner_label),
-      toJSON('ubuntu-24.04'))) || ('ubuntu-24.04') }}
+      fromJSON(format('["self-hosted","crabbox",{0},{1}]', toJSON(inputs.crabbox_runner_label), toJSON(format('{0}-{1}', inputs.crabbox_runner_label, 'ubuntu-24.04')))) || ('ubuntu-24.04') }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
