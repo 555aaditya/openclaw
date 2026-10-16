@@ -119,17 +119,17 @@ it.for(["managed", "SIGTERM", "SIGKILL"] as const)(
             held = true;
             return;
           }
-          const marker = text
-            .match(/PEER_UPDATE_[0-9]+|CANCELLED_UPDATE|RESET_SOURCE_UPDATE|REVOKED_UPDATE/gu)
-            ?.at(-1);
-          if (marker) {
-            attempted.push(marker);
-            if (holdRecovery && marker === "PEER_UPDATE_1") {
-              recoveryHeld = true;
-              return;
-            }
-            observed.push(marker);
+          // Orphan repair can carry the interrupted input into the next prompt.
+          const markers: string[] =
+            text.match(
+              /PEER_UPDATE_[0-9]+|CANCELLED_UPDATE|RESET_SOURCE_UPDATE|REVOKED_UPDATE/gu,
+            ) ?? [];
+          attempted.push(...markers);
+          if (holdRecovery && markers.includes("PEER_UPDATE_1")) {
+            recoveryHeld = true;
+            return;
           }
+          observed.push(...markers);
           writeOpenAiResponsesText(response, {
             text: "RECEIVED",
             messageId: randomUUID(),
