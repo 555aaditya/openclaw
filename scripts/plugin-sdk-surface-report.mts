@@ -278,7 +278,8 @@ export function readPluginSdkSurfaceBudgets(env: NodeJS.ProcessEnv = process.env
       // +14: versioned Decision data contracts, lossless codecs, validation, and typed errors.
       // +4: Decision execution/context types; completes Peter Steinberger's
       // approved +18 exports / +6 callables scope (2026-09-26, #157148 and #157225).
-      3790,
+      // +1: approved boot-selected family lookup on the database-engine runtime.
+      3791,
       env,
     ),
     publicFunctionExports: readPluginSdkSurfaceBudgetEnv(
@@ -316,7 +317,8 @@ export function readPluginSdkSurfaceBudgets(env: NodeJS.ProcessEnv = process.env
       // +1: the same approved database-engine JSON path helper.
       // +1: the same engine-owned search admission helper.
       // +6: four lossless Decision codecs and two bounded V2 validators.
-      2203,
+      // +1: the same boot-selected family lookup.
+      2204,
       env,
     ),
     publicDeprecatedExports: readPluginSdkSurfaceBudgetEnv(
