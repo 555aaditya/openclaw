@@ -25,7 +25,10 @@ import {
 } from "./subagent-registry-persistence.js";
 import { settleRequesterSettleWakeBatch } from "./subagent-registry-requester-wake-mutation.js";
 import type { SubagentRunRecord } from "./subagent-registry.types.js";
-import { captureRequesterSettleRunIdentity } from "./subagent-requester-settle-identity.js";
+import {
+  captureRequesterSettleRunIdentity,
+  isSubagentObligationRetired,
+} from "./subagent-requester-settle-identity.js";
 import { isClaimedByLiveRequesterTurn } from "./subagent-requester-turn-liveness.js";
 import {
   currentSubagentRunOrObserved,
@@ -166,6 +169,19 @@ function isRetiredByLiveRequesterTurn(entry: SubagentRunRecord): boolean {
   return caller !== undefined && !caller.result && caller.key === entry.requesterSessionKey;
 }
 
+/**
+ * A Stop ended this row's pause before retiring its obligation. That retirement replaces the
+ * pause notice with the cohort wake, or clears it, and re-evaluates; until then nothing is owed,
+ * and a continuation reserved now would be withdrawn by the retirement it does not yet reflect.
+ */
+function awaitsStoppedPauseRetirement(entry: SubagentRunRecord): boolean {
+  return (
+    entry.pauseReason !== "sessions_yield" &&
+    entry.requesterSettleWake?.pauseNotice !== undefined &&
+    isSubagentObligationRetired(entry)
+  );
+}
+
 /** One in-flight evaluation per owed continuation; members of one cohort share it. */
 function requesterSettleWakeScope(entry: SubagentRunRecord): string {
   const wake = entry.requesterSettleWake;
@@ -203,6 +219,7 @@ export function scheduleRequesterSettleWake(
     (isCompletedRequesterDeliveryBlocked(entry) && admittedWake.requesterYieldBatch !== true) ||
     entry.execution.status === "running" ||
     !hasSubagentRunEnded(entry) ||
+    awaitsStoppedPauseRetirement(entry) ||
     // A live requester turn transfers its own children when it ends.
     isClaimedByLiveRequesterTurn(entry)
   ) {
@@ -271,6 +288,7 @@ export function scheduleRequesterSettleWake(
           // Admission can wait; reread the row before a blocked receipt is executed again.
           if (
             !isSourceCurrent() ||
+            awaitsStoppedPauseRetirement(entry) ||
             (isCompletedRequesterDeliveryBlocked(entry) &&
               entry.requesterSettleWake?.requesterYieldBatch !== true)
           ) {

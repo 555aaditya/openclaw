@@ -8,6 +8,7 @@ import { createDeferredCore } from "../../../shared/deferred.js";
 import { captureOpenClawStateWorkerContext } from "../../../state/openclaw-state-worker-context.js";
 import type { OpenClawStateWorkerContext } from "../../../state/openclaw-state-worker-context.types.js";
 import type { AcceptedSessionSpawn } from "../../accepted-session-spawn.js";
+import { withoutGatewayToolCallerIdentity } from "../../tools/gateway-caller-context.js";
 import {
   prepareRequesterCronAuthority,
   type PreparedRequesterCronAuthority,
@@ -374,10 +375,14 @@ export class SubagentLifecycleController {
     isCurrent: () => boolean,
   ): Promise<unknown> => {
     this.trackRun(entry);
-    // The detached Gateway root keeps restart drain aware of an evaluation in flight.
-    return runWithGatewayDetachedWorkContinuation(
-      async () => (isCurrent() ? run() : undefined),
-      "subagents:lifecycle-wake",
+    // The detached Gateway root keeps restart drain aware of an evaluation in flight. The
+    // evaluation outlives the turn whose event scheduled it, so it must not dispatch the
+    // continuation under that turn's tool caller once the turn has ended.
+    return withoutGatewayToolCallerIdentity(() =>
+      runWithGatewayDetachedWorkContinuation(
+        async () => (isCurrent() ? run() : undefined),
+        "subagents:lifecycle-wake",
+      ),
     );
   };
 
