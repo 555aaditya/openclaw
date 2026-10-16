@@ -54,7 +54,11 @@ describe.skipIf(!browserAvailable)("Claws Add in Agents", () => {
     await server?.close();
   });
 
-  async function fixture(page: import("playwright").Page, entry = workflowOperator) {
+  async function fixture(
+    page: import("playwright").Page,
+    entry = workflowOperator,
+    detailPublisher: Partial<Pick<typeof workflowOperator, "ownerHandle" | "official">> = {},
+  ) {
     return await installMockGateway(page, {
       featureMethods: [
         "openclaw.chat",
@@ -85,6 +89,7 @@ describe.skipIf(!browserAvailable)("Claws Add in Agents", () => {
         "claws.catalog.detail": {
           detail: {
             ...entry,
+            ...detailPublisher,
             version: "1.2.0",
             agentName: "Workflow Operator",
             workspaceFiles: 2,
@@ -236,6 +241,42 @@ describe.skipIf(!browserAvailable)("Claws Add in Agents", () => {
       }
     },
   );
+
+  it("uses the accepted detail publisher when the catalog identity is stale", async () => {
+    const context = await browser.newContext({
+      locale: "en-US",
+      serviceWorkers: "block",
+      viewport: { width: 1440, height: 900 },
+    });
+    const page = await context.newPage();
+    await fixture(
+      page,
+      { ...workflowOperator, packageName: "workflow-operator" },
+      { ownerHandle: "maker", official: false },
+    );
+    try {
+      await page.goto(`${server.baseUrl}agents`);
+      const card = page.locator("[data-claws-explore] [data-claws-entry]").first();
+      await card.waitFor();
+      expect(await card.textContent()).toContain("@openclaw");
+      await card.getByRole("button", { name: "Add" }).click();
+      const detail = page.locator(".plugin-catalog-detail");
+      await detail.getByRole("heading", { name: "Skills" }).waitFor();
+      expect(await detail.locator("[data-claws-confirm] button").isEnabled()).toBe(true);
+      if (capture) {
+        const dir = createControlUiE2eArtifactDir("claws-detail-publisher-refresh");
+        await page.screenshot({ path: `${dir}/detail.png`, animations: "disabled" });
+      }
+      const publisher = detail.locator(".plugin-catalog-detail__publisher");
+      expect(await publisher.getByRole("img", { name: "Official" }).count()).toBe(0);
+      expect(await publisher.locator("strong").textContent()).toBe("maker");
+      expect(await publisher.getByRole("link", { name: "@maker" }).getAttribute("href")).toBe(
+        "https://clawhub.ai/maker",
+      );
+    } finally {
+      await context.close();
+    }
+  });
 
   it("adds a personal publisher Claw and sends the first chat message despite pending setup", async () => {
     const context = await browser.newContext({ locale: "en-US", serviceWorkers: "block" });
