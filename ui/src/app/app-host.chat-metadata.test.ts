@@ -682,7 +682,7 @@ describe("session command metadata events", () => {
           expect(invalidate).not.toHaveBeenCalled();
         }
       } finally {
-        states.forEach(retireChatMetadataRequests);
+        states.forEach((state) => retireChatMetadataRequests(state));
       }
     },
   );
