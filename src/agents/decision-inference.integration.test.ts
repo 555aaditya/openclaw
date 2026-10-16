@@ -22,11 +22,16 @@ import {
   createColdPluginHermeticEnv,
 } from "../plugins/test-helpers/cold-plugin-fixtures.js";
 import { withEnvAsync } from "../test-utils/env.js";
+import {
+  createOpenClawTestState,
+  type OpenClawTestState,
+} from "../test-utils/openclaw-test-state.js";
 import { VERSION } from "../version.js";
 import { resetPreparedModelRuntimeSnapshotsForTest } from "./prepared-model-runtime.test-support.js";
 
 const roots = useAutoCleanupTempDirTracker(afterEach);
 const traceKey = Symbol.for("openclaw.test.decision-prepared-path");
+let profileState: OpenClawTestState | undefined;
 type Trace = {
   calls: number;
   onDispatch?: () => void;
@@ -34,6 +39,7 @@ type Trace = {
   authenticated: boolean;
   usage?: DecisionBatchResultV2["usage"];
   modelKeys?: string[];
+  modelContextWindow?: number;
   resultReads?: number;
   modelBilling?: unknown;
   modelBaseUrl?: string;
@@ -51,9 +57,11 @@ afterEach(async () => {
   resetPluginLoaderTestStateForTest();
   resetDiagnosticEventsForTest();
   Reflect.deleteProperty(globalThis, traceKey);
+  await profileState?.cleanup();
+  profileState = undefined;
 });
 
-it.each(["plugin", "agent", "exchange"] as const)(
+it.each(["plugin", "agent", "profile", "missing", "exchange"] as const)(
   "runs the retained decision SDK through real preparation without primary fallback or fabricated chat fields (%s auth)",
   async (authScope) => {
     const root = roots.make("decision-prepared-integration-");
@@ -74,7 +82,10 @@ it.each(["plugin", "agent", "exchange"] as const)(
         modelCatalog: {
           providers: {
             [id]: {
-              authScope: authScope === "exchange" ? "agent" : authScope,
+              authScope: authScope === "plugin" ? "plugin" : "agent",
+              ...(authScope === "plugin"
+                ? {}
+                : { api: "openai-completions", baseUrl: "https://catalog.fixture.invalid/v1" }),
               models: [
                 {
                   id: "native",
@@ -94,7 +105,7 @@ it.each(["plugin", "agent", "exchange"] as const)(
                       billing: {
                         unit: "tokens",
                         source: "provider-catalog",
-                        usdPerMillion: { input: 2 },
+                        usdPerMillion: { input: 2, output: 0 },
                       },
                       input: ["text"],
                       questions: { boolean: { probabilities: "none", abstention: true } },
@@ -114,16 +125,19 @@ it.each(["plugin", "agent", "exchange"] as const)(
         "module.exports = { id: " + JSON.stringify(id) + ", register(api) {",
         "api.registerDecisionProvider({ id: " + JSON.stringify(id) + ", contractVersion: 2,",
         'provider: { label: "Synthetic", auth: [], authScope: ' +
-          JSON.stringify(authScope === "exchange" ? "agent" : authScope) +
-          ', resolveSyntheticAuth() { return {apiKey: "synthetic-prepared-token", mode: "api-key", source: "synthetic fixture"}; },' +
-          (authScope === "agent"
+          JSON.stringify(authScope === "plugin" ? "plugin" : "agent") +
+          ", " +
+          (authScope === "profile" || authScope === "missing"
+            ? ""
+            : 'resolveSyntheticAuth() { return {apiKey: "synthetic-prepared-token", mode: "api-key", source: "synthetic fixture"}; },') +
+          (authScope === "agent" || authScope === "profile" || authScope === "missing"
             ? 'normalizeTransport() { return { api: "openai-responses" }; },'
             : "") +
           (authScope === "exchange"
             ? 'normalizeResolvedModel(context) { return { ...context.model, api: "openai-responses" }; }, prepareRuntimeAuth(context) { trace.preparedApi=context.model.api; return { apiKey: context.apiKey, baseUrl: "https://entitlement.fixture.invalid/v1", request: { headers: { "x-fixture-entitlement": "synthetic-entitlement" }, auth: { mode: "header", headerName: "x-fixture-auth", value: "synthetic-exchanged-header" } } }; },'
             : "") +
           "} ,",
-        'async evaluate(batch, context) { trace.calls++; trace.onDispatch?.(); await trace.work; trace.authenticated = context.auth.apiKey === "synthetic-prepared-token"; trace.modelKeys = Object.keys(context.model); trace.modelBilling=context.model.inference?.decision?.billing; trace.modelBaseUrl=context.model.baseUrl; trace.modelHeaders=context.model.headers; trace.modelRequest=context.model[Symbol.for("openclaw.modelProviderRequestTransport")]; trace.modelApi=context.model.api; let reads = 0; return { status: "ok", get result() { trace.resultReads = ++reads; return { model: context.model.id, answers: { q: reads === 1 ? { type: "boolean", answer: null } : { type: "boolean", probabilityTrue: 0.75 } }, usage: trace.usage }; } }; }',
+        'async evaluate(batch, context) { trace.calls++; trace.onDispatch?.(); await trace.work; trace.authenticated = context.auth.apiKey === "synthetic-prepared-token"; trace.modelKeys = Object.keys(context.model); trace.modelContextWindow = context.model.contextWindow; trace.modelBilling=context.model.inference?.decision?.billing; trace.modelBaseUrl=context.model.baseUrl; trace.modelHeaders=context.model.headers; trace.modelRequest=context.model[Symbol.for("openclaw.modelProviderRequestTransport")]; trace.modelApi=context.model.api; let reads = 0; return { status: "ok", get result() { trace.resultReads = ++reads; return { model: context.model.id, answers: { q: reads === 1 ? { type: "boolean", answer: null } : { type: "boolean", probabilityTrue: 0.75 } }, usage: trace.usage }; } }; }',
         "}); trace.evaluate = api.runtime.decisions.evaluateV2; } };",
       ].join("\n"),
     );
@@ -133,6 +147,19 @@ it.each(["plugin", "agent", "exchange"] as const)(
       usage: { inputTokens: 100, costUsd: 0 },
     };
     Reflect.set(globalThis, traceKey, trace);
+    if (authScope === "profile") {
+      profileState = await createOpenClawTestState({
+        label: "decision-agent-profile",
+        applyEnv: false,
+      });
+      // A synthetic key exists only in the operation agent store: no config/env credential.
+      await profileState.writeAuthProfiles({
+        version: 1,
+        profiles: {
+          [id + ":agent"]: { type: "api_key", provider: id, key: "synthetic-prepared-token" },
+        },
+      });
+    }
     const cfg: OpenClawConfig = {
       ...(authScope !== "plugin"
         ? {
@@ -141,7 +168,9 @@ it.each(["plugin", "agent", "exchange"] as const)(
                 [id]: {
                   api: "openai-completions",
                   baseUrl: "https://catalog.fixture.invalid/v1",
-                  apiKey: "synthetic-prepared-token",
+                  ...(authScope === "profile" || authScope === "missing"
+                    ? {}
+                    : { apiKey: "synthetic-prepared-token" }),
                   headers: { "x-provider": "provider", "X-Precedence": "provider" },
                   request: { headers: { "x-precedence": "request", "x-request": "request" } },
                   models: [
@@ -149,18 +178,7 @@ it.each(["plugin", "agent", "exchange"] as const)(
                       id: "native",
                       name: "Native fixture",
                       headers: { "x-model": "model", "X-PRECEDENCE": "model" },
-                      ...(authScope === "exchange"
-                        ? { contextWindow: 4096 }
-                        : {
-                            inference: {
-                              chat: false,
-                              decision: {
-                                protocol: "fixture",
-                                input: ["text"],
-                                questions: { boolean: { probabilities: "none", abstention: true } },
-                              },
-                            },
-                          }),
+                      ...(authScope === "exchange" ? { contextWindow: 4096 } : {}),
                       maxTokens: 256,
                       reasoning: false,
                       input: ["text"],
@@ -187,8 +205,9 @@ it.each(["plugin", "agent", "exchange"] as const)(
     };
     const env = {
       ...createColdPluginHermeticEnv(root, { bundledPluginsDir: emptyBundled }),
+      ...profileState?.envVars,
       OPENCLAW_DISABLE_BUNDLED_PLUGINS: "1",
-      OPENCLAW_STATE_DIR: path.join(root, "state"),
+      OPENCLAW_STATE_DIR: profileState?.stateDir ?? path.join(root, "state"),
     };
     await withEnvAsync(env, async () => {
       setRuntimeConfigSnapshot(cfg);
@@ -228,6 +247,12 @@ it.each(["plugin", "agent", "exchange"] as const)(
           },
         );
       const outcome = await evaluateFixture();
+      if (authScope === "missing") {
+        expect(outcome).toEqual({ status: "unavailable", reason: "credentials-unavailable" });
+        expect(trace.calls).toBe(0);
+        expect(usageEvents).toEqual([]);
+        return;
+      }
       expect(
         outcome,
         JSON.stringify({
@@ -282,9 +307,9 @@ it.each(["plugin", "agent", "exchange"] as const)(
       } else {
         expect(trace.modelKeys).not.toContain("cost");
         expect(trace.modelKeys).not.toContain("maxTokens");
-        expect(trace.modelKeys).not.toContain("contextWindow");
+        expect(trace.modelContextWindow).toBeUndefined();
       }
-      if (authScope === "agent") {
+      if (authScope === "agent" || authScope === "profile") {
         expect(trace.modelHeaders).toEqual({
           "x-provider": "provider",
           "x-model": "model",
