@@ -86,6 +86,7 @@ const enAgentsHome = {
       "Inspect and edit the generated scope, instructions, and files. Save changes before reviewing the package.",
     document: "Draft document (JSON)",
     reload: "Reload draft",
+    discardBeforeReload: "Discard your unsaved changes and load the latest draft?",
     loading: "Loading draft…",
     loadFailed: "Reload to read this draft.",
     save: "Save draft",

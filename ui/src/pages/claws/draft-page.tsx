@@ -78,7 +78,7 @@ export function ClawDraftPage(props: { target: ClawDraftTarget }) {
                 actions={
                   <button
                     class="btn btn--sm"
-                    disabled={view.read().busy !== null || view.read().dirty}
+                    disabled={view.read().busy !== null}
                     onClick={() => void state.load()}
                   >
                     {t("clawsDraft.reload")}

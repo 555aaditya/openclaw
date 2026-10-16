@@ -124,6 +124,9 @@ export class ClawDraftPageState {
   }
 
   async load() {
+    if (this.dirty && !window.confirm(t("clawsDraft.discardBeforeReload"))) {
+      return;
+    }
     await this.run("load", async (scope) => {
       if (!scope.draftId) {
         return;
