@@ -26,6 +26,7 @@ import {
   createDeliveredWake,
   createOrphanedRequiredDelivery,
   writeChildSession,
+  writeSubagentSessionEntry,
 } from "./subagent-registry.persistence.test-support.js";
 import { loadSubagentRegistryFromSqlite } from "./subagent-registry.store.sqlite.js";
 import type { SubagentRunRecord } from "./subagent-registry.types.js";
@@ -237,6 +238,83 @@ describe("subagent registry persistence resume", () => {
     } finally {
       admission.resetGatewayWorkAdmission();
     }
+  });
+
+  it("lets later requester input run after restoring a wake whose children kept aborted sessions", async () => {
+    const mailbox = await import("../../../sessions/session-controller.mailbox.js");
+    const { captureSessionTarget } =
+      await import("../../../sessions/session-controller.lifecycle.js");
+    await withRegistryState(async (stateDir) => {
+      // Restart left both yielded members terminal while their child sessions stayed aborted.
+      const batchRunIds = ["run-aborted-yield-a", "run-aborted-yield-b"];
+      const endedAt = Date.now();
+      const runs = batchRunIds.map((runId) =>
+        createDeliveredWake(
+          runId,
+          {
+            batchRunIds,
+            requesterYieldBatch: true,
+            yieldedFinalDeliverable: true,
+            rearmGeneration: 1,
+          },
+          {
+            endedAt,
+            outcome: { status: "error", error: "agent.wait unavailable during gateway restart" },
+            endedReason: "subagent-error",
+            completion: { required: true, resultText: null, capturedAt: endedAt },
+            delivery: { status: "failed", lastError: "permanent_failure" },
+          },
+        ),
+      );
+      saveSubagentRegistryToSqlite(new Map(runs.map((run) => [run.runId, run])));
+      const requesterStorePath = await writeSubagentSessionEntry({
+        stateDir,
+        agentId: "main",
+        sessionKey: "agent:main:main",
+        defaultSessionId: "sess-aborted-yield-requester",
+      });
+      for (const run of runs) {
+        await writeSubagentSessionEntry({
+          stateDir,
+          agentId: "main",
+          sessionKey: run.childSessionKey,
+          defaultSessionId: `sess-${run.runId}`,
+          abortedLastRun: true,
+        });
+      }
+      const wakeRequester = vi.spyOn(
+        requesterSettleModule,
+        "maybeWakeRequesterAfterAllChildrenSettled",
+      );
+
+      await mod.initSubagentRegistry();
+      await activateSubagentPersistenceRegistry(mod, callGatewayModule.callGateway);
+      await settleSubagentRegistryPersistenceWork(() => settleOwnedWork?.(true));
+
+      // Restore reserved the owed wake on the requester mailbox; only its evaluation retires it.
+      expect(wakeRequester).toHaveBeenCalledWith(
+        expect.objectContaining({ requesterSessionKey: "agent:main:main" }),
+      );
+      // A later message steers through the injection order; no restored wake may hold it.
+      const input = mailbox.reserveSessionControllerSource("agent:main:main", {
+        policy: { mode: "steer" },
+        target: captureSessionTarget({
+          storeScope: requesterStorePath,
+          sessionKey: "agent:main:main",
+          incarnation: "sess-aborted-yield-requester",
+          agentId: "main",
+        }),
+      });
+      const injection = mailbox.beginSessionControllerSourceInjection(input);
+      try {
+        await expect(
+          Promise.race([injection.admit(), nextTask().then(() => "blocked" as const)]),
+        ).resolves.toBe(true);
+      } finally {
+        injection.finish(false);
+        mailbox.retireSessionControllerInput(input);
+      }
+    });
   });
 
   it.each([

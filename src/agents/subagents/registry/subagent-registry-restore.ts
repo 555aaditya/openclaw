@@ -38,7 +38,10 @@ import {
   SubagentRegistryMutationRejectedError,
 } from "./subagent-registry-persistence.js";
 import { getLatestSubagentRunForChild } from "./subagent-registry-queries.js";
-import { isRetiredSubagentSessionOwner } from "./subagent-registry-restart-recovery-helpers.js";
+import {
+  isOrphanRecoveryExecution,
+  isRetiredSubagentSessionOwner,
+} from "./subagent-registry-restart-recovery-helpers.js";
 import type { SubagentRunRecord } from "./subagent-registry.types.js";
 import { getSubagentRunRuntimeKey, isSameSubagentRunOwner } from "./subagent-run-generation.js";
 import { deleteSubagentSessionForCleanup } from "./subagent-session-cleanup.js";
@@ -432,10 +435,13 @@ export function createSubagentRegistryRestorer(config: {
       const sessionEntry = loadSubagentSessionEntry({
         childSessionKey: entry.childSessionKey,
       });
-      // Orphan recovery owns aborted sessions and exact still-running retired
-      // executions. Completed sessions must resume normal settlement and delivery.
+      // Orphan recovery owns unended executions behind aborted sessions, saved
+      // restart terminals, and exact still-running retired executions. An ended
+      // row can keep an aborted child session (restart drain settled it); orphan
+      // recovery ignores that row, so it resumes normal settlement and delivery,
+      // including the requester wake its restored mailbox reservation waits for.
       if (
-        sessionEntry?.abortedLastRun === true ||
+        (sessionEntry?.abortedLastRun === true && isOrphanRecoveryExecution(entry)) ||
         isRetiredSubagentSessionOwner(entry, sessionEntry)
       ) {
         continue;

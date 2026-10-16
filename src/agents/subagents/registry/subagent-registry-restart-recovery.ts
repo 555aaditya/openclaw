@@ -15,6 +15,7 @@ import { SubagentRegistryMutationRejectedError } from "./subagent-registry-persi
 import { getLatestSubagentRunForChild } from "./subagent-registry-queries.js";
 import {
   getRestartRecoveryReplayError,
+  isOrphanRecoveryExecution,
   isRestartRecoveryLifecycleCurrent,
   ownsSubagentSessionExecution,
 } from "./subagent-registry-restart-recovery-helpers.js";
@@ -51,11 +52,11 @@ export async function recoverInterruptedSubagentRow(
   if (!childSessionKey || !isCurrent()) {
     return { status: "ignored" };
   }
-  const terminalError = getRestartRecoveryReplayError(entry);
-  const replayTerminal = terminalError !== undefined;
-  if (!replayTerminal && typeof entry.execution.endedAt === "number") {
+  if (!isOrphanRecoveryExecution(entry)) {
     return { status: "ignored" };
   }
+  const terminalError = getRestartRecoveryReplayError(entry);
+  const replayTerminal = terminalError !== undefined;
   try {
     const session = await loadSubagentRecoverySession({ entry, isOwnerCurrent: isCurrent }).catch(
       (error: unknown) => {

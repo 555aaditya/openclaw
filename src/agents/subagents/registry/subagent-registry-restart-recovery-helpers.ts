@@ -17,6 +17,17 @@ export function getRestartRecoveryReplayError(entry: SubagentRunRecord): string 
     : (entry.execution.outcome.error ?? "subagent run interrupted by gateway restart");
 }
 
+/**
+ * Whether startup orphan recovery owns this row's execution: an unended run, or a
+ * saved restart terminal it replays. Every other ended row settles through resume.
+ */
+export function isOrphanRecoveryExecution(entry: SubagentRunRecord): boolean {
+  return (
+    getRestartRecoveryReplayError(entry) !== undefined ||
+    typeof entry.execution.endedAt !== "number"
+  );
+}
+
 export function isRestartRecoveryLifecycleCurrent(
   receipt: SubagentRestartRecoveryReceipt,
 ): boolean {
