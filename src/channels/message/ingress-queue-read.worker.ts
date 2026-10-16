@@ -1,38 +1,50 @@
 import type { EngineConnection } from "../../infra/sql-connection.js";
+import { runSqliteReadSnapshotSync } from "../../infra/sqlite-transaction.js";
 import {
   countChannelIngressQueuePressureInDatabase,
   countFailedChannelIngressQueueEntriesInDatabase,
 } from "./ingress-queue-health.kernel.js";
-import type {
-  ChannelIngressReadCommand,
-  ChannelIngressReadReply,
-} from "./ingress-queue-read-contract.js";
-import { listChannelIngressAccountsInDatabase } from "./ingress-queue.kernel.js";
+import {
+  listChannelIngressAccountsInDatabase,
+  listChannelIngressRowsInDatabase,
+  listStaleChannelIngressClaimsInDatabase,
+  readChannelIngressClaimSnapshotInDatabase,
+} from "./ingress-queue.kernel.js";
+import type { ChannelIngressClaimRequest, ChannelIngressListInput } from "./ingress-queue.types.js";
 
-export function readChannelIngressInDatabase(
-  db: EngineConnection,
-  command: ChannelIngressReadCommand,
-): ChannelIngressReadReply {
-  if (command.type === "channelIngress.accounts") {
+export const channelIngressReadOperations = {
+  "channelIngress.accounts": (input: { channelId: string }, db: EngineConnection) => ({
+    type: "channelIngress.accounts" as const,
+    result: listChannelIngressAccountsInDatabase(db, input),
+  }),
+  "channelIngress.failedHealth": (_input: undefined, db: EngineConnection) => ({
+    type: "channelIngress.failedHealth" as const,
+    result: countFailedChannelIngressQueueEntriesInDatabase(db),
+  }),
+  "channelIngress.pressureHealth": (input: { now: number }, db: EngineConnection) => ({
+    type: "channelIngress.pressureHealth" as const,
+    result: countChannelIngressQueuePressureInDatabase(db, input.now),
+  }),
+  "channelIngress.list": (input: ChannelIngressListInput, db: EngineConnection) => {
+    const read = () => listChannelIngressRowsInDatabase(db, input);
     return {
-      ok: true,
-      sourceAdmitted: true,
-      type: command.type,
-      result: listChannelIngressAccountsInDatabase(db, command.input),
+      type: "channelIngress.list" as const,
+      // Pending listings paginate past corrupt payloads; other statuses use one SELECT.
+      result: input.status === "pending" ? runSqliteReadSnapshotSync(db, read) : read(),
     };
-  }
-  if (command.type === "channelIngress.failedHealth") {
+  },
+  "channelIngress.claimSnapshot": (input: ChannelIngressClaimRequest, db: EngineConnection) => {
+    const read = () => readChannelIngressClaimSnapshotInDatabase(db, input);
     return {
-      ok: true,
-      sourceAdmitted: true,
-      type: command.type,
-      result: countFailedChannelIngressQueueEntriesInDatabase(db),
+      type: "channelIngress.claimSnapshot" as const,
+      result: input.candidateIds?.length ? runSqliteReadSnapshotSync(db, read) : read(),
     };
-  }
-  return {
-    ok: true,
-    sourceAdmitted: true,
-    type: command.type,
-    result: countChannelIngressQueuePressureInDatabase(db, command.input.now),
-  };
-}
+  },
+  "channelIngress.staleClaims": (
+    input: { queueName: string; cutoff: number },
+    db: EngineConnection,
+  ) => ({
+    type: "channelIngress.staleClaims" as const,
+    result: listStaleChannelIngressClaimsInDatabase(db, input),
+  }),
+};

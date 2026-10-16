@@ -18,7 +18,7 @@ export async function countFailedChannelIngressQueueEntries(
   }
   const reply = await executeExistingOpenClawStateRead(
     { env: resolveChannelIngressStateEnv(stateDir) },
-    { type: "channelIngress.failedHealth" },
+    { type: "channelIngress.failedHealth", input: undefined },
   );
   if (!reply) {
     return [];

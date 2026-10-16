@@ -18,12 +18,12 @@ import {
 } from "../../state/openclaw-state-db.js";
 import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
 import { countFailedChannelIngressQueueEntries } from "./ingress-queue-health.js";
+import { channelIngressReadOperations } from "./ingress-queue-read.worker.js";
 import {
   createChannelIngressQueue,
   listChannelIngressQueueAccountIdsReadOnly,
 } from "./ingress-queue.js";
 import { createTestIngressQueue, useRetainedIngressState } from "./ingress-queue.test-helpers.js";
-import { channelIngressOperations } from "./ingress-queue.worker.js";
 
 type ChannelIngressTestDatabase = Pick<OpenClawStateKyselyDatabase, "channel_ingress_events">;
 
@@ -50,10 +50,6 @@ describe("channel ingress queue", () => {
       await queue.claim("claimed");
       await queue.fail("failed", { reason: "rejected" });
       const database = openIngressStateDatabase(stateDir);
-      const context = {
-        open: () => database,
-        stateOptions: () => ({ path: database.path, env: { OPENCLAW_STATE_DIR: stateDir } }),
-      };
       const queueName = JSON.stringify(["test", "account"]);
       const transactionSql = vi.spyOn(database.db, "exec");
       try {
@@ -62,18 +58,18 @@ describe("channel ingress queue", () => {
           ["failed", ["failed"]],
           ["unsettled", ["claimed", "pending"]],
         ] as const) {
-          const rows = channelIngressOperations["channelIngress.list"](
-            { queueName, status, readOnly: false, orderBy: "id" },
-            context,
+          const rows = channelIngressReadOperations["channelIngress.list"](
+            { queueName, status, orderBy: "id" },
+            database.db,
           );
-          expect(rows.map((row) => row.event_id)).toEqual(ids);
+          expect(rows.result.map((row) => row.event_id)).toEqual(ids);
         }
-        const snapshot = channelIngressOperations["channelIngress.claimSnapshot"](
+        const snapshot = channelIngressReadOperations["channelIngress.claimSnapshot"](
           { queueName, blockedLaneKeys: [], deriveLaneKey: false },
-          context,
+          database.db,
         );
-        expect(snapshot.pending.map((row) => row.event_id)).toEqual(["pending"]);
-        expect(snapshot.claimed).toEqual([]);
+        expect(snapshot.result.pending.map((row) => row.event_id)).toEqual(["pending"]);
+        expect(snapshot.result.claimed).toEqual([]);
         expect(transactionSql).not.toHaveBeenCalled();
       } finally {
         transactionSql.mockRestore();

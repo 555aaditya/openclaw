@@ -1,12 +1,18 @@
+import type { SqliteWorkerCommand } from "../../infra/sqlite-worker-contract.js";
 import { createSqliteWorkerOperationAdmission } from "../../infra/sqlite-worker-operation-admission.js";
 import type { SqliteWorkerOperationSettlement } from "../../infra/sqlite-worker-operation-settlement.js";
 import { createSqliteWorkerWriteAdmission } from "../../infra/sqlite-worker-store.js";
-import { executeExistingOpenClawStateRead } from "../../state/openclaw-state-db-readonly.js";
+import {
+  executeExistingOpenClawStateRead,
+  withArtifactPreservingStateReads,
+} from "../../state/openclaw-state-db-readonly.js";
 import { captureOpenClawStateWorkerContext } from "../../state/openclaw-state-worker-context.js";
 import type { OpenClawStateWorkerContext } from "../../state/openclaw-state-worker-context.types.js";
 import { runOpenClawStateWorkerOperation } from "../../state/openclaw-state-worker-store.js";
+import type { WorkerOperations } from "../../state/worker-operation-registry.js";
 import { resolveChannelIngressStateEnv } from "./ingress-queue-client.js";
 import { invalidateChannelIngressHealth } from "./ingress-queue-health-cache.js";
+import type { channelIngressReadOperations } from "./ingress-queue-read.worker.js";
 import {
   baseRecord,
   claimedRecord,
@@ -165,36 +171,32 @@ export function createChannelIngressQueue<
             : createSqliteWorkerWriteAdmission(assertActive, [context.admission.databasePath]),
       },
     ).finally(() => {
-      if (
-        type !== "channelIngress.list" &&
-        type !== "channelIngress.claimSnapshot" &&
-        type !== "channelIngress.staleClaims"
-      ) {
-        // A failed reply may follow a committed write; refresh diagnostic facts either way.
-        invalidateChannelIngressHealth(context);
-      }
+      // A failed reply may follow a committed write; refresh diagnostic facts either way.
+      invalidateChannelIngressHealth(context);
     });
-    // Mutations settle under their commit grant; prepared facts still need a live reader.
-    if (
-      type === "channelIngress.list" ||
-      type === "channelIngress.claimSnapshot" ||
-      type === "channelIngress.staleClaims"
-    ) {
-      assertQueueCurrent(context);
-    }
     return result;
   };
-  const readRows = async (input: Omit<ChannelIngressListInput, "queueName">) => {
-    const context = capture();
-    const rows = await runOpenClawStateWorkerOperation(
-      context,
-      (worker) =>
-        worker.execute({ type: "channelIngress.list", input: { ...input, queueName, readOnly } }),
-      { existingOnly: readOnly, assertCurrent },
-    );
+  const read = async <
+    Command extends SqliteWorkerCommand<WorkerOperations<typeof channelIngressReadOperations>>,
+  >(
+    command: Command,
+    context = capture(),
+  ) => {
+    const inspect = () =>
+      executeExistingOpenClawStateRead({ path: context.admission.databasePath, env }, command, {
+        context,
+        current: true,
+        live: !readOnly,
+      });
+    // Writable queues retain cold database admission; inspection never creates a store.
+    const reply = readOnly
+      ? await withArtifactPreservingStateReads(inspect)
+      : await runOpenClawStateWorkerOperation(context, inspect, { assertCurrent });
     assertQueueCurrent(context);
-    return rows ?? [];
+    return reply;
   };
+  const readRows = async (input: Omit<ChannelIngressListInput, "queueName">) =>
+    (await read({ type: "channelIngress.list", input: { ...input, queueName } }))?.result ?? [];
   const mutation = (value: string | { id: string; claim?: { token: string } }, at: number) => ({
     queueName,
     id: idFrom(value),
@@ -212,7 +214,9 @@ export function createChannelIngressQueue<
     const shouldRecoverCorrupt = recoverOptions?.shouldRecoverCorrupt;
     const current = recoverOptions?.now ?? now();
     const cutoff = current - Math.max(0, Math.floor(recoverOptions?.staleMs ?? 0));
-    const rows = await execute("channelIngress.staleClaims", { queueName, cutoff }, context);
+    const rows =
+      (await read({ type: "channelIngress.staleClaims", input: { queueName, cutoff } }, context))
+        ?.result ?? [];
     let recovered = 0;
     for (const row of rows) {
       assertQueueCurrent(context);
@@ -296,7 +300,9 @@ export function createChannelIngressQueue<
         : stored;
     };
     while (true) {
-      const snapshot = await execute("channelIngress.claimSnapshot", request, context);
+      const snapshot = (
+        await read({ type: "channelIngress.claimSnapshot", input: request }, context)
+      )?.result ?? { pending: [], claimed: [] };
       // Native fingerprinting owns row freshness; retain only the lane observations to recheck.
       const preparedLanes: Array<{ row: ChannelIngressRow; laneKey: string | undefined }> = [];
       const selection = selectChannelIngressClaim(

@@ -52,6 +52,12 @@ the same `event_id` is rejected durably for the tombstone retention window.
 See [Channel outbound API](/plugins/sdk-channel-outbound#durable-ingress-monitors)
 for the monitor API and shutdown contract.
 
+Queue listings, stale-claim discovery, and claim preparation read committed state
+in the read worker without joining the SQLite writer queue. Claim and recovery
+transactions recheck the prepared rows before changing them; lane policy and
+claim-token checks still guard dispatch and settlement. Read-only inspection
+never creates the shared database.
+
 The dispatch lifecycle optionally exposes
 `readLaneBacklog(): Promise<readonly ChannelIngressQueueRecord<unknown, unknown>[]>`.
 It reads same-lane durable rows that have not yet been handed off, excluding the

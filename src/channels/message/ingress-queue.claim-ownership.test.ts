@@ -6,10 +6,40 @@ import * as workerReplies from "../../infra/sqlite-worker-broker-reply.js";
 import type { SqliteWorkerRequest } from "../../infra/sqlite-worker-contract.js";
 import * as workerAdmission from "../../infra/sqlite-worker-operation-admission.js";
 import { sqliteWorkerOwnerProbe as probe } from "../../infra/sqlite-worker-owner-probe.test-support.js";
+import * as stateWorker from "../../state/openclaw-state-worker-store.js";
 import { createTestIngressQueue, withTempState } from "./ingress-drain.test-helpers.js";
 import { createChannelIngressQueue } from "./ingress-queue.js";
 
 describe("channel ingress claim ownership", () => {
+  it("polls committed queue state without adding writer requests", async () => {
+    await withTempState(async (stateDir) => {
+      const queue = createTestIngressQueue<{ text: string }>(stateDir);
+      await queue.enqueue("pending", { text: "waiting" });
+      await queue.enqueue("claimed", { text: "active" });
+      const claimed = expectDefined(await queue.claim("claimed"), "active claim");
+      const commands: string[] = [];
+      const writer = probe.command(stateWorker, (command, options, scope) => {
+        commands.push(command.type);
+        return scope.execute(command, options);
+      });
+      try {
+        expect((await queue.listPending()).map((row) => row.id)).toEqual(["pending"]);
+        expect((await queue.listClaims()).map((row) => row.id)).toEqual(["claimed"]);
+        expect(await queue.listUnsettled?.()).toMatchObject({
+          pending: [{ id: "pending" }],
+          claims: [{ id: "claimed" }],
+        });
+        expect(await queue.recoverStaleClaims({ staleMs: 0, shouldRecover: () => false })).toBe(0);
+        expect(commands).toEqual([]);
+        expect(await queue.claimNext()).toMatchObject({ id: "pending" });
+        expect(commands).toEqual(["channelIngress.claimNext"]);
+        expect(await queue.refreshClaim?.(claimed)).toBe(true);
+      } finally {
+        writer.mockRestore();
+      }
+    });
+  });
+
   it.each(["transaction", "commit"] as const)(
     "revalidates live lane policy at native %s admission",
     async (stage) => {

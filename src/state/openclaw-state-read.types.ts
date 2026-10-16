@@ -12,10 +12,6 @@ import type {
 } from "../agents/subagents/registry/subagent-registry.types.js";
 import type { WorkspaceStateSnapshot } from "../agents/workspace-state-store.kernel.js";
 import type { ExecutionIdentityInspectionQuery } from "../audit/execution-identity-inspection.types.js";
-import type {
-  ChannelIngressReadCommand,
-  ChannelIngressReadReply,
-} from "../channels/message/ingress-queue-read-contract.js";
 import type { ClawInventory } from "../claws/inventory-read.kernel.js";
 import type { PersistedClawPackageRef } from "../claws/package-extension-provenance.js";
 import type { ClawOrphanWorkspace, PersistedClawInstall } from "../claws/provenance-types.js";
@@ -156,7 +152,6 @@ export type OpenClawStateReadCommand =
   | { type: "admit" }
   | { type: "backup.runs" }
   | TuiLastSessionReadCommand
-  | ChannelIngressReadCommand
   | { type: "capture.readOnlyEvents"; sessionId: string; limit?: number }
   | { type: "capture.readOnlyBlob"; blobId: string }
   | { type: "deliveryQueue.outbound"; id?: string; mode: "pending" | "unfinished" }
@@ -339,7 +334,6 @@ export type OpenClawStateReadResult =
       type: "tui.lastSession.read";
       row: ConfigMachineStateRow | undefined;
     }
-  | ReadResult<ChannelIngressReadReply>
   | {
       type: "deliveryQueue.outbound";
       entries: OutboundDeliveryStorageEntry[];

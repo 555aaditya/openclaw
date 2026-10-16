@@ -5,8 +5,6 @@ import {
 import { loadSubagentSessionListRunsFromSqlite } from "../agents/subagents/registry/subagent-registry.store.sqlite.js";
 import { readSubagentRunsInWorker } from "../agents/subagents/registry/subagent-registry.store.worker.js";
 import { readWorkspaceStateSnapshotForDirectoryInDatabase } from "../agents/workspace-state-store.kernel.js";
-import { isChannelIngressReadCommand } from "../channels/message/ingress-queue-read-contract.js";
-import { readChannelIngressInDatabase } from "../channels/message/ingress-queue-read.worker.js";
 import {
   readClawInstallRecordFromDatabase,
   readClawInstallRecordsInDatabase,
@@ -181,9 +179,6 @@ export function readOpenClawStateDatabaseCommand(
     command.type === "acpSessions.metadata"
   ) {
     return metadataRead ? metadataRead.read(db) : readAcpSessionCommand(db, command);
-  }
-  if (isChannelIngressReadCommand(command)) {
-    return readChannelIngressInDatabase(db, command);
   }
   if ("input" in command && stateReadRegistry.has(command)) {
     return stateReadRegistry.execute(command, db);

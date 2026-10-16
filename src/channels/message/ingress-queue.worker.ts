@@ -1,17 +1,14 @@
-import { runSqliteReadSnapshotSync } from "../../infra/sqlite-transaction.js";
 import {
   requestSqliteWorkerOperationAdmission,
   takeSqliteWorkerOperationAdmissionAttachment,
 } from "../../infra/sqlite-worker-operation-admission.js";
 import type { OpenClawStateDatabase } from "../../state/openclaw-state-db-contract.js";
-import { withExistingOpenClawStateDatabaseArtifactPreservingReadOnly } from "../../state/openclaw-state-db-readonly.js";
 import { runOpenClawStateWriteTransaction } from "../../state/openclaw-state-db.js";
 import type {
   WorkerOperationContext,
   WorkerOperationHandlers,
 } from "../../state/worker-operation-registry.js";
 import * as kernel from "./ingress-queue.kernel.js";
-import type { ChannelIngressListInput } from "./ingress-queue.types.js";
 
 type Mutation<Input, Result> = (
   db: OpenClawStateDatabase["db"],
@@ -72,31 +69,6 @@ function write<Input, Result>(apply: Mutation<Input, Result>, claim = false) {
 }
 
 export const channelIngressOperations = {
-  "channelIngress.list": (
-    input: ChannelIngressListInput & { readOnly: boolean },
-    { open, stateOptions },
-  ) => {
-    const read = ({ db }: Pick<OpenClawStateDatabase, "db">) => {
-      const select = () => kernel.listChannelIngressRowsInDatabase(db, input);
-      // Pending listings paginate past corrupt payloads; other statuses use one SELECT.
-      return input.status === "pending" ? runSqliteReadSnapshotSync(db, select) : select();
-    };
-    return input.readOnly
-      ? (withExistingOpenClawStateDatabaseArtifactPreservingReadOnly(read, stateOptions()) ?? [])
-      : read(open());
-  },
-  "channelIngress.claimSnapshot": (
-    input: Parameters<typeof kernel.readChannelIngressClaimSnapshotInDatabase>[1],
-    { open },
-  ) => {
-    const { db } = open();
-    const read = () => kernel.readChannelIngressClaimSnapshotInDatabase(db, input);
-    return input.candidateIds?.length ? runSqliteReadSnapshotSync(db, read) : read();
-  },
-  "channelIngress.staleClaims": (
-    input: Parameters<typeof kernel.listStaleChannelIngressClaimsInDatabase>[1],
-    { open },
-  ) => kernel.listStaleChannelIngressClaimsInDatabase(open().db, input),
   "channelIngress.enqueue": write(kernel.enqueueChannelIngressInDatabase),
   "channelIngress.claim": write(kernel.claimChannelIngressInDatabase, true),
   "channelIngress.claimNext": write(kernel.claimNextChannelIngressInDatabase, true),
