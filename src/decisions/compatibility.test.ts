@@ -150,6 +150,21 @@ describe("explicit decision version conversion", () => {
     expect(converted).toBeDefined();
     expect(converted && decisionBatchV2ToV1(converted)).toEqual(boundary);
   });
+  it("round-trips admitted V1 depth and node boundaries without charging V2 framing", () => {
+    let nested: DecisionBatch["state"] = null;
+    for (let depth = 0; depth < 31; depth++) {
+      nested = [nested];
+    }
+    // Batch, state array, questions, question, and type consume five nodes.
+    for (const state of [nested, Array.from({ length: 19_995 }, () => null)]) {
+      const boundary: DecisionBatch = { state, questions: { q: { type: "boolean" } } };
+      expect(validateDecisionBatch(boundary)).toBe(true);
+      const converted = decisionBatchV1ToV2(boundary);
+      expect(converted).toBeDefined();
+      expect(converted && decisionBatchV2ToV1(converted)).toEqual(boundary);
+      expect(decisionBatchV1ToV2({ ...boundary, state: [state] })).toBeUndefined();
+    }
+  });
   it("round-trips representable evidence and estimates without thresholding, argmax or normalization", () => {
     const before = structuredClone({ batch, result });
     expect(decisionBatchV1ToV2(batch)).toEqual(v2Batch);
