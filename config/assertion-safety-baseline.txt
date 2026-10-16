@@ -111,7 +111,6 @@ extensions/clickclack/src/setup-surface.ts	8
 extensions/clickclack/src/setup-verify.ts	4
 extensions/codex/harness.ts	1
 extensions/codex/index.ts	5
-extensions/codex/src/app-server/attempt-diagnostics.ts	2
 extensions/codex/src/app-server/attempt-notifications.ts	1
 extensions/codex/src/app-server/attempt-startup.ts	1
 extensions/codex/src/app-server/auth-bridge.ts	1
@@ -207,7 +206,6 @@ extensions/discord/src/actions/runtime.presence.ts	1
 extensions/discord/src/actions/runtime.shared.ts	1
 extensions/discord/src/activities/discord-api.ts	1
 extensions/discord/src/activities/register.ts	1
-extensions/discord/src/activities/store.ts	1
 extensions/discord/src/api.ts	3
 extensions/discord/src/approval-handler.runtime.ts	2
 extensions/discord/src/audit-core.ts	2
