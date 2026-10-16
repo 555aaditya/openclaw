@@ -213,8 +213,9 @@ export async function assembleModelCatalogBundle(options: {
         throw new Error(`provider ${providerId} is declared by more than one plugin manifest`);
       }
       if (isRecord(provider)) {
+        // Credential ownership belongs to the installed manifest, never a downloaded catalog.
         // Manifests shipped since 2026.9.7 may still carry the retired authoring field.
-        const { recommendedModels: _retired, ...v1Provider } = provider;
+        const { authScope: _authScope, recommendedModels: _retired, ...v1Provider } = provider;
         providers[providerId] = v1Provider;
       } else {
         providers[providerId] = provider;
