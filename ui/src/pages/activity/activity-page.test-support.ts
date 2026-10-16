@@ -1,5 +1,6 @@
 import { vi } from "vitest";
-import type { GatewayHelloOk } from "../../api/gateway.ts";
+import type { GatewayBrowserClient, GatewayHelloOk } from "../../api/gateway.ts";
+import type { GatewaySessionRow, SessionsListResult } from "../../api/types.ts";
 import type { ApplicationContext, ApplicationGatewaySnapshot } from "../../app/context.ts";
 
 export function activityHello(recoveryScope = "activity-owner-a"): GatewayHelloOk {
@@ -31,4 +32,45 @@ export function createActivityGatewayStub(): ApplicationContext["gateway"] {
     subscribeEventLog: vi.fn(() => () => undefined),
     subscribeEvents: vi.fn(() => () => undefined),
   } as unknown as ApplicationContext["gateway"];
+}
+
+export function inspectorGateway(client: GatewayBrowserClient) {
+  const source = createActivityGatewayStub();
+  Object.assign(source.snapshot, {
+    client,
+    phase: "connected",
+    hello: {
+      ...activityHello(),
+      features: { methods: ["audit.run.inspect"], events: [] },
+    },
+  });
+  return source;
+}
+
+export function activityRoster(
+  sessions: GatewaySessionRow[] = [
+    { key: "main", kind: "direct", hasActiveRun: true },
+    { key: "agent:other:work", kind: "direct", hasActiveRun: true },
+  ],
+): SessionsListResult {
+  return {
+    ts: 1,
+    path: "",
+    count: sessions.length,
+    sessions,
+    defaults: { model: null, modelProvider: null, contextTokens: null },
+  };
+}
+
+export function activityResponse(method: string, params: unknown) {
+  switch (method) {
+    case "sessions.list":
+      return activityRoster();
+    case "sessions.subscribe":
+      return { subscribed: true };
+    case "sessions.messages.subscribe":
+      return params;
+    default:
+      return {};
+  }
 }

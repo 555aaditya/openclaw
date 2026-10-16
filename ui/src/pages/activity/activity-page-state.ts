@@ -10,6 +10,7 @@ import {
 import { activityPersonFromPath } from "../../app-route-paths.ts";
 import type { ApplicationContext, ApplicationGatewaySnapshot } from "../../app/context.ts";
 import { gatewayPresentationScope } from "../../app/gateway-presentation-scope.ts";
+import { hasOperatorSelfReadAccess } from "../../app/operator-access.ts";
 import { readPresenceEntries, type PresencePayload } from "../../app/user-profile.ts";
 import { isMissingOperatorReadScopeError } from "../../lib/gateway-errors.ts";
 import { canCallGatewayMethod, isGatewayMethodAdvertised } from "../../lib/gateway-methods.ts";
@@ -152,12 +153,11 @@ export function createActivityPageState(context: ApplicationContext) {
 
   function syncSessionActivity(reason: "query" | "retry" = "query") {
     const snapshot = context.gateway.snapshot;
+    // Session-scoped operators may read sessions.list, matching the roster activity store.
     const accessLost =
       snapshot.phase === "connected" &&
       snapshot.hello !== null &&
-      !canCallGatewayMethod(snapshot, "sessions.list", "operator.read", {
-        requireAdvertisement: false,
-      });
+      !hasOperatorSelfReadAccess(snapshot.hello.auth ?? null);
     void sessionActivity.load(
       accessLost ? null : snapshot.client,
       routeData?.mode === "sessions"

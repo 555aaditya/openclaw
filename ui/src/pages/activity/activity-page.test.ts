@@ -6,8 +6,8 @@ import { createComponent, createEffect, createSignal } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AuditRunInspectResult } from "../../../../packages/gateway-protocol/src/schema/audit-run.js";
 import { createDeferred } from "../../../../test/helpers/promise.js";
-import { GatewayRequestError, type GatewayBrowserClient } from "../../api/gateway.ts";
-import type { GatewaySessionRow, SessionsListResult } from "../../api/types.ts";
+import { GatewayRequestError } from "../../api/gateway.ts";
+import type { SessionsListResult } from "../../api/types.ts";
 import type { ApplicationContext } from "../../app/context.ts";
 import {
   createGatewayEvent,
@@ -23,7 +23,13 @@ import { cleanupSolid, mountSolid } from "../../test-helpers/mount-solid.ts";
 import { flush, waitForSolid } from "../../test-helpers/solid-settle.ts";
 import { createActivityPageState } from "./activity-page-state.ts";
 import { ActivityPageView } from "./activity-page-view.tsx";
-import { activityHello, createActivityGatewayStub } from "./activity-page.test-support.ts";
+import {
+  activityHello,
+  activityResponse,
+  activityRoster,
+  createActivityGatewayStub,
+  inspectorGateway,
+} from "./activity-page.test-support.ts";
 
 type TestActivityPage = ReturnType<typeof createActivityPage>;
 
@@ -44,19 +50,6 @@ function createActivityPage(context: ApplicationContext, initial?: RouteLocation
       flush();
     },
   };
-}
-
-function inspectorGateway(client: GatewayBrowserClient) {
-  const source = createActivityGatewayStub();
-  Object.assign(source.snapshot, {
-    client,
-    phase: "connected",
-    hello: {
-      ...activityHello(),
-      features: { methods: ["audit.run.inspect"], events: [] },
-    },
-  });
-  return source;
 }
 
 function previews(page: TestActivityPage) {
@@ -195,34 +188,6 @@ async function bindActivity(source: ApplicationContext["gateway"]): Promise<Test
   });
   await syncActivityRoster(page);
   return page;
-}
-
-function activityRoster(
-  sessions: GatewaySessionRow[] = [
-    { key: "main", kind: "direct", hasActiveRun: true },
-    { key: "agent:other:work", kind: "direct", hasActiveRun: true },
-  ],
-): SessionsListResult {
-  return {
-    ts: 1,
-    path: "",
-    count: sessions.length,
-    sessions,
-    defaults: { model: null, modelProvider: null, contextTokens: null },
-  };
-}
-
-function activityResponse(method: string, params: unknown) {
-  switch (method) {
-    case "sessions.list":
-      return activityRoster();
-    case "sessions.subscribe":
-      return { subscribed: true };
-    case "sessions.messages.subscribe":
-      return params;
-    default:
-      return {};
-  }
 }
 
 async function syncActivityRoster(page: TestActivityPage) {
@@ -408,6 +373,41 @@ describe("ActivityPage gateway lifecycle", () => {
     await waitForSolid(() => expect(rows()).toHaveLength(0));
     expect(retry()).toBeNull();
     expect(filter.value).toBe("my draft filter");
+  });
+
+  it("keeps reading Current Work across a session-scoped reconnect and clears it when read access is lost", async () => {
+    const { gateway: source, current } = activityGateway();
+    const hello = activityHello();
+    hello.auth = { ...hello.auth, scopes: ["operator.sessions.read"] };
+    current().opts.onHello?.(hello);
+    const page = await bindActivity(source);
+    const rows = () => page.container.querySelectorAll(".activity-current-work__row");
+    expect(rows()).toHaveLength(2);
+
+    current().opts.onClose?.({ code: 1006, reason: "reconnecting", willRetry: true });
+    flush();
+    expect(rows()).toHaveLength(2);
+    const refreshed = createDeferred<SessionsListResult>();
+    current().request.mockImplementation(async (method, params) =>
+      method === "sessions.list" ? refreshed.promise : activityResponse(method, params),
+    );
+    current().opts.onHello?.({
+      ...hello,
+      auth: { ...hello.auth, scopes: ["operator.sessions.write"] },
+    });
+    flush();
+    expect(rows()).toHaveLength(2);
+    refreshed.resolve(
+      activityRoster([
+        { key: "main", kind: "direct", hasActiveRun: true, label: "Refreshed work" },
+      ]),
+    );
+    await waitForSolid(() => expect(rows()).toHaveLength(1));
+    expect(rows()[0]?.textContent).toContain("Refreshed work");
+
+    current().opts.onHello?.({ ...hello, auth: { ...hello.auth, scopes: [] } });
+    flush();
+    expect(rows()).toHaveLength(0);
   });
 
   it.each(["live", "run"] as const)(
