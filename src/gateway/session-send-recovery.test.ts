@@ -410,7 +410,19 @@ it("retries discovery without losing the saved delivery", async () => {
   expect(io.report).not.toHaveBeenCalled();
 });
 
-it("recovers a logical agent's input from a shared physical store", async () => {
+it("waits for logical-agent admission in an already discovered shared store", async () => {
+  const refusal = createAgentDatabaseInspectionRefusal({
+    agentId: "secondary",
+    paths: ["/fixture/secondary.sqlite"],
+    reason: "Synthetic startup inspection",
+    pending: true,
+  });
+  recordAgentDatabaseAdmissions([refusal]);
+  io.discover.mockImplementation(async ({ agentIds }: { agentIds?: ReadonlySet<string> }) =>
+    !agentIds || agentIds.has("main")
+      ? [{ agentId: "main", storePath: "/fixture/shared.sqlite" }]
+      : [],
+  );
   const sharedDelivery = {
     ...delivery,
     target: { ...delivery.target, agentId: "secondary", sessionKey: "agent:secondary:target" },
@@ -435,17 +447,45 @@ it("recovers a logical agent's input from a shared physical store", async () => 
     },
     assertCurrent() {},
   });
-  io.load.mockImplementation(async ({ key }: { key: string }) => ({
-    agentId: key === delivery.source.sessionKey ? "main" : "secondary",
-    canonicalKey: key,
-    storePath: "/fixture/shared.sqlite",
-    store: { [key]: key === delivery.source.sessionKey ? sourceEntry : targetEntry },
-  }));
-  await recoverSessionSendDeliveries(context, controller().signal);
+  io.load.mockImplementation(async ({ key }: { key: string }) => {
+    const agentId = key === delivery.source.sessionKey ? "main" : "secondary";
+    if (readAgentDatabaseAdmissionRefusal(agentId)) {
+      throw new AgentDatabaseAdmissionError(refusal);
+    }
+    return {
+      agentId,
+      canonicalKey: key,
+      storePath: "/fixture/shared.sqlite",
+      store: { [key]: key === delivery.source.sessionKey ? sourceEntry : targetEntry },
+    };
+  });
+  const joined = createDeferred();
+  const prepared = createDeferred();
+  const recovery = withAgentDatabasePreparationContext(
+    () => ({
+      waitForAgentPreparation: () => {
+        joined.resolve();
+        return prepared.promise;
+      },
+    }),
+    () => recoverSessionSendDeliveries(context, controller().signal),
+  );
+  try {
+    await Promise.all([joined.promise, vi.runAllTimersAsync()]);
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(io.report).not.toHaveBeenCalled();
+    await preparePendingAgentDatabase(refusal, { assertCurrent() {} }, async () => {});
+    prepared.resolve();
+    await recovery;
+  } finally {
+    prepared.resolve();
+    await recovery.catch(() => {});
+  }
   expect(dispatch).toHaveBeenCalledOnce();
   expect(dispatch.mock.calls[0]![0]).toMatchObject({
     agentId: "secondary",
     sessionKey: "agent:secondary:target",
+    idempotencyKey: delivery.runId,
   });
   expect(io.report).not.toHaveBeenCalled();
 });

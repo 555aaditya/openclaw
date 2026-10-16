@@ -171,6 +171,16 @@ async function recoverSessionSendDeliveriesForAgents(
         try {
           await retry(async () => {
             attempts++;
+            // A shared store can be readable while an endpoint's logical agent is still pending.
+            for (const agentId of new Set([delivery.source.agentId, delivery.target.agentId])) {
+              if (
+                readAgentDatabaseAdmissionRefusal(agentId)?.code ===
+                "agent-database-inspection-pending"
+              ) {
+                await waitForAgentDatabasePreparation(agentId, { signal });
+                assertCurrent();
+              }
+            }
             let communication:
               | Awaited<ReturnType<typeof prepareSessionsSendCommunication>>
               | undefined;
