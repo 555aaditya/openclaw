@@ -204,7 +204,7 @@ canceled scan leaves uncommitted derived totals for the next refresh. Persisted
 rollups, partitions, schemas, and report totals keep their existing format.
 
 Transcript history, search, and model-context pools start with one worker and
-add a second only when a read has waited in the queue for 25 milliseconds.
+add a second only when a read has waited in the queue for 100 milliseconds.
 Existing idle workers accept reads immediately. Surplus workers retire after 30
 seconds idle. History and search keep one worker until their five-minute idle
 retirement, which waits for logical reader leases to be released. Surplus
