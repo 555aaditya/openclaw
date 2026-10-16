@@ -115,11 +115,28 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe("managed handoff native staging", () => {
-  it("preserves the single-file stage outside FreeBSD", async () => {
+  it("preserves the single-file stage on Linux", async () => {
     await withMockedPlatform("linux", async () => {
       const files = stageManagedHandoffRuntime(destination);
       expect(files).toEqual([path.join(destination, "runtime", "managed-handoff-runtime.mjs")]);
       expect(fs.readFileSync(files[0]!)).toEqual(runtimeBytes);
+      expect(createRequireMock).not.toHaveBeenCalled();
+    });
+  });
+
+  it("retains the Windows security helper beside the sealed runtime", async () => {
+    const bytes = Buffer.from([0x4d, 0x5a, 0x00, 0xff]);
+    const source = path.join(root, "windows-security-helper.exe");
+    write(source, bytes);
+    await withMockedPlatform("win32", async () => {
+      const files = stageManagedHandoffRuntime(destination);
+      const staged = path.join(destination, "runtime", "windows-security-helper.exe");
+      expect(files).toEqual([
+        path.join(destination, "runtime", "managed-handoff-runtime.mjs"),
+        staged,
+      ]);
+      fs.rmSync(source);
+      expect(fs.readFileSync(staged)).toEqual(bytes);
       expect(createRequireMock).not.toHaveBeenCalled();
     });
   });

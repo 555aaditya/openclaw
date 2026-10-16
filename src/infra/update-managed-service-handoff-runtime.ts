@@ -18,6 +18,15 @@ export function stageManagedHandoffRuntime(directory: string): string[] {
   const destination = path.join(directory, "runtime", MANAGED_HANDOFF_RUNTIME_ENTRY);
   fs.mkdirSync(path.dirname(destination), { recursive: true, mode: 0o700 });
   fs.writeFileSync(destination, fs.readFileSync(source), { mode: 0o600, flag: "wx" });
+  const files = [destination];
+  if (process.platform === "win32") {
+    const helper = path.join(path.dirname(destination), "windows-security-helper.exe");
+    fs.writeFileSync(helper, fs.readFileSync(new URL("./windows-security-helper.exe", source)), {
+      mode: 0o600,
+      flag: "wx",
+    });
+    files.push(helper);
+  }
   // Survives update-to-triage exec, then shares the helper's sensitive-file cleanup.
-  return [destination, ...stageFreeBsdManagedHandoffNativeRuntime(directory)];
+  return [...files, ...stageFreeBsdManagedHandoffNativeRuntime(directory)];
 }

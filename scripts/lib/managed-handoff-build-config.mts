@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import { createRequire } from "node:module";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { UserConfig } from "tsdown";
 import { packageActivationRuntimeEntrypoint } from "../../src/infra/package-update-activation-runtime-assets.ts";
@@ -36,6 +39,22 @@ function createSealedRecoveryBuildConfig(entry: typeof managedHandoffRuntimeEntr
     define: { SEALED_RUNTIME_BUILD: "true" },
     plugins: [
       createStateSchemaInlinePlugin(),
+      {
+        name: "openclaw:sealed-recovery-assets",
+        buildStart() {
+          const require = createRequire(import.meta.url);
+          const helper = path.join(
+            path.dirname(require.resolve("@openclaw/fs-safe/package.json")),
+            "dist/windows-security-helper.exe",
+          );
+          this.addWatchFile(helper);
+          this.emitFile({
+            type: "asset",
+            fileName: "windows-security-helper.exe",
+            source: fs.readFileSync(helper),
+          });
+        },
+      },
       {
         name: "openclaw:managed-handoff-native-loader",
         // All shared identity consumers in this bundle use its recovery-owned loader.
