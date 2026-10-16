@@ -58,19 +58,34 @@ type OpengrepWorkflowStep = {
   with?: Record<string, string>;
 };
 
-function runChangedPathsWorkflow(repo: string, base: string, env: NodeJS.ProcessEnv) {
+function runChangedPathsWorkflow(
+  repo: string,
+  base: string,
+  env: NodeJS.ProcessEnv,
+  manualBase = "",
+) {
   const workflow = parse(fs.readFileSync(".github/workflows/opengrep-precise.yml", "utf8"));
   const steps: OpengrepWorkflowStep[] = workflow.jobs.scan.steps;
   const values = new Map([
     ["github.event.pull_request.base.sha", base],
-    ["github.event.pull_request.base.ref", "main"],
+    ["github.event.pull_request.base.ref", manualBase ? "" : "main"],
+    ["inputs.base_ref", manualBase],
+    ["github.ref_name", "main"],
+    ["github.event_name", manualBase ? "workflow_dispatch" : "pull_request"],
   ]);
   const output = path.join(repo, "step-output.txt");
   const interpolate = (value: string) =>
     value.replace(/\$\{\{\s*(.*?)\s*\}\}/gu, (_match, expression: string) => {
-      const resolved = values.get(expression);
-      if (resolved === undefined) {
-        throw new Error(`Unbound workflow expression: ${expression}`);
+      let resolved = "";
+      for (const term of expression.split(/\s*\|\|\s*/u)) {
+        const candidate = values.get(term);
+        if (candidate === undefined) {
+          throw new Error(`Unbound workflow expression: ${term}`);
+        }
+        resolved = candidate;
+        if (resolved) {
+          break;
+        }
       }
       return resolved;
     });
@@ -351,11 +366,33 @@ describe("run-opengrep.sh", () => {
     });
 
     it.each([
-      { shape: "partial merge", branch: "main", depth: 2, partial: true, passes: true },
-      { shape: "merge without parents", branch: "main", depth: 1, partial: false, passes: false },
+      {
+        shape: "partial merge",
+        branch: "main",
+        depth: 2,
+        partial: true,
+        passes: true,
+        manualBase: "",
+      },
+      {
+        shape: "manual merge",
+        branch: "main",
+        depth: 3,
+        partial: false,
+        passes: true,
+        manualBase: "HEAD~2",
+      },
+      {
+        shape: "merge without parents",
+        branch: "main",
+        depth: 1,
+        partial: false,
+        passes: false,
+        manualBase: "",
+      },
     ])(
       "prepares and scans a shallow $shape checkout without unrelated base fetches",
-      ({ branch, depth, partial, passes }) => {
+      ({ branch, depth, partial, passes, manualBase }) => {
         const repo = createTempDir("openclaw-opengrep-shallow-");
         git(
           source,
@@ -380,25 +417,28 @@ describe("run-opengrep.sh", () => {
           "--batch-all-objects",
           "--batch-check=%(objectname)",
         );
-        expect(localObjects.split("\n").includes(staleBase)).toBe(
-          branch === "feature" && depth === 2,
-        );
+        expect(localObjects.split("\n").includes(staleBase)).toBe(depth === 3);
         const { argsPath, binDir } = installOpengrepStub(repo);
         const trace = path.join(createTempDir("openclaw-opengrep-trace-"), "git.jsonl");
-        const result = runChangedPathsWorkflow(repo, staleBase, {
-          ...process.env,
-          PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}`,
-          RUNNER_OS:
-            process.platform === "win32"
-              ? "Windows"
-              : process.platform === "darwin"
-                ? "macOS"
-                : "Linux",
-          GIT_CONFIG_GLOBAL: devNull,
-          GIT_CONFIG_NOSYSTEM: "1",
-          GIT_ALLOW_PROTOCOL: "",
-          GIT_TRACE2_EVENT: trace,
-        });
+        const result = runChangedPathsWorkflow(
+          repo,
+          staleBase,
+          {
+            ...process.env,
+            PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}`,
+            RUNNER_OS:
+              process.platform === "win32"
+                ? "Windows"
+                : process.platform === "darwin"
+                  ? "macOS"
+                  : "Linux",
+            GIT_CONFIG_GLOBAL: devNull,
+            GIT_CONFIG_NOSYSTEM: "1",
+            GIT_ALLOW_PROTOCOL: "",
+            GIT_TRACE2_EVENT: trace,
+          },
+          manualBase,
+        );
         const traceEvents = fs
           .readFileSync(trace, "utf8")
           .trim()
@@ -439,7 +479,11 @@ describe("run-opengrep.sh", () => {
         expect(fetches).toEqual([]);
         const args = fs.readFileSync(argsPath, "utf8");
         expect(args).toContain("src/pr.ts");
-        expect(args).not.toContain("src/main-only.ts");
+        if (manualBase) {
+          expect(args).toContain("src/main-only.ts");
+        } else {
+          expect(args).not.toContain("src/main-only.ts");
+        }
       },
     );
   });

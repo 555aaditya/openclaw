@@ -74,10 +74,14 @@ jobs:
         id: scan-base
         env:
           BASE_SHA: ${{ inputs.base_ref || github.event.pull_request.base.sha }}
+          SCAN_EVENT: ${{ github.event_name }}
         run: |
-          # Resolve the scan's merge parent before fetching a stale event-payload base.
-          base="$(node scripts/lib/merge-head-diff-base.mjs --base "$BASE_SHA" --head HEAD --prefer-first-parent)"
-          base="$(git rev-parse --verify --end-of-options "${base}^{commit}")"
+          if [[ "$SCAN_EVENT" == workflow_dispatch ]]; then
+            base="$(git rev-parse --verify --end-of-options "${BASE_SHA}^{commit}")"
+          else
+            # Resolve the merge parent before fetching a stale PR event base.
+            base="$(node scripts/lib/merge-head-diff-base.mjs --base "$BASE_SHA" --head HEAD --prefer-first-parent)"
+          fi
           echo "sha=$base" >> "$GITHUB_OUTPUT"
 
       - name: Ensure PR base commit

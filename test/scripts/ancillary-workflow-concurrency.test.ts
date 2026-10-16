@@ -63,7 +63,10 @@ const WORKFLOWS: {
   {
     file: ".github/workflows/opengrep-precise.yml",
     prGroup: "opengrep-pr-diff-OpenGrep — PR Diff-123",
-    manual: { mode: "absent" },
+    manual: {
+      mode: "same-SHA cancels",
+      group: `opengrep-pr-diff-OpenGrep — PR Diff-${"a".repeat(40)}`,
+    },
   },
   {
     file: ".github/workflows/sandbox-common-smoke.yml",

@@ -52,7 +52,7 @@ export async function dispatchCiWorkflow({
   ref,
   label,
   requestPath,
-  dispatcherArgs = [],
+  dispatcherArgs = /** @type {string[]} */ ([]),
   github,
 }) {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]*\.ya?ml$/u.test(workflow)) {
