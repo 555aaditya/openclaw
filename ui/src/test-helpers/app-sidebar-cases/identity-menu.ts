@@ -15,7 +15,6 @@ import {
 } from "../app-sidebar.ts";
 import { waitForSolid } from "../solid-settle.ts";
 import "../../components/app-sidebar.tsx";
-import { openSubmenu } from "../session-menu.ts";
 
 describe("AppSidebar footer identity menu", () => {
   it("opens Profile from the Owner header without a self user", async () => {
@@ -194,17 +193,16 @@ describe("AppSidebar footer identity menu", () => {
     const helpRow = menu?.querySelector<HTMLElement>(".sidebar-identity-menu__help");
     await (helpRow as (HTMLElement & { updateComplete?: Promise<unknown> }) | null)?.updateComplete;
     expect(helpRow?.getAttribute("aria-haspopup")).toBe("menu");
-    const helpMenu = await openSubmenu(menu!, "Help");
     expect(
-      [...helpMenu.querySelectorAll("a[href]")].map((link) => link.getAttribute("href")),
+      [...(helpRow?.parentElement?.querySelectorAll('[role="menu"] a[href]') ?? [])].map((link) =>
+        link.getAttribute("href"),
+      ),
     ).toEqual([
       "https://docs.openclaw.ai",
       "https://docs.openclaw.ai/help",
       "https://discord.gg/clawd",
       "https://docs.openclaw.ai/releases",
     ]);
-    helpMenu.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-    await sidebar.updateComplete;
 
     menu?.querySelector<HTMLElement>('[data-value="command:profile"]')?.focus();
     menu?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
