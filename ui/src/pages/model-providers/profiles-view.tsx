@@ -1,6 +1,4 @@
-import "./account-usage.tsx";
 import { createMemo, For, onCleanup, Show } from "solid-js";
-import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import { Icon } from "../../components/solid/icon.tsx";
 import { SettingsStatus } from "../../components/solid/settings-ui.tsx";
 import { registerSettingsEnglish } from "../../i18n/locales/en-settings.ts";
@@ -9,21 +7,9 @@ import { formatDurationHuman } from "../../lib/format-duration.ts";
 import { registerEnglishCatalog, t } from "../../lib/reactive/i18n.ts";
 import { listen } from "../../lib/reactive/listener.ts";
 import { showToast } from "../../lib/toast.ts";
-import type { ModelAccountUsageElement } from "./account-usage.tsx";
+import { AccountLimits, type AccountUsageScope } from "./account-usage.tsx";
 import { modelProviderErrorMessage } from "./config-mutation.ts";
 import type { ModelProviderCard, ModelProviderPendingLogout } from "./data.ts";
-
-declare module "@solidjs/web" {
-  namespace JSX {
-    interface IntrinsicElements {
-      "openclaw-model-account-usage": HTMLAttributes<ModelAccountUsageElement> & {
-        "prop:client": GatewayBrowserClient | null;
-        "prop:agentId": string;
-        "prop:profileId": string;
-      };
-    }
-  }
-}
 
 registerEnglishCatalog(registerSettingsEnglish);
 
@@ -47,9 +33,8 @@ export function showProfileLogoutSuccess(warning?: string): void {
 type ProviderProfile = ModelProviderCard["profiles"][number];
 
 export type ProviderProfilesViewProps = {
-  usageClient?: GatewayBrowserClient | null;
-  usageAgentId?: string;
-  registerAccountUsage?: (element: ModelAccountUsageElement) => () => void;
+  /** Present when this operator may read per-account Codex limits. */
+  accountUsage?: AccountUsageScope | null;
   busy: Record<string, boolean>;
   canMutate: boolean;
   mutationBlockedReason: string | null;
@@ -535,11 +520,7 @@ function ProviderProfileRow(
   },
 ) {
   let cancelDrag: (() => void) | undefined;
-  let releaseUsage: (() => void) | undefined;
-  onCleanup(() => {
-    cancelDrag?.();
-    releaseUsage?.();
-  });
+  onCleanup(() => cancelDrag?.());
   const profile = () => props.row.profile;
   const group = () => props.row.group;
   const provider = () => group().provider;
@@ -639,14 +620,6 @@ function ProviderProfileRow(
         ) : undefined}
       </span>
       <ProfileIdentity profile={profile()} identity={props.identity} showDetails />
-      {provider() === "openai" && profile().type !== "api_key" ? (
-        <openclaw-model-account-usage
-          ref={(element) => (releaseUsage = props.registerAccountUsage?.(element))}
-          prop:client={props.usageClient ?? null}
-          prop:agentId={props.usageAgentId ?? ""}
-          prop:profileId={profile().profileId}
-        />
-      ) : undefined}
       <span class="model-providers__profile-status">
         {profileStatus(profile(), props.card.catalogStatus === "auth-rejected")}
       </span>
@@ -684,6 +657,9 @@ function ProviderProfileRow(
           </button>
         ) : undefined}
       </span>
+      <Show when={provider() === "openai" && profile().type !== "api_key" && props.accountUsage}>
+        {(scope) => <AccountLimits scope={scope()} profileId={profile().profileId} />}
+      </Show>
     </div>
   );
 }

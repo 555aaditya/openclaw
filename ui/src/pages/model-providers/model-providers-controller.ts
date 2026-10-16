@@ -19,7 +19,6 @@ import { projectAgents, projectRuntimeConfig } from "../../lib/reactive/domain-c
 import { i18nRevision, t } from "../../lib/reactive/i18n.ts";
 import { projectSource } from "../../lib/reactive/projection.ts";
 import { UsageRefreshPolicy } from "../usage/refresh-policy.ts";
-import type { ModelAccountUsageElement } from "./account-usage.tsx";
 import {
   buildDefaultsPatch,
   DEFAULT_MODELS_REPLACE_PATHS,
@@ -59,6 +58,7 @@ type ModelProvidersState = {
   addProviderKey: string;
   defaultsDraft: DefaultsDraft | null;
   selectedAgentId: string;
+  accountUsageRevision: number;
 };
 
 export function createModelProviders(
@@ -81,7 +81,6 @@ export function createModelProviders(
     mutationBlockedReason() === null && !modelProviderConfigBusy(context);
   let loaderPending = false;
   let connected = false;
-  const accountUsages = new Set<ModelAccountUsageElement>();
   const state: ModelProvidersState = {
     data: null,
     busy: {},
@@ -94,6 +93,7 @@ export function createModelProviders(
     addProviderKey: "",
     defaultsDraft: null,
     selectedAgentId: "",
+    accountUsageRevision: 0,
   };
   let logoutConfirmation: AbortController | null = null;
   let pendingConnection = false;
@@ -119,9 +119,7 @@ export function createModelProviders(
     onStart: (reason) => {
       supplemental.beginCoreRefresh(reason === "forced");
       if (reason === "forced") {
-        for (const account of accountUsages) {
-          account.refreshUsage();
-        }
+        setState("accountUsageRevision", state.accountUsageRevision + 1);
       }
     },
     onComplete: ({ client, data }) => {
@@ -674,12 +672,14 @@ export function createModelProviders(
       installedAgents: undefined,
       providerQuery: providerQuery(),
       onConnectProvider: () => void login.connectProvider(values.configuredModels),
-      usageClient: !mutationBlockedReason() && usageAvailable ? gatewaySnapshot.client : null,
-      usageAgentId: state.selectedAgentId,
-      registerAccountUsage: (element) => {
-        accountUsages.add(element);
-        return () => accountUsages.delete(element);
-      },
+      accountUsage:
+        !mutationBlockedReason() && usageAvailable && gatewaySnapshot.client
+          ? {
+              client: gatewaySnapshot.client,
+              agentId: state.selectedAgentId,
+              revision: state.accountUsageRevision,
+            }
+          : null,
       connected: gatewaySnapshot.phase === "connected",
       loading:
         gatewaySnapshot.phase === "connected" &&
