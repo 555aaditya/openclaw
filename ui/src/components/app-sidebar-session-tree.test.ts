@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GatewaySessionRow } from "../api/types.ts";
-import { projectSessionTree } from "./app-sidebar-session-tree.ts";
+import { projectSessionTree } from "./app-sidebar-session-tree.test-support.ts";
 import {
   SIDEBAR_SESSION_NO_ATTENTION,
   type SidebarRecentSession,

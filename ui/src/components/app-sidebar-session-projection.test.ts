@@ -1,8 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { SidebarSessionProjection } from "./app-sidebar-session-projection.ts";
+import {
+  SidebarSessionProjection,
+  type SidebarSessionSubtitleEnvironment,
+} from "./app-sidebar-session-projection.ts";
 import type { SidebarRecentSession } from "./app-sidebar-session-types.ts";
 
-type ProjectionInput = Parameters<SidebarSessionProjection["project"]>[0];
+type ProjectionInput = Parameters<SidebarSessionProjection["project"]>[0] & {
+  listLoaded: boolean;
+  subtitle: SidebarSessionSubtitleEnvironment;
+};
 
 const connectionIdentity = {};
 const listSource = {};
@@ -64,6 +70,16 @@ function projectionInput(
   };
 }
 
+function project(projection: SidebarSessionProjection, input: ProjectionInput) {
+  projection.beginSessionScope(input.agentId, input.connectionIdentity, input.listSource);
+  const observe = (row: SidebarRecentSession) => {
+    projection.observeSession(row, input.subtitle, input.listLoaded);
+    row.children.forEach(observe);
+  };
+  input.rows.forEach(observe);
+  return projection.project(input);
+}
+
 function narrationInput(session: SidebarRecentSession, line: string): ProjectionInput {
   return projectionInput([session], {
     subtitle: {
@@ -121,23 +137,25 @@ describe("SidebarSessionProjection child expansion", () => {
   it("reveals newly added children while preserving a manual collapse through ordinary updates", () => {
     const projection = new SidebarSessionProjection();
     const parent = sessionRow("parent", { childSessionKeys: ["first", "second"] });
-    projection.project(projectionInput([sessionRow(parent.key)]));
-    projection.project(projectionInput([parent]));
+    project(projection, projectionInput([sessionRow(parent.key)]));
+    project(projection, projectionInput([parent]));
     expect(projection.children.isExpanded(parent.key)).toBe(true);
     expect(projection.children.toggle(parent.key)).toEqual({ expanded: false });
 
-    projection.project(
+    project(
+      projection,
       projectionInput([sessionRow(parent.key, { childSessionKeys: ["second", "first"] })]),
     );
     expect(projection.children.isExpanded(parent.key)).toBe(false);
 
     // Compare identities, not counts: one child can replace another between snapshots.
     const replacement = sessionRow(parent.key, { childSessionKeys: ["second", "third"] });
-    projection.project(projectionInput([replacement]));
+    project(projection, projectionInput([replacement]));
     expect(projection.children.isExpanded(parent.key)).toBe(true);
 
     projection.children.showMore(parent.key);
-    projection.project(
+    project(
+      projection,
       projectionInput([
         sessionRow(parent.key, { childSessionKeys: ["second", "third", "fourth"] }),
       ]),
@@ -147,12 +165,13 @@ describe("SidebarSessionProjection child expansion", () => {
 
   it("keeps existing children collapsed when the list replaces a route placeholder", () => {
     const projection = new SidebarSessionProjection();
-    projection.project(projectionInput([sessionRow("parent")], { listLoaded: false }));
+    project(projection, projectionInput([sessionRow("parent")], { listLoaded: false }));
     const parent = sessionRow("parent", { childSessionKeys: ["first", "second"] });
-    projection.project(projectionInput([parent]));
+    project(projection, projectionInput([parent]));
     expect(projection.children.isExpanded(parent.key)).toBe(false);
 
-    projection.project(
+    project(
+      projection,
       projectionInput([sessionRow(parent.key, { childSessionKeys: ["first", "second", "third"] })]),
     );
     expect(projection.children.isExpanded(parent.key)).toBe(true);
@@ -162,10 +181,11 @@ describe("SidebarSessionProjection child expansion", () => {
     const projection = new SidebarSessionProjection();
     const parent = sessionRow("parent", { childSessionKeys: ["first"] });
     projection.children.restore([{ key: parent.key, childrenDisplayMode: "collapsed-by-user" }]);
-    projection.project(projectionInput([parent]));
+    project(projection, projectionInput([parent]));
     expect(projection.children.isExpanded(parent.key)).toBe(false);
 
-    projection.project(
+    project(
+      projection,
       projectionInput([sessionRow(parent.key, { childSessionKeys: ["first", "second"] })]),
     );
     expect(projection.children.isExpanded(parent.key)).toBe(true);
@@ -179,7 +199,7 @@ describe("SidebarSessionProjection child expansion", () => {
       sessionRow("collapsed", { containsActiveDescendant: true }),
       sessionRow("untouched", { containsActiveDescendant: true }),
     ];
-    projection.project(projectionInput([]));
+    project(projection, projectionInput([]));
     projection.children.restore([
       { key: "expanded", childrenDisplayMode: "expanded" },
       { key: "fully-shown", childrenDisplayMode: "expanded-fully" },
@@ -189,14 +209,15 @@ describe("SidebarSessionProjection child expansion", () => {
     expect(projection.children.isExpanded("expanded")).toBe(true);
     expect(projection.children.isFullyShown("fully-shown")).toBe(true);
     const liveConnection = {};
-    projection.project(
+    project(
+      projection,
       projectionInput(rows, { connectionIdentity: liveConnection, listSource: {} }),
     );
     expect(projection.children.isExpanded("expanded")).toBe(true);
     expect(projection.children.isFullyShown("fully-shown")).toBe(true);
     expect(projection.children.isExpanded("collapsed")).toBe(false);
     expect(projection.children.isExpanded("untouched")).toBe(true);
-    projection.project(projectionInput(rows, { connectionIdentity: {} }));
+    project(projection, projectionInput(rows, { connectionIdentity: {} }));
     expect(projection.children.isExpanded("expanded")).toBe(false);
     expect(projection.children.isFullyShown("fully-shown")).toBe(false);
     expect(projection.children.isExpanded("collapsed")).toBe(true);
@@ -205,25 +226,13 @@ describe("SidebarSessionProjection child expansion", () => {
   it("keeps an explicitly collapsed parent closed when a later descendant becomes active", () => {
     const projection = new SidebarSessionProjection();
     const active = sessionRow("parent", { containsActiveDescendant: true });
-    projection.project(projectionInput([active]));
+    project(projection, projectionInput([active]));
     expect(projection.children.toggle(active.key)).toEqual({ expanded: false });
 
-    projection.project(projectionInput([sessionRow("parent")]));
-    projection.project(projectionInput([active]));
+    project(projection, projectionInput([sessionRow("parent")]));
+    project(projection, projectionInput([active]));
 
     expect(projection.children.isExpanded("parent")).toBe(false);
-  });
-
-  it("forgets expansion when a session disappears before returning", () => {
-    const projection = new SidebarSessionProjection();
-    const parent = sessionRow("parent");
-    projection.project(projectionInput([parent]));
-    projection.children.toggle(parent.key);
-
-    projection.project(projectionInput([]));
-    projection.project(projectionInput([parent]));
-
-    expect(projection.children.isExpanded(parent.key)).toBe(false);
   });
 });
 
@@ -232,9 +241,9 @@ describe("SidebarSessionProjection running subtitle hold", () => {
     // Live repro: queued->running rotates activeRunIds; the row must not blank.
     const projection = new SidebarSessionProjection();
     const running = sessionRow("running", { hasActiveRun: true, activeRunIds: ["run-one"] });
-    projection.project(narrationInput(running, "Pre-rotation activity"));
+    project(projection, narrationInput(running, "Pre-rotation activity"));
     const rotated = sessionRow(running.key, { hasActiveRun: true, activeRunIds: ["run-two"] });
-    projection.project(projectionInput([rotated]));
+    project(projection, projectionInput([rotated]));
 
     expect(projection.resolveSubtitle(subtitleParams(rotated)).subtitle).toBe(
       "Pre-rotation activity",
@@ -245,14 +254,14 @@ describe("SidebarSessionProjection running subtitle hold", () => {
     let clock = 0;
     const projection = new SidebarSessionProjection(() => clock);
     const running = sessionRow("running", { hasActiveRun: true, activeRunIds: ["run-one"] });
-    projection.project(narrationInput(running, "First activity"));
+    project(projection, narrationInput(running, "First activity"));
 
     clock = 500;
-    projection.project(narrationInput(running, "Second activity"));
+    project(projection, narrationInput(running, "Second activity"));
     expect(projection.resolveSubtitle(subtitleParams(running)).subtitle).toBe("First activity");
 
     clock = 2_500;
-    projection.project(narrationInput(running, "Second activity"));
+    project(projection, narrationInput(running, "Second activity"));
     expect(projection.resolveSubtitle(subtitleParams(running)).subtitle).toBe("Second activity");
   });
 
@@ -260,7 +269,7 @@ describe("SidebarSessionProjection running subtitle hold", () => {
     let clock = 0;
     const projection = new SidebarSessionProjection(() => clock);
     const running = sessionRow("running", { hasActiveRun: true, activeRunIds: ["run-one"] });
-    projection.project(narrationInput(running, "Ambient activity"));
+    project(projection, narrationInput(running, "Ambient activity"));
 
     clock = 200;
     const needsInput = sessionRow(running.key, {
@@ -268,7 +277,7 @@ describe("SidebarSessionProjection running subtitle hold", () => {
       activeRunIds: ["run-one"],
       agentStatusNote: "Blocked on operator input",
     });
-    projection.project(projectionInput([needsInput]));
+    project(projection, projectionInput([needsInput]));
 
     expect(projection.resolveSubtitle(subtitleParams(needsInput)).subtitle).toBe(
       "Blocked on operator input",
@@ -278,9 +287,10 @@ describe("SidebarSessionProjection running subtitle hold", () => {
   it("clears held narration when the user disables live activity", () => {
     const projection = new SidebarSessionProjection();
     const running = sessionRow("running", { hasActiveRun: true, activeRunIds: ["run-one"] });
-    projection.project(narrationInput(running, "Running checks"));
+    project(projection, narrationInput(running, "Running checks"));
 
-    projection.project(
+    project(
+      projection,
       projectionInput([running], {
         subtitle: {
           sidebarLiveActivity: false,
@@ -304,7 +314,7 @@ describe("SidebarSessionProjection running subtitle hold", () => {
       workSession: true,
       subtitle: "~/Projects/openclaw",
     });
-    projection.project(projectionInput([running]));
+    project(projection, projectionInput([running]));
 
     expect(projection.resolveSubtitle(subtitleParams(running, { hasDisplay: true }))).toEqual({
       subtitle: undefined,

@@ -432,7 +432,7 @@ try {
   );
   const warmProbes = values["warm-reload"] ? `\n(${warmReloadProbe.toString()})();` : "";
   await page.addInitScript({
-    content: `;(() => { if (window !== window.top) return; const __name = (fn) => fn; (${installWidgetReadiness.toString()})(); ${createControlUiMockGatewayInitScript(prepared.scenario)}\n${rigProbeScript}\n${fixture.sidebarListChurn ? `window.__teamScaleSidebarLists = { apply: (mutation) => window.__teamScaleMutate(mutation) }; window.openclawControlUiE2eGateway.setRequestHandler("sessions.list", async ({ params, respond }) => respond(await window.__teamScaleList(params)));` : ""}\n${createColdLoadProbeInitScript({ latencyMs, frameGapMs, events: fixture.events, liveEvents: fixture.liveEvents, liveHistory: fixture.liveHistory })}\n${streamingReply ? createStreamingReplyProbeInitScript() : ""}\n${extraInitScripts.join("\n")}\n${warmProbes} })();`,
+    content: `;(() => { if (window !== window.top) return; const __name = (fn) => fn; (${installWidgetReadiness.toString()})(); ${createControlUiMockGatewayInitScript(prepared.scenario)}\n${rigProbeScript}\n${fixture.sidebarListChurn ? `window.__teamScaleSidebarLists = { apply: (mutation) => window.__teamScaleMutate(mutation) }; window.openclawControlUiE2eGateway.setRequestHandler("sessions.list", async ({ params, respond }) => respond(await window.__teamScaleList(params)));` : ""}\n${createColdLoadProbeInitScript({ diagnosticStacks: !values.untraced, latencyMs, frameGapMs, events: fixture.events, liveEvents: fixture.liveEvents, liveHistory: fixture.liveHistory })}\n${streamingReply ? createStreamingReplyProbeInitScript() : ""}\n${extraInitScripts.join("\n")}\n${warmProbes} })();`,
   });
   const url = controlUiSessionUrl(server.baseUrl, fixture.selectedSessionKey, "dashboard");
   async function settle() {
@@ -836,14 +836,14 @@ try {
         Reflect.get(window, "__coldLoad").startLive();
       }, Boolean(rigProbeScript));
       await page.waitForFunction(
-        (count) => Reflect.get(window, "__coldLoad").readLive().sentEvents === count,
+        (count) => Reflect.get(window, "__coldLoad").readLiveProgress().sentEvents === count,
         fixture.liveEvents.length,
         { timeout: 35_000 },
       );
       const plannedWindowMs =
         fixture.liveEvents.at(-1)!.atMs + (values["sidebar-list-churn"] ? 16_000 : 750);
       await page.waitForFunction(
-        (windowMs) => Reflect.get(window, "__coldLoad").readLive().elapsedMs >= windowMs,
+        (windowMs) => Reflect.get(window, "__coldLoad").readLiveProgress().elapsedMs >= windowMs,
         plannedWindowMs,
       );
       if (values["sidebar-list-churn"]) {
@@ -921,16 +921,17 @@ try {
           : summarizeColdLoadTrace(liveTrace.map(prepareColdLoadTraceEvent), liveMetrics.elapsedMs),
         sidebarRowTransfer: values["sidebar-list-churn"] ? runTransfer : undefined,
         sidebarLists: sidebarReads,
-        sidebarWindows: sidebarReads
-          ? summarizeSidebarWindows(
-              liveMetrics.rpcs,
-              liveMetrics.rpcOffset,
-              sidebarReads,
-              responseTasks,
-              activeStreamMs,
-              liveMetrics.elapsedMs,
-            )
-          : undefined,
+        sidebarWindows:
+          sidebarReads && !values.untraced
+            ? summarizeSidebarWindows(
+                liveMetrics.rpcs,
+                liveMetrics.rpcOffset,
+                sidebarReads,
+                responseTasks,
+                activeStreamMs,
+                liveMetrics.elapsedMs,
+              )
+            : undefined,
         pairedRefreshes,
         pairingMeasurement:
           "Conditional request starts after six seconds, paired within half the five-second minimum cooldown; response arrival skew is separate.",

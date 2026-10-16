@@ -121,12 +121,12 @@ export class AppSidebarOwner extends AppSidebarSessionNavigationElement implemen
     if (!this.context) {
       return null;
     }
-    const rows = this.selectedAgentSessionRows(this.getSessionNavigationState());
+    const rows = this.selectedAgentSessionRows();
     return captureSidebarSnapshotModel(
       this,
       this.context,
       rows,
-      this.zonedVisibleSections(rows).sections,
+      this.zonedVisibleSections().sections,
     );
   }
 
@@ -439,8 +439,8 @@ export class AppSidebarOwner extends AppSidebarSessionNavigationElement implemen
   renderSessionsBody() {
     const host = () => this;
     const navigationState = createMemo(() => host().getSessionNavigationState());
-    const visibleSessions = createMemo(() => host().selectedAgentSessionRows(navigationState()));
-    const sections = createMemo(() => host().zonedVisibleSections(visibleSessions()).sections);
+    const visibleSessions = createMemo(() => host().selectedAgentSessionRows());
+    const sections = createMemo(() => host().zonedVisibleSections().sections);
     const expandedAgentId = createMemo(() => host().expandedAgentId());
     const catalogs = createMemo(() => host().sidebarSessionCatalogs());
     const catalogRouteSessionKey = createMemo(() => {

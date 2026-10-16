@@ -11,34 +11,21 @@ export type SolidSidebarProbeOwner = {
 };
 export type SidebarLifecycle = "requestUpdate" | "prepareRender" | "commitRender";
 export type ProbeMethod = (...args: unknown[]) => unknown;
-type ChatMethod =
-  | "requestUpdate"
-  | "performUpdate"
-  | "render"
-  | "prepareRender"
-  | "commitRender"
-  | "afterCommit";
+type ChatMethod = "invalidate" | "render";
 export type ChatProbeOwner = {
   readonly isConnected: boolean;
-  requestUpdate: ProbeMethod;
-  performUpdate: ProbeMethod;
+  invalidate: ProbeMethod;
   render: ProbeMethod;
-  prepareRender?: ProbeMethod;
-  commitRender?: ProbeMethod;
-  afterCommit?: ProbeMethod;
 };
 export type ChatOwnerRecord = {
   host: HTMLElement;
   owner: ChatProbeOwner;
   originals: Map<ChatMethod, ProbeMethod>;
   pending: Map<string, number>;
-  pendingRequests: Map<number, string>;
-  queuedRequests: Map<number, string>;
-  publicationRequests: Map<number, string>;
-  publicationPending: boolean;
 };
 
 export type ColdLoadProbeInput = {
+  diagnosticStacks?: boolean;
   latencyMs: number;
   frameGapMs: number;
   events: Array<{ event: string; payload: unknown }>;
@@ -73,6 +60,7 @@ type LiveDeliveryOrigin = {
 /** Serialized with the main probe; all runtime dependencies belong to this function. */
 export function createColdLoadFrameProbe(
   readWindow: () => { startedAt: number; finishedAt: number },
+  diagnosticStacks = true,
 ) {
   type FrameOrigin = {
     id: number;
@@ -96,7 +84,9 @@ export function createColdLoadFrameProbe(
         id: frameOrigins.size + 1,
         frameId: 0,
         scheduledAtMs: performance.now() - readWindow().startedAt,
-        schedulingStack: new Error().stack?.split("\n").slice(2, 18).join(" <- ") ?? "",
+        schedulingStack: diagnosticStacks
+          ? (new Error().stack?.split("\n").slice(2, 18).join(" <- ") ?? "")
+          : "",
         delivery: activeLiveDelivery,
         parentId: activeFrameOrigin?.id ?? null,
       };
@@ -123,9 +113,6 @@ export function createColdLoadFrameProbe(
       if (window.requestAnimationFrame === frameProbe.request) {
         window.requestAnimationFrame = frameProbe.original;
       }
-    },
-    currentOriginId() {
-      return activeFrameOrigin?.id ?? null;
     },
     withDelivery<T>(delivery: LiveDeliveryOrigin | null, dispatch: () => T): T {
       if (delivery) {

@@ -1,26 +1,15 @@
 import type { SessionObserverDigest } from "../../../packages/gateway-protocol/src/schema/sessions.js";
-import type { ControlUiNavigationItem } from "../../../src/plugin-sdk/control-ui.js";
 import type { GatewaySessionRow } from "../api/types.ts";
 import type { SidebarZoneEntry } from "../app-navigation.ts";
-import type { ApplicationContext } from "../app/context.ts";
 import type { PresencePayload } from "../app/user-profile.ts";
-import { rosterActivityStore } from "../lib/agents/roster-activity-store.ts";
-import type { SessionOwnerOption } from "../lib/session-owner.ts";
 import {
   groupSidebarSessionRows,
   type SidebarSessionSection,
   type SidebarSessionsGrouping,
 } from "../lib/sessions/grouping.ts";
 import { areUiSessionKeysEquivalent, normalizeAgentId } from "../lib/sessions/session-key.ts";
-import type { ControlUiRegistration } from "../plugins/control-ui-capability.ts";
 import { SidebarChildExpansion } from "./app-sidebar-child-expansion.ts";
 import { sidebarPresencePresentation, type SidebarPresenceScope } from "./app-sidebar-presence.ts";
-import {
-  catalogErrorMessages,
-  catalogSessionActivity,
-  catalogSessionRowsByKey,
-  type SidebarSessionCatalog,
-} from "./app-sidebar-session-catalogs.ts";
 import {
   SIDEBAR_SESSION_PAGE_SIZE,
   visibleSessionChildren,
@@ -30,13 +19,9 @@ import {
   type SidebarSessionStatusFilter,
 } from "./app-sidebar-session-types.ts";
 import { sessionAttentionSubtitle } from "./session-attention-presentation.ts";
-import {
-  areSessionCatalogsSettled,
-  type SessionDataControllerHost,
-} from "./session-data-controller-catalog.ts";
+import type { SessionDataControllerHost } from "./session-data-controller-catalog.ts";
 import type { SessionDataController } from "./session-data-controller.ts";
 import { resolveSidebarSessionSubtitle } from "./session-row-subtitle.ts";
-import { summarizeTeamSessionSlots } from "./solid/session-presentation.tsx";
 
 const SIDEBAR_CREATED_ORDER_CAP = 1_000;
 // Ambient subtitle sources (observer digest, narration, work path) race at
@@ -46,6 +31,12 @@ const SIDEBAR_SUBTITLE_MIN_DISPLAY_MS = 2_000;
 
 type SidebarSubtitleParams = Parameters<typeof resolveSidebarSessionSubtitle>[0];
 type SidebarSubtitleValue = ReturnType<typeof resolveSidebarSessionSubtitle>;
+export type SidebarSessionSubtitleEnvironment = {
+  sidebarLiveActivity: boolean;
+  showPreview: boolean;
+  narrationLines: ReadonlyMap<string, string>;
+  observerDigests: ReadonlyMap<string, SessionObserverDigest>;
+};
 
 type SidebarProjectionInput = {
   rows: SidebarRecentSession[];
@@ -64,14 +55,6 @@ type SidebarProjectionInput = {
   agentId: string;
   connectionIdentity: object | null;
   listSource: object | null;
-  /** False while rows are only route placeholders, before the session list arrives. */
-  listLoaded: boolean;
-  subtitle: {
-    sidebarLiveActivity: boolean;
-    showPreview: boolean;
-    narrationLines: ReadonlyMap<string, string>;
-    observerDigests: ReadonlyMap<string, SessionObserverDigest>;
-  };
 };
 
 export type SidebarVisibleSections = {
@@ -96,19 +79,10 @@ type SidebarPresentationHost = Pick<
   | "expandedAgentId"
 > & {
   readonly sessionData: SessionDataController;
-  readonly sessionOwnershipVisibility: { filters: boolean; avatars: boolean };
-  readonly sidebarMenus: { agentMenuPosition: { x: number; top: number } | null };
   readonly rosterSessionSource: {
     agentIds: readonly string[];
     collapsedAgentIds: ReadonlySet<string>;
   } | null;
-  activeChipAgent(): {
-    agents: readonly { id: string }[];
-    identity: ReturnType<ApplicationContext["agentIdentity"]["get"]>;
-    identities: ReadonlyMap<string, ReturnType<ApplicationContext["agentIdentity"]["get"]>>;
-  };
-  pluginNavigation(): readonly ControlUiRegistration<ControlUiNavigationItem>[];
-  getSessionNavigationState(): { toSidebarSession(row: GatewaySessionRow): SidebarRecentSession };
   mainSessionRow(agentId: string): GatewaySessionRow | null;
   projectHomeSession(row: GatewaySessionRow, agentId: string): SidebarRecentSession;
   sessionNavigationAgentId(session: Pick<SidebarRecentSession, "key" | "agentId">): string;
@@ -116,17 +90,7 @@ type SidebarPresentationHost = Pick<
   otherAgentsHaveUnread(): boolean;
   isSessionChildrenExpanded(session: SidebarRecentSession): boolean;
   isSessionChildrenFullyShown(key: string): boolean;
-  querySelectorAll: HTMLElement["querySelectorAll"];
 };
-type SidebarPresentationReaders = {
-  snapshot: boolean;
-  sections(): SidebarVisibleSections["sections"];
-  tree(): SidebarRecentSession[];
-  catalogs(): SidebarSessionCatalog[];
-  catalogRows(): GatewaySessionRow[];
-  ownerOptions(): readonly SessionOwnerOption[];
-};
-
 /** Attention, agent-declared status, and the queued explanation are messages
  * the operator must act on; they replace a held subtitle immediately. */
 function isOperatorCriticalSubtitle(session: SidebarRecentSession): boolean {
@@ -140,143 +104,18 @@ function isOperatorCriticalSubtitle(session: SidebarRecentSession): boolean {
 export class SidebarSessionProjection {
   constructor(private readonly now: () => number = () => Date.now()) {}
 
-  // Record frame admission only; owner.updated can precede child DOM bindings.
-  private publishedSessionPresentation = "";
-  private admittedPresencePresentation = "";
-
-  shouldPublishSessionData(
-    host: SidebarPresentationHost,
-    readers: SidebarPresentationReaders,
-  ): boolean {
-    if (readers.snapshot) {
-      return true;
-    }
-    const data = host.sessionData;
-    const sessionsVisible = host.navigationView === "sessions" && !host.contextualSidebar;
-    const chip = host.activeChipAgent();
-    const replacement =
-      sessionsVisible && host.sessionDataContext?.plugins.selectedReplacement("session-list");
-    const navigation = host.getSessionNavigationState();
-    const sections = sessionsVisible ? readers.sections() : [];
-    const roster =
-      sessionsVisible && host.sidebarAgentsMode === "roster" ? host.rosterSessionSource : null;
-    const rosterSnapshot =
-      sessionsVisible && host.sidebarAgentsMode === "roster" && host.sessionDataContext
-        ? rosterActivityStore(host.sessionDataContext).snapshot
-        : null;
-    const catalogs = host.sessionCatalogRowsVisible ? readers.catalogs() : null;
-    const catalogRowsByKey = catalogSessionRowsByKey(catalogs?.length ? readers.catalogRows() : []);
-    const presentation = JSON.stringify([
-      host.navigationView,
-      host.connected,
-      host.sessionDataContext?.gateway.snapshot.hello,
-      host.sessionDataContext?.agents.state.agentsList,
-      host.sidebarAgentsMode === "chip" ? chip.identity : null,
-      host.sidebarAgentsMode === "chip" && host.otherAgentsHaveUnread(),
-      host.sidebarMenus.agentMenuPosition !== null
-        ? chip.agents.map(({ id }) => [
-            chip.identities.get(normalizeAgentId(id)),
-            host.agentUnreadCount(id),
-          ])
-        : null,
-      host.sessionDataContext?.plugins.registryStatus,
-      host.pluginNavigation().map(({ key, value }) => [key, value]),
-      Boolean(replacement),
-      replacement ? host.sessionDataContext?.sessions.state.result?.sessions : null,
-      host.sessionDataContext?.sessions.groupsStatus(),
-      host.sessionDataContext?.sessions.state.error,
-      host.sessionDataContext?.sessions.eventSubscriptionError,
-      host.sessionDataContext?.sessions.state.groupSettings,
-      rosterSnapshot && [
-        rosterSnapshot.cards.map(({ id, name, avatar, textAvatar }) => [
-          id,
-          name,
-          avatar,
-          textAvatar,
-        ]),
-        rosterSnapshot.loading,
-        rosterSnapshot.error,
-        rosterSnapshot.subscriptionError,
-      ],
-      readers.ownerOptions(),
-      host.sessionOwnershipVisibility,
-      data.sessionsLoading,
-      data.sessionsStartupPending,
-      data.sessionsResult?.hasMore,
-      data.sessionMutationError,
-      data.sessionCatalogRefreshStatus,
-      [...data.loadingMoreSessionCatalogIds],
-      [...data.childSessionErrorsByParent],
-      catalogs
-        ? [
-            catalogs.map(({ hosts, ...visible }) => [
-              visible,
-              catalogErrorMessages({ ...visible, hosts }),
-              hosts.some(({ nextCursor }) => Boolean(nextCursor)),
-            ]),
-            catalogs.map((catalog) =>
-              catalogSessionActivity(
-                catalog.visibleHosts.flatMap((catalogHost) => catalogHost.sessions),
-                catalogRowsByKey,
-                (row) => host.sessionDataContext?.sessions.isRunVisuallyActive(row) ?? false,
-              ),
-            ),
-            Array.from(
-              host.querySelectorAll<HTMLElement>("[data-catalog-session-key][data-session-key]"),
-              (element) => {
-                const row = catalogRowsByKey.get(element.dataset.sessionKey ?? "");
-                return row ? navigation.toSidebarSession(row) : null;
-              },
-            ),
-            areSessionCatalogsSettled(data),
-            [...data.visibleSessionLimits],
-          ]
-        : null,
-      [data.ownerCounts.counts && [...data.ownerCounts.counts], data.ownerCounts.error],
-      this.admittedPresencePresentation,
-      sessionsVisible
-        ? [
-            readers.tree().map(({ children: _children, ...row }) => row),
-            sections.map(({ rows: sectionRows, ...header }) => [
-              header,
-              summarizeTeamSessionSlots(sectionRows, true),
-              sectionRows.reduce((count, row) => count + (row.workspaceConflictCount ?? 0), 0),
-            ]),
-          ]
-        : null,
-      [...new Set([host.expandedAgentId(), ...(roster?.agentIds ?? [])])].map((id) => {
-        const row = host.mainSessionRow(id);
-        if (!row) {
-          return null;
-        }
-        const { children: _children, ...home } = host.projectHomeSession(row, id);
-        return home;
-      }),
-    ]);
-    if (presentation === this.publishedSessionPresentation) {
-      return false;
-    }
-    this.publishedSessionPresentation = presentation;
-    return true;
-  }
-
   samePresence(
     previous: PresencePayload | undefined,
     next: PresencePayload | undefined,
     scope: SidebarPresenceScope,
   ): boolean {
-    this.admittedPresencePresentation = sidebarPresencePresentation(next, scope);
     return (
       previous === next ||
-      sidebarPresencePresentation(previous, scope) === this.admittedPresencePresentation
+      sidebarPresencePresentation(previous, scope) === sidebarPresencePresentation(next, scope)
     );
   }
 
-  refreshPresencePresentation(host: SidebarPresentationHost, scope: SidebarPresenceScope): void {
-    this.admittedPresencePresentation = sidebarPresencePresentation(
-      host.sessionData.presencePayload,
-      scope,
-    );
+  refreshPresencePresentation(host: SidebarPresentationHost, _scope: SidebarPresenceScope): void {
     host.sessionData.requestSessionDataUpdate();
   }
 
@@ -375,8 +214,45 @@ export class SidebarSessionProjection {
 
   revision = 0;
   createdOrderRevision = 0;
-  private observedResults: readonly { sessions: readonly { key: string }[] }[] = [];
-  subtitleDeadline = Infinity;
+  private readonly subtitleDeadlines = new Map<string, number>();
+  get subtitleDeadline(): number {
+    return Math.min(Infinity, ...this.subtitleDeadlines.values());
+  }
+  private sessionScope: readonly unknown[] = [];
+
+  beginSessionScope(agentId: string, connection: object | null, source: object | null): void {
+    const scope = [agentId, connection, source];
+    const changed =
+      this.sessionScope.length > 0 &&
+      scope.some((value, index) => value !== this.sessionScope[index]);
+    this.children.beginPass(changed);
+    if (changed) {
+      this.heldSubtitles.clear();
+      this.subtitleDeadlines.clear();
+    }
+    this.sessionScope = scope;
+  }
+
+  observeSession(
+    session: SidebarRecentSession,
+    environment: SidebarSessionSubtitleEnvironment,
+    listLoaded: boolean,
+  ): void {
+    this.children.observe(session, listLoaded);
+    this.observeSubtitle(session, environment);
+  }
+
+  retainSessions(keys: ReadonlySet<string>): void {
+    for (const key of new Set([...this.children.keys(), ...this.heldSubtitles.keys()])) {
+      if (!keys.has(key)) this.forgetSession(key);
+    }
+  }
+
+  private forgetSession(key: string): void {
+    this.children.delete(key);
+    this.heldSubtitles.delete(key);
+    this.subtitleDeadlines.delete(key);
+  }
   private readonly observedOrder = new Map<string, number>();
   private nextCreatedOrder = 0;
   private readonly stickySections = new Map<string, Set<string>>();
@@ -398,13 +274,6 @@ export class SidebarSessionProjection {
   }
 
   observeRows(results: readonly { sessions: readonly { key: string }[] }[]): void {
-    if (
-      results.length === this.observedResults.length &&
-      results.every((value, index) => Object.is(value, this.observedResults[index]))
-    ) {
-      return;
-    }
-    this.observedResults = results;
     const previousOrder = this.nextCreatedOrder;
     for (const result of results) {
       for (const { key } of result.sessions) {
@@ -454,9 +323,6 @@ export class SidebarSessionProjection {
   }
 
   project(input: SidebarProjectionInput): SidebarVisibleSections {
-    // Record the state published by this pass, including sticky membership and subtitles.
-    this.revision += 1;
-    this.subtitleDeadline = Infinity;
     const previous = this.previousInput;
     const scopeChanged =
       previous !== null &&
@@ -474,14 +340,6 @@ export class SidebarSessionProjection {
     ) {
       this.resetMembership();
     }
-    this.children.beginPass(
-      previous !== null &&
-        (previous.agentId !== input.agentId ||
-          previous.connectionIdentity !== input.connectionIdentity),
-    );
-    if (scopeChanged) {
-      this.heldSubtitles.clear();
-    }
     for (const sectionId of input.collapsedSections) {
       if (!this.previousCollapsedSections.has(sectionId)) {
         this.resetMembership(sectionId);
@@ -496,21 +354,6 @@ export class SidebarSessionProjection {
       listSource: input.listSource,
     };
     this.previousCollapsedSections = new Set(input.collapsedSections);
-
-    const staleKeys = new Set([...this.children.keys(), ...this.heldSubtitles.keys()]);
-    const observeTree = (session: SidebarRecentSession) => {
-      staleKeys.delete(session.key);
-      this.children.observe(session, input.listLoaded);
-      this.observeSubtitle(session, input.subtitle);
-      for (const child of session.children) {
-        observeTree(child);
-      }
-    };
-    input.rows.forEach(observeTree);
-    for (const key of staleKeys) {
-      this.children.delete(key);
-      this.heldSubtitles.delete(key);
-    }
 
     const { grouping, knownGroups, selfOwnerId, sectionOrder, catalogIds } = input;
     const hideEmptyGroups =
@@ -616,7 +459,7 @@ export class SidebarSessionProjection {
   }
 
   invalidate(): void {
-    this.subtitleDeadline = Infinity;
+    this.subtitleDeadlines.clear();
     this.revision += 1;
   }
 
@@ -639,8 +482,9 @@ export class SidebarSessionProjection {
 
   private observeSubtitle(
     session: SidebarRecentSession,
-    environment: SidebarProjectionInput["subtitle"],
+    environment: SidebarSessionSubtitleEnvironment,
   ): void {
+    this.subtitleDeadlines.delete(session.key);
     if (!session.hasActiveRun || !environment.showPreview) {
       this.heldSubtitles.delete(session.key);
       return;
@@ -673,10 +517,7 @@ export class SidebarSessionProjection {
       now - held.shownAt < SIDEBAR_SUBTITLE_MIN_DISPLAY_MS &&
       !isOperatorCriticalSubtitle(session)
     ) {
-      this.subtitleDeadline = Math.min(
-        this.subtitleDeadline,
-        held.shownAt + SIDEBAR_SUBTITLE_MIN_DISPLAY_MS,
-      );
+      this.subtitleDeadlines.set(session.key, held.shownAt + SIDEBAR_SUBTITLE_MIN_DISPLAY_MS);
       return;
     }
     const catalogValue = resolveSidebarSessionSubtitle({ ...params, hasDisplay: true });

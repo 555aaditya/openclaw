@@ -138,6 +138,12 @@ export type SidebarSessionNavigationState = {
   toSidebarSession: (row: SessionRow, isChild?: boolean) => SidebarRecentSession;
 };
 
+export type SidebarSessionRuntimeSample = Pick<SessionRow, "sessionId" | "startedAt"> & {
+  runtimeMs: number;
+  active: boolean;
+  sampledAt: number;
+};
+
 export function buildSidebarSessionNavigationState(input: {
   context: ApplicationContext | undefined;
   routeSessionKey: string;
@@ -149,7 +155,7 @@ export function buildSidebarSessionNavigationState(input: {
   statusFilter: SidebarSessionStatusFilter;
   compareSessions: (a: SessionRow, b: SessionRow) => number;
   highlightCurrentSession: boolean;
-  runtimeSampledAtByRow: WeakMap<GatewaySessionRow, number>;
+  runtimeSampledAtByRow: WeakMap<GatewaySessionRow, SidebarSessionRuntimeSample>;
   loadingChildSessionKeys: ReadonlySet<string>;
   outboxAttentionCountForSessionKey: (sessionKey: string) => number;
   hasSessionDraft: (sessionKey: string) => boolean;
@@ -176,13 +182,30 @@ export function buildSidebarSessionNavigationState(input: {
   });
   const toSidebarSession = (row: SessionRow, isChild = false): SidebarRecentSession => {
     const channelInfo = resolveChannelSessionInfo(row.key, row.channel);
+    const hasActiveRun = row.archived !== true && isSessionRunActive(row);
     let runtimeSampledAt = row.runtimeSampledAt;
     if (row.runtimeMs != null && runtimeSampledAt == null) {
-      runtimeSampledAt = input.runtimeSampledAtByRow.get(row);
-      if (runtimeSampledAt == null) {
-        runtimeSampledAt = Date.now();
-        input.runtimeSampledAtByRow.set(row, runtimeSampledAt);
+      let sample = input.runtimeSampledAtByRow.get(row);
+      if (
+        !sample ||
+        sample.runtimeMs !== row.runtimeMs ||
+        sample.active !== hasActiveRun ||
+        sample.sessionId !== row.sessionId ||
+        sample.startedAt !== row.startedAt
+      ) {
+        // Keyed rows retain their identity across runtime samples and run generations.
+        sample = {
+          runtimeMs: row.runtimeMs,
+          active: hasActiveRun,
+          sessionId: row.sessionId,
+          startedAt: row.startedAt,
+          sampledAt: Date.now(),
+        };
+        input.runtimeSampledAtByRow.set(row, sample);
       }
+      runtimeSampledAt = sample.sampledAt;
+    } else {
+      input.runtimeSampledAtByRow.delete(row);
     }
     return {
       key: row.key,
@@ -205,7 +228,7 @@ export function buildSidebarSessionNavigationState(input: {
       workContext: resolveSessionWorkContext(row),
       active: row.key === navigation.activeRowKey,
       visuallyActive: input.highlightCurrentSession && row.key === navigation.currentSessionKey,
-      hasActiveRun: row.archived !== true && isSessionRunActive(row),
+      hasActiveRun,
       isRunVisuallyActive:
         row.archived !== true &&
         (context ? context.sessions.isRunVisuallyActive(row) : isSessionRunActive(row)),

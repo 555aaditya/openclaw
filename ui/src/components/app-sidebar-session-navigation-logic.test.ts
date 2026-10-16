@@ -15,7 +15,7 @@ import {
   resolveSidebarMainSessionKey,
 } from "./app-sidebar-session-navigation-logic.ts";
 import { projectSidebarSession } from "./app-sidebar-session-navigation.test-support.ts";
-import { projectSessionTree } from "./app-sidebar-session-tree.ts";
+import { projectSessionTree } from "./app-sidebar-session-tree.test-support.ts";
 import type { SidebarRecentSession, SidebarSessionAttention } from "./app-sidebar-session-types.ts";
 import { TeamSessionSlots } from "./solid/session-presentation.tsx";
 

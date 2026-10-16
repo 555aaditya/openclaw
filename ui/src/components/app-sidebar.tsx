@@ -14,6 +14,7 @@ import {
 import { useApplication, useOptionalApplication } from "../lib/reactive/context.ts";
 import { createParkedProjection } from "../lib/reactive/parked-projection.ts";
 import { projectOwner, projectSource } from "../lib/reactive/projection.ts";
+import { createSidebarSessionPresentation } from "../lib/reactive/sidebar-session-presentation.ts";
 import { defineSolidBridge, type SolidBridgeElement } from "../lib/solid-bridge.ts";
 import { PluginView } from "../plugins/control-ui-view.solid.tsx";
 import { appSidebarProperties, type AppSidebarProps } from "./app-sidebar-base.ts";
@@ -95,6 +96,7 @@ function AppSidebarContent(props: AppSidebarProps, host: HTMLElement): JSX.Eleme
     },
     { equals: false },
   );
+  owner.presentation = createSidebarSessionPresentation(owner, prepared);
   createSessionOwnerFilterQuery(owner.sessionOwnerFilter, prepared, () =>
     context.sessions.listSnapshot(owner.sessionData.sessionListQuery(owner.expandedAgentId())),
   );

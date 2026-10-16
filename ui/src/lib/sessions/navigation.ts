@@ -237,7 +237,9 @@ export function resolveSessionNavigation(input: SessionNavigationInput) {
     currentSessionKey &&
     currentSessionKey.toLowerCase() !== "unknown" &&
     !parseCatalogSessionKey(currentSessionKey)
-      ? { ...(selectedSession ?? { kind: "direct", updatedAt: null }), key: currentSessionKey }
+      ? selectedSession?.key === currentSessionKey
+        ? selectedSession
+        : { ...(selectedSession ?? { kind: "direct", updatedAt: null }), key: currentSessionKey }
       : undefined;
   const sortedSessions = filterVisibleSessionRows(input.result?.sessions ?? [], {
     currentSessionKey: currentSessionKey || undefined,

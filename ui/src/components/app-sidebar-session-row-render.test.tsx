@@ -74,7 +74,9 @@ function createHost(mode: "chip" | "roster" = "roster", snapshot?: Partial<Sideb
     context,
     props,
   );
-  host.sessionOwnershipVisibility = { filters: true, avatars: true };
+  Object.defineProperty(host, "sessionOwnershipVisibility", {
+    value: { filters: true, avatars: true },
+  });
   document.body.append(container);
   if (snapshot) {
     host.restoreSidebarSnapshot({ ...emptySnapshot, ...snapshot });

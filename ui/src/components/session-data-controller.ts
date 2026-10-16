@@ -20,7 +20,6 @@ import {
   finishSidebarChildSessionLoad,
   type SidebarChildSessionQuery,
   retireStaleChildSessionRows,
-  scheduleSidebarChildSessions,
 } from "./app-sidebar-child-session-data.ts";
 import {
   SessionCatalogLiveState,
@@ -84,9 +83,6 @@ export class SessionDataController implements SolidController, SessionCatalogDat
   sessionResultsByAgent: Record<string, SessionsListResult> = {};
 
   private readonly subscriptions: SubscriptionsController;
-  private readonly renderSubscription: SubscriptionsController;
-  private invalidateRender: (() => void) | undefined;
-  private presentationScope: readonly unknown[];
   readonly sessionCatalogLive = new SessionCatalogLiveState();
   sessionScopeGeneration = 0;
   sessionCatalogAgentId: string | null = null;
@@ -121,35 +117,13 @@ export class SessionDataController implements SolidController, SessionCatalogDat
 
   constructor(private readonly host: SessionDataControllerHost) {
     host.addController(this);
-    this.presentationScope = this.readPresentationScope();
-    const subscriptionHost = {
+    this.subscriptions = new SubscriptionsController({
       addController: () => undefined,
       removeController: () => undefined,
-      requestUpdate: () => {
-        this.synchronizePresentedSessions();
-        if (host.navigationVisible && host.shouldPublishSessionData()) {
-          host.requestUpdate();
-        }
-      },
+      requestUpdate: () => this.requestSessionDataUpdate(),
       get updateComplete() {
         return host.updateComplete;
       },
-    };
-    // State is synchronous; the existing shared frame compares only presentation.
-    this.renderSubscription = new SubscriptionsController(subscriptionHost).watch(
-      () => this,
-      (_, notify) => {
-        this.invalidateRender = notify;
-        return () => {
-          this.invalidateRender = undefined;
-        };
-      },
-      undefined,
-      () => undefined,
-    );
-    this.subscriptions = new SubscriptionsController({
-      ...subscriptionHost,
-      requestUpdate: () => this.requestSessionDataUpdate(),
     });
     this.subscriptions
       .effect(
@@ -224,7 +198,7 @@ export class SessionDataController implements SolidController, SessionCatalogDat
 
   readonly requestSessionDataUpdate = () => {
     if (this.host.navigationVisible) {
-      this.invalidateRender?.();
+      this.host.requestUpdate();
     }
   };
 
@@ -242,9 +216,7 @@ export class SessionDataController implements SolidController, SessionCatalogDat
   sessionListQuery = (agentId: string) => sidebarSessionListQuery(this.host, agentId);
 
   hostConnected(): void {
-    // Bind current sources before frame admission can start discovery.
     this.subscriptions.hostConnected();
-    this.renderSubscription.hostConnected();
     this.stopCatalogBrowserEvents = subscribeSessionCatalogBrowserEvents(
       this.handleCatalogSessionContinued as EventListener,
       this.handleSessionCatalogPageActivation,
@@ -254,28 +226,10 @@ export class SessionDataController implements SolidController, SessionCatalogDat
   hostUpdate(): void {
     this.subscriptions.hostUpdate();
     this.lineage.synchronize();
-    const scope = this.readPresentationScope();
-    if (scope.some((value, index) => value !== this.presentationScope[index])) {
-      this.presentationScope = scope;
-      // Explicit scope changes render current facts; ordinary commits cannot consume pending data.
-      this.host.shouldPublishSessionData();
-    }
-  }
-
-  private readPresentationScope(): readonly unknown[] {
-    return [
-      this.host.navigationVisible,
-      this.host.navigationView,
-      this.host.contextualSidebar,
-      this.host.sidebarAgentsMode,
-      this.host.connected,
-      this.filteredSessionScope,
-    ];
   }
 
   hostUpdated(): void {
-    // Lit can finish a queued update after disconnect. Keep retired timers and
-    // observers closed until the host reconnects.
+    // A queued update can finish after disconnect; keep retired observers closed.
     if (this.host.isConnected) {
       this.synchronizeSessionScope();
       this.synchronizeOwnerSessionCounts();
@@ -289,15 +243,12 @@ export class SessionDataController implements SolidController, SessionCatalogDat
     if (!this.sessionLineageVisible) {
       return;
     }
-    // Discovery can advance without changing displayed rows; admit it before the frame gate.
     if (isSessionRouteId(this.host.activeRouteId)) {
       void this.loadActiveSessionLineage(this.host.getRouteSessionKey());
     }
-    scheduleSidebarChildSessions(this, () => this.host.childSessionParents());
   }
 
   hostDisconnected(): void {
-    this.renderSubscription.hostDisconnected();
     this.ownerCounts.dispose();
     this.resetChildSessionState();
     this.retireFilteredSessions();

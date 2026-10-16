@@ -163,9 +163,7 @@ function createFilteredSessionController(
     navigationVisible: true,
     navigationView: "sessions" as const,
     sidebarAgentsMode: "chip" as const,
-    shouldPublishSessionData: () => true,
     getRouteSessionKey: () => context.gateway.snapshot.sessionKey.trim(),
-    childSessionParents: () => new Set(),
     sessionDataContext: context,
     addController: () => undefined,
     removeController: () => undefined,
@@ -253,59 +251,41 @@ function createFilteredSessionController(
 
 describe("filtered sidebar session event refresh", () => {
   it.each(["active", "all"] as const)(
-    "coalesces %s session and presence publications while preserving immediate state",
+    "keeps %s session and presence facts current until the presenter disconnects",
     async (statusFilter) => {
       const { controller, host, publishPresence, disconnectHost } = createFilteredSessionController(
         statusFilter,
         300,
         true,
       );
-      const frames = new Map<number, FrameRequestCallback>();
-      let frameId = 0;
-      vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
-        frames.set(++frameId, callback);
-        return frameId;
-      });
-      vi.stubGlobal("cancelAnimationFrame", (id: number) => frames.delete(id));
-      const flushFrame = () => {
-        const pending = [...frames.values()];
-        frames.clear();
-        for (const callback of pending) {
-          callback(0);
-        }
-      };
       try {
         controller.hostConnected();
         await controller.refreshSidebarSessions();
-        flushFrame();
         host.requestUpdate.mockClear();
 
-        for (let index = 0; index < 30; index += 1) {
-          publishPresence(`profile-${index}`);
-          await Promise.resolve();
+        for (const instanceId of ["first-profile", "latest-profile"]) {
+          publishPresence(instanceId);
+          expect(controller.presencePayload?.presence?.[0]?.instanceId).toBe(instanceId);
         }
         await controller.refreshSidebarSessions();
 
-        expect(controller.presencePayload?.presence?.[0]?.instanceId).toBe("profile-29");
         expect(controller.sessionsResult?.sessions).toHaveLength(SIDEBAR_SESSION_ROSTER_LIMIT);
-        expect(host.requestUpdate).not.toHaveBeenCalled();
-        flushFrame();
-        expect(host.requestUpdate).toHaveBeenCalledOnce();
+        expect(host.requestUpdate).toHaveBeenCalled();
 
         host.requestUpdate.mockClear();
         Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
         publishPresence("hidden-profile");
         expect(controller.presencePayload?.presence?.[0]?.instanceId).toBe("hidden-profile");
-        expect(host.requestUpdate).toHaveBeenCalledOnce();
+        expect(host.requestUpdate).toHaveBeenCalled();
 
         Object.defineProperty(document, "visibilityState", {
           configurable: true,
           value: "visible",
         });
+        disconnectHost();
         host.requestUpdate.mockClear();
         publishPresence("retired-profile");
-        disconnectHost();
-        flushFrame();
+        expect(controller.presencePayload?.presence?.[0]?.instanceId).toBe("hidden-profile");
         expect(host.requestUpdate).not.toHaveBeenCalled();
       } finally {
         controller.hostDisconnected();
@@ -699,13 +679,9 @@ describe("filtered sidebar session event refresh", () => {
   });
 
   it("retires an in-flight child snapshot when the status filter changes", async () => {
-    const { controller, host, list, selectStatusFilter } =
-      createFilteredSessionController("archived");
+    const { controller, list, selectStatusFilter } = createFilteredSessionController("archived");
     controller.hostConnected();
     await controller.refreshSidebarSessions();
-    const parents = vi
-      .spyOn(host, "childSessionParents")
-      .mockReturnValue(new Set(["agent:main:parent"]));
     let resolveChildPage!: (value: Awaited<ReturnType<typeof list>>) => void;
     const childPage = new Promise<Awaited<ReturnType<typeof list>>>((resolve) => {
       resolveChildPage = resolve;
@@ -715,7 +691,6 @@ describe("filtered sidebar session event refresh", () => {
     const pendingChildren = controller.loadChildSessions("agent:main:parent");
     expect(controller.loadingChildSessionKeys.has("agent:main:parent")).toBe(true);
 
-    parents.mockReturnValue(new Set());
     selectStatusFilter("all");
     resolveChildPage({
       ts: 2,

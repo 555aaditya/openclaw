@@ -14,6 +14,14 @@ function installColdLoadProbes(
   createEventStream: typeof createColdLoadEventStream,
 ) {
   Reflect.set(Error, "stackTraceLimit", 40);
+  const diagnosticStacks = input.diagnosticStacks !== false;
+  const readStack = (start: number, end: number) =>
+    diagnosticStacks
+      ? (new Error().stack
+          ?.split("\n")
+          .slice(start + 1, end + 1)
+          .join(" <- ") ?? "")
+      : "";
   const updates = new Map<string, { count: number; ms: number }>();
   const rpcs: Array<{
     method: string;
@@ -41,14 +49,10 @@ function installColdLoadProbes(
   const chatOwners = new Map<HTMLElement, ProbeInit.ChatOwnerRecord>();
   const chatLifecycle = new Map<string, Map<string, Map<string, { count: number; ms: number }>>>();
   const chatProducerStacks = new Map<string, number>();
-  const frameProbe = createFrameProbe(() => ({
-    startedAt: liveStartedAt,
-    finishedAt: liveFinishedAt,
-  }));
-  const chatRequests = new Map<
-    number,
-    { tag: string; producer: string; frameOriginId: number | null }
-  >();
+  const frameProbe = createFrameProbe(
+    () => ({ startedAt: liveStartedAt, finishedAt: liveFinishedAt }),
+    diagnosticStacks,
+  );
   let previousChatHook: unknown;
   let previousChatHookDescriptor: PropertyDescriptor | undefined;
   const chatPasses: Array<{
@@ -56,8 +60,6 @@ function installColdLoadProbes(
     kind: string;
     atMs: number;
     producers: Record<string, number>;
-    requestIds: number[];
-    requestAttributed: boolean;
     unattributed: boolean;
     entryStack: string;
   }> = [];
@@ -70,24 +72,13 @@ function installColdLoadProbes(
         owner !== null &&
         "isConnected" in owner &&
         typeof owner.isConnected === "boolean" &&
-        "requestUpdate" in owner &&
-        typeof owner.requestUpdate === "function" &&
-        "performUpdate" in owner &&
-        typeof owner.performUpdate === "function" &&
+        "invalidate" in owner &&
+        typeof owner.invalidate === "function" &&
         "render" in owner &&
         typeof owner.render === "function" &&
-        ((host.localName === "openclaw-chat-page" &&
-          "host" in owner &&
-          owner.host === host &&
-          "afterCommit" in owner &&
-          typeof owner.afterCommit === "function") ||
-          (host.localName === "openclaw-chat-pane" &&
-            "element" in owner &&
-            owner.element === host &&
-            "prepareRender" in owner &&
-            typeof owner.prepareRender === "function" &&
-            "commitRender" in owner &&
-            typeof owner.commitRender === "function"))
+        host.localName === "openclaw-chat-pane" &&
+        "element" in owner &&
+        owner.element === host
       );
     },
     record(tag: string, method: string, ms = 0) {
@@ -102,27 +93,13 @@ function installColdLoadProbes(
       lastActivity = performance.now();
     },
     producer(record: ProbeInit.ChatOwnerRecord, source: string) {
-      const stack = new Error().stack?.split("\n").slice(3, 18).join(" <- ") ?? "";
+      const stack = readStack(3, 18);
       const key = `${liveKind} :: ${record.host.localName} :: ${source} :: ${stack}`;
       if (!chatProducerStacks.has(key) && chatProducerStacks.size >= 1000) {
         throw new Error("Live chat producer stack limit exceeded");
       }
       chatProducerStacks.set(key, (chatProducerStacks.get(key) ?? 0) + 1);
       record.pending.set(key, (record.pending.get(key) ?? 0) + 1);
-      if (source.startsWith("requestUpdate:")) {
-        if (chatRequests.size >= 5000) {
-          throw new Error("Live chat owner request limit exceeded");
-        }
-        const id = chatRequests.size + 1;
-        chatRequests.set(id, {
-          tag: record.host.localName,
-          producer: key,
-          // Null includes callbacks queued before live instrumentation; never infer their caller.
-          frameOriginId: frameProbe.currentOriginId(),
-        });
-        record.pendingRequests.set(id, key);
-        record.queuedRequests.set(id, key);
-      }
     },
     hook(this: void, host: object, phase: "invalidate" | "commit") {
       if (liveStartedAt && !liveFinishedAt) {
@@ -141,7 +118,7 @@ function installColdLoadProbes(
       }
     },
     install() {
-      for (const tag of ["openclaw-chat-page", "openclaw-chat-pane"]) {
+      for (const tag of ["openclaw-chat-pane"]) {
         for (const host of document.querySelectorAll(tag)) {
           if (!(host instanceof HTMLElement)) {
             continue;
@@ -153,14 +130,7 @@ function installColdLoadProbes(
       }
       for (const record of chatOwners.values()) {
         const owner = record.owner;
-        for (const method of [
-          "requestUpdate",
-          "performUpdate",
-          "render",
-          "prepareRender",
-          "commitRender",
-          "afterCommit",
-        ] as const) {
+        for (const method of ["invalidate", "render"] as const) {
           const original = owner[method];
           if (!original) {
             continue;
@@ -168,50 +138,23 @@ function installColdLoadProbes(
           record.originals.set(method, original);
           owner[method] = function (this: ProbeInit.ChatProbeOwner, ...args: unknown[]) {
             const connected = this.isConnected;
-            if (connected && method === "requestUpdate") {
-              const property = args[0];
-              const propertyLabel =
-                typeof property === "string" ||
-                typeof property === "number" ||
-                typeof property === "symbol"
-                  ? String(property)
-                  : "-";
-              chatProbe.producer(record, `requestUpdate:${propertyLabel}`);
-            }
-            if (connected && method === "performUpdate") {
-              record.publicationRequests = new Map(record.queuedRequests);
-              record.queuedRequests.clear();
-              record.publicationPending = true;
+            if (connected && method === "invalidate") {
+              chatProbe.producer(record, "invalidate");
             }
             if (connected && method === "render") {
               if (chatPasses.length >= 5000) {
                 throw new Error("Live chat projection pass limit exceeded");
               }
-              const requests = record.publicationPending
-                ? new Map(record.publicationRequests)
-                : new Map<number, string>();
               const producers = new Map(record.pending);
-              for (const [id, producer] of requests) {
-                if (!record.pendingRequests.has(id)) {
-                  producers.set(producer, (producers.get(producer) ?? 0) + 1);
-                }
-              }
-              for (const [id, producer] of record.pendingRequests) {
-                requests.set(id, producer);
-              }
               chatPasses.push({
                 tag: record.host.localName,
                 kind: liveKind,
                 atMs: performance.now() - liveStartedAt,
                 producers: Object.fromEntries(producers),
-                requestIds: [...requests.keys()].toSorted((left, right) => left - right),
-                requestAttributed: requests.size > 0,
                 unattributed: producers.size === 0,
-                entryStack: new Error().stack?.split("\n").slice(2, 18).join(" <- ") ?? "",
+                entryStack: readStack(2, 18),
               });
               record.pending.clear();
-              record.pendingRequests.clear();
-              record.publicationPending = false;
             }
             const started = performance.now();
             try {
@@ -262,7 +205,8 @@ function installColdLoadProbes(
     },
     read() {
       return {
-        measurement: "owner-requests-publications-projection-passes-and-commits",
+        measurement: "runtime-invalidations-render-passes-and-lifecycle",
+        tags: ["openclaw-chat-pane"],
         lifecycle: Object.fromEntries(
           [...chatLifecycle].map(([tag, kinds]) => [
             tag,
@@ -272,7 +216,6 @@ function installColdLoadProbes(
           ]),
         ),
         producerStacks: Object.fromEntries(chatProducerStacks),
-        requests: Object.fromEntries(chatRequests),
         ...frameProbe.read(),
         passes: chatPasses,
         pendingProducers: [...chatOwners.values()].map((record) => ({
@@ -333,15 +276,10 @@ function installColdLoadProbes(
           owner,
           originals: new Map(),
           pending: new Map(),
-          pendingRequests: new Map(),
-          queuedRequests: new Map(),
-          publicationRequests: new Map(),
-          publicationPending: false,
         });
       }
       if (
         solidSidebarOwner &&
-        [...chatOwners.keys()].some((chatHost) => chatHost.localName === "openclaw-chat-page") &&
         [...chatOwners.keys()].some((chatHost) => chatHost.localName === "openclaw-chat-pane")
       ) {
         sidebarRegistration.restore();
@@ -428,7 +366,7 @@ function installColdLoadProbes(
           !wasPending &&
           this.isUpdatePending
         ) {
-          const stack = new Error().stack?.split("\n").slice(2, 14).join(" <- ") ?? "";
+          const stack = readStack(2, 14);
           const key = `${liveKind} :: ${this.localName} :: ${String(property ?? "-")} :: ${stack}`;
           if (liveStacks.has(key) || liveStacks.size < 500) {
             liveStacks.set(key, (liveStacks.get(key) ?? 0) + 1);
@@ -453,7 +391,7 @@ function installColdLoadProbes(
             pending.set(frame.id, {
               method: frame.method,
               params: frame.params,
-              stack: new Error().stack,
+              stack: diagnosticStacks ? new Error().stack : undefined,
               bytes: new TextEncoder().encode(data).length,
               at: performance.now(),
             });
@@ -522,7 +460,12 @@ function installColdLoadProbes(
     }
   });
   observer.observe({ type: "longtask", buffered: true });
+  const readLiveProgress = () => ({
+    elapsedMs: (liveFinishedAt || performance.now()) - liveStartedAt,
+    sentEvents: [...liveEvents.values()].reduce((sum, count) => sum + count, 0),
+  });
   Reflect.set(window, "__coldLoad", {
+    readLiveProgress,
     startLive() {
       liveStartedAt = performance.now();
       liveRpcOffset = rpcs.length;
@@ -545,7 +488,7 @@ function installColdLoadProbes(
           owner[method] = function (this: ProbeInit.SolidSidebarProbeOwner) {
             const connected = this.isConnected;
             if (method === "requestUpdate" && connected) {
-              const stack = new Error().stack?.split("\n").slice(2, 14).join(" <- ") ?? "";
+              const stack = readStack(2, 14);
               const key = `${liveKind} :: ${stack}`;
               if (sidebarOwnerStacks.has(key) || sidebarOwnerStacks.size < 100) {
                 sidebarOwnerStacks.set(key, (sidebarOwnerStacks.get(key) ?? 0) + 1);
@@ -575,7 +518,7 @@ function installColdLoadProbes(
       if (owner) {
         const original = owner.requestSessionDataUpdate;
         owner.requestSessionDataUpdate = function (...args: unknown[]) {
-          const stack = new Error().stack?.split("\n").slice(2, 14).join(" <- ") ?? "";
+          const stack = readStack(2, 14);
           const key = `${liveKind} :: ${stack}`;
           if (liveOrigins.has(key) || liveOrigins.size < 100) {
             liveOrigins.set(key, (liveOrigins.get(key) ?? 0) + 1);
@@ -604,10 +547,10 @@ function installColdLoadProbes(
     },
     readLive() {
       return {
-        elapsedMs: (liveFinishedAt || performance.now()) - liveStartedAt,
+        ...readLiveProgress(),
+        diagnosticStacks,
         rpcs: rpcs.slice(liveRpcOffset),
         rpcOffset: liveRpcOffset,
-        sentEvents: [...liveEvents.values()].reduce((sum, count) => sum + count, 0),
         events: Object.fromEntries(liveEvents),
         deliveryCadence: frameProbe.readDeliveryCadence(),
         updates: Object.fromEntries(

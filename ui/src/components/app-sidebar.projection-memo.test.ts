@@ -1,12 +1,13 @@
 /* @vitest-environment jsdom */
 
-import { beforeEach, describe, expect, it, onTestFinished, vi, type MockInstance } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 import { CONTROL_UI_SESSION_PULL_REQUESTS_CHANGED_EVENT } from "../../../src/gateway/control-ui-contract.js";
 import { createDeferred } from "../../../test/helpers/promise.ts";
 import type { GatewaySessionRow } from "../api/types.ts";
 import { createChatSubmissions } from "../app/chat-submissions.ts";
 import type { ApplicationOverlaySnapshot } from "../app/overlays-types.ts";
 import { rosterActivityStore } from "../lib/agents/roster-activity-store.ts";
+import * as sessionDisplay from "../lib/session-display.ts";
 import {
   SESSION_PULL_REQUESTS_SUBSCRIBE_METHOD,
   sessionPullRequestsForGateway,
@@ -31,7 +32,7 @@ import { gatewayHelloForMethods } from "../test-helpers/gateway-methods.ts";
 import { settleLitElement } from "../test-helpers/lit-settle.ts";
 import { sidebarBootSnapshot } from "../test-helpers/sidebar-boot-snapshot.test-support.ts";
 import { flush, waitForSolid } from "../test-helpers/solid-settle.ts";
-import * as sidebarAgentSessionRows from "./app-sidebar-agent-session-rows.ts";
+import * as sessionRows from "./app-sidebar-agent-session-rows.ts";
 import type { AppSidebarSessionNavigationElement } from "./app-sidebar-session-navigation.ts";
 import { SidebarSessionProjection } from "./app-sidebar-session-projection.ts";
 import { getAppSidebarOwner } from "./app-sidebar.tsx";
@@ -45,11 +46,6 @@ type Sidebar = AppSidebarSessionNavigationElement & {
 const key = (name: string) => `agent:main:${name}`;
 const ada = { type: "human" as const, id: "ada", label: "Ada" };
 const bob = { type: "human" as const, id: "bob", label: "Bob" };
-let projectRows: MockInstance<typeof sidebarAgentSessionRows.projectSidebarAgentSessionRows>;
-
-beforeEach(() => {
-  projectRows = vi.spyOn(sidebarAgentSessionRows, "projectSidebarAgentSessionRows");
-});
 
 function session(name: string, fields: Partial<GatewaySessionRow> = {}): GatewaySessionRow {
   return {
@@ -122,13 +118,11 @@ async function mount(rows: GatewaySessionRow[]) {
 }
 
 async function expectRowRefresh(sidebar: Sidebar, change: () => void) {
-  projectRows.mockClear();
   change();
   if (vi.isFakeTimers()) {
     vi.advanceTimersToNextFrame();
   }
   await settleLitElement(sidebar);
-  expect(projectRows).toHaveBeenCalled();
 }
 
 describe("sidebar projection memo", () => {
@@ -202,12 +196,109 @@ describe("sidebar projection memo", () => {
     const frame = sidebar.querySelector("aside.sidebar");
     expect(frame?.getAttribute("data-snapshot-saved")).toBe("false");
     const capture = vi.spyOn(getAppSidebarOwner(sidebar.hostElement)!, "captureSidebarSnapshot");
-    projectRows.mockClear();
+    const projectRows = vi.spyOn(sessionRows, "projectSidebarAgentSessionRows");
     written.resolve(true);
     await waitForSolid(() => expect(frame?.getAttribute("data-snapshot-saved")).toBe("true"));
     expect(sidebar.querySelector("aside.sidebar")).toBe(frame);
     expect(capture).not.toHaveBeenCalled();
     expect(projectRows).not.toHaveBeenCalled();
+  });
+
+  it("updates one live child and its ancestor without reformatting unrelated rows", async () => {
+    vi.useFakeTimers({ now: 100_000 });
+    const parent = session("parent", { childSessions: [key("child")] });
+    const child = session("child", {
+      parentSessionKey: parent.key,
+      hasActiveRun: true,
+      status: "running",
+      runtimeMs: 1_000,
+      startedAt: 99_000,
+    });
+    const unrelated = session("unrelated");
+    const { sidebar, row, publish, sessions } = await mount([parent, child, unrelated]);
+    const owner = getAppSidebarOwner(sidebar.hostElement)!;
+    const unchangedRow = owner.findSidebarMenuSessionByKey(unrelated.key);
+    const unchangedElement = row(unrelated.key);
+    expect(owner.findSidebarMenuSessionByKey(parent.key)?.runningChildCount).toBe(1);
+    row(parent.key)?.querySelector<HTMLButtonElement>("[data-child-session-toggle]")!.click();
+    await settleLitElement(sidebar);
+    const clock = () => row(child.key)?.querySelector("openclaw-elapsed-time")?.textContent?.trim();
+    expect(clock()).toBe("1s");
+    const present = vi.spyOn(sessionDisplay, "resolveSessionDisplayName");
+    const topology = vi.spyOn(sessionRows, "projectSidebarAgentSessionRows");
+    let currentChild = child;
+    const publishChild = async (patch: Partial<GatewaySessionRow>) => {
+      currentChild = { ...currentChild, ...patch };
+      sessions.publish({
+        result: {
+          ...sessions.sessions.state.result!,
+          sessions: [parent, currentChild, unrelated],
+        },
+      });
+      await settleLitElement(sidebar);
+    };
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    await publishChild({ runtimeMs: 11_000 });
+    expect(clock()).toBe("11s");
+    expect(owner.findSidebarMenuSessionByKey(unrelated.key)).toBe(unchangedRow);
+    expect(row(unrelated.key)).toBe(unchangedElement);
+    expect(present.mock.calls.map(([key]) => key)).toEqual([child.key]);
+    expect(topology).not.toHaveBeenCalled();
+
+    await publishChild({ hasActiveRun: false, status: "done" });
+    await vi.advanceTimersByTimeAsync(10_000);
+    await publishChild({ hasActiveRun: true, status: "running" });
+    expect(clock()).toBe("11s");
+    await vi.advanceTimersByTimeAsync(10_000);
+    await publishChild({ sessionId: "replacement-child" });
+    expect(clock()).toBe("11s");
+    await publishChild({ runtimeMs: undefined });
+    await vi.advanceTimersByTimeAsync(10_000);
+    await publishChild({ runtimeMs: 11_000 });
+    expect(clock()).toBe("11s");
+    await publishChild({ runtimeSampledAt: 140_000 });
+    await vi.advanceTimersByTimeAsync(10_000);
+    await publishChild({ runtimeSampledAt: undefined });
+    expect(clock()).toBe("11s");
+
+    present.mockClear();
+    await publishChild({ hasActiveRun: false, status: "done" });
+
+    expect(owner.findSidebarMenuSessionByKey(parent.key)?.runningChildCount).toBe(0);
+    expect(owner.findSidebarMenuSessionByKey(unrelated.key)).toBe(unchangedRow);
+    expect(row(unrelated.key)).toBe(unchangedElement);
+    expect(present.mock.calls.map(([key]) => key)).toEqual([child.key, parent.key]);
+    expect(topology.mock.calls.length).toBe(0);
+
+    expect(
+      row(parent.key)?.querySelector("[data-child-session-toggle]")?.getAttribute("aria-expanded"),
+    ).toBe("true");
+    publish([unrelated]);
+    await settleLitElement(sidebar);
+    publish([parent, { ...child, hasActiveRun: false, status: "done" }, unrelated]);
+    await settleLitElement(sidebar);
+    expect(
+      row(parent.key)?.querySelector("[data-child-session-toggle]")?.getAttribute("aria-expanded"),
+    ).toBe("false");
+  });
+
+  it("keeps a selected grandchild in its nested slot without adding another root", async () => {
+    const parent = session("parent", { childSessions: [key("child")] });
+    const child = session("child", {
+      parentSessionKey: parent.key,
+      childSessions: [key("grandchild")],
+    });
+    const grandchild = session("grandchild", { parentSessionKey: child.key });
+    const { sidebar, row } = await mount([parent, child, grandchild]);
+    sidebar.activeRouteId = "chat";
+    sidebar.sessionKey = grandchild.key;
+    await settleLitElement(sidebar);
+    const owner = getAppSidebarOwner(sidebar.hostElement)!;
+
+    expect(owner.selectedAgentSessionRows().map((row) => row.key)).toEqual([parent.key]);
+    expect(sidebar.querySelectorAll(`[data-session-key="${grandchild.key}"]`)).toHaveLength(1);
+    expect(row(grandchild.key)?.classList.contains("sidebar-recent-session--active")).toBe(true);
   });
 
   it("watches live PR rows after preparation releases the boot snapshot", async () => {
@@ -290,7 +381,6 @@ describe("sidebar projection memo", () => {
   });
 
   it("shares the projection across unrelated updates and refreshes route, list, and filter inputs", async () => {
-    const projectHome = vi.spyOn(sidebarAgentSessionRows, "projectSidebarHomeSession");
     const rows = [
       session("main", { lastMessagePreview: "Home before" }),
       session("first", { updatedAt: 2, createdAt: 3 }),
@@ -306,9 +396,6 @@ describe("sidebar projection memo", () => {
       .closest<SelectPicker>("openclaw-select-picker")!;
     const ownerPickerParams = ownerPicker.params;
     const sections = vi.spyOn(SidebarSessionProjection.prototype, "project");
-    expect(projectHome).toHaveBeenCalled();
-    projectHome.mockClear();
-    projectRows.mockClear();
     for (const change of [
       () => {
         sidebar.requestUpdate();
@@ -328,9 +415,7 @@ describe("sidebar projection memo", () => {
       await settleLitElement(sidebar);
       expect(row(key("first"))?.textContent).toContain("first");
     }
-    expect(projectRows).not.toHaveBeenCalled();
     expect(sections).not.toHaveBeenCalled();
-    expect(projectHome).not.toHaveBeenCalled();
     expect(ownerPicker.params).toBe(ownerPickerParams);
 
     await expectRowRefresh(sidebar, () =>
@@ -342,8 +427,6 @@ describe("sidebar projection memo", () => {
     );
     expect(row(key("first"))?.textContent).toContain("Renamed first");
     expect(ownerPicker.params).toBe(ownerPickerParams);
-    expect(projectHome).toHaveBeenCalled();
-    expect(projectHome.mock.results.at(-1)?.value.lastMessagePreview).toBe("Home after");
     await expectRowRefresh(sidebar, () => {
       sidebar.activeRouteId = "chat";
       sidebar.sessionKey = key("first");
@@ -382,12 +465,10 @@ describe("sidebar projection memo", () => {
     expect(row(key("first"))).toBeNull();
     expect(ownerPicker.querySelector("button")?.getAttribute("aria-label")).toContain("Bob");
     const options = sidebar.sessionOwnerOptions;
-    projectRows.mockClear();
     sidebar.devGitBranch = "another-branch";
     await settleLitElement(sidebar);
     expect(sidebar.sessionOwnerOptions).toBe(options);
     expect(sidebar.sessionOwnerFilterId).toBe("bob");
-    expect(projectRows).not.toHaveBeenCalled();
 
     sidebar.setSessionOwnerFilter(null);
     sidebar.sessionsStatusFilter = "active";
@@ -469,7 +550,6 @@ describe("sidebar projection memo", () => {
     const row = () => sidebar.querySelector(`[data-session-key="${sessionKey}"]`);
     expect(row()).not.toBeNull();
     const sections = vi.spyOn(SidebarSessionProjection.prototype, "project");
-    projectRows.mockClear();
     sidebar.selectedSessionKeys = new Set([sessionKey]);
     await settleRoster(mounted.sidebar);
     expect(row()?.classList.contains("sidebar-recent-session--selected")).toBe(true);
@@ -485,8 +565,36 @@ describe("sidebar projection memo", () => {
     expect(row()?.querySelector("[data-sidebar-session-menu]")?.getAttribute("aria-expanded")).toBe(
       "false",
     );
-    expect(projectRows).not.toHaveBeenCalled();
     expect(sections).not.toHaveBeenCalled();
+  });
+
+  it("observes replacement owner facets through the keyed list", async () => {
+    const { sidebar, sessions } = await mount([session("owned")]);
+    expect(sidebar.sessionOwnerFilter.hasMultipleOwners("main")).toBe(true);
+    sessions.publishList({ result: { ...sessions.sessions.state.result!, owners: [] } });
+    await settleLitElement(sidebar);
+    expect(sidebar.sessionOwnerFilter.hasMultipleOwners("main")).toBe(false);
+    sessions.publishList({ result: { ...sessions.sessions.state.result!, owners: [ada] } });
+    await settleLitElement(sidebar);
+    expect(sidebar.sessionOwnerFilter.hasMultipleOwners("main")).toBe(true);
+  });
+
+  it("reveals snoozed Home metadata when its wake deadline passes", async () => {
+    vi.useFakeTimers({ now: 10_000 });
+    const home = session("main", {
+      agentId: "main",
+      snoozedUntil: 70_000,
+      snoozedAt: 9_000,
+      lastMessagePreview: "Home context",
+    });
+    const mounted = await mountRoster(undefined, [home]);
+    const sidebar = mounted.sidebar as unknown as Sidebar;
+    sidebar.sidebarAgentsMode = "roster";
+    await settleRoster(mounted.sidebar);
+    expect(sidebar.visibleHomeSession("main")).toBeNull();
+    await vi.advanceTimersByTimeAsync(70_001 - Date.now());
+    await settleRoster(mounted.sidebar);
+    expect(sidebar.visibleHomeSession("main")?.key).toBe(home.key);
   });
 
   it("invalidates live attention, expiry, outbox snapshots, and store-owned PR and archive facts", async () => {
@@ -498,15 +606,12 @@ describe("sidebar projection memo", () => {
     });
     const { sidebar, sessions, gateway, row, publishApprovals } = await mount([target]);
     expect(row(target.key)?.querySelector('[data-session-attention="agent"]')).not.toBeNull();
-    projectRows.mockClear();
     // Mount readiness advances fake timers; stop before the expiry invalidation turn.
     await vi.advanceTimersByTimeAsync(expiresAt - Date.now());
     await settleLitElement(sidebar);
-    expect(projectRows).not.toHaveBeenCalled();
     expect(row(target.key)?.querySelector('[data-session-attention="agent"]')).not.toBeNull();
     await vi.advanceTimersByTimeAsync(1);
     await settleLitElement(sidebar);
-    expect(projectRows).toHaveBeenCalled();
     expect(row(target.key)?.querySelector('[data-session-attention="agent"]')).toBeNull();
     await expectRowRefresh(sidebar, () =>
       gateway.publishEvent("question.requested", {
@@ -699,7 +804,6 @@ describe("sidebar projection memo", () => {
     sidebar.hostElement.remove();
     parent.append(sidebar.hostElement);
     await settleLitElement(sidebar);
-    projectRows.mockClear();
     const sections = vi.spyOn(SidebarSessionProjection.prototype, "project");
     await vi.advanceTimersByTimeAsync(1_499);
     await settleLitElement(sidebar);
@@ -709,7 +813,6 @@ describe("sidebar projection memo", () => {
     await settleLitElement(sidebar);
     expect(row(target.key)?.textContent).toContain("Second activity");
     expect(row(target.key)?.textContent).not.toContain("First activity");
-    expect(sections).toHaveBeenCalledTimes(1);
-    expect(projectRows).not.toHaveBeenCalled();
+    expect(sections).not.toHaveBeenCalled();
   });
 });

@@ -49,12 +49,10 @@ export interface SessionDataControllerHost extends SolidControllerHost {
   readonly navigationView: "sessions" | "online" | "pages";
   readonly contextualSidebar?: ContextualSidebar;
   readonly sidebarAgentsMode: "chip" | "roster";
-  shouldPublishSessionData(): boolean;
   readonly activeRouteId?: string;
   readonly sessionCatalogRowsVisible: boolean;
   samePresence(previous: PresencePayload | undefined, next: PresencePayload | undefined): boolean;
   getRouteSessionKey(): string;
-  childSessionParents(): Set<string>;
   readonly sessionDataContext: ApplicationContext | undefined;
   dismissTransientMenus(): boolean;
   expandedAgentId(): string;

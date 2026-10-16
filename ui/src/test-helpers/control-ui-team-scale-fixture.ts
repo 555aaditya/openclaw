@@ -196,6 +196,7 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
         updatedAt: now,
       };
       if (index < 24) {
+        row.category = "Active work";
         const parent = sessions[120 + Math.floor(index / 4)]!;
         row.spawnedBy = parent.key;
         row.parentSessionKey = parent.key;
