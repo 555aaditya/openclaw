@@ -18,6 +18,7 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  *
+ * Subset: only the data marks the Control UI renders.
  *
  * Candidate data and meter anatomy for operational usage surfaces. Roles resolve
  * through carapace-control-ui.css, so every Control UI theme family applies. */
@@ -84,30 +85,8 @@
   vector-effect: non-scaling-stroke;
 }
 
-.oc-sparkline[data-tone="accent"] .oc-sparkline-line {
-  stroke: var(--oc-accent-primary);
-}
-
-.oc-sparkline-fill {
-  fill: color-mix(in srgb, var(--oc-accent-primary) 12%, transparent);
-  stroke: none;
-}
-
-.oc-sparkline-endpoint {
-  fill: var(--oc-accent-primary);
-  stroke: none;
-}
-
-/* Band-size sparkline for datelines and section headers: same stepped
-   geometry, full width, taller stroke room. */
-.oc-sparkline[data-size="lg"] {
-  max-width: none;
-  height: 3rem;
-}
-
-/* Composition bar: segments share one row and sum to the viewBox width.
-   Roles follow the chart color guidance -- accents for neutral series,
-   status colors only when a segment genuinely carries that meaning. */
+/* Composition bar: segments share one row and sum to the viewBox width;
+   each segment carries its series tone in --oc-chart-color. */
 .oc-split {
   display: block;
   overflow: hidden;
@@ -118,26 +97,6 @@
 
 .oc-split-segment {
   fill: var(--oc-chart-color, var(--oc-accent-primary));
-}
-
-.oc-split-secondary {
-  --oc-chart-color: var(--oc-accent-secondary);
-}
-
-.oc-split-success {
-  --oc-chart-color: var(--oc-status-success-fg);
-}
-
-.oc-split-warning {
-  --oc-chart-color: var(--oc-status-warning-fg);
-}
-
-.oc-split-error {
-  --oc-chart-color: var(--oc-status-error-fg);
-}
-
-.oc-split-muted {
-  --oc-chart-color: var(--oc-border-strong);
 }
 
 .oc-split-legend {
