@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../test/helpers/promise.js";
 import { assistantMediaPolicyKey } from "../pages/chat/components/chat-message-media.ts";
 import { resolveArtifactDownloadSource } from "./artifact-download.ts";
+import type { GatewaySessionRow } from "./types.ts";
 
 describe("resolveArtifactDownloadSource", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -33,7 +34,7 @@ describe("resolveArtifactDownloadSource", () => {
       } as never,
     };
     const params = { sessionKey: "agent:main:main", artifactId: artifact.id };
-    const session = { key: params.sessionKey };
+    const session: GatewaySessionRow = { key: params.sessionKey, kind: "direct", updatedAt: 1 };
     await resolveArtifactDownloadSource(state, params, undefined, assistantMediaPolicyKey(session));
     await resolveArtifactDownloadSource(
       state,
