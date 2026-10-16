@@ -2907,9 +2907,10 @@ describe("loadPageAssistantIdentity", () => {
       chatSubmissions: createChatSubmissions(),
       sessions: { refresh: vi.fn().mockResolvedValue(undefined) },
     } as unknown as ApplicationContext;
+    const invalidate = vi.fn();
     const state = createPageState(
       context,
-      { invalidate: vi.fn(), afterCommit: () => () => {} },
+      { invalidate, afterCommit: () => () => {} },
       { dispatchEvent: () => true, querySelector: () => null },
     );
     state.client = client;
@@ -2918,8 +2919,11 @@ describe("loadPageAssistantIdentity", () => {
     state.sessionKey = "agent:main:first";
 
     await state.loadAssistantIdentity();
+    expect(invalidate).toHaveBeenCalledOnce();
+    invalidate.mockClear();
     state.sessionKey = "agent:main:second";
     await state.loadAssistantIdentity();
+    expect(invalidate).not.toHaveBeenCalled();
 
     expect(request).toHaveBeenCalledWith("agent.identity.get", {
       agentId: "main",
@@ -2929,6 +2933,7 @@ describe("loadPageAssistantIdentity", () => {
 
     state.sessionKey = "agent:other:main";
     await state.loadAssistantIdentity();
+    expect(invalidate).toHaveBeenCalledOnce();
     expect(request).toHaveBeenLastCalledWith("agent.identity.get", { agentId: "other" });
     expect(request).toHaveBeenCalledTimes(2);
     expect(state.assistantName).toBe("Other Agent");
@@ -2939,8 +2944,10 @@ describe("loadPageAssistantIdentity", () => {
     expect(request).toHaveBeenCalledTimes(2);
 
     identities.invalidate(["main"]);
+    invalidate.mockClear();
     await state.loadAssistantIdentity();
     expect(request).toHaveBeenCalledTimes(3);
+    expect(invalidate).not.toHaveBeenCalled();
 
     const staleIdentity = createDeferred<{ name: string; agentId: string }>();
     identities.invalidate(["main"]);

@@ -107,10 +107,31 @@ describe("chat pane session discussion", () => {
     const { pane, updateSidebarLayout } = createDiscussionPane({
       info: { state: "open", embedUrl: "https://clack.example/embed/c1" },
     });
+    const requestUpdate = vi.spyOn(pane, "requestUpdate");
 
     await pane.probeSessionDiscussion(SESSION_KEY);
 
     expect(updateSidebarLayout).not.toHaveBeenCalled();
+    expect(requestUpdate).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    { info: { state: "none" } as const, currentSession: SESSION_KEY },
+    {
+      info: { state: "open", embedUrl: "https://clack.example/embed/c1" } as const,
+      currentSession: "agent:main:other",
+    },
+  ])("caches $info.state for $currentSession without invalidating the pane", async (scenario) => {
+    const { pane, state, request } = createDiscussionPane(scenario);
+    state.sessionKey = scenario.currentSession;
+    const requestUpdate = vi.spyOn(pane, "requestUpdate");
+
+    await pane.probeSessionDiscussion(SESSION_KEY);
+    await pane.probeSessionDiscussion(SESSION_KEY);
+
+    expect(request).toHaveBeenCalledOnce();
+    expect(pane.resolveSessionDiscussionAction()).toBeNull();
+    expect(requestUpdate).not.toHaveBeenCalled();
   });
 
   it("keeps the reported external URL with the discussion panel", async () => {

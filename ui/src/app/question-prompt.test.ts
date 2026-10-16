@@ -563,6 +563,24 @@ describe("question resolution connection ownership", () => {
 });
 
 describe("refreshPendingQuestions", () => {
+  it("does not publish when hydration finds no questions", async () => {
+    vi.useFakeTimers();
+    const onChange = vi.fn();
+    const state = createState(onChange);
+    const request = vi.fn<RequestFn>(async () => ({ questions: [] }));
+    const client = { request };
+    setQuestionPromptClient(state, client);
+    onChange.mockClear();
+
+    refreshPendingQuestionsWithRetry(state, client);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(request).toHaveBeenCalledOnce();
+    expect(state.prompts.size).toBe(0);
+    expect(state.refreshRetryTimer).toBeNull();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it("retries question hydration when the gateway leaves question.list unresolved", async () => {
     vi.useFakeTimers();
     let attempts = 0;
@@ -606,6 +624,7 @@ describe("refreshPendingQuestions", () => {
   });
 
   it("preserves a resolution received while reconnect refresh is in flight", async () => {
+    vi.useFakeTimers();
     const list = createDeferred<unknown>();
     const request = vi.fn<RequestFn>(() => list.promise);
     const { state, client } = createConnectedState(request);
@@ -616,10 +635,13 @@ describe("refreshPendingQuestions", () => {
       status: "answered",
       answers: { answers: { format: ["Detailed"] } },
     });
+    const onChange = vi.mocked(state.onChange);
+    onChange.mockClear();
     list.resolve({ questions: [requestedPayload()] });
-    await waitForFast(() => expect(state.prompts.get("question-1")?.status).toBe("answered"));
+    await vi.advanceTimersByTimeAsync(0);
 
     expect(state.prompts.get("question-1")?.status).toBe("answered");
+    expect(onChange).not.toHaveBeenCalled();
   });
 
   it("retains a resolution that arrives before reconnect hydration", async () => {

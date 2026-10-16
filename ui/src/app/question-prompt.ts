@@ -405,6 +405,7 @@ async function refreshPendingQuestions(
     return false;
   }
   const refreshedIds = new Set(records.map((record) => record.id));
+  const previousRevision = state.revision;
   for (const record of records) {
     const previous = state.prompts.get(record.id);
     if (!previous || previous.revision <= startedAtRevision || previous.locallyExpired) {
@@ -412,7 +413,9 @@ async function refreshPendingQuestions(
     }
   }
   scheduleExpiry(state);
-  state.onChange();
+  if (state.revision !== previousRevision) {
+    state.onChange();
+  }
   const missing: Array<{
     id: string;
     prompt: QuestionPrompt | undefined;
