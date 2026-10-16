@@ -321,9 +321,6 @@ function ProviderAccess(
       get usageDays() {
         return props.usageRange;
       },
-      get now() {
-        return props.updatedAt ?? Date.now();
-      },
     });
   const providerRows = () => (
     <>

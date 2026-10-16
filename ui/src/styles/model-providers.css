@@ -555,10 +555,7 @@
 .usage-overview__name small,
 .usage-overview__share,
 .usage-overview__daily-head,
-.usage-columns__axis,
-.provider-limits__group,
-.provider-limits__summary,
-.provider-limit__reset {
+.usage-columns__axis {
   color: var(--oc-text-muted);
   font-size: var(--oc-font-size-xs);
 }
@@ -597,10 +594,6 @@
 }
 
 /* Stepped trends take the row's series tone; the shared class stays neutral. */
-.usage-sparkline .oc-sparkline-line {
-  stroke: var(--oc-chart-color, var(--oc-text-muted));
-}
-
 .usage-overview__daily-head {
   display: flex;
   justify-content: space-between;
@@ -781,31 +774,6 @@
 .usage-overview__models td {
   color: var(--oc-text-secondary);
   font-family: var(--oc-font-mono);
-}
-
-.provider-limits__rows {
-  padding-inline: var(--oc-space-4);
-  border-bottom: 0;
-}
-
-.provider-limit .oc-menu-panel-usage-value {
-  font-family: var(--oc-font-mono);
-}
-
-.provider-limit__reset {
-  grid-column: 2 / -1;
-  margin-top: -4px;
-}
-
-.provider-limits__error,
-.provider-limits__summary {
-  margin: 0;
-  padding: var(--oc-space-2) var(--oc-space-4);
-}
-
-.provider-limits__error {
-  color: var(--oc-status-error-fg);
-  font-size: var(--oc-font-size-xs);
 }
 
 /* Provider access: one master list. Each connected provider is a dense summary
@@ -1015,16 +983,6 @@
   border: 0;
 }
 
-.provider-row .provider-limits__rows {
-  padding: 0;
-  border-bottom: 0;
-}
-
-.provider-row .provider-limits__error,
-.provider-row .provider-limits__summary {
-  padding: 0;
-}
-
 .provider-row .model-providers__card-actions {
   justify-content: flex-start;
   padding-top: var(--oc-space-3);
@@ -1061,14 +1019,13 @@
 }
 
 /* Meters take the provider's series tone, so a row reads as one identity. */
-.provider-limit .oc-inspector-meter span,
 .provider-limit-chip .oc-inspector-meter span {
   background: var(--oc-chart-color, var(--oc-accent-secondary));
 }
 
 .provider-limit-chip {
   display: inline-grid;
-  grid-template-columns: 4.5rem 3.5rem 2.5rem;
+  grid-template-columns: 4.5rem 3.5rem 4.5rem;
   align-items: center;
   gap: var(--oc-space-2);
   color: var(--oc-text-muted);
@@ -1087,16 +1044,23 @@
   text-align: end;
 }
 
-.provider-limit-chip[data-tone="warning"] .oc-inspector-meter span,
-.provider-limit[data-tone="warning"] .oc-inspector-meter span {
-  background: var(--oc-status-warning-fg);
-}
-
-.provider-limit-chip[data-tone="warning"] .provider-limit-chip__value {
-  color: var(--oc-status-warning-fg);
+.provider-limit-chip[data-tone="warning"] {
+  --provider-limit-tone: var(--oc-status-warning-fg);
 }
 
 .provider-limit-chip[data-tone="error"] {
+  --provider-limit-tone: var(--oc-status-error-fg);
+}
+
+.provider-limit-chip[data-tone] .oc-inspector-meter span {
+  background: var(--provider-limit-tone);
+}
+
+.provider-limit-chip[data-tone] .provider-limit-chip__value {
+  color: var(--provider-limit-tone);
+}
+
+.provider-limit-chip--failed {
   display: inline-flex;
   color: var(--oc-status-error-fg);
 }
@@ -1146,7 +1110,7 @@
     grid-template-columns: auto minmax(0, 1fr) minmax(5rem, auto);
   }
 
-  .usage-overview__providers .usage-sparkline,
+  .usage-overview__providers .oc-sparkline,
   .usage-overview__share {
     display: none;
   }

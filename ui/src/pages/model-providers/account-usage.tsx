@@ -3,15 +3,18 @@
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import type { UsageSummary } from "../../../../src/infra/provider-usage.types.js";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
+import {
+  hasProviderUsageDetails,
+  ProviderUsagePanel,
+} from "../../components/solid/provider-usage.tsx";
 import { formatUiError } from "../../lib/format-error.ts";
 import { t } from "../../lib/reactive/i18n.ts";
-import { hasProviderLimits, ProviderLimitDetails } from "./provider-limits.tsx";
 
 export type AccountUsageScope = { client: GatewayBrowserClient; agentId: string; revision: number };
 
 type UsageState =
   | { phase: "pending" }
-  | { phase: "complete"; summary: UsageSummary; at: number }
+  | { phase: "complete"; summary: UsageSummary }
   | { phase: "error"; error: unknown };
 
 export function AccountLimits(props: { scope: AccountUsageScope; profileId: string }) {
@@ -28,7 +31,7 @@ export function AccountLimits(props: { scope: AccountUsageScope; profileId: stri
           { signal: request.signal, timeoutMs: 30_000 },
         )
         .then(
-          (summary) => setState({ phase: "complete", summary, at: Date.now() }),
+          (summary) => setState({ phase: "complete", summary }),
           (error: unknown) => {
             if (!request.signal.aborted) {
               setState({ phase: "error", error });
@@ -63,10 +66,10 @@ export function AccountLimits(props: { scope: AccountUsageScope; profileId: stri
                   <strong>{snapshot.plan}</strong>
                 </Show>
                 <Show
-                  when={hasProviderLimits(snapshot)}
+                  when={hasProviderUsageDetails(snapshot)}
                   fallback={<span>{t("modelProviders.noStats")}</span>}
                 >
-                  <ProviderLimitDetails usage={snapshot} now={result().at} />
+                  <ProviderUsagePanel usage={snapshot} />
                 </Show>
               </>
             )}

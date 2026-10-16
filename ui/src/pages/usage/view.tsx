@@ -1,7 +1,7 @@
 import { For, Show, createMemo } from "solid-js";
 import { extractQueryTerms } from "../../../../src/shared/usage-query.js";
 import { Menu } from "../../components/solid/menu.tsx";
-import { renderProviderUsageDetails } from "../../components/solid/provider-usage.tsx";
+import { ProviderUsagePanel } from "../../components/solid/provider-usage.tsx";
 import {
   SettingsSection,
   SettingsPage,
@@ -82,7 +82,7 @@ function renderProviderUsage(
                     </>
                   ) : undefined}
                 </div>
-                {renderProviderUsageDetails(provider)}
+                <ProviderUsagePanel usage={provider} />
               </article>
             )}
           </For>

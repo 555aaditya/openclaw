@@ -6,12 +6,13 @@ import {
   SettingsSection,
   SettingsSegmented,
 } from "../../components/solid/settings-ui.tsx";
+import { StepSparkline } from "../../components/solid/step-sparkline.tsx";
 import { formatCompactTokenCount } from "../../lib/format.ts";
 import { t } from "../../lib/reactive/i18n.ts";
 import "../../styles/carapace-data.css";
 import type { ModelProviderCard } from "./data.ts";
 import { MODEL_PROVIDERS_USAGE_RANGES, type ModelProvidersUsageRange } from "./load.ts";
-import { DailyColumns, ShareBar, StepSparkline } from "./usage-charts.tsx";
+import { DailyColumns, ShareBar } from "./usage-charts.tsx";
 import {
   isLowerBound,
   isUnpriced,

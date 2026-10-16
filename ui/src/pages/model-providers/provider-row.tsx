@@ -5,16 +5,16 @@ import type { ModelsProbeResult } from "../../api/types.ts";
 import { providerDisplayLabel } from "../../components/provider-icon.ts";
 import { Icon } from "../../components/solid/icon.tsx";
 import { ProviderBrandIcon } from "../../components/solid/provider-icon.tsx";
+import {
+  hasProviderUsageDetails,
+  ProviderUsagePanel,
+} from "../../components/solid/provider-usage.tsx";
 import { formatUiExternalText } from "../../lib/format-error.ts";
 import { formatCompactTokenCount } from "../../lib/format.ts";
 import { t } from "../../lib/reactive/i18n.ts";
 import type { ModelProviderCard } from "./data.ts";
 import { apiKeySource, profileIdentity, ProviderProfiles } from "./profiles-view.tsx";
-import {
-  hasProviderLimits,
-  ProviderLimitDetails,
-  ProviderLimitSummary,
-} from "./provider-limits.tsx";
+import { ProviderLimitSummary } from "./provider-limits.tsx";
 import { seriesColor, type OverviewProvider } from "./usage-overview-model.ts";
 import { usageCostText } from "./usage-overview.tsx";
 import { isProviderUsable, renderMutationMessage, renderProviderStatus } from "./view-status.tsx";
@@ -25,7 +25,6 @@ type ProviderRowProps = ModelProvidersViewProps & {
   /** Local usage for the selected range, when the provider has any. */
   usage?: OverviewProvider;
   usageDays: number;
-  now: number;
 };
 
 export function configMutationDisabled(state: ModelProvidersViewProps): boolean {
@@ -312,7 +311,7 @@ function credentialLine(card: ModelProviderCard): string | undefined {
 export function ProviderRow(props: ProviderRowProps) {
   const card = () => props.card;
   const message = () => props.messages[`key:${card().id}`] ?? props.messages[card().id];
-  const limits = () => (hasProviderLimits(card().usage) ? card().usage : undefined);
+  const limits = () => (hasProviderUsageDetails(card().usage) ? card().usage : undefined);
   const [expanded, setExpanded] = createSignal(false);
   // Work in progress and problems keep the detail open until they settle.
   const pinned = () =>
@@ -375,7 +374,7 @@ export function ProviderRow(props: ProviderRowProps) {
               {(usage) => (
                 <section class="provider-row__pane">
                   <h3 class="provider-row__pane-title">{t("modelProviders.limits.title")}</h3>
-                  <ProviderLimitDetails usage={usage()} now={props.now} />
+                  <ProviderUsagePanel usage={usage()} />
                 </section>
               )}
             </Show>

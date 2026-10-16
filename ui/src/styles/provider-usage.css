@@ -1,0 +1,53 @@
+/* Shared provider usage rows on Carapace data rows; each surface owns its padding. */
+.provider-usage {
+  display: grid;
+  gap: var(--oc-space-2);
+  min-width: 0;
+}
+
+.provider-usage__rows {
+  padding: 0;
+  border-bottom: 0;
+}
+
+.provider-usage__row .oc-menu-panel-usage-value {
+  font-family: var(--oc-font-mono);
+}
+
+.provider-usage__row[data-tone="warning"] .oc-inspector-meter span {
+  background: var(--oc-status-warning-fg);
+}
+
+.provider-usage__row[data-tone="error"] .oc-inspector-meter span {
+  background: var(--oc-status-error-fg);
+}
+
+.provider-usage__note,
+.provider-usage__error {
+  margin: 0;
+  color: var(--oc-text-muted);
+  font-size: var(--oc-font-size-xs);
+}
+
+.provider-usage__error {
+  color: var(--oc-status-error-fg);
+}
+
+.provider-usage__reset {
+  grid-column: 2 / -1;
+  margin-top: -4px;
+}
+
+.provider-usage__trend {
+  display: flex;
+  align-items: center;
+  gap: var(--oc-space-3);
+  color: var(--oc-text-muted);
+  font-size: var(--oc-font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.provider-usage__trend .oc-sparkline {
+  flex: none;
+  width: 7.5rem;
+}

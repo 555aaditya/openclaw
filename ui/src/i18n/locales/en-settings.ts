@@ -710,13 +710,6 @@ const enSettings = {
     },
     limits: {
       title: "Plan limits",
-      meter: "{label} used",
-      used: "{percent}% used",
-      resetsIn: "Resets in {time}",
-      resetUnknown: "Reset time not reported",
-      available: "Available",
-      near: "Near limit",
-      reached: "Limit reached",
       checkFailed: "Check failed",
     },
     saving: "Saving…",
