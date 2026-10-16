@@ -68,8 +68,8 @@ async function checkStaging() {
 }
 
 const readCommand = {
-  type: "deviceAuth.read",
-  input: { deviceId: "lifecycle-retention", role: "operator", readOnly: false },
+  type: "nativeHookRelay.listRecords",
+  input: undefined,
 } as const;
 
 async function completeStateOpening() {
@@ -88,7 +88,7 @@ async function completeStateOpening() {
         },
       },
     );
-    assert.deepEqual(result, { entry: null, expectedToken: null });
+    assert.deepEqual(result, []);
   });
   return { references, context };
 }
@@ -106,7 +106,7 @@ async function checkStateOpening() {
     assert.equal(getSqliteWorkerActorIdentity(store), actor);
     assert.deepEqual(
       await runOpenClawStateWorkerOperation(context, (scope) => scope.execute(readCommand)),
-      { entry: null, expectedToken: null },
+      [],
     );
   } finally {
     await closeOpenClawStateDatabaseAsync();
