@@ -254,8 +254,8 @@ Transcript bytes, session recovery rows, schemas, and update behavior are unchan
 Global projection preflight and search readiness use the projection maintenance
 owner's connection-local facts. Transactional TEMP triggers queue affected sessions
 for appends, rewrites, projection publication, deletion, cold-storage moves, and raw
-local SQL. A sibling-writer receipt or schema change restarts bounded admission;
-local changes consume only the queued sessions. A bounded recursive key query
+local SQL. A sibling-writer receipt requests another bounded scan after the current
+cursor completes; local changes consume only the queued sessions. A bounded recursive key query
 skips whole session ranges instead of scanning transcript rows, then a compound
 read classifies the batch using the projection owner's readiness predicate.
 Queue consumption and dirty-session publication are batched in the same
