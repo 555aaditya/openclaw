@@ -249,6 +249,8 @@ describe("CommandPalette search", () => {
       expect(findPaletteOption(palette, "Needle old")).toBeDefined();
 
       harness.emit(event, payload);
+      await palette.updateComplete;
+      expect(findPaletteOption(palette, "Needle old")).toBeUndefined();
       await vi.advanceTimersByTimeAsync(200);
       await palette.updateComplete;
       expect(palette.querySelector('.cmd-palette__search [role="status"]')?.textContent).toContain(
@@ -308,7 +310,10 @@ describe("CommandPalette search", () => {
         harness.emit("chat.metadata.changed");
       }
       await palette.updateComplete;
-      if (replacement !== "publication") {
+      if (replacement === "connection") {
+        expect(findPaletteOption(palette, "Needle old")).toBeDefined();
+        expect(palette.textContent).toContain("Reconnect to search Gateway content.");
+      } else if (replacement !== "publication") {
         expect(findPaletteOption(palette, "Needle old")).toBeUndefined();
       }
       if (replacement === "connection") {
@@ -330,6 +335,7 @@ describe("CommandPalette search", () => {
       await vi.advanceTimersByTimeAsync(200);
       await palette.updateComplete;
       expect(findPaletteOption(palette, "Needle new")).toBeDefined();
+      expect(findPaletteOption(palette, "Needle old")).toBeUndefined();
       expect(findPaletteOption(palette, "Needle stale")).toBeUndefined();
       if (replacement === "agent") {
         expect(request).toHaveBeenLastCalledWith("models.list", {
@@ -566,20 +572,21 @@ describe("CommandPalette search", () => {
     "keeps selection actionable when a chosen session disappears and returns (%s)",
     async (interaction) => {
       const { gateway, setConnected } = createGateway(true);
-      const { palette } = await mountPalette(
-        createContext(
-          gateway,
-          vi.fn(async () => ({
-            ...createSessionResult("agent:main:qa-0", "Agent QA 0"),
-            count: 10,
-            sessions: Array.from(
-              { length: 10 },
-              (_, index) =>
-                createSessionResult(`agent:main:qa-${index}`, `Agent QA ${index}`).sessions[0]!,
-            ),
-          })),
+      const roster = {
+        ...createSessionResult("agent:main:qa-0", "Agent QA 0"),
+        count: 10,
+        sessions: Array.from(
+          { length: 10 },
+          (_, index) =>
+            createSessionResult(`agent:main:qa-${index}`, `Agent QA ${index}`).sessions[0]!,
         ),
-      );
+      };
+      const list = vi
+        .fn<ApplicationContext["sessions"]["list"]>()
+        .mockResolvedValueOnce(roster)
+        .mockResolvedValueOnce({ ...roster, sessions: [], count: 0 })
+        .mockResolvedValue(roster);
+      const { palette } = await mountPalette(createContext(gateway, list));
       await enterQuery(palette, "agent");
       await vi.advanceTimersByTimeAsync(200);
       await palette.updateComplete;
@@ -590,24 +597,33 @@ describe("CommandPalette search", () => {
 
       setConnected(false);
       await palette.updateComplete;
+      expect(findPaletteOption(palette, "Agent QA 9")).toBe(session);
+      expect(palette.querySelector('[aria-selected="true"]')).toBe(session);
+      const input = palette.querySelector<HTMLTextAreaElement>(".cmd-palette__input")!;
+      expect(document.getElementById(input.getAttribute("aria-activedescendant")!)).toBe(session);
+      setConnected(true);
+      await vi.advanceTimersByTimeAsync(200);
+      await palette.updateComplete;
+      expect(list).toHaveBeenCalledTimes(2);
       expect(findPaletteOption(palette, "Agent QA 9")).toBeUndefined();
       const first = palette.querySelector('[role="option"]');
       expect(palette.querySelector('[aria-selected="true"]')).toBe(first);
-      const input = palette.querySelector<HTMLTextAreaElement>(".cmd-palette__input")!;
       expect(document.getElementById(input.getAttribute("aria-activedescendant")!)).toBe(first);
       if (interaction === "navigate") {
         input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
         await palette.updateComplete;
       }
-      const offlineSelection = palette.querySelector('[aria-selected="true"]')?.textContent;
+      const fallbackSelection = palette.querySelector('[aria-selected="true"]')?.textContent;
 
+      setConnected(false);
       setConnected(true);
       await palette.updateComplete;
       await vi.advanceTimersByTimeAsync(200);
       await palette.updateComplete;
+      expect(list).toHaveBeenCalledTimes(3);
       const active = palette.querySelector('[aria-selected="true"]');
       expect(active?.textContent).toEqual(
-        interaction === "retain" ? sessionText : offlineSelection,
+        interaction === "retain" ? sessionText : fallbackSelection,
       );
       input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
       expect(palette.isOpen).toBe(false);

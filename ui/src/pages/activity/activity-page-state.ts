@@ -93,7 +93,10 @@ export function createActivityPageState(context: ApplicationContext) {
     if (location && routeData) {
       presentedRoute = { location, data: routeData };
     }
-    syncRunInspector(context.gateway, context.gateway.snapshot);
+    // Receipt focus must not retry a failed inspection of the same evidence page.
+    if (inspectorRequestKey(routeData) !== inspectorSelectorKey) {
+      syncRunInspector(context.gateway, context.gateway.snapshot);
+    }
     syncSessionActivity();
     reconcileSessions();
   }

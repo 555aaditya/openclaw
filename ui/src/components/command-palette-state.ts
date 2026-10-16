@@ -207,6 +207,7 @@ export class CommandPaletteState {
       if (invalidation === "clear") {
         this.catalogLoad = undefined;
         this.catalogItems = [];
+        this.settledModels = this.modelReader.snapshot;
       }
       if (this.open) {
         void this.ensureCatalogItems(true);

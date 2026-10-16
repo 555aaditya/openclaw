@@ -12,7 +12,12 @@ import { isSessionRunActive } from "../session-run-state.ts";
 import type { SessionCreateOutcome } from "./create.ts";
 import { captureBootRoster } from "./session-boot-roster.ts";
 import { createSessionBootSnapshot } from "./session-boot-snapshot.ts";
-import type { SessionCapability, SessionGateway, SessionState } from "./session-capability.ts";
+import {
+  createSessionState,
+  type SessionCapability,
+  type SessionGateway,
+  type SessionState,
+} from "./session-capability.ts";
 import { createSessionDeletions } from "./session-deletions.ts";
 import { createSessionEventSubscriptionOwner } from "./session-event-subscription.ts";
 import { createSessionGitHubPublication } from "./session-github-publication.ts";
@@ -71,17 +76,7 @@ export function createSessionCapability(
     connectionBootstrap?: ConnectionBootstrapCoordinator;
   } = {},
 ): SessionCapability {
-  let state: SessionState = {
-    result: null,
-    agentId: null,
-    modelOverrides: {},
-    loading: false,
-    error: null,
-    deletedSessions: [],
-    groups: cacheOptions.bootRecord?.groups.map((group) => group.name) ?? [],
-    groupSettings: cacheOptions.bootRecord?.groups ?? [],
-    sectionOrder: cacheOptions.bootRecord?.sectionOrder ?? [],
-  };
+  let state = createSessionState(cacheOptions.bootRecord);
   let presentation: SessionCapability["presentation"] = { result: null, agentId: null };
   let reconnectListRevision: number | null = null;
   let presentationProfileId =
@@ -439,10 +434,11 @@ export function createSessionCapability(
     const connected = next.phase === "connected";
     const presentationScope = gatewayPresentationScope(gateway);
     const selfUserId = presentationScope.displayUser?.id.trim() || null;
-    const nextPresentationKey = presentationScope.key;
+    // First-client adoption keeps the boot roster admitted by the cache lifecycle.
     const identityChanged =
-      previousClient !== next.client || presentationKey !== nextPresentationKey;
-    presentationKey = nextPresentationKey;
+      (previousClient !== null && previousClient !== next.client) ||
+      presentationKey !== presentationScope.key;
+    presentationKey = presentationScope.key;
     const transportChanged = connection.transition(next);
     if (identityChanged && !transportChanged) {
       connection.invalidate();
@@ -487,20 +483,7 @@ export function createSessionCapability(
         hydratedSelfUserId = null;
         presentationProfileId = selfUserId;
         retirePresentation();
-        publish({
-          ...state,
-          result: null,
-          agentId: null,
-          resultCached: false,
-          modelOverrides: {},
-          groups: [],
-          groupSettings: [],
-          sectionOrder: [],
-          deletedSessions: [],
-          loading: false,
-          error: null,
-          startupPending: false,
-        });
+        publish({ ...createSessionState(), resultCached: false, startupPending: false });
       }
       // Client replacement needs a publish; disconnect publishes cleared state below.
       if ((hadPullRequestSummaries || hadSubscriptionError) && connected && next.client) {

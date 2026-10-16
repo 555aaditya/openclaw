@@ -1,8 +1,8 @@
 import { expect, it } from "vitest";
+import { waitForControlUiGatewayReconnecting } from "../test-helpers/control-ui-e2e-readiness.ts";
 import {
   installMockGateway,
   pauseVirtualClock,
-  waitForControlUiGatewayReconnecting,
   waitForControlUiRoute,
 } from "../test-helpers/control-ui-e2e.ts";
 import { createControlUiE2eSuite } from "./control-ui-e2e-suite.test-support.ts";

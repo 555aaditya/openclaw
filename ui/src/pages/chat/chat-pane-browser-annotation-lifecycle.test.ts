@@ -16,6 +16,7 @@ import {
 } from "./attachment-payload-store.ts";
 import { ChatPaneRuntime } from "./chat-pane-render.ts";
 import {
+  createGatewayBrowserClientFixture,
   createSessionCapabilityFixture,
   createPaneTestHost,
   getPaneTestRuntime,
@@ -286,12 +287,14 @@ describe("staged attachment composer adoption", () => {
   });
 
   it("preserves the package on same-client reconnect and clears it on replacement", () => {
-    const owner = {} as GatewayBrowserClient;
-    const replacement = {} as GatewayBrowserClient;
+    const owner = createGatewayBrowserClientFixture();
+    const replacement = createGatewayBrowserClientFixture();
     const { pane, state } = createTestChatPane({
       client: owner,
       sessions: createSessionCapabilityFixture(),
     });
+    state.loadAssistantIdentity = vi.fn(async () => undefined);
+    const connected = pane.context.gateway.snapshot;
     pane.active = true;
     (
       pane as TestChatPane & { receiveBrowserAnnotation: (candidate: Event) => void }
@@ -319,18 +322,7 @@ describe("staged attachment composer adoption", () => {
     expect(state.chatAttachments).toEqual([current, ordinary]);
     expect(getChatAttachmentDataUrl(current)).not.toBeNull();
 
-    const stopAfterAnnotationOwner = new Error("stop after annotation owner");
-    const cancelHeaderRename = vi.spyOn(pane, "cancelHeaderRename").mockImplementation(() => {
-      throw stopAfterAnnotationOwner;
-    });
-    expect(() =>
-      pane.applyGatewaySnapshot({
-        ...pane.context.gateway.snapshot,
-        client: owner,
-        phase: "connected",
-      }),
-    ).toThrow(stopAfterAnnotationOwner);
-    cancelHeaderRename.mockRestore();
+    pane.applyGatewaySnapshot(connected);
     expect(state.chatAttachments).toEqual([current, ordinary]);
     expect(getChatAttachmentDataUrl(current)).not.toBeNull();
 

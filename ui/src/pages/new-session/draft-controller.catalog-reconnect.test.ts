@@ -36,6 +36,7 @@ it.each([false, true])(
     const refreshed = createDeferred<AgentsListResult>();
     let reads = 0;
     const source = createApplicationGateway();
+    source.gateway.setSessionKey = vi.fn();
     const hello = gatewayHelloForMethods(["agents.list", "models.list"], ["operator.read"]);
     hello.auth!.recoveryScope = "test-recovery-scope";
     source.publish({

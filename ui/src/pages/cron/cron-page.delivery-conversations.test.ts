@@ -399,10 +399,9 @@ describe("CronPage lifecycle", () => {
       await waitForCronPage(() => expect(directoryCalls).toBe(2));
 
       save.resolve({ id: "saved-1" });
-      // The retired save runs its own continuation to completion, which is what
-      // used to clear the replacement page's cache and advance its generation.
-      await waitForCronPage(() => expect(retiredState.cronCreateOpen).toBe(false));
-
+      if (rotation === "scope") {
+        await waitForCronPage(() => expect(retiredState.cronCreateOpen).toBe(false));
+      }
       freshDirectory.resolve({ conversations: [conversationTarget("-100fresh")] });
       await waitForCronPage(() =>
         expect(page.deliveryDirectory.conversations.map((entry) => entry.target)).toEqual([
@@ -411,6 +410,9 @@ describe("CronPage lifecycle", () => {
       );
       expect(directoryCalls).toBe(2);
       expect(page.deliveryDirectory.error).toBeNull();
+      // Transport retirement fences the save's draft changes as well as discovery;
+      // a scope change leaves its old state private while the accepted save settles.
+      expect(retiredState.cronCreateOpen).toBe(rotation === "reconnect");
     },
   );
 

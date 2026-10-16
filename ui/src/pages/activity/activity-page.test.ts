@@ -974,18 +974,31 @@ describe("ActivityPage gateway lifecycle", () => {
       new GatewayProtocolRequestError({ code: "UNAVAILABLE", message: "gateway unavailable" }),
       "retry",
     ],
-  ] as const)("classifies a %s cursor failure", async (_label, error, recovery) => {
-    const client = createTestGatewayClient(vi.fn(() => Promise.reject(error)));
-    const activeGateway = inspectorGateway(client);
-    const page = createActivityPage(activityContext(activeGateway), {
-      pathname: "/activity",
-      search: "?view=run&run=run-1&receipt=receipt-1&decision=cursor-1",
-      hash: "",
-    });
-    await waitForSolid(() =>
+  ] as const)(
+    "keeps a %s cursor failure until explicit recovery",
+    async (_label, error, recovery) => {
+      const request = vi.fn(() => Promise.reject(error));
+      const client = createTestGatewayClient(request);
+      const activeGateway = inspectorGateway(client);
+      const page = createActivityPage(activityContext(activeGateway), {
+        pathname: "/activity",
+        search: "?view=run&run=run-1&receipt=receipt-1&decision=cursor-1",
+        hash: "",
+      });
+      await waitForSolid(() =>
+        expect(page.container.querySelector('[role="alert"] button')?.textContent).toBe(
+          recovery === "restart" ? "Restart inspection" : "Retry inspection",
+        ),
+      );
+      page.setRouteLocation({
+        pathname: "/activity",
+        search: "?view=run&run=run-1&receipt=receipt-2&decision=cursor-1",
+        hash: "",
+      });
+      expect(request).toHaveBeenCalledOnce();
       expect(page.container.querySelector('[role="alert"] button')?.textContent).toBe(
         recovery === "restart" ? "Restart inspection" : "Retry inspection",
-      ),
-    );
-  });
+      );
+    },
+  );
 });
