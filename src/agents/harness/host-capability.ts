@@ -36,7 +36,6 @@ import type { EmbeddedRunAttemptInternalParams } from "../embedded-agent-runner/
 import { runBestEffortCallback } from "../embedded-agent-subscribe.callback.js";
 import { createCronScheduledToolProjection } from "../exec-tool-target-pinning.js";
 import { throwAgentRunRestartAbortReason } from "../run-termination.js";
-import { withPreparedSessionCapabilityRead } from "../subagents/spawn/subagent-session-store.js";
 import { resolveToolLoopDetectionConfig } from "../tool-loop-detection-config.js";
 import { isToolExecutionAllowed } from "../tool-policy-shared.js";
 import type { AnyAgentTool } from "../tools/common.js";
@@ -51,7 +50,6 @@ import {
   getCoreTtsToolResultMediaUrls,
   transferCoreTtsToolResultProvenance,
 } from "../tools/tts-tool-result-provenance.js";
-import { resolveWebSearchToolPolicy } from "../web-search-tool-policy.js";
 import { bindHostToolSurface } from "./host-bound-tool.js";
 import type { AgentHarnessHostCapabilities } from "./host-capability-types.js";
 import {
@@ -75,6 +73,7 @@ import {
   bindHarnessHostSourceAuthority,
   bindHarnessModelExecution,
   bindHarnessNativeSpawnAuthority,
+  bindHarnessWebSearchToolPolicy,
   retainHarnessSource,
 } from "./host-source-authority.js";
 import { bindHarnessTrajectory } from "./host-trajectory.js";
@@ -546,19 +545,7 @@ export function createAgentHarnessHostCapabilities(params: {
       );
       return bindCreatedTools(sourceTools, bindingOptions);
     },
-    prepareWebSearchToolPolicy: async (options) => {
-      const assertCurrent = () => {
-        attemptSignal?.throwIfAborted();
-        assertActive();
-      };
-      assertCurrent();
-      const policy = await withPreparedSessionCapabilityRead(() => {
-        assertCurrent();
-        return resolveWebSearchToolPolicy(options);
-      });
-      assertCurrent();
-      return policy;
-    },
+    prepareWebSearchToolPolicy: bindHarnessWebSearchToolPolicy(assertActive, attemptSignal),
     prepareMutableFileApproval: async (request) => {
       assertActive();
       const prepared = await prepareSystemRunMutableFileApproval(request);
