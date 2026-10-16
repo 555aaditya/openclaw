@@ -16,7 +16,7 @@ import { makePrompter } from "./setup/__tests__/test-utils.js";
 
 const ensureAuthProfileStore = vi.hoisted(() => vi.fn(() => ({ version: 1, profiles: {} })));
 vi.mock("../agents/auth-profiles.js", () => ({
-  ensureAuthProfileStore,
+  ensureAuthProfileStoreAsync: async () => ensureAuthProfileStore(),
 }));
 
 describe("warnIfModelConfigLooksOff", () => {
@@ -41,7 +41,9 @@ describe("warnIfModelConfigLooksOff", () => {
     ];
     const note = vi.fn(async () => {});
 
-    expect(resolveDefaultModelAuthStatus(config, { env: {}, pendingAuthProfiles })).toMatchObject({
+    expect(
+      await resolveDefaultModelAuthStatus(config, { env: {}, pendingAuthProfiles }),
+    ).toMatchObject({
       status: "ready",
       hasAuth: true,
     });
@@ -119,7 +121,7 @@ describe("warnIfModelConfigLooksOff", () => {
       agents: { defaults: { model: "openai/gpt-5.3-codex-spark" } },
     } as OpenClawConfig;
     expect(
-      resolveDefaultModelAuthStatus(config, { env: { OPENAI_API_KEY: "api-key" } }),
+      await resolveDefaultModelAuthStatus(config, { env: { OPENAI_API_KEY: "api-key" } }),
     ).toMatchObject({
       status: "missing",
       hasAuth: false,
@@ -144,7 +146,10 @@ describe("warnIfModelConfigLooksOff", () => {
       },
     }) satisfies AuthProfileStore;
     ensureAuthProfileStore.mockReturnValue(store);
-    expect(resolveDefaultModelAuthStatus(config)).toMatchObject({ status: "ready", hasAuth: true });
+    expect(await resolveDefaultModelAuthStatus(config)).toMatchObject({
+      status: "ready",
+      hasAuth: true,
+    });
   });
 
   it("maps incompatible route facts to status and recovery wording", async () => {
@@ -171,7 +176,7 @@ describe("warnIfModelConfigLooksOff", () => {
       },
     } as OpenClawConfig;
 
-    expect(resolveDefaultModelAuthStatus(config)).toMatchObject({
+    expect(await resolveDefaultModelAuthStatus(config)).toMatchObject({
       status: "incompatible",
       hasAuth: false,
       code: "platform-only-model-on-chatgpt",
@@ -185,7 +190,7 @@ describe("warnIfModelConfigLooksOff", () => {
     );
   });
 
-  it("uses selected static ChatGPT catalog facts for auth checks", () => {
+  it("uses selected static ChatGPT catalog facts for auth checks", async () => {
     const store = createAuthProfileStoreFixture({
       "openai:subscription": {
         type: "oauth",
@@ -215,11 +220,11 @@ describe("warnIfModelConfigLooksOff", () => {
     const catalogFacts = resolveDefaultModelCatalogFacts(config, catalog);
     expect(catalogFacts.observedRoutes).toEqual([observedRoute]);
     expect(
-      resolveDefaultModelAuthStatus(config, { observedRoutes: catalogFacts.observedRoutes }),
+      await resolveDefaultModelAuthStatus(config, { observedRoutes: catalogFacts.observedRoutes }),
     ).toMatchObject({ status: "ready", hasAuth: true });
   });
 
-  it("matches shipped OpenAI aliases to their canonical catalog model", () => {
+  it("matches shipped OpenAI aliases to their canonical catalog model", async () => {
     const observedRoute = {
       api: "openai-responses",
       baseUrl: "https://api.openai.com/v1",
@@ -239,14 +244,14 @@ describe("warnIfModelConfigLooksOff", () => {
     const catalogFacts = resolveDefaultModelCatalogFacts(config, catalog);
     expect(catalogFacts.observedRoutes).toEqual([observedRoute]);
     expect(
-      resolveDefaultModelAuthStatus(config, {
+      await resolveDefaultModelAuthStatus(config, {
         env: { OPENAI_API_KEY: "api-key" },
         observedRoutes: catalogFacts.observedRoutes,
       }),
     ).toMatchObject({ status: "ready", hasAuth: true });
   });
 
-  it("uses every physical route when the first route lacks compatible auth", () => {
+  it("uses every physical route when the first route lacks compatible auth", async () => {
     const platformRoute = {
       api: "openai-responses",
       baseUrl: "https://api.openai.com/v1",
@@ -284,7 +289,7 @@ describe("warnIfModelConfigLooksOff", () => {
     const catalogFacts = resolveDefaultModelCatalogFacts(config, [platform], { routeVariants });
     expect(catalogFacts.observedRoutes).toEqual([platformRoute, chatGPTRoute]);
     expect(
-      resolveDefaultModelAuthStatus(config, { observedRoutes: catalogFacts.observedRoutes }),
+      await resolveDefaultModelAuthStatus(config, { observedRoutes: catalogFacts.observedRoutes }),
     ).toMatchObject({ status: "ready", hasAuth: true });
   });
 
@@ -295,7 +300,7 @@ describe("warnIfModelConfigLooksOff", () => {
       agents: { defaults: { model: "openai/gpt-5.4-nano" } },
     } as OpenClawConfig;
 
-    expect(resolveDefaultModelAuthStatus(config)).toMatchObject({
+    expect(await resolveDefaultModelAuthStatus(config)).toMatchObject({
       status: "indeterminate",
       hasAuth: false,
     });
