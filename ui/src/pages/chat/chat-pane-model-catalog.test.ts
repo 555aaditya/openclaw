@@ -77,7 +77,7 @@ describe("chat pane composer controls", () => {
           agents: [{ id: "main" }],
         },
       });
-      store.current().request.mockImplementation(request);
+      store.current().request.mockImplementation(async (method, params) => request(method, params));
       const hello = {
         ...gatewayHelloForMethods(["chat.metadata", "chat.startup", "models.list"]),
         snapshot: {

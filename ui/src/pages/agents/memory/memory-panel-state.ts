@@ -79,23 +79,33 @@ export function createAgentMemory(context: ApplicationContext) {
   }
   const gateway = new GatewayPageBinding(notify, {
     getGateway: () => context.gateway,
-    invalidateRequests: () => {
+    invalidateRequests: ({ identityChanged }) => {
       dreaming.resourceRequests = {};
       dreaming.dreamingStatusLoading = false;
       dreaming.dreamDiaryLoading = false;
       dreaming.wikiImportInsightsLoading = false;
       dreaming.wikiOverviewLoading = false;
+      if (
+        !identityChanged &&
+        dreaming.dreamDiaryActionLoading &&
+        !dreaming.dreamDiaryActionMessage
+      ) {
+        dreaming.dreamDiaryActionMessage = {
+          kind: "error",
+          text: t("dreaming.actions.actionInterrupted"),
+        };
+      }
       dreaming.dreamDiaryActionLoading = false;
       dreaming.dreamingModeSaving = false;
       toggleConfirmLoading = false;
-      if (wikiPreview) {
-        wikiPreview.loading = false;
-      }
     },
     onSnapshot: applyGatewaySnapshot,
     ensureInitialData: ({ snapshot }) => {
       if (selectedAgentId && hasOperatorReadAccess(snapshot.hello?.auth ?? null)) {
         void loadResources();
+        if (wikiPreview?.loading) {
+          void loadWikiPreview(wikiPreview);
+        }
       }
     },
   });
@@ -450,10 +460,10 @@ export function createAgentMemory(context: ApplicationContext) {
     };
   }
 
-  async function openWikiPreview(lookup: string) {
+  function openWikiPreview(lookup: string): Promise<void> {
     const scope = captureTaskScope();
     if (!scope || !scope.state.connected) {
-      return;
+      return Promise.resolve();
     }
     const request: WikiPreviewState = {
       page: { title: pathDisplayName(lookup), path: lookup, content: "" },
@@ -462,6 +472,15 @@ export function createAgentMemory(context: ApplicationContext) {
     };
     wikiPreview = request;
     notify();
+    return loadWikiPreview(request);
+  }
+
+  async function loadWikiPreview(request: WikiPreviewState) {
+    const scope = captureTaskScope();
+    if (!scope) {
+      return;
+    }
+    const lookup = request.page.path;
     try {
       const page = await openWikiPage(lookup);
       if (wikiPreview !== request || !isTaskScopeCurrent(scope)) {

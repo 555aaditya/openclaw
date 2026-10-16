@@ -160,6 +160,26 @@ afterEach(() => {
 });
 
 describe("MemoryImportPage", () => {
+  it("shows the disconnected explanation on a cold offline load and opens the workspace on reconnect", async () => {
+    const request = vi.fn(async () => createPlan());
+    const context = createContext(request);
+    context.gateway.snapshot.phase = "stopped";
+    const page = await mountPage(context);
+
+    expect(page.textContent).toContain("Connect to the gateway to import memory.");
+    expect(page.querySelector(".memory-import")).toBeNull();
+    expect(page.textContent).not.toContain("Memory import requires operator.admin access.");
+    expect(request).not.toHaveBeenCalled();
+
+    context.gateway.snapshot.phase = "connected";
+    context.notify();
+    await waitForMemoryImport(() =>
+      expect(page.querySelector("[data-test-id='memory-import-provider-button']")).not.toBeNull(),
+    );
+    expect(page.textContent).not.toContain("Connect to the gateway to import memory.");
+    expect(page.textContent).toContain("/tmp/openclaw-research");
+  });
+
   it("retains a loaded plan after roster refresh failure and retries the roster on Refresh", async () => {
     const roster = createDeferredCore<unknown>();
     const request = vi.fn((method: string) =>

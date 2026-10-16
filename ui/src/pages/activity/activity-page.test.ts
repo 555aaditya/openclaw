@@ -6,13 +6,9 @@ import { createComponent, createEffect, createSignal } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AuditRunInspectResult } from "../../../../packages/gateway-protocol/src/schema/audit-run.js";
 import { createDeferred } from "../../../../test/helpers/promise.js";
-import {
-  GatewayRequestError,
-  type GatewayBrowserClient,
-  type GatewayHelloOk,
-} from "../../api/gateway.ts";
+import { GatewayRequestError, type GatewayBrowserClient } from "../../api/gateway.ts";
 import type { GatewaySessionRow, SessionsListResult } from "../../api/types.ts";
-import type { ApplicationContext, ApplicationGatewaySnapshot } from "../../app/context.ts";
+import type { ApplicationContext } from "../../app/context.ts";
 import {
   createGatewayEvent,
   createGatewayStoreTestStore,
@@ -27,6 +23,7 @@ import { cleanupSolid, mountSolid } from "../../test-helpers/mount-solid.ts";
 import { flush, waitForSolid } from "../../test-helpers/solid-settle.ts";
 import { createActivityPageState } from "./activity-page-state.ts";
 import { ActivityPageView } from "./activity-page-view.tsx";
+import { activityHello, createActivityGatewayStub } from "./activity-page.test-support.ts";
 
 type TestActivityPage = ReturnType<typeof createActivityPage>;
 
@@ -50,7 +47,7 @@ function createActivityPage(context: ApplicationContext, initial?: RouteLocation
 }
 
 function inspectorGateway(client: GatewayBrowserClient) {
-  const source = gateway();
+  const source = createActivityGatewayStub();
   Object.assign(source.snapshot, {
     client,
     phase: "connected",
@@ -76,32 +73,6 @@ function expandFirst(page: TestActivityPage) {
   row.dispatchEvent(new Event("toggle"));
   flush();
   return row;
-}
-
-function mountActivityPage(page: TestActivityPage) {
-  return page.container;
-}
-
-function gateway(): ApplicationContext["gateway"] {
-  const snapshot: ApplicationGatewaySnapshot = {
-    client: null,
-    phase: "stopped",
-    offlineStable: false,
-    canvasPluginSurfaceUrl: null,
-    hello: null,
-    assistantAgentId: null,
-    sessionKey: "main",
-    lastError: null,
-    lastErrorCode: null,
-  };
-  return {
-    snapshot,
-    eventLog: [],
-    eventLogRevision: 0,
-    subscribe: vi.fn(() => () => undefined),
-    subscribeEventLog: vi.fn(() => () => undefined),
-    subscribeEvents: vi.fn(() => () => undefined),
-  } as unknown as ApplicationContext["gateway"];
 }
 
 const activeGateways = new Set<ApplicationContext["gateway"]>();
@@ -193,14 +164,6 @@ function activityContext(source: ApplicationContext["gateway"]): ApplicationCont
     get chatAttachmentHandoff(): never {
       throw new Error("Activity fixture does not provide chatAttachmentHandoff");
     },
-  };
-}
-
-function activityHello(recoveryScope = "activity-owner-a"): GatewayHelloOk {
-  return {
-    type: "hello-ok",
-    protocol: 1,
-    auth: { role: "operator", scopes: ["operator.read"], recoveryScope },
   };
 }
 
@@ -307,7 +270,7 @@ afterEach(async () => {
 
 describe("ActivityPage gateway lifecycle", () => {
   it.each(["sessions", "run"] as const)("skips Live Activity rendering in %s mode", (mode) => {
-    const page = createActivityPage(activityContext(gateway()), {
+    const page = createActivityPage(activityContext(createActivityGatewayStub()), {
       pathname: "/activity",
       search: mode === "run" ? "?view=run" : "",
       hash: "",
@@ -418,16 +381,32 @@ describe("ActivityPage gateway lifecycle", () => {
     expect(rows()).toHaveLength(2);
     expect(filter.value).toBe("my draft filter");
 
-    const refreshed = createDeferred<SessionsListResult>();
+    const failed = createDeferred<SessionsListResult>();
     current().request.mockImplementation(async (method, params) =>
-      method === "sessions.list" ? refreshed.promise : activityResponse(method, params),
+      method === "sessions.list" ? failed.promise : activityResponse(method, params),
     );
     current().opts.onHello?.(activityHello());
     flush();
     expect(rows()).toHaveLength(2);
     expect(filter.value).toBe("my draft filter");
+    failed.reject(new Error("Current Work refresh unavailable"));
+    const retry = () =>
+      page.container.querySelector<HTMLButtonElement>(".activity-current-work__feedback button");
+    await waitForSolid(() => expect(retry()?.textContent?.trim()).toBe("Retry"));
+    expect(page.container.querySelector(".activity-current-work__feedback")?.textContent).toContain(
+      "Could not load active sessions",
+    );
+    expect(rows()).toHaveLength(2);
+    const refreshed = createDeferred<SessionsListResult>();
+    current().request.mockImplementation(async (method, params) =>
+      method === "sessions.list" ? refreshed.promise : activityResponse(method, params),
+    );
+    retry()!.click();
+    flush();
+    expect(rows()).toHaveLength(2);
     refreshed.resolve(activityRoster([]));
     await waitForSolid(() => expect(rows()).toHaveLength(0));
+    expect(retry()).toBeNull();
     expect(filter.value).toBe("my draft filter");
   });
 
@@ -538,9 +517,22 @@ describe("ActivityPage gateway lifecycle", () => {
       decisionDisplays: [{ ...second.decisionDisplays[0]!, selectorId: "stale-receipt" }],
     });
 
+    const failedRefresh = createDeferred<AuditRunInspectResult>();
+    inspection = failedRefresh.promise;
+    current().opts.onHello?.(hello());
+    flush();
+    expect(receipts()).toHaveLength(2);
+    failedRefresh.reject(new Error("Run inspection refresh unavailable"));
+    const retry = () =>
+      page.container.querySelector<HTMLButtonElement>(".run-inspector__panel button");
+    await waitForSolid(() => expect(retry()?.textContent?.trim()).toBe("Retry inspection"));
+    expect(page.container.querySelector('[role="alert"]')?.textContent).toContain(
+      "Run inspection failed",
+    );
+    expect(receipts()).toHaveLength(2);
     const refresh = createDeferred<AuditRunInspectResult>();
     inspection = refresh.promise;
-    current().opts.onHello?.(hello());
+    retry()!.click();
     flush();
     expect(receipts()).toHaveLength(2);
     refresh.resolve({
@@ -556,6 +548,7 @@ describe("ActivityPage gateway lifecycle", () => {
     await waitForSolid(() =>
       expect(page.container.textContent).toContain("Fresh first-page evidence"),
     );
+    expect(retry()).toBeNull();
     expect(receipts()).toHaveLength(2);
     inspection = Promise.resolve(second);
     loadMore().click();
@@ -582,7 +575,8 @@ describe("ActivityPage gateway lifecycle", () => {
       features: { methods: ["audit.run.inspect"], events: [] },
     };
     current().opts.onHello?.(hello);
-    const first = { ...presentResult("growing-run"), nextDecisionCursor: null };
+    const first = presentResult("growing-run");
+    delete first.nextDecisionCursor;
     let inspection: AuditRunInspectResult = first;
     current().request.mockImplementation(async (method, params) =>
       method === "audit.run.inspect" ? inspection : activityResponse(method, params),
@@ -886,7 +880,7 @@ describe("ActivityPage gateway lifecycle", () => {
       search: "?view=live",
       hash: "",
     });
-    const container = mountActivityPage(page);
+    const container = page.container;
     await syncActivityRoster(page);
     flush();
     const sessions = activityContext(source).sessions;
@@ -926,7 +920,7 @@ describe("ActivityPage gateway lifecycle", () => {
     current().opts.onEvent?.(toolEvent("other", "agent:other:work"));
     expect(previews(page)).toEqual(["original output", "other output"]);
 
-    const container = mountActivityPage(page);
+    const container = page.container;
     const clear = container.querySelector<HTMLButtonElement>(".activity-page button.danger");
     expect(clear?.textContent?.trim()).toBe("Clear");
     clear?.click();

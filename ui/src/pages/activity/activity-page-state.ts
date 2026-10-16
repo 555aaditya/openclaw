@@ -264,7 +264,7 @@ export function createActivityPageState(context: ApplicationContext) {
     const pageStatus = pageKind === "decisions" ? "decisionPageStatus" : "executionPageStatus";
     runInspector = previousState
       ? pageKind === "refresh"
-        ? previousState
+        ? { ...previousState, refreshError: undefined }
         : { ...previousState, [pageStatus]: "loading" }
       : { status: "loading", waitingForGateway: false };
     publish();
@@ -350,7 +350,11 @@ export function createActivityPageState(context: ApplicationContext) {
           ? { status: "unsupported" }
           : previousState
             ? pageKind === "refresh"
-              ? previousState
+              ? {
+                  ...previousState,
+                  refreshError:
+                    decisionCursor && isExpiredDecisionCursorError(error) ? "restart" : "retry",
+                }
               : { ...previousState, [pageStatus]: "error" }
             : {
                 status: "error",

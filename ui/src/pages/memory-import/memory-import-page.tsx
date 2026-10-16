@@ -84,6 +84,7 @@ export function MemoryImportPage() {
   let planAbort: AbortController | undefined;
   let planLoading = false;
   let planError: string | null = null;
+  let workspaceAuthorized = false;
   let lastPlanValue: {
     client: MemoryImportClient;
     agentId: string;
@@ -181,6 +182,7 @@ export function MemoryImportPage() {
       }
       if (identityChanged || accessLost) {
         lastPlanValue = null;
+        workspaceAuthorized = false;
       }
       if (previous[1] !== connected) {
         applyEpoch += 1;
@@ -188,6 +190,9 @@ export function MemoryImportPage() {
         state.applyingProviderId = null;
         state.backfillBusy = null;
       }
+    }
+    if (connected) {
+      workspaceAuthorized = allowed;
     }
     presentationScopeKey = scopeKey;
     void loadPlan();
@@ -239,9 +244,17 @@ export function MemoryImportPage() {
     return planError;
   }
 
+  function workspaceAccessible(): boolean {
+    revision();
+    gateway.read();
+    return canAdmin();
+  }
+
   function canAdmin(): boolean {
     const snapshot = context.gateway.snapshot;
-    return snapshot.phase !== "connected" || hasOperatorAdminAccess(snapshot.hello?.auth ?? null);
+    return snapshot.phase === "connected"
+      ? hasOperatorAdminAccess(snapshot.hello?.auth ?? null)
+      : workspaceAuthorized;
   }
 
   function resetMutationState(options: { preserveAttemptedImport?: boolean } = {}) {
@@ -526,7 +539,7 @@ export function MemoryImportPage() {
       <SettingsWorkspace>
         <MemoryImport
           connected={gateway.read().snapshot.phase === "connected"}
-          canAdmin={gateway.read().snapshot.phase !== "connected" || canAdmin()}
+          canAdmin={workspaceAccessible()}
           agents={listSelectableAgents(agents.read().agentsList?.agents ?? [])}
           selectedAgentId={currentAgentId()}
           plan={plan()}

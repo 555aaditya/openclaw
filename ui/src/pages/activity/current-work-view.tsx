@@ -87,12 +87,12 @@ function CurrentSession(props: { owner: CurrentWorkProps; row: GatewaySessionRow
 export function renderCurrentWork(props: CurrentWorkProps) {
   const rows = createMemo(() => props.result?.sessions ?? []);
   const message = createMemo(() =>
-    rows().length > 0
-      ? null
-      : !props.connected
-        ? t("activity.currentWork.disconnected")
-        : props.error
-          ? t("activity.currentWork.loadFailed")
+    props.error
+      ? t("activity.currentWork.loadFailed")
+      : rows().length > 0
+        ? null
+        : !props.connected
+          ? t("activity.currentWork.disconnected")
           : !props.result || props.incomplete
             ? t("activity.currentWork.loading")
             : t("activity.currentWork.empty"),
@@ -115,18 +115,17 @@ export function renderCurrentWork(props: CurrentWorkProps) {
                 type="button"
                 class="btn btn--sm"
                 disabled={!props.connected || props.loading}
-                onClick={props.onRetry}
+                onClick={() => props.onRetry()}
               >
                 {t("common.retry")}
               </button>
             ) : undefined}
           </div>
-        ) : (
-          <For each={rows()} keyed={currentWorkIdentity}>
-            {(row) => <CurrentSession owner={props} row={row()} />}
-          </For>
-        )}
-        {props.result?.hasMore && !message() ? (
+        ) : undefined}
+        <For each={rows()} keyed={currentWorkIdentity}>
+          {(row) => <CurrentSession owner={props} row={row()} />}
+        </For>
+        {props.result?.hasMore && rows().length > 0 ? (
           <div class="activity-current-work__feedback">
             {t("activity.currentWork.limit", {
               count: String(rows().length),

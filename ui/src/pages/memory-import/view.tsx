@@ -623,7 +623,11 @@ export function MemoryImport(props: MemoryImportViewProps) {
       when={props.canAdmin}
       fallback={
         <SettingsPage>
-          <SettingsEmpty message={t("memoryImport.adminRequired")} />
+          <SettingsEmpty
+            message={t(
+              props.connected ? "memoryImport.adminRequired" : "memoryImport.disconnected",
+            )}
+          />
         </SettingsPage>
       }
     >

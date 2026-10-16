@@ -266,10 +266,68 @@ describe("AgentMemoryPanel gateway lifecycle", () => {
     expect(page.state.view().dreaming.dreamDiaryContent).toBeNull();
   });
 
+  it.each([false, true])(
+    "preserves the outcome of an interrupted memory action (confirmed: %s)",
+    async (confirmed) => {
+      const action = deferred<unknown>();
+      const refresh = deferred<unknown>();
+      let statusReads = 0;
+      const method = "doctor.memory.repairDreamingArtifacts";
+      const request = vi.fn((name: string) => {
+        if (name === method) {
+          return action.promise;
+        }
+        if (name === "doctor.memory.status" && ++statusReads === 2) {
+          return refresh.promise;
+        }
+        return Promise.resolve(emptyReply(name));
+      });
+      const context = contextWithGateway(createTestGatewayClient(request), true);
+      const hello = gatewayHelloForMethods([method], ["operator.read", "operator.write"]);
+      context.emit({ hello });
+      const page = await createPage(context);
+      click(page.container, "#dreams-tab-advanced");
+      vi.mocked(showConfirmDialog).mockResolvedValueOnce(true);
+      page.state.view().dreaming.onRepairDreamingArtifacts();
+      await waitForSolid(() => expect(request).toHaveBeenCalledWith(method, { agentId: "main" }));
+      const result = { archivedDreamsDiary: true, archiveDir: "/tmp/dreaming-repair" };
+      if (confirmed) {
+        action.resolve(result);
+        await waitForSolid(() => expect(statusReads).toBe(2));
+      }
+
+      context.emit({ phase: "reconnecting", hello: null });
+      flush();
+      const message = confirmed
+        ? "Dream cache repair complete"
+        : "Connection lost before the memory action was confirmed. It may have completed.";
+      expect(page.container.querySelector("[role='status']")?.textContent).toContain(message);
+      expect(page.state.view().dreaming.dreamDiaryActionLoading).toBe(false);
+      expect(page.state.view().dreaming.access.canRepairDreamingArtifacts).toBe(false);
+
+      context.emit({ phase: "connected", hello });
+      action.resolve(result);
+      refresh.resolve(emptyReply("doctor.memory.status"));
+      await waitForSolid(() => expect(statusReads).toBe(confirmed ? 3 : 2));
+      await waitForSolid(() => expect(page.state.view().header.refreshLoading).toBe(false));
+      expect(page.container.querySelector("[role='status']")?.textContent).toContain(message);
+      expect(request.mock.calls.filter(([name]) => name === method)).toHaveLength(1);
+      expect(page.state.view().dreaming.dreamDiaryActionArchivePath).toBe(
+        confirmed ? "/tmp/dreaming-repair" : null,
+      );
+
+      context.emit({ client: createTestGatewayClient(vi.fn(async (name) => emptyReply(name))) });
+      flush();
+      expect(page.state.view().dreaming.dreamDiaryActionMessage).toBeNull();
+      expect(page.state.view().dreaming.dreamDiaryActionArchivePath).toBeNull();
+    },
+  );
+
   it("retains diary, preview and toggle drafts through reconnect while rejecting old reads", async () => {
     const stale = deferred<unknown>();
     let refresh = false;
     const fresh = deferred<unknown>();
+    const freshPreview = deferred<unknown>();
     const request = vi.fn((method: string) => {
       if (method === "doctor.memory.dreamDiary") {
         return refresh
@@ -277,7 +335,7 @@ describe("AgentMemoryPanel gateway lifecycle", () => {
           : Promise.resolve({ found: true, path: "DREAMS.md", content: "Retained diary" });
       }
       if (method === "wiki.get") {
-        return stale.promise;
+        return refresh ? freshPreview.promise : stale.promise;
       }
       return Promise.resolve(emptyReply(method));
     });
@@ -291,10 +349,13 @@ describe("AgentMemoryPanel gateway lifecycle", () => {
     const preview = page.state.view().dreaming.onOpenWikiPage("retained.md");
     page.state.setEnabled(false);
     flush();
+    const previewDialog = page.container.querySelector(".dreams-diary__preview-panel");
+    expect(previewDialog).not.toBeNull();
     context.emit({ phase: "reconnecting", hello: null });
     flush();
     expect(page.state.view().dreaming.dreamDiaryContent).toBe("Retained diary");
     expect(page.state.view().dreaming.wikiPreview?.page.path).toBe("retained.md");
+    expect(page.state.view().dreaming.wikiPreview?.loading).toBe(true);
     expect(page.state.view().toggle).toMatchObject({ open: true, disabled: true });
     expect(
       page.container.querySelector<HTMLButtonElement>(".exec-approval-actions button")?.disabled,
@@ -307,10 +368,19 @@ describe("AgentMemoryPanel gateway lifecycle", () => {
       ).toHaveLength(2),
     );
     expect(page.state.view().dreaming.dreamDiaryContent).toBe("Retained diary");
+    expect(request.mock.calls.filter(([method]) => method === "wiki.get")).toHaveLength(2);
     stale.resolve({ title: "Old", path: "retained.md", content: "Stale preview" });
     await preview;
     expect(page.state.view().dreaming.wikiPreview?.page.content).toBe("");
+    expect(page.state.view().dreaming.wikiPreview?.loading).toBe(true);
     expect(page.state.view().toggle.open).toBe(true);
+    freshPreview.resolve({ title: "Fresh", path: "retained.md", content: "Fresh preview" });
+    await waitForSolid(() =>
+      expect(page.container.querySelector(".dreams-diary__preview-pre")?.textContent).toBe(
+        "Fresh preview",
+      ),
+    );
+    expect(page.container.querySelector(".dreams-diary__preview-panel")).toBe(previewDialog);
     fresh.resolve({ found: true, path: "DREAMS.md", content: "Fresh diary" });
     await waitForSolid(() =>
       expect(page.state.view().dreaming.dreamDiaryContent).toBe("Fresh diary"),

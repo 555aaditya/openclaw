@@ -453,6 +453,15 @@ export async function runDreamDiaryAction(
     if (!isCurrent()) {
       return false;
     }
+    // Keep the confirmed receipt if a follow-up read is interrupted.
+    state.dreamDiaryActionArchivePath =
+      method === "doctor.memory.repairDreamingArtifacts"
+        ? (normalizeTrimmedString(payload?.archiveDir) ?? null)
+        : null;
+    state.dreamDiaryActionMessage = {
+      kind: "success",
+      text: buildDreamDiaryActionSuccessMessage(method, payload),
+    };
     if (
       method !== "doctor.memory.resetGroundedShortTerm" &&
       method !== "doctor.memory.repairDreamingArtifacts"
@@ -466,14 +475,6 @@ export async function runDreamDiaryAction(
     if (!isCurrent()) {
       return false;
     }
-    state.dreamDiaryActionArchivePath =
-      method === "doctor.memory.repairDreamingArtifacts"
-        ? (normalizeTrimmedString(payload?.archiveDir) ?? null)
-        : null;
-    state.dreamDiaryActionMessage = {
-      kind: "success",
-      text: buildDreamDiaryActionSuccessMessage(method, payload),
-    };
     return true;
   } catch (err) {
     if (!isCurrent()) {

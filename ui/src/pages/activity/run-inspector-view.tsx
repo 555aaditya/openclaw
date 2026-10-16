@@ -309,6 +309,9 @@ function renderReady(
   const currentCoverageLabel = runInspectorCoverageLabel(result.coverage.state);
   return (
     <>
+      {state.refreshError
+        ? renderPanel(props, { status: "error", recovery: state.refreshError })
+        : undefined}
       <div
         class={["run-inspector__coverage", `run-inspector__coverage--${result.coverage.state}`]}
         role="status"
@@ -375,7 +378,12 @@ function renderPanel(
       <h3>{t(`activity.runInspector.panels.${key}.title`)}</h3>
       <p>{t(`activity.runInspector.panels.${key}.description`)}</p>
       {action ? (
-        <button type="button" class="btn" onClick={action.onClick}>
+        <button
+          type="button"
+          class="btn"
+          disabled={props.connected === false}
+          onClick={action.onClick}
+        >
           {action.label}
         </button>
       ) : undefined}
