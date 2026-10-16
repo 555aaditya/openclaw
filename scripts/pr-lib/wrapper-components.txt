@@ -83,6 +83,7 @@ packages/model-catalog-core/src/model-catalog-pricing.ts
 packages/model-catalog-core/src/model-catalog-reasoning.ts
 packages/model-catalog-core/src/model-catalog-refs.ts
 packages/model-catalog-core/src/model-catalog-types.ts
+packages/model-catalog-core/src/model-inference-capabilities.ts
 packages/model-catalog-core/src/provider-id.ts
 packages/model-catalog-core/src/provider-model-id-normalization.ts
 packages/model-catalog-core/src/provider-model-id-normalize.ts
