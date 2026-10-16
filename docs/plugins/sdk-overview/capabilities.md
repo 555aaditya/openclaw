@@ -259,12 +259,13 @@ their feature's activation, evidence selection, and permission to send that
 evidence. Having credentials alone must not activate background collection or
 spending.
 
-The host applies the registered consumer plugin's policy from
-`plugins.entries.<consumer-id>.llm`. An explicit `agentId`
-requires `allowAgentIdOverride: true`; omitting it selects the global decision
-role, even inside an agent operation. `allowedCompletionModels` restricts the
-configured selected model before provider dispatch. An empty or invalid-only
-list denies all models; `["*"]` permits any model at this policy layer.
+The host applies the registered consumer plugin's `allowedCompletionModels`
+policy from `plugins.entries.<consumer-id>.llm` before provider dispatch. An empty
+or invalid-only list denies all models; `["*"]` permits any model at this policy
+layer. Pass the operation's owning `agentId` as before; omitting it selects the
+global decision role, even inside an agent operation. Unlike the agent-bound LLM
+runtime, Decision calls select their owner explicitly and do not require
+`allowAgentIdOverride`.
 
 A configured decision role is not a caller model override, so `allowModelOverride`
 and the override-only `allowedModels` do not gate it. The agent's conversational
@@ -293,7 +294,7 @@ const outcome = await api.runtime.decisions.evaluate(
     },
   },
   {
-    agentId, // Requires allowAgentIdOverride; omit for global-default selection.
+    agentId, // The agent that owns this operation; omit only for global-default selection.
     purpose: "example-plugin.response-eligibility",
     rubricVersion: "1",
     timeoutMs: 1500,
