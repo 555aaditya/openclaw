@@ -1,6 +1,6 @@
 import type { DecisionBatch, DecisionProviderContextV2 } from "openclaw/plugin-sdk/decisions";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import manifest from "../openclaw.plugin.json";
+import manifest from "../openclaw.plugin.json" with { type: "json" };
 import { evaluate } from "./client.js";
 import type { RuntimeConfig } from "./config.js";
 import { createDecisionProvider, createPreparedDecisionProvider } from "./decisions.js";
@@ -81,12 +81,15 @@ it("preserves canonical per-model capability and billing facts while enriching V
   );
 });
 
+type ProviderConfig = NonNullable<RuntimeConfig["providerConfig"]>;
 type Inference = NonNullable<DecisionProviderContextV2["model"]["inference"]>;
 const pinned = manifest.modelCatalog.providers.typesafe.models.find(
   (model) => model.id === "jev-1.13.0",
 )!;
 const pinnedRow = {
-  ...pinned,
+  id: pinned.id,
+  name: pinned.name,
+  baseUrl: pinned.baseUrl,
   provider: "typesafe",
   inference: {
     chat: false,
@@ -107,9 +110,7 @@ async function preparedFacts(runtime: RuntimeConfig) {
   const rows = await provider.provider?.augmentModelCatalog?.({ env: {}, entries: [pinnedRow] });
   return { facts: rows?.[0]?.inference?.decision, provider };
 }
-function configuredModel(
-  overrides: Partial<NonNullable<RuntimeConfig["providerConfig"]>["models"][number]> = {},
-) {
+function configuredModel(overrides: Partial<ProviderConfig["models"][number]> = {}) {
   return {
     id: pinned.id,
     name: pinned.name,
@@ -121,9 +122,7 @@ function configuredModel(
     ...overrides,
   };
 }
-function configuredRuntime(
-  overrides: Partial<NonNullable<RuntimeConfig["providerConfig"]>> = {},
-): RuntimeConfig {
+function configuredRuntime(overrides: Partial<ProviderConfig> = {}): RuntimeConfig {
   return {
     ...config,
     providerConfig: { baseUrl: "https://api.typesafe.ai/v1", models: [], ...overrides },
@@ -155,7 +154,7 @@ it.each([
   expect(pinnedRow.inference.decision.billing).toBeDefined();
 });
 
-it.each([
+it.each<Partial<ProviderConfig>>([
   { headers: { "TypeSafe-Danger-Zone-Long-Context": "true" } },
   {
     headers: { "typesafe-danger-zone-long-context": "false" },
@@ -184,25 +183,27 @@ it("uses final request header precedence instead of the provider long-context se
   expect(facts).toEqual(pinnedRow.inference.decision);
 });
 
-it("retains explicit operator facts on a custom route", async () => {
+it("preserves canonical catalog billing without carrying hosted token limits to a custom route", async () => {
   const inference: Inference = {
     ...pinnedRow.inference,
     decision: {
       ...pinnedRow.inference.decision,
-      billing: { unit: "requests", source: "configured" },
-      limits: { maxRequestTokens: 1000, maxStateAndQuestionTokens: 500 },
+      billing: { unit: "requests", source: "provider-catalog" },
+      limits: { ...pinnedRow.inference.decision.limits, maxQuestions: 12 },
     },
   };
   const runtime = configuredRuntime({
     baseUrl: "https://systemone.fixture.invalid/v1",
-    models: [configuredModel({ inference })],
   });
   const provider = createPreparedDecisionProvider(() => runtime);
   const rows = await provider.provider?.augmentModelCatalog?.({
     env: {},
     entries: [{ ...pinnedRow, inference }],
   });
-  expect(rows?.[0]?.inference).toEqual(inference);
+  expect(rows?.[0]?.inference).toEqual({
+    ...inference,
+    decision: { ...inference.decision, limits: { maxQuestions: 12 } },
+  });
 });
 
 it("keeps unresolved unrelated secrets out of catalog fact binding", async () => {

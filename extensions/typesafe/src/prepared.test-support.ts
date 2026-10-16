@@ -1,5 +1,5 @@
 import {
-  decisionBatchV1ToV2,
+  type DecisionBatchV2,
   decisionResultV2ToV1,
   type DecisionProviderV1,
   type DecisionProviderV2,
@@ -20,10 +20,14 @@ export function legacyWireFixture(
     contractVersion: 1,
     isReady: () => hasCredentials(getConfig()),
     async evaluate(batch, context) {
-      const v2 = decisionBatchV1ToV2(batch);
-      if (!v2) {
-        return { status: "unavailable", reason: "unsupported-input" };
-      }
+      // Preserve hostile fixture values so the registered provider owns rejection.
+      const v2: DecisionBatchV2 = {
+        state:
+          typeof batch.state === "string"
+            ? { type: "text", text: batch.state }
+            : { type: "json", value: batch.state },
+        questions: batch.questions,
+      };
       const config = getConfig();
       const outcome = await provider.evaluate(v2, {
         model: {

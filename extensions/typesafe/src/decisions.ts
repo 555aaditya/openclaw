@@ -9,7 +9,7 @@ import type {
 import { createLazyRuntimeModule } from "openclaw/plugin-sdk/lazy-runtime";
 import { resolveProviderRequestHeaders } from "openclaw/plugin-sdk/provider-http";
 import { resolveSecretInputString } from "openclaw/plugin-sdk/secret-input";
-import manifest from "../openclaw.plugin.json";
+import manifest from "../openclaw.plugin.json" with { type: "json" };
 import { hasCredentials, providerBaseUrl, type RuntimeConfig } from "./config.js";
 import { decisionFailure } from "./errors.js";
 
@@ -87,28 +87,19 @@ function bindHostedFacts(inference: Inference, id: string, config: RuntimeConfig
   if (hosted && contextHeader !== "true" && contextHeader !== "unavailable") {
     return inference;
   }
+  // These token limits describe hosted execution; configured models expose no native overrides.
   const { billing, limits, ...decision } = inference.decision;
   const {
     maxRequestTokens: _maxRequestTokens,
     maxStateAndQuestionTokens: _maxStateAndQuestionTokens,
     ...otherLimits
   } = limits ?? {};
-  const explicitLimits = configuredModel?.inference?.decision?.limits;
-  const boundLimits = {
-    ...otherLimits,
-    ...(explicitLimits?.maxRequestTokens !== undefined
-      ? { maxRequestTokens: explicitLimits.maxRequestTokens }
-      : {}),
-    ...(explicitLimits?.maxStateAndQuestionTokens !== undefined
-      ? { maxStateAndQuestionTokens: explicitLimits.maxStateAndQuestionTokens }
-      : {}),
-  };
   return {
     ...inference,
     decision: {
       ...decision,
       ...(billing && (hosted || billing.source !== "provider-docs") ? { billing } : {}),
-      ...(Object.keys(boundLimits).length ? { limits: boundLimits } : {}),
+      ...(Object.keys(otherLimits).length ? { limits: otherLimits } : {}),
     },
   };
 }
@@ -253,17 +244,18 @@ export function createPreparedDecisionProvider(getConfig: () => RuntimeConfig): 
       augmentModelCatalog: ({ entries }) =>
         entries
           .filter((entry) => entry.provider === "typesafe")
-          .map((entry) => ({
-            ...entry,
-            // Canonical declarations own route-bound facts; only V1 inputs need protocol enrichment.
-            inference: bindHostedFacts(
-              entry.inference?.decision && entry.inference.decision.protocol !== "decision-v1"
-                ? entry.inference
-                : inference,
-              entry.id,
-              getConfig(),
-            ),
-          })),
+          .map((entry) =>
+            Object.assign({}, entry, {
+              // Canonical declarations own route-bound facts; only V1 inputs need protocol enrichment.
+              inference: bindHostedFacts(
+                entry.inference?.decision && entry.inference.decision.protocol !== "decision-v1"
+                  ? entry.inference
+                  : inference,
+                entry.id,
+                getConfig(),
+              ),
+            }),
+          ),
     },
     async evaluate(batch, context) {
       const v1 = decisionBatchV2ToV1(batch);

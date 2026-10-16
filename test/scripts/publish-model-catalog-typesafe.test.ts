@@ -106,7 +106,7 @@ it("publishes pinned TypeSafe billing without borrowing prices for aliases or lo
   expect(second.providers).not.toHaveProperty("typesafe");
   expect(second.models).toHaveLength(200);
   const models = third.models.filter((model) => model.provider === "typesafe");
-  expect(models.map((model) => model.id).sort()).toEqual([...ids].sort());
+  expect(models.map((model) => model.id).toSorted()).toEqual(ids.toSorted());
   const pinned = models.find((model) => model.id === "jev-1.13.0");
   expect(pinned).toMatchObject({
     inference: {

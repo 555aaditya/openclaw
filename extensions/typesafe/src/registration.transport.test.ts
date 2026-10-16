@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import type { DecisionBatch } from "openclaw/plugin-sdk/decisions";
+import { DecisionContractError, type DecisionBatch } from "openclaw/plugin-sdk/decisions";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk/plugin-entry";
 import { resolveProviderHttpRequestConfigWithOriginTrust } from "openclaw/plugin-sdk/provider-http";
 import { getPreparedPluginSecretInput } from "openclaw/plugin-sdk/secret-input-runtime";
@@ -428,7 +428,7 @@ it.each(["inherited array serializer", "hidden serializer", "getter", "hidden ar
         },
         context(),
       ),
-    ).resolves.toEqual({ status: "unavailable", reason: "unsupported-input" });
+    ).rejects.toThrow(DecisionContractError);
     expect(hook).not.toHaveBeenCalled();
     expect(fetch).not.toHaveBeenCalled();
   },
