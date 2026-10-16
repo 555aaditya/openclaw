@@ -9,6 +9,7 @@ import {
 import { isOpenClawAgentDatabaseRegistryChange } from "../state/openclaw-agent-db-registry-listing.js";
 import * as profiles from "../state/user-profile-list.js";
 import { ensureSessionGroupCatalog } from "./session-group-catalog.js";
+import { disposeCompactSessionListIndex } from "./session-list-compact-worker.js";
 import { createSessionMembershipProjection } from "./session-membership-projection.js";
 import { createSessionProjectionDrain, yieldSessionListWork } from "./session-projection-work.js";
 import * as rowMembership from "./session-row-membership-read.js";
@@ -701,6 +702,7 @@ export async function createSessionRowProjection(params: records.ProjectionOptio
       records.snapshot(describe(query), metadata.current, options),
     dispose,
   };
+  stop.push(() => disposeCompactSessionListIndex(projection));
   return projection;
 }
 

@@ -20,6 +20,7 @@ import {
 import { authenticatedProfileUnavailableError } from "./server-methods/gateway-client-identity.js";
 import type { GatewayClient, SessionMutationAuthorization } from "./server-methods/types.js";
 import { isSessionCreatorProfile, prepareSessionCreatorProfile } from "./session-creator.js";
+import type { CompactSessionListAudience } from "./session-list-compact.js";
 import {
   SessionMutationAuthorizationChangedError,
   SessionSharingProfileFactsChangedError,
@@ -125,10 +126,22 @@ export function prepareSessionSharing(
       prepared && { value: prepared.sessionCap },
       isCreator,
     );
+  const entryFilter = createSessionListEntryFilter(params, isCreator, prepared);
+  const listAudience: CompactSessionListAudience | undefined = !entryFilter
+    ? { all: true, aliases: [] }
+    : prepared
+      ? {
+          all: false,
+          profileId: identity?.id,
+          aliases: [...prepared.aliases],
+          sessionCap: identity ? prepared.sessionCap : "none",
+        }
+      : undefined;
   return {
     isCreator,
     sessionCap: prepared?.sessionCap,
-    entryFilter: createSessionListEntryFilter(params, isCreator, prepared),
+    entryFilter,
+    listAudience,
     roleForTarget,
     authorizeTarget: (target: SessionSharingTarget) =>
       authorizeSessionSharingTarget(

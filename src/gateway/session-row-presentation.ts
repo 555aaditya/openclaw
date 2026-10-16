@@ -634,6 +634,21 @@ export function prepareProjectedSessionPresentation(
     }
     return projectModels(row, views, signature);
   };
+  const cachedSelection = (opts: SessionsListParams) => {
+    if (opts.search || opts.spawnedBy || opts.activeOnly || opts.activityPulseBoundaries) {
+      return undefined;
+    }
+    const view = listView(opts, true);
+    if (
+      view.selectedAt !== undefined &&
+      opts.activeMinutes !== undefined &&
+      (now < view.selectedAt || now > (view.activityExpiresAt ?? Infinity))
+    ) {
+      view.selection = undefined;
+      view.partitions = undefined;
+    }
+    return view.selection;
+  };
   return {
     get audienceKey() {
       return JSON.stringify([
@@ -653,6 +668,7 @@ export function prepareProjectedSessionPresentation(
       );
       return record ? present(record, options) : null;
     },
+    cachedSelection,
     select(
       opts: SessionsListParams,
       select: (retained?: WeakMap<object, SessionListFilteredEntries>) => SessionEntrySelection,
@@ -661,28 +677,21 @@ export function prepareProjectedSessionPresentation(
       if (opts.search || opts.spawnedBy || opts.activeOnly || opts.activityPulseBoundaries) {
         return select();
       }
+      const cached = cachedSelection(opts);
+      if (cached) {
+        return cached;
+      }
       const view = listView(opts, true);
-      if (
-        view.selectedAt !== undefined &&
-        opts.activeMinutes !== undefined &&
-        (now < view.selectedAt || now > (view.activityExpiresAt ?? Infinity))
-      ) {
-        view.selection = undefined;
-        view.partitions = undefined;
-      }
-      if (!view.selection) {
-        const { entries, ownerSessionProfiles, ...facets } = select(
-          (view.partitions ??= new WeakMap()),
-        );
-        Object.freeze(entries);
-        view.selection = Object.freeze({
-          ...freezeJsonSnapshot(facets),
-          ownerSessionProfiles,
-          entries,
-        });
-        view.selectedAt = now;
-        view.activityExpiresAt = view.selection.activityExpiresAt;
-      }
+      view.partitions ??= new WeakMap();
+      const { entries, ownerSessionProfiles, ...facets } = select(view.partitions);
+      Object.freeze(entries);
+      view.selection = Object.freeze({
+        ...freezeJsonSnapshot(facets),
+        ownerSessionProfiles,
+        entries,
+      });
+      view.selectedAt = now;
+      view.activityExpiresAt = view.selection.activityExpiresAt;
       return view.selection;
     },
     list(rows: GatewaySessionRow[], opts: SessionsListParams) {

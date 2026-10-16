@@ -329,6 +329,16 @@ Selected pages yield to the event loop between bounded materialization batches,
 including when stored facts are already cached. A long `materialize` wait does
 not by itself indicate an event-loop stall or repeated work for each caller.
 
+Ordinary metadata-only list queries can select in a worker after its compact
+index is ready. Cold requests, cached selections, and filters requiring live run
+or search facts retain the resident path. The index follows committed row changes
+and retains one federation scope at a time; scope changes rebuild it without
+blocking list availability. Main-thread authorization rechecks the entire result,
+including counts and owner facets, before presentation. A worker failure logs
+`Session selection worker unavailable` and serves the request from the resident
+projection. Worker CPU and index preparation are outside the synchronous CPU
+intervals below.
+
 Profile and run-registry publications refresh their derived display facts without
 rereading session entries. Worker environment and placement publications refresh
 only the selected rows' worker facts on their next presentation. Stored session

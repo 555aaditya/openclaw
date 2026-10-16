@@ -25,6 +25,8 @@ import {
   addSessionOwnerFacetIdentity,
   sortSessionOwnerFacet,
 } from "./session-identity-projection.js";
+import { compactSessionListIndex } from "./session-list-compact-worker.js";
+import { supportsCompactSessionList } from "./session-list-compact.js";
 import type { SessionListDiagnostics } from "./session-list-diagnostics.types.js";
 import {
   filterSessionEntries,
@@ -327,6 +329,7 @@ export function prepareSessionRowSelection(
   );
   const { entries } = selected;
   return {
+    scope: selectedScope,
     cfg,
     opts,
     now,
@@ -513,6 +516,24 @@ export async function listProjectedSessions(params: {
       projection.needsSelectionPreparation(selectionPreparation) ||
       (searchIdentities && searchIdentities.cfg !== projection.state.cfg)
     );
+    const compact =
+      params.acceptsSerializedJson && exactKey === undefined && supportsCompactSessionList(opts)
+        ? compactSessionListIndex(projection)
+        : undefined;
+    const pendingSelection = compact?.prepare(
+      () =>
+        prepareProjectedSessionList({
+          projection,
+          opts,
+          context,
+          client,
+          now: Date.now(),
+          metadataPrepared: true,
+        }),
+      opts,
+      client,
+    );
+    const readWorkerSelection = pendingSelection && (await pendingSelection);
     let prepareSyncMs = 0;
     const selectPage = () => {
       const started = performance.now();
@@ -532,8 +553,12 @@ export async function listProjectedSessions(params: {
             metadataPrepared: true,
           });
         diagnostics?.mark("filterSetup");
-        const select = (retained?: WeakMap<object, SessionListFilteredEntries>) =>
-          withAgentRosterFactsBatch(prepared.cfg, () =>
+        const select = (retained?: WeakMap<object, SessionListFilteredEntries>) => {
+          const selected = readWorkerSelection?.(prepared, presentation, now);
+          if (selected) {
+            return selected;
+          }
+          return withAgentRosterFactsBatch(prepared.cfg, () =>
             runSynchronousWork(
               selectSessionEntries({
                 ...filters,
@@ -543,6 +568,7 @@ export async function listProjectedSessions(params: {
               }),
             ),
           );
+        };
         const selection =
           params.acceptsSerializedJson && exactKey === undefined
             ? presentation.select(opts, select)
@@ -663,6 +689,7 @@ export async function listProjectedSessions(params: {
           diagnostics?.finishSyncCpu("rowThreadCpuMs", syncCpu);
           syncCpu = undefined;
           params.onResult?.(result);
+          compact?.seed(prepared, opts);
           return result;
         } finally {
           diagnostics?.finishSyncCpu("rowThreadCpuMs", syncCpu);
