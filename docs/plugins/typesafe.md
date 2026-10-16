@@ -14,9 +14,10 @@ model role to TypeSafe AI's hosted Jev models or an explicitly configured
 System One server such as [Kev](https://github.com/jaredpalmer/kev). Its models appear in the separate
 **Decision** picker, never in the conversational model picker.
 
-The adapter and decision model role were added after released OpenClaw
-`2026.9.5`. Packaged installs require a host and plugin API of at least
-`2026.9.6`; the installer rejects older hosts before loading the plugin.
+This adapter requires the prepared Decision V2 API. Released OpenClaw
+`2026.10.4` exposes V1 only. Packaged use requires a supporting paired host/plugin
+release; the older installation floor alone does not establish V2 compatibility.
+The normal release process aligns plugin API and build versions with the host.
 
 See [Decision models](/concepts/decision-models) for the model role, available
 backends, rubric examples, and provider-neutral plugin API.
@@ -41,10 +42,10 @@ openclaw plugins install clawhub:@openclaw/typesafe
 ```
 
 Until a supporting release is available, use a source checkout containing the
-decision-provider API and `extensions/typesafe`. Build it with
+prepared V2 decision-provider API and `extensions/typesafe`. Build it with
 `pnpm install --frozen-lockfile` and `pnpm build`, then apply the configuration
 below. Source-checkout plugins use the host's co-versioned development API;
-that does not make the packaged plugin compatible with OpenClaw `2026.9.5`.
+that does not make the packaged plugin compatible with a V1-only host.
 
 ## Enable and configure
 

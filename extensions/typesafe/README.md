@@ -7,8 +7,11 @@ decision-model API. Core supplies the provider-neutral `decision_evaluate` agent
 tool when the agent has an effective `decisionModel` selection, subject to normal
 tool policy and harness capabilities. No separate tool enablement is required.
 
-Requires OpenClaw and plugin API **2026.9.6 or later**. Released OpenClaw
-2026.9.5 does not include the decision API.
+This adapter requires the prepared Decision V2 API. Released OpenClaw
+`2026.10.4` exposes V1 only. For development, use a matching source checkout
+containing the prepared V2 runtime and this plugin. Packaged use requires a
+supporting paired host/plugin release; the older installation floor alone does
+not establish V2 compatibility.
 
 ```sh
 openclaw plugins install @openclaw/typesafe
