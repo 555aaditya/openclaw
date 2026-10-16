@@ -20,7 +20,7 @@ export { createCodexRuntimePlanFixture } from "./test-support.js";
 
 const hoisted = vi.hoisted(() => ({
   normalizeAgentRuntimeTools: vi.fn(),
-  resolveWebSearchToolPolicy: vi.fn(),
+  prepareWebSearchToolPolicy: vi.fn(),
   loadNodeExecAvailability: vi.fn(),
 }));
 
@@ -31,11 +31,11 @@ vi.mock("openclaw/plugin-sdk/agent-harness", async (importOriginal) => {
 
   return {
     ...actual,
-    resolveWebSearchToolPolicy: (
-      ...args: Parameters<(typeof actual)["resolveWebSearchToolPolicy"]>
+    prepareWebSearchToolPolicy: (
+      ...args: Parameters<(typeof actual)["prepareWebSearchToolPolicy"]>
     ) => {
-      hoisted.resolveWebSearchToolPolicy(...args);
-      return actual.resolveWebSearchToolPolicy(...args);
+      hoisted.prepareWebSearchToolPolicy(...args);
+      return actual.prepareWebSearchToolPolicy(...args);
     },
   };
 });
@@ -166,7 +166,7 @@ export async function setupDynamicToolBuildFixture(): Promise<string> {
     isAvailable: () => true,
   });
   hoisted.normalizeAgentRuntimeTools.mockClear();
-  hoisted.resolveWebSearchToolPolicy.mockClear();
+  hoisted.prepareWebSearchToolPolicy.mockClear();
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-codex-tools-"));
   setRuntimeConfigSnapshot({});
   return tempDir;

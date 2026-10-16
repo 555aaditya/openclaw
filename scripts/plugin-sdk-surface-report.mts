@@ -278,7 +278,8 @@ export function readPluginSdkSurfaceBudgets(env: NodeJS.ProcessEnv = process.env
       // +14: versioned Decision data contracts, lossless codecs, validation, and typed errors.
       // +1: approved boot-selected family lookup on the database-engine runtime.
       // +1: shared auth-patch application replaces manual plugin config merging.
-      3788,
+      // +1: approved async web-search policy preparation with retained sync compatibility.
+      3789,
       env,
     ),
     publicFunctionExports: readPluginSdkSurfaceBudgetEnv(
@@ -318,7 +319,8 @@ export function readPluginSdkSurfaceBudgets(env: NodeJS.ProcessEnv = process.env
       // +6: four lossless Decision codecs and two bounded V2 validators.
       // +1: the same boot-selected family lookup.
       // +1: the same shared auth-patch application.
-      2205,
+      // +1: the same approved web-search policy preparation.
+      2206,
       env,
     ),
     publicDeprecatedExports: readPluginSdkSurfaceBudgetEnv(

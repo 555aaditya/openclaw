@@ -366,9 +366,9 @@ export async function buildDynamicTools(
       !webSearchPresent &&
       persistentCodexWebSearchSurface
     ) {
-      const webSearchPolicy = (
+      const webSearchPolicy = await (
         await import("openclaw/plugin-sdk/agent-harness")
-      ).resolveWebSearchToolPolicy({
+      ).prepareWebSearchToolPolicy({
         config: params.config,
         modelProvider: params.model.provider,
         modelId: params.modelId,
