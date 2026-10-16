@@ -1,6 +1,7 @@
 import { WorkerTaskError } from "@openclaw/worker-runtime";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { GatewayClientRequestError } from "../../packages/gateway-client/src/request-error.js";
+import { createDeferred } from "../../test/helpers/promise.js";
 import {
   clearRuntimeConfigSnapshot,
   setRuntimeConfigSnapshot,
@@ -8,7 +9,15 @@ import {
 import type { SessionPendingInput } from "../config/sessions/session-pending-input.types.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { SqliteWorkerError } from "../infra/sqlite-worker-contract.js";
-import { AgentDatabaseAdmissionError } from "../state/agent-database-admission.js";
+import {
+  AgentDatabaseAdmissionError,
+  createAgentDatabaseInspectionRefusal,
+  failPendingAgentDatabase,
+  preparePendingAgentDatabase,
+  readAgentDatabaseAdmissionRefusal,
+  recordAgentDatabaseAdmissions,
+} from "../state/agent-database-admission.js";
+import { withAgentDatabasePreparationContext } from "../state/agent-database-preparation-context.js";
 import { createDirectChatContext } from "./server-chat.agent-events.test-helpers.js";
 import { createMockGatewayRecoveryRuntime } from "./server-recovery-runtime.test-support.js";
 import type { SessionSendDelivery } from "./session-send-delivery.js";
@@ -151,7 +160,68 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   clearRuntimeConfigSnapshot();
+  recordAgentDatabaseAdmissions([]);
 });
+
+it.each(["admitted", "failed", "cancelled"] as const)(
+  "rescans only pending stores when their admission owner settles: %s",
+  async (outcome) => {
+    const refusal = createAgentDatabaseInspectionRefusal({
+      agentId: "main",
+      paths: ["/fixture/sessions.json"],
+      reason: "Synthetic startup inspection",
+      pending: true,
+    });
+    recordAgentDatabaseAdmissions([refusal]);
+    io.discover.mockImplementation(async () =>
+      readAgentDatabaseAdmissionRefusal("main")
+        ? []
+        : [{ agentId: "main", storePath: "/fixture/sessions.json" }],
+    );
+    const joined = createDeferred();
+    const prepared = createDeferred();
+    const cancellation = controller();
+    const recovery = withAgentDatabasePreparationContext(
+      () => ({
+        waitForAgentPreparation: () => {
+          joined.resolve();
+          return prepared.promise;
+        },
+      }),
+      () => recoverSessionSendDeliveries(context, cancellation.signal),
+    );
+    try {
+      await Promise.race([joined.promise, recovery]);
+      expect(dispatch).not.toHaveBeenCalled();
+      if (outcome === "failed") {
+        failPendingAgentDatabase(refusal, new Error("Synthetic inspection failure"), {});
+      } else {
+        await preparePendingAgentDatabase(refusal, { assertCurrent() {} }, async () => {});
+      }
+      if (outcome === "cancelled") {
+        cancellation.abort();
+      }
+      prepared.resolve();
+      if (outcome === "cancelled") {
+        await expect(recovery).rejects.toThrow();
+      } else {
+        await recovery;
+      }
+      if (outcome === "admitted") {
+        expect(dispatch).toHaveBeenCalledOnce();
+        expect(dispatch.mock.calls[0]![0].idempotencyKey).toBe(delivery.runId);
+        expect(io.discover.mock.calls[1]![0].agentIds).toEqual(new Set(["main"]));
+      } else {
+        expect(dispatch).not.toHaveBeenCalled();
+        expect(io.discover).toHaveBeenCalledOnce();
+      }
+      expect(io.report).not.toHaveBeenCalled();
+    } finally {
+      prepared.resolve();
+      await recovery.catch(() => {});
+    }
+  },
+);
 
 it("retries transient admission with the saved input and delivery identity, in order", async () => {
   const next = {

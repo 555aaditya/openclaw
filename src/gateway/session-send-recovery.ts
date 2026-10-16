@@ -14,6 +14,7 @@ import { listSessionPendingInputs } from "../config/sessions/session-pending-inp
 import { readPendingInputSource } from "../config/sessions/session-pending-input-source.js";
 import type { SessionPendingInput } from "../config/sessions/session-pending-input.types.js";
 import { withSessionTranscriptWriteAssertion } from "../config/sessions/transcript-write-context.js";
+import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { sleepWithAbort } from "../infra/backoff.js";
 import { formatErrorMessageForDisplay } from "../infra/error-diagnostics.js";
 import { formatErrorMessageWithCode } from "../infra/errors.js";
@@ -23,7 +24,12 @@ import { retryAsync } from "../infra/retry.js";
 import { isSqliteLockError } from "../infra/sqlite-error-diagnostics.js";
 import type { CommunicationEndpoint } from "../sessions/communication-admission.js";
 import { parseAgentSessionKey } from "../sessions/session-key-utils.js";
-import { AgentDatabaseAdmissionError } from "../state/agent-database-admission.js";
+import {
+  AgentDatabaseAdmissionError,
+  listAgentDatabaseAdmissionRefusals,
+  readAgentDatabaseAdmissionRefusal,
+} from "../state/agent-database-admission.js";
+import { waitForAgentDatabasePreparation } from "../state/agent-database-preparation-context.js";
 import { INTERNAL_MESSAGE_CHANNEL } from "../utils/message-channel.js";
 import type { GatewayRequestContext } from "./server-methods/types.js";
 import {
@@ -50,11 +56,41 @@ export async function recoverSessionSendDeliveries(
   context: GatewayRequestContext,
   signal: AbortSignal,
 ): Promise<void> {
+  if (!context.recoveryRuntime) {
+    return;
+  }
+  const config = context.getRuntimeConfig();
+  const pendingAgents = listAgentDatabaseAdmissionRefusals()
+    .filter((refusal) => refusal.code === "agent-database-inspection-pending")
+    .map((refusal) => refusal.agentId);
+  await recoverSessionSendDeliveriesForAgents(context, config, signal);
+  // Join the existing startup owner; discovery omits stores still awaiting admission.
+  const rescans = await Promise.allSettled(
+    pendingAgents.map(async (agentId) => {
+      await waitForAgentDatabasePreparation(agentId, { signal });
+      signal.throwIfAborted();
+      if (!readAgentDatabaseAdmissionRefusal(agentId)) {
+        await recoverSessionSendDeliveriesForAgents(context, config, signal, new Set([agentId]));
+      }
+    }),
+  );
+  for (const result of rescans) {
+    if (result.status === "rejected") {
+      throw result.reason;
+    }
+  }
+}
+
+async function recoverSessionSendDeliveriesForAgents(
+  context: GatewayRequestContext,
+  config: OpenClawConfig,
+  signal: AbortSignal,
+  agentIds?: ReadonlySet<string>,
+): Promise<void> {
   const runtime = context.recoveryRuntime;
   if (!runtime) {
     return;
   }
-  const config = context.getRuntimeConfig();
   const assertCurrent = () => {
     signal.throwIfAborted();
     if (context.getRuntimeConfig() !== config) {
@@ -87,6 +123,7 @@ export async function recoverSessionSendDeliveries(
   const targets = await retry(() =>
     discoverRestartRecoveryStoreTargets({
       cfg: config,
+      agentIds,
       shouldContinue: () => !signal.aborted,
     }),
   );
