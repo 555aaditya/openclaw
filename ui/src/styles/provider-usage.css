@@ -5,13 +5,24 @@
   min-width: 0;
 }
 
+/* One column track for every row, so meters line up whatever the label length. */
 .provider-usage__rows {
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
   padding: 0;
   border-bottom: 0;
 }
 
+.provider-usage__rows > * {
+  grid-column: 1 / -1;
+}
+
+.provider-usage__row {
+  grid-template-columns: subgrid;
+}
+
 .provider-usage__row .oc-menu-panel-usage-value {
   font-family: var(--oc-font-mono);
+  text-align: end;
 }
 
 .provider-usage__row[data-tone="warning"] .oc-inspector-meter span {
