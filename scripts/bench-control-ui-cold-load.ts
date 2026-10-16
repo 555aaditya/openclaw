@@ -209,6 +209,8 @@ const { values } = parseArgs({
     "init-script": { type: "string", multiple: true, default: [] },
     "sidebar-list-churn": { type: "boolean", default: false },
     "sidebar-live-churn": { type: "boolean", default: false },
+    "artifact-source-reads": { type: "boolean", default: false },
+    "artifact-http-failure": { type: "boolean", default: false },
     "duplicate-boot-reads": { type: "boolean", default: false },
     "capture-ms": { type: "string", default: "0" },
     "sidebar-row-transfer": { type: "string", default: "full" },
@@ -293,6 +295,7 @@ const fixture = createControlUiTeamScaleFixture({
   sidebarListChurn: values["sidebar-list-churn"],
   sidebarLiveChurn: values["sidebar-live-churn"],
   duplicateBootReads: values["duplicate-boot-reads"],
+  artifactSourceReads: values["artifact-source-reads"],
 });
 const streamingReply = values["streaming-reply"] ? createControlUiStreamingReply() : undefined;
 const extraInitScripts = await Promise.all(
@@ -380,6 +383,17 @@ try {
     const asset = assets.get(new URL(route.request().url()).pathname);
     return asset ? route.fulfill({ status: 200, ...asset }) : route.fallback();
   });
+  if (fixture.artifactSources) {
+    const source = fixture.artifactSources;
+    await page.route(`**${source.path}*`, (route) =>
+      route.fulfill({
+        status: values["artifact-http-failure"] ? 404 : 200,
+        contentType: "image/png",
+        headers: { "Content-Disposition": "attachment" },
+        body: Buffer.from(source.data, "base64"),
+      }),
+    );
+  }
   if (values["duplicate-boot-reads"]) {
     await page.route("**/api/chat/media/outgoing/**", (route) => {
       const asset = assets.get(new URL(route.request().url()).pathname);
@@ -571,6 +585,16 @@ try {
     }
     await page.reload({ waitUntil: "domcontentloaded" });
     await settle();
+    if (fixture.artifactSources) {
+      await page.waitForFunction(() => {
+        const images = [
+          ...document.querySelectorAll<HTMLImageElement>('img[alt^="Shared artifact "]'),
+        ];
+        return (
+          images.length === 6 && images.every((image) => image.complete && image.naturalWidth === 1)
+        );
+      });
+    }
     if (captureMs) {
       await page.waitForFunction((duration) => performance.now() >= duration, captureMs);
     }
@@ -978,6 +1002,8 @@ try {
         sidebarListChurn: values["sidebar-list-churn"],
         sidebarLiveChurn: fixture.sidebarLiveChurn,
         duplicateBootReads: values["duplicate-boot-reads"],
+        artifactSourceReads: values["artifact-source-reads"],
+        artifactHttpFailure: values["artifact-http-failure"],
         traced: !values.untraced,
         sidebarRowTransfer,
         sidebarComparison: values["sidebar-list-churn"]

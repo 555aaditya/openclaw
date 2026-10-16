@@ -63,6 +63,7 @@ import {
 } from "./chat-state-route.ts";
 import type { ChatProps } from "./chat-view.tsx";
 import { getChatComposerState } from "./components/chat-composer-state.ts";
+import { assistantMediaPolicyKey } from "./components/chat-message-media.ts";
 import { openSessionWorkspaceFile } from "./components/chat-session-workspace.ts";
 import { resolveChatLinkFaviconFetcher } from "./link-favicon-loader.ts";
 import { chatFailureRunId, hasAbortableSessionRun, hasDirectSessionRun } from "./run-lifecycle.ts";
@@ -678,7 +679,12 @@ export class ChatPaneRuntime extends ChatPaneLayoutRender {
       branding: this.context?.theme.branding,
       assistantAttachmentAuthToken: resolveControlUiAuthToken(state),
       resolveArtifactDownload: (params, signal) =>
-        resolveArtifactDownloadSource(state, params, signal),
+        resolveArtifactDownloadSource(
+          state,
+          { ...params, ...scopedAgentParamsForSession(state, params.sessionKey) },
+          signal,
+          assistantMediaPolicyKey(selectedSession, state.mediaPolicyEpoch),
+        ),
       basePath: state.basePath,
       sessionPublicOrigin: markdownSessionPublicOrigin(this.context),
       resourceBasePath: state.resourceBasePath,

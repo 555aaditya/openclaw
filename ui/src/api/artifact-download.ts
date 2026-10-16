@@ -3,6 +3,7 @@ import type { ChatImageRenditionWidth } from "../../../src/shared/chat-image-ren
 import { normalizeBasePath } from "../app-route-paths.ts";
 import { fetchControlUiResource } from "../app/browser-http.ts";
 import { isSameOriginGateway } from "../app/gateway-control-ui-reload.ts";
+import { subscribeToSharedRequest } from "../lib/shared-request-subscription.ts";
 import type { GatewayBrowserClient } from "./gateway.ts";
 import type { ArtifactDownloadResult } from "./types.ts";
 
@@ -127,12 +128,11 @@ export async function downloadArtifact(
 
 const ARTIFACT_IMAGE_MIME = /^image\/(?:png|jpeg|gif|webp|avif)$/u;
 
-export async function resolveArtifactDownloadSource(
+async function loadArtifactDownloadSource(
   state: ArtifactDownloadHost,
   params: ArtifactDownloadParams,
-  signal?: AbortSignal,
 ): Promise<{ url: string; expiresAt?: string; blob?: Blob } | null> {
-  const result = await downloadArtifact(state, params, signal);
+  const result = await downloadArtifact(state, params);
   if (
     result?.blob &&
     (result.artifact.type !== "image" ||
@@ -158,4 +158,85 @@ export async function resolveArtifactDownloadSource(
     ...(expiresAt ? { expiresAt } : {}),
     ...(result?.blob ? { blob: result.blob } : {}),
   };
+}
+
+type ArtifactSource = Awaited<ReturnType<typeof loadArtifactDownloadSource>>;
+type SourceEntry = {
+  promise: Promise<ArtifactSource>;
+  subscribers: Set<object>;
+  expiresAt?: number;
+};
+type SourceCache = {
+  client: GatewayBrowserClient;
+  epoch: number | undefined;
+  basePath: string | undefined;
+  entries: Map<string, SourceEntry>;
+};
+const sourceCaches = new WeakMap<ArtifactDownloadHost, SourceCache>();
+
+export async function resolveArtifactDownloadSource(
+  state: ArtifactDownloadHost,
+  params: ArtifactDownloadParams,
+  signal?: AbortSignal,
+  policyKey?: string,
+): Promise<ArtifactSource> {
+  const { client, connectionEpoch: epoch, resourceBasePath: basePath } = state;
+  if (!state.connected || !client || signal?.aborted) {
+    return null;
+  }
+  let cache = sourceCaches.get(state);
+  if (cache?.client !== client || cache.epoch !== epoch || cache.basePath !== basePath) {
+    cache = { client, epoch, basePath, entries: new Map() };
+    sourceCaches.set(state, cache);
+  }
+  const entries = cache.entries;
+  const key = JSON.stringify([
+    policyKey,
+    params.sessionKey,
+    params.agentId,
+    params.artifactId,
+    params.variant,
+    params.variant === "thumbnail" ? (params.previewWidth ?? 960) : undefined,
+  ]);
+  let entry = entries.get(key);
+  if (entry?.expiresAt !== undefined && entry.expiresAt <= Date.now()) {
+    entries.delete(key);
+    entry = undefined;
+  }
+  if (!entry) {
+    // A detached image cancels only its subscription. Finish the bounded read
+    // so another consumer or virtual-row remount can reuse the same bytes.
+    const created: SourceEntry = {
+      subscribers: new Set(),
+      promise: loadArtifactDownloadSource(state, params).then(
+        (source) => {
+          if (source) {
+            created.expiresAt = source.expiresAt ? Date.parse(source.expiresAt) || 0 : Infinity;
+            for (const [oldKey, old] of entries) {
+              if (entries.size <= 64) break;
+              if (old.expiresAt !== undefined) entries.delete(oldKey);
+            }
+          } else {
+            entries.delete(key);
+          }
+          return source;
+        },
+        (error: unknown) => {
+          entries.delete(key);
+          throw error;
+        },
+      ),
+    };
+    entries.set(key, created);
+    entry = created;
+  }
+  try {
+    const source = await subscribeToSharedRequest(entry, {}, signal);
+    return state.connected && state.client === client && state.connectionEpoch === epoch
+      ? source
+      : null;
+  } catch (error) {
+    if (signal?.aborted) return null;
+    throw error;
+  }
 }
