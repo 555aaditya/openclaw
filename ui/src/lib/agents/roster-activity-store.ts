@@ -2,7 +2,7 @@ import { SESSIONS_LIST_TRANSCRIPT_LIMIT } from "../../../../src/shared/session-l
 import type { SessionsListResult } from "../../api/types.ts";
 import type { ApplicationContext } from "../../app/context.ts";
 import { gatewayPresentationScope } from "../../app/gateway-presentation-scope.ts";
-import { hasOperatorReadAccess } from "../../app/operator-access.ts";
+import { hasOperatorSelfReadAccess } from "../../app/operator-access.ts";
 import { t } from "../../i18n/index.ts";
 import { formatUiError } from "../format-error.ts";
 import { createGatewaySetSyncLifecycle } from "../gateway-set-sync-lifecycle.ts";
@@ -166,7 +166,7 @@ class RosterActivityStore {
     const presentationKey = gatewayPresentationScope(this.context.gateway).key;
     const accessLost =
       this.context.gateway.snapshot.phase === "connected" &&
-      !hasOperatorReadAccess(this.context.gateway.snapshot.hello?.auth ?? null);
+      !hasOperatorSelfReadAccess(this.context.gateway.snapshot.hello?.auth ?? null);
     if (client !== this.client || presentationKey !== this.presentationKey || accessLost) {
       this.client = client;
       this.presentationKey = presentationKey;

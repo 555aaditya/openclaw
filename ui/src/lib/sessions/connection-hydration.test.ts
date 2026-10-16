@@ -3,6 +3,7 @@ import {
   GatewayProtocolClient,
   type GatewayProtocolSocketHandlers,
 } from "@openclaw/gateway-client/browser";
+import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { describe, expect, it, vi } from "vitest";
 // @vitest-environment node
 import { SIDEBAR_SESSION_ROSTER_LIMIT } from "../../../../src/shared/session-list-limits.ts";
@@ -72,9 +73,9 @@ describe("session connection hydration", () => {
       const stale = createDeferred<SessionsListResult>();
       const fresh = createDeferred<SessionsListResult>();
       let reads = 0;
-      const request = vi.fn(async (method: string, params?: Record<string, unknown>) => {
+      const request = vi.fn(async (method: string, params?: unknown) => {
         if (method === "sessions.list") {
-          if (params?.archived === "all") {
+          if (isRecord(params) && params.archived === "all") {
             reads += 1;
             return reads === 1 ? retained : reads === 2 ? stale.promise : fresh.promise;
           }

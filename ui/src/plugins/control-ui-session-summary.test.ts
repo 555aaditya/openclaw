@@ -24,7 +24,10 @@ function setup(identity?: () => AgentIdentityResult) {
   const { gateway, current } = createGatewayStoreTestStore();
   gateways.push(gateway);
   gateway.start();
-  current().opts.onHello?.(GATEWAY_STORE_TEST_HELLO);
+  current().opts.onHello?.({
+    ...GATEWAY_STORE_TEST_HELLO,
+    auth: { role: "operator", scopes: ["operator.sessions.read"] },
+  });
   const requests: Array<{
     params: unknown;
     resolve: (history: ChatHistoryResult) => void;

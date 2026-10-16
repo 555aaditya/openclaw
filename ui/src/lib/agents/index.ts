@@ -10,7 +10,7 @@ import type {
 } from "../../api/types.ts";
 import { gatewayPresentationScope } from "../../app/gateway-presentation-scope.ts";
 import type { ApplicationGatewaySnapshot } from "../../app/gateway.ts";
-import { hasOperatorReadAccess } from "../../app/operator-access.ts";
+import { hasOperatorReadAccess, hasOperatorSelfReadAccess } from "../../app/operator-access.ts";
 import { formatUiError } from "../format-error.ts";
 import type { GatewayConnectionSnapshot } from "../gateway-connection-lifecycle.ts";
 import {
@@ -225,7 +225,7 @@ export function createAgentCapability(gateway: AgentGateway) {
     if (agentsRequest && !force) {
       return agentsRequest;
     }
-    if (state.agentsList && !force) {
+    if (state.agentsList && !state.agentsError && !force) {
       return state.agentsList;
     }
     state.agentsLoading = true;
@@ -324,7 +324,9 @@ export function createAgentCapability(gateway: AgentGateway) {
     presentationKey = nextPresentationKey;
     const connected = snapshot.phase === "connected";
     const connectionChanged = identityChanged || state.connected !== connected;
-    const accessLost = connected && !hasOperatorReadAccess(snapshot.hello?.auth ?? null);
+    const accessLost = connected && !hasOperatorSelfReadAccess(snapshot.hello?.auth ?? null);
+    const filesAccessLost =
+      connected && files.size > 0 && !hasOperatorReadAccess(snapshot.hello?.auth ?? null);
     state.client = snapshot.client;
     state.connected = connected;
     if ((connectionChanged && (identityChanged || !connected)) || accessLost) {
@@ -339,9 +341,13 @@ export function createAgentCapability(gateway: AgentGateway) {
         state.agentsError = null;
       }
     }
-    if (connectionChanged || accessLost) {
+    if (filesAccessLost) {
+      fileRequests.clear();
+      files.clear();
+    }
+    if (connectionChanged || accessLost || filesAccessLost) {
       publish();
-      if (connected && !accessLost) {
+      if (connectionChanged && connected && !accessLost) {
         if (!agentsRequest && (hadList || (identityChanged && listeners.size > 0))) {
           void loadList(true);
         }

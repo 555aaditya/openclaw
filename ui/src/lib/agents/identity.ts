@@ -5,7 +5,7 @@ import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import type { AgentIdentityResult } from "../../api/types.ts";
 import { gatewayPresentationScope } from "../../app/gateway-presentation-scope.ts";
 import type { ApplicationGatewaySnapshot } from "../../app/gateway.ts";
-import { hasOperatorReadAccess } from "../../app/operator-access.ts";
+import { hasOperatorSelfReadAccess } from "../../app/operator-access.ts";
 import { isGatewayAvailable, resolveGatewayReadRetryDelayMs } from "../gateway-availability.ts";
 
 type AgentIdentityGatewaySnapshot = Pick<
@@ -122,7 +122,7 @@ export function createAgentIdentityCapability(gateway: AgentIdentityGateway) {
     const nextPresentationKey = gatewayPresentationScope(gateway).key;
     const identityChanged =
       snapshot.client !== cachedClient || presentationKey !== nextPresentationKey;
-    const accessLost = connected && !hasOperatorReadAccess(snapshot.hello?.auth ?? null);
+    const accessLost = connected && !hasOperatorSelfReadAccess(snapshot.hello?.auth ?? null);
     if (!identityChanged && connected === cachedConnected && !accessLost) {
       return;
     }
@@ -188,7 +188,7 @@ export function createAgentIdentityCapability(gateway: AgentIdentityGateway) {
       if (
         !client ||
         !isGatewayAvailable(snapshot) ||
-        !hasOperatorReadAccess(snapshot.hello?.auth ?? null)
+        !hasOperatorSelfReadAccess(snapshot.hello?.auth ?? null)
       ) {
         return;
       }

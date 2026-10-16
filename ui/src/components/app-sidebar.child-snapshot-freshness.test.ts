@@ -120,20 +120,21 @@ describe("sidebar child snapshot freshness", () => {
         }
         return (params as { spawnedBy?: string })?.spawnedBy
           ? result([replacement])
-          : result([{ ...parent, childSessions: [replacement.key] }]);
+          : result([{ ...parent, label: "Replacement parent", childSessions: [replacement.key] }]);
       });
       gatewayHarness.publish({ client: createTestGatewayClient(newRequest) });
-      // A different connection identity intentionally resets manual expansion.
+      // Wait for the replacement parent, not the old toggle awaiting retirement.
       await waitForFast(() =>
-        expect(sidebar.querySelector("[data-child-session-toggle]")).not.toBeNull(),
+        expect(sidebar.querySelector(`[data-session-key="${parentKey}"]`)?.textContent).toContain(
+          "Replacement parent",
+        ),
       );
       await sidebar.updateComplete;
       const replacementToggle = sidebar.querySelector<HTMLButtonElement>(
         "[data-child-session-toggle]",
       )!;
-      if (replacementToggle.getAttribute("aria-expanded") !== "true") {
-        replacementToggle.click();
-      }
+      expect(replacementToggle.getAttribute("aria-expanded")).toBe("false");
+      replacementToggle.click();
       await waitForFast(() => expect(sidebar.textContent).toContain("Replacement child"));
       expect(sidebar.sessionData.loadingChildSessionKeys.has(parentKey)).toBe(false);
       tail.resolve({
