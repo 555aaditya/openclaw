@@ -437,6 +437,44 @@ describe("Codex catalog worker transport", () => {
     expect(harness.client.getCloseError()).toBeUndefined();
   });
 
+  it("keeps an oversized singleton's continuation without retaining rows at capacity", async () => {
+    const harness = createHarness();
+    const request = harness.client.request(
+      "thread/list",
+      { limit: 1 },
+      { catalogPreview: true, catalogRows: 0 },
+    );
+    harness.send({
+      id: requestId(harness),
+      result: {
+        data: [{ id: "huge", preview: "x".repeat(8 * 1024 * 1024) }],
+        nextCursor: "opaque-continuation",
+      },
+    });
+    await expect(request).resolves.toEqual({ data: [], nextCursor: "opaque-continuation" });
+  });
+
+  it.each(["identity", "cursor", "cardinality"])(
+    "rejects oversized singleton recovery with invalid %s",
+    async (invalid) => {
+      const harness = createHarness();
+      const request = harness.client.request("thread/list", { limit: 1 }, { catalogPreview: true });
+      const rejected = expect(request).rejects.toThrow("exceeds 8 MiB");
+      harness.send({
+        id: requestId(harness),
+        result: {
+          data: [
+            { id: invalid === "identity" ? "" : "huge", preview: "x".repeat(8 * 1024 * 1024) },
+            ...(invalid === "cardinality" ? [{ id: "extra" }] : []),
+          ],
+          nextCursor: invalid === "cursor" ? 42 : "opaque-continuation",
+        },
+      });
+      await rejected;
+      expect(harness.client.getCloseError()).toBeUndefined();
+    },
+  );
+
   it("preserves meaningful text after a long ANSI prefix through the worker", async () => {
     const harness = createHarness();
     const request = harness.client.request("thread/list", {}, { catalogPreview: true });

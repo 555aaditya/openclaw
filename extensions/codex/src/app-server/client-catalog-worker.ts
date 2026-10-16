@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { WorkerTaskPool } from "openclaw/plugin-sdk/process-runtime";
 import { codexCatalogPageWorkerEntrypoint } from "../../catalog-page-worker-entrypoint.js";
+import { readOversizedCodexCatalogPage } from "./client-catalog-oversized.js";
 import {
   projectCodexCatalogMessage,
   type CodexCatalogDecodeInput,
@@ -52,6 +53,17 @@ export class CodexCatalogWorker {
       return undefined;
     }
     if (line.byteLength > CATALOG_MAX_BYTES) {
+      const projection =
+        route === "unresolved" ? undefined : attempts.get(route.id)?.catalogProjection;
+      if (route !== "unresolved" && route.kind === "list" && projection?.singleThread) {
+        const page = readOversizedCodexCatalogPage(line, route.id);
+        if (page) {
+          if (projection.remainingRows === 0) {
+            page.data = [];
+          }
+          return { message: { id: route.id, result: page }, failures: [] };
+        }
+      }
       const error = new CodexCatalogResponseTooLargeError();
       return route === "unresolved"
         ? { failures: [{ byteCount: line.byteLength, fragmentCount: 1 }] }

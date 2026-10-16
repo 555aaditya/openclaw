@@ -17,7 +17,11 @@ import { isJsonObject, isRpcResponse } from "./protocol.js";
 import type { CodexRequestAttempt } from "./request-attempt.js";
 
 export type CodexClientRequestAttempt = CodexRequestAttempt & {
-  catalogProjection?: { preview?: CodexCatalogPreviewCache; remainingRows?: number };
+  catalogProjection?: {
+    preview?: CodexCatalogPreviewCache;
+    remainingRows?: number;
+    singleThread?: boolean;
+  };
 };
 
 export type CodexCatalogDecodeInput = {

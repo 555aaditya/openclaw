@@ -59,13 +59,17 @@ Native adoption bindings still use their storage owner, and paired-node enumerat
 can use network I/O. Previews remain limited to 500 characters;
 native hydration and overflow requests ask for at most 16 threads per page.
 Codex `thread/list` has no preview truncation or exclusion option, so wire JSON can
-still be large. Catalog responses over 8 MiB fail before JSON parsing. Native
+still be large. Catalog responses over 8 MiB are never parsed as full JSON. Native
 listing halves an oversized page and retries the same cursor within the original
 request deadline, retaining the smaller page limit for that resident home's lifetime.
-If a single thread still exceeds 8 MiB, the host reports an error and waits 15 minutes
-before another native listing attempt; repeated reads during backoff reuse that error
-without repeating its background warning. Reduce that thread's oversized preview
-to allow discovery to recover. Each local host has
+If a single thread still exceeds 8 MiB, the catalog retains its bounded metadata
+as a degraded entry and continues with the server's cursor, without decoding or
+retaining the oversized preview. The entry displays `systemError`; its degraded
+marker survives restart and clears when a healthy native response replaces it.
+If the singleton's identity or continuation cannot be recovered, the host reports
+an error and waits 15 minutes before another native listing attempt; repeated
+reads during backoff reuse that error without repeating its background warning.
+Each local host has
 one eight-second response budget covering all page reads and adoption projection,
 matching the paired-node response budget. Healthy siblings still return; background
 native hydration can continue warming the next request. Complete catalog `thread/list` pages and metadata-only `thread/read` responses
