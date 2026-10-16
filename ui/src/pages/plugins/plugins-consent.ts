@@ -79,11 +79,17 @@ function pluginRuntimeFailureText(details: Record<string, unknown> | undefined, 
 }
 
 export function createPluginsConsent(host: PluginsConsentOptions) {
-  const state = {
-    consent: null as PluginConsentState | null,
-    inspection: null as PluginsInspectResult | null,
+  const state: {
+    consent: PluginConsentState | null;
+    inspection: PluginsInspectResult | null;
+    inspectionLoading: boolean;
+    inspectionError: string | null;
+    installProgress: Map<string, PluginInstallProgress>;
+  } = {
+    consent: null,
+    inspection: null,
     inspectionLoading: false,
-    inspectionError: null as string | null,
+    inspectionError: null,
     installProgress: new Map<string, PluginInstallProgress>(),
   };
   onCleanup(() => {

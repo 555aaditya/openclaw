@@ -7,8 +7,25 @@ import type {
   PluginDiscoveryEntry,
   PluginDiscoveryResult,
 } from "../../lib/plugins/index.ts";
-import type { PluginDiscoveryIntent } from "./catalog-results.tsx";
 import { createPluginRequest } from "./plugin-request.ts";
+
+export type PluginDiscoveryIntent = "all" | "bundled" | "trending" | "official" | "featured";
+export type PluginDiscoveryState = {
+  result: PluginDiscoveryResult | null;
+  error: string | null;
+  remoteError: string | null;
+  categories: readonly PluginDiscoveryCategory[];
+  categoriesError: string | null;
+  featured: readonly PluginDiscoveryEntry[];
+  trending: readonly PluginDiscoveryEntry[];
+  loadMoreError: string | null;
+  intent: PluginDiscoveryIntent;
+  category: string | null;
+  query: string;
+  readonly loading: boolean;
+  readonly categoriesLoading: boolean;
+  readonly loadingMore: boolean;
+};
 
 const CATALOG_PAGE_SIZE = 100;
 const CATALOG_SECTION_SIZE = 8;
@@ -56,17 +73,17 @@ export function createPluginDiscovery(gateway: PluginDiscoveryGateway, onChange:
   let categoriesStarted = false;
   let committedQuery = "";
   let searchTimer: ReturnType<typeof setTimeout> | null = null;
-  const state = {
-    result: null as PluginDiscoveryResult | null,
-    error: null as string | null,
-    remoteError: null as string | null,
-    categories: [] as PluginDiscoveryCategory[],
-    categoriesError: null as string | null,
-    featured: [] as PluginDiscoveryEntry[],
-    trending: [] as PluginDiscoveryEntry[],
-    loadMoreError: null as string | null,
-    intent: "all" as PluginDiscoveryIntent,
-    category: null as string | null,
+  const state: PluginDiscoveryState = {
+    result: null,
+    error: null,
+    remoteError: null,
+    categories: [],
+    categoriesError: null,
+    featured: [],
+    trending: [],
+    loadMoreError: null,
+    intent: "all",
+    category: null,
     query: "",
     get loading(): boolean {
       // Keep keyed cards and their open controls during a same-selection refresh.

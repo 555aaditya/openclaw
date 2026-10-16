@@ -43,6 +43,11 @@ export function PluginsPageView(props: { page: PluginsPageModel }) {
     props.page.read();
     return props.page;
   };
+  // The owner mutates in place; publish fresh props for each page revision.
+  const discovery = createMemo(() => ({
+    ...page().discovery.read(),
+    error: page().discovery.read().error ?? page().state.error,
+  }));
   const onOpenSkill = (request: PluginsSkillsReadParams) => void page().skillPreview.open(request);
   const actions = {
     openPluginSettings: (pluginId: string | null) => {
@@ -289,23 +294,10 @@ export function PluginsPageView(props: { page: PluginsPageModel }) {
             ) : (
               <SettingsPage wide carapace>
                 <PluginCatalogResults
+                  {...discovery()}
                   registerIcon={page().icons.register}
                   connected={page().gateway.connected}
-                  loading={page().discovery.read().loading}
-                  result={page().discovery.read().result}
-                  error={page().discovery.read().error ?? page().state.error}
-                  remoteError={page().discovery.read().remoteError}
-                  categories={page().discovery.read().categories}
-                  categoriesLoading={page().discovery.read().categoriesLoading}
-                  categoriesError={page().discovery.read().categoriesError}
                   onRetryCategories={() => void page().discovery.ensureCategories(true)}
-                  featured={page().discovery.read().featured}
-                  trending={page().discovery.read().trending}
-                  loadingMore={page().discovery.read().loadingMore}
-                  loadMoreError={page().discovery.read().loadMoreError}
-                  intent={page().discovery.read().intent}
-                  category={page().discovery.read().category}
-                  query={page().discovery.read().query}
                   iconUrls={page().state.catalogIconUrls}
                   pluginIconUrls={page().state.iconUrls}
                   iconLoading={page().icons.catalog.isLoading}

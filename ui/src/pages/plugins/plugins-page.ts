@@ -20,7 +20,6 @@ import {
 } from "../../lib/plugins/index.ts";
 import { t } from "../../lib/reactive/i18n.ts";
 import { listen } from "../../lib/reactive/listener.ts";
-import { projectSource } from "../../lib/reactive/projection.ts";
 import { installedPluginDetailTabFromHash, type InstalledPluginDetailTab } from "./detail-tabs.ts";
 import { createPluginDiscovery } from "./plugin-discovery.ts";
 import { createPluginHelp } from "./plugin-help.ts";
@@ -55,36 +54,41 @@ export function createPluginsPage(options: {
   let active = true;
   let routeData: PluginsRouteData | undefined;
   let surface: "discovery" | "settings" = "settings";
-  let notify = () => {};
+  const [revision, setRevision] = createSignal(0, { ownedWrite: true });
   const [settingsTab, setSettingsTab] = createSignal<PluginSettingsTab>("installed");
 
-  const state = {
-    result: null as PluginListResult | null,
-    error: null as string | null,
-    busy: {} as Record<string, PluginMutationAction>,
-    messages: {} as Record<string, PluginRowMessage>,
-    detail: null as PluginsPageDetail | null,
-    iconUrls: {} as Record<string, string>,
-    catalogIconUrls: {} as Record<string, string>,
-    pageNotice: null as PluginRowMessage | null,
-    catalogDetail: null as PluginsPageCatalogDetail | null,
-    installedDetailTab: "readme" as InstalledPluginDetailTab,
+  const state: {
+    result: PluginListResult | null;
+    error: string | null;
+    busy: Record<string, PluginMutationAction>;
+    messages: Record<string, PluginRowMessage>;
+    detail: PluginsPageDetail | null;
+    iconUrls: Record<string, string>;
+    catalogIconUrls: Record<string, string>;
+    pageNotice: PluginRowMessage | null;
+    catalogDetail: PluginsPageCatalogDetail | null;
+    installedDetailTab: InstalledPluginDetailTab;
+  } = {
+    result: null,
+    error: null,
+    busy: {},
+    messages: {},
+    detail: null,
+    iconUrls: {},
+    catalogIconUrls: {},
+    pageNotice: null,
+    catalogDetail: null,
+    installedDetailTab: "readme",
   };
 
-  const projection = projectSource(state, {
-    read: (source) => source,
-    subscribe: (_source, listener) => {
-      notify = listener;
-      return () => {
-        notify = () => {};
-      };
-    },
-    equality: "revision",
-  });
+  function read() {
+    revision();
+    return state;
+  }
 
   function publish() {
     if (active) {
-      notify();
+      setRevision((previous) => previous + 1);
     }
   }
 
@@ -212,7 +216,7 @@ export function createPluginsPage(options: {
   // Track live tile identities before synchronizing the shared fetch/cache owners.
   createEffect(
     () => {
-      projection.revision();
+      revision();
       return icons.rendered();
     },
     (rendered) =>
@@ -653,9 +657,9 @@ export function createPluginsPage(options: {
     );
   }
   return {
-    read: projection.read,
+    read,
     get state() {
-      return projection.read();
+      return read();
     },
     context,
     gateway,
@@ -669,15 +673,15 @@ export function createPluginsPage(options: {
     settingsTab,
     setSettingsTab,
     get routeData() {
-      projection.read();
+      revision();
       return routeData;
     },
     get surface() {
-      projection.read();
+      revision();
       return surface;
     },
     get loading() {
-      projection.read();
+      revision();
       return loading();
     },
     setState,
