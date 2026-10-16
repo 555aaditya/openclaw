@@ -144,7 +144,7 @@ export function toCatalogSession(
   // Codex models Atlas and ChatGPT as custom sources but includes both in its
   // interactive default. Normalize those objects for the string-only catalog.
   const source = normalizeInteractiveThreadSource(thread.source);
-  if (!source && !thread.catalogError) {
+  if (!source) {
     return undefined;
   }
   const { id: threadId, sessionId, name, cwd, modelProvider, cliVersion } = thread;

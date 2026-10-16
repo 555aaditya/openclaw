@@ -81,8 +81,7 @@ function createFactory(state: CodexCatalogState) {
   });
 }
 
-it("finishes a native snapshot past one oversized thread with bounded metadata and requests", async () => {
-  const { harness, requests, native } = serveCatalog();
+function createStoredState() {
   const values = new Map<string, StoredCodexCatalogEntry>();
   const state: CodexCatalogState = {
     entries: async () => [...values].map(([key, value]) => ({ key, value, createdAt: 0 })),
@@ -91,6 +90,12 @@ it("finishes a native snapshot past one oversized thread with bounded metadata a
     },
     delete: async (key) => values.delete(key),
   };
+  return { values, state };
+}
+
+it("finishes a native snapshot past one oversized thread with bounded metadata and requests", async () => {
+  const { harness, requests, native } = serveCatalog();
+  const { values, state } = createStoredState();
   const factory = createFactory(state);
   let restarted: ReturnType<typeof createFactory> | undefined;
   try {
@@ -146,6 +151,40 @@ it("finishes a native snapshot past one oversized thread with bounded metadata a
       ),
       retainedBytes: Buffer.byteLength(JSON.stringify([...values])),
     });
+    await factory.stop();
+    await restarted?.stop();
+    await harness.client.closeAndWait();
+  }
+});
+
+it("omits an oversized noninteractive thread while completing and persisting the snapshot", async () => {
+  const { harness, requests, native } = serveCatalog();
+  native[5]!.source = "exec";
+  const { values, state } = createStoredState();
+  const factory = createFactory(state);
+  let restarted: ReturnType<typeof createFactory> | undefined;
+  const visibleThreadIds = [0, 1, 2, 3, 4, 6, 7, 8, 9].map((index) => `thread-${index}`);
+  try {
+    const home = (await factory.homesForAgent("main"))[0]!;
+    const control = factory.forRequest("main", home);
+    await control.initialize();
+    const page = await control.listPage({ limit: 20 });
+    expect(page.sessions.map((row) => row.threadId)).toEqual(visibleThreadIds);
+    expect(page.nextCursor).toBeUndefined();
+    expect(values.get("complete")).toEqual({ version: 1, kind: "complete" });
+    expect(requests).toHaveLength(11);
+    expect([...values.values()]).toContainEqual({
+      version: 1,
+      kind: "row",
+      row: expect.objectContaining({ threadId: "thread-5", page: { sessions: [] } }),
+    });
+    await factory.stop();
+    restarted = createFactory(state);
+    const restoredHome = (await restarted.homesForAgent("main"))[0]!;
+    const restored = await restarted.forRequest("main", restoredHome).listPage({ limit: 20 });
+    expect(restored.sessions.map((row) => row.threadId)).toEqual(visibleThreadIds);
+    expect(requests).toHaveLength(11);
+  } finally {
     await factory.stop();
     await restarted?.stop();
     await harness.client.closeAndWait();

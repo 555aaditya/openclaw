@@ -65,8 +65,10 @@ resident home's lifetime.
 If a single thread still exceeds 8 MiB but fits within 64 MiB, the catalog worker
 parses that page once, retains only its bounded catalog projection as a degraded
 entry, and continues with the server's cursor. The full payload is discarded
-before the worker returns. The entry displays `systemError`; its degraded
-marker survives restart and clears when a healthy native response replaces it.
+before the worker returns. Interactive entries display `systemError`; their degraded
+marker survives restart and clears when a healthy native response replaces them.
+The normal source filter still applies: noninteractive threads remain hidden
+while discovery continues past them.
 If the singleton exceeds 64 MiB or its identity or continuation cannot be recovered,
 the host reports an error and waits 15 minutes before another native listing attempt; repeated
 reads during backoff reuse that error without repeating its background warning.
