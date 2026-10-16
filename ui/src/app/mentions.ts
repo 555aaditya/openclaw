@@ -27,6 +27,7 @@ type MentionsSnapshot = {
 export type MentionsCapability = ReturnType<typeof createMentionsCapability>;
 
 type MentionConnection = {
+  retired: boolean;
   client: GatewayBrowserClient;
   hello: GatewayHelloOk;
   connectionRevision: number;
@@ -64,6 +65,7 @@ export function createMentionsCapability(
   const isCurrent = (owner: MentionConnection) =>
     !disposed &&
     connection === owner &&
+    !owner.retired &&
     canCallGatewayMethod(gateway.snapshot, "mentions.list", "operator.read") &&
     gateway.snapshot.client === owner.client &&
     gateway.snapshot.hello === owner.hello &&
@@ -172,6 +174,10 @@ export function createMentionsCapability(
       return;
     }
     clearTimeout(connection?.retryTimer);
+    if (connection) {
+      // Keep its display identity, but never revive pre-disconnect requests.
+      connection.retired = true;
+    }
     const sameIdentity =
       connection?.client === next.client &&
       connection?.connectionRevision === gateway.connectionRevision &&
@@ -205,6 +211,7 @@ export function createMentionsCapability(
       return;
     }
     const owner: MentionConnection = {
+      retired: false,
       client: next.client,
       hello: next.hello,
       connectionRevision: gateway.connectionRevision,

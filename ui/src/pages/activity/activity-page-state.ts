@@ -93,8 +93,8 @@ export function createActivityPageState(context: ApplicationContext) {
     if (location && routeData) {
       presentedRoute = { location, data: routeData };
     }
+    syncRunInspector(context.gateway, context.gateway.snapshot);
     syncSessionActivity();
-    bindInspectorRoute();
     reconcileSessions();
   }
 
@@ -170,22 +170,6 @@ export function createActivityPageState(context: ApplicationContext) {
     );
   }
 
-  function bindInspectorRoute() {
-    const route = routeData;
-    const selector = route?.mode === "run" ? route.selector : null;
-    const nextSelectorKey = inspectorRequestKey(route);
-    if (nextSelectorKey === inspectorSelectorKey && route?.mode === "run") {
-      return;
-    }
-    inspectorSelectorKey = nextSelectorKey;
-    cancelInspectorRequest();
-    inspectorClient = null;
-    runInspector = selector ? { status: "loading", waitingForGateway: true } : { status: "empty" };
-    if (route?.mode === "run") {
-      syncRunInspector(context.gateway, context.gateway.snapshot, true);
-    }
-  }
-
   function cancelInspectorRequest() {
     inspectorEpoch += 1;
     inspectorAbort?.abort();
@@ -198,6 +182,13 @@ export function createActivityPageState(context: ApplicationContext) {
     force = false,
   ) {
     const route = routeData;
+    const selectorKey = inspectorRequestKey(route);
+    if (selectorKey !== inspectorSelectorKey) {
+      cancelInspectorRequest();
+      inspectorClient = null;
+      runInspector = { status: "empty" };
+      inspectorSelectorKey = selectorKey;
+    }
     if (route?.mode !== "run") {
       return;
     }
@@ -207,7 +198,6 @@ export function createActivityPageState(context: ApplicationContext) {
       publish();
       return;
     }
-    inspectorSelectorKey = inspectorRequestKey(route);
     if (snapshot.phase !== "connected" || !snapshot.client) {
       cancelInspectorRequest();
       inspectorClient = null;

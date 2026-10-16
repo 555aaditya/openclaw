@@ -419,42 +419,54 @@ describe("application mention Inbox", () => {
     },
   );
 
-  it("retains visible mentions through a same-client blip and fences the old read", async () => {
-    const stale = deferred<MentionsListResult>();
-    const refreshed = deferred<MentionsListResult>();
-    const request = vi
-      .fn<RequestFn>()
-      .mockResolvedValueOnce(result(1))
-      .mockReturnValueOnce(stale.promise)
-      .mockReturnValueOnce(refreshed.promise);
-    const harness = gatewayForMentions(request);
-    const capability = createCapability(harness.gateway);
-    await capability.refresh();
-    const previous = capability.refresh();
-    await flushMicrotasks();
-    harness.update({ phase: "reconnecting", selfUser: null, hello: null });
-    expect(capability.snapshot).toMatchObject({ phase: "unavailable", items: [mention] });
-    await capability.dismiss([mention.id]);
-    expect(request).toHaveBeenCalledTimes(2);
-    stale.resolve(result(99, []));
-    await previous;
-    expect(capability.snapshot.items).toEqual([mention]);
-    harness.update({
-      phase: "connected",
-      hello: hello(),
-      selfUser: undefined,
-    });
-    expect(capability.snapshot).toMatchObject({ phase: "loading", items: [mention] });
-    await capability.dismiss([mention.id]);
-    expect(request).toHaveBeenCalledTimes(2);
-    harness.update({
-      selfUser: { id: "bob", identity: { type: "profile", id: "bob" } },
-    });
-    expect(capability.snapshot.items).toEqual([mention]);
-    refreshed.resolve(result(2, []));
-    await capability.refresh();
-    expect(capability.snapshot.items).toEqual([]);
-  });
+  it.each(["same hello", "profile hydration"] as const)(
+    "refreshes on reconnect alone and never revives a pre-disconnect read (%s)",
+    async (reconnect) => {
+      const stale = deferred<MentionsListResult>();
+      const refreshed = deferred<MentionsListResult>();
+      const request = vi
+        .fn<RequestFn>()
+        .mockResolvedValueOnce(result(1))
+        .mockReturnValueOnce(stale.promise)
+        .mockReturnValueOnce(refreshed.promise);
+      const harness = gatewayForMentions(request);
+      const connected = { ...harness.gateway.snapshot };
+      const capability = createCapability(harness.gateway);
+      await flushMicrotasks();
+      expect(capability.snapshot.items).toEqual([mention]);
+      harness.emitEvent("mentions.changed", { gatewayInstanceId: "boot-a", revision: 2 });
+      await flushMicrotasks();
+      expect(request).toHaveBeenCalledTimes(2);
+      harness.update({ phase: "reconnecting", selfUser: null, hello: null });
+      expect(capability.snapshot).toMatchObject({ phase: "unavailable", items: [mention] });
+      await capability.dismiss([mention.id]);
+      expect(request).toHaveBeenCalledTimes(2);
+      harness.update(
+        reconnect === "same hello"
+          ? connected
+          : { phase: "connected", hello: hello(), selfUser: undefined },
+      );
+      expect(capability.snapshot).toMatchObject({ phase: "loading", items: [mention] });
+      if (reconnect === "profile hydration") {
+        await capability.dismiss([mention.id]);
+        expect(request).toHaveBeenCalledTimes(2);
+        harness.update({ selfUser: connected.selfUser });
+      }
+      await flushMicrotasks();
+      expect(request).toHaveBeenCalledTimes(3);
+      expect(request).toHaveBeenLastCalledWith("mentions.list", {});
+
+      // Resolve the old read only after reconnect, when its transport facts match again.
+      stale.resolve(result(99, []));
+      await flushMicrotasks();
+      expect(capability.snapshot).toMatchObject({ phase: "loading", items: [mention] });
+      const current = { ...mention, id: "created-during-outage" };
+      refreshed.resolve(result(2, [current]));
+      await flushMicrotasks();
+      expect(capability.snapshot).toMatchObject({ phase: "ready", items: [current] });
+      expect(request).toHaveBeenCalledTimes(3);
+    },
+  );
 
   it("hydrates the new profile when an earlier profile's bootstrap is still queued", async () => {
     const bootstrap = createConnectionBootstrapCoordinator();

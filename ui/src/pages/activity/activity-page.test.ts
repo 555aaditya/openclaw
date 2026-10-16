@@ -574,6 +574,62 @@ describe("ActivityPage gateway lifecycle", () => {
     replacement.resolve(first);
   });
 
+  it.each(["connected", "offline"] as const)(
+    "clears run A evidence when selecting run B while %s, including after B fails",
+    async (phase) => {
+      const { gateway: source, current } = activityGateway();
+      const hello = {
+        ...activityHello(),
+        features: { methods: ["audit.run.inspect"], events: [] },
+      };
+      current().opts.onHello?.(hello);
+      const first = presentResult("run-a");
+      const second = createDeferred<AuditRunInspectResult>();
+      let inspection: Promise<AuditRunInspectResult> = Promise.resolve(first);
+      current().request.mockImplementation(async (method, params) =>
+        method === "audit.run.inspect" ? inspection : activityResponse(method, params),
+      );
+      const page = createActivityPage(activityContext(source), {
+        pathname: "/activity",
+        search: "?view=run&run=run-a",
+        hash: "",
+      });
+      const receipts = () => page.container.querySelectorAll(".run-inspector__receipt-list li");
+      await waitForSolid(() => expect(receipts()).toHaveLength(1));
+      inspection = second.promise;
+      if (phase === "offline") {
+        current().opts.onClose?.({ code: 1006, reason: "reconnecting", willRetry: true });
+        flush();
+        expect(receipts()).toHaveLength(1);
+      }
+
+      page.setRouteLocation({ pathname: "/activity", search: "?view=run&run=run-b", hash: "" });
+      expect(receipts()).toHaveLength(0);
+      if (phase === "offline") {
+        expect(current().request).not.toHaveBeenCalledWith(
+          "audit.run.inspect",
+          expect.objectContaining({ runId: "run-b" }),
+          expect.anything(),
+        );
+        current().opts.onHello?.(hello);
+        flush();
+        expect(receipts()).toHaveLength(0);
+      }
+      expect(current().request).toHaveBeenCalledWith(
+        "audit.run.inspect",
+        expect.objectContaining({ runId: "run-b" }),
+        expect.anything(),
+      );
+      second.reject(new Error("Run B inspection unavailable"));
+      await waitForSolid(() =>
+        expect(page.container.querySelector('[role="alert"] button')?.textContent).toBe(
+          "Retry inspection",
+        ),
+      );
+      expect(receipts()).toHaveLength(0);
+    },
+  );
+
   it.each(["stop", "event"] as const)(
     "retires the roster before an earlier reset observer triggers a reentrant %s",
     async (action) => {
