@@ -230,8 +230,8 @@ export function loadControlUiSourceCatalog(): TranslationMap {
     registerUpdateActionsEnglish.catalog,
     registerTranscriptsEnglish.catalog,
     registerUsageEnglish.catalog,
-    loadControlUiCoreHintCatalog(),
     { publicReader: PUBLIC_SESSION_COPY },
+    loadControlUiCoreHintCatalog(),
   );
 }
 

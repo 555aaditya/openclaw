@@ -4,7 +4,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderPublicSessionDocument } from "./control-ui-public-session-render.js";
 
 // Synthetic catalog fixture isolates reader behavior from generated translation freshness.
-vi.mock("./control-ui-public-session-locales.js", () => ({
+vi.mock("./control-ui-public-session-locales.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./control-ui-public-session-locales.js")>()),
   PUBLIC_SESSION_LOCALES: {
     fr: {
       top: "Haut",
