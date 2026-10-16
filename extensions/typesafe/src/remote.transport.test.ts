@@ -207,6 +207,9 @@ function provider(source: ModelProviderConfig | (() => ModelProviderConfig)) {
   } as unknown as OpenClawPluginApi);
   const registered = registerDecisionProvider.mock.calls[0]?.[0];
   assert(registered);
+  if (registered.contractVersion !== 2) {
+    throw new Error("TypeSafe fixture registered an unexpected decision contract");
+  }
   return legacyWireFixture(registered, () =>
     resolveRuntimeConfig({
       models: { providers: { typesafe: typeof source === "function" ? source() : source } },
