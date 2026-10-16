@@ -7,8 +7,14 @@ title: "Levanto Sage"
 ---
 
 The optional Levanto plugin connects Sage to OpenClaw's [decision model](/concepts/decision-models)
-role. It does not provide chat completions. It requires the prepared version-2 decision
-provider API in OpenClaw **2026.9.6 or later**; an older host must not load it.
+role. It does not provide chat completions. It requires the prepared version-2
+decision provider API. The released OpenClaw 2026.9.6 runtime exposes V1 only and
+cannot load this plugin.
+
+**Release compatibility is pending.** The package's current minimum-host declaration
+is provisional and must be bound to the first release containing the required V2
+SDK before publication. Development validation requires a compatible V2 host
+candidate; do not override host-version checks to force installation.
 
 ## Connect and select
 
@@ -30,23 +36,29 @@ agent-scoped credential profile. Do not set Sage as the conversational primary m
 
 The default endpoint is `https://sage.levanto.ai`. Normal configured provider URL
 prefixes, effective request headers, proxy/TLS settings and private-network policy
-remain owned by OpenClaw's common provider request path. Inference consumes only the
-host-prepared credential; it does not read environment keys or use headers as an
-alternate credential source.
+remain owned by OpenClaw's common provider request path. Inference consumes the
+host-prepared credential and effective private headers, including resolved SecretRefs;
+it does not reread configured auth values, read environment keys, or use headers as an
+alternate credential source. A foreign base URL override does not inherit Sage
+capabilities: the owning plugin must explicitly declare that native route and
+protocol in its [model catalog](/plugins/manifest/models#task-specific-inference-metadata).
+An empty chat-model list is not such a declaration.
 
 ## Native operations
 
 Consumers use [`api.runtime.decisions.evaluateV2`](/plugins/sdk-overview/capabilities#prepared-version-2-providers).
+The V1 adapter still refuses richer results it cannot represent; selecting Sage
+does not establish V1-only consumer or Auto compatibility.
 Only explicitly supplied content is sent. One question uses `POST /decide`;
 multiple questions use one grouped `POST /decide/batch`, not hidden fan-out.
 
-| OpenClaw kind | Sage kind | Semantics and bounds                                                                                                                                                         |
-| ------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Boolean       | Yes/No    | `probabilityTrue` is P(yes). `answer: null` is successful abstention.                                                                                                        |
-| Choice        | Choice    | 2–120 options; at most 20 for images. Preserve the chosen option, nullable selected probability and independent per-option estimates; do not normalize or take their argmax. |
-| Score         | Scale     | Exactly five rubric levels, indexed 0–4. Preserve the fractional expectation and provider confidence; no distribution is invented.                                           |
-| Sort          | Sort      | A list of 2–120 items; preserves the native order and optional list-level confidence. No image sorting.                                                                      |
-| Tags          | Tags      | 1–120 labels. Text verdicts may be null; image verdicts are Boolean.                                                                                                         |
+| OpenClaw kind | Sage kind | Semantics and bounds                                                                                                                                               |
+| ------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Boolean       | Yes/No    | `probabilityTrue` is P(yes). `answer: null` is successful abstention.                                                                                              |
+| Choice        | Choice    | 2–120 options; at most 20 for images. Preserve the chosen option, nullable selected probability and categorical distribution; do not normalize or take its argmax. |
+| Score         | Scale     | 2–26 rubric levels, indexed from zero. Preserve the fractional expectation, provider confidence and supplied per-level distribution.                               |
+| Sort          | Sort      | A list of 2–120 items; preserves the native order and optional list-level confidence. No image sorting.                                                            |
+| Tags          | Tags      | 1–120 labels. Text verdicts may be null; image verdicts are Boolean.                                                                                               |
 
 Text and JSON evidence are rendered as text. List item bodies and rubric entries
 retain their supplied text or JSON representation. Boolean true/false criteria,
@@ -58,9 +70,9 @@ image dimensions. Remote image URLs, filesystem paths, list-contained images and
 image Sort are not accepted. Callers still own authority to submit the image.
 
 The caller can select `auto`, `off` or `on` reasoning. Omission retains Sage's
-`auto` default. Its internal reasoning budget can be six seconds, but never extends
-the caller's deadline. Use `off` for tight latency budgets. Returned reasoning
-metadata describes execution, not a prose reasoning trace.
+`off` default. Its internal reasoning limit is ten seconds, but never extends
+the caller's deadline. Allow more than ten seconds when requesting reasoning.
+Returned reasoning metadata describes execution, not a prose reasoning trace.
 
 The initial shared V2 request has no grounding authorization input. This adapter
 therefore **omits grounding**, even though the vendor supports it. It performs no
@@ -75,16 +87,18 @@ and reasoning metadata. A failed batch question becomes an explicit error answer
 not a negative decision. Successful questions are retained.
 
 The selectable catalog ID is `levanto-sage`. A response may report
-`levanto-sage-v1.1`; neither is a request-level version pin. Sage documents no model
+`levanto-sage-v1.3`; neither is a request-level version pin. Sage documents no model
 selector in these request bodies.
 
-Reported billed input tokens flow through the common usage owner. Missing output
-tokens remain unknown, and reasoning tokens are not silently relabeled as output
-tokens. Native usage is also retained unchanged. The short pricing docs describe
-monthly decision units, whereas the catalog still exposes token pricing. Current
-short docs and OpenAPI say reasoning tokens are not billed. The adapter does not convert decision units
-into dollars, apply token catalog rates, or report missing cost as zero. Exact
-plan-dependent context limits are not invented.
+Reported `meta.usage.input_tokens` and `output_tokens` flow through the common
+usage owner. Sage includes reasoning in those totals; the adapter does not add
+`meta.reasoning.tokens` again. Native usage, including image counts and tokens,
+is retained unchanged. If usage is absent, it remains unknown.
+
+Sage charges per input token, output token and grounding search at the account's
+plan rates. This adapter omits grounding, declares token billing without fixed
+rates, and does not invent a dollar cost or report missing cost as zero.
+Plan-dependent context limits are not inferred from the catalog.
 
 See the vendor [decision documentation](https://docs.levanto.ai/llms.txt),
 [pricing](https://docs.levanto.ai/pricing.md) and [OpenAPI](https://sage.levanto.ai/openapi.json).

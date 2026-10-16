@@ -161,10 +161,10 @@ function question(value: unknown, c: unknown, batch: boolean, topGrounding?: unk
     }
     case "scale": {
       keys(q, [...base, "levels"], "scale fields");
-      const levels = array(q.levels, 5, 5, "scale level count").map((v) => {
+      const levels = array(q.levels, 2, 26, "scale level count").map((v) => {
         const l = object(v, "scale level");
         keys(l, ["level", "description"], "level fields");
-        integer(l.level, 0, 4, "scale level");
+        integer(l.level, Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER, "scale level");
         optionalString(l.description, "level description");
         return l.level;
       });
@@ -229,10 +229,8 @@ function metadata(value: unknown) {
   }
   if (m.usage != null) {
     const u = object(m.usage, "usage");
-    integer(u.billed_input_tokens, 0, Infinity, "billed input tokens");
-    if (u.rendered_tokens != null) {
-      integer(u.rendered_tokens, 0, Infinity, "usage rendered_tokens");
-    }
+    integer(u.input_tokens, 0, Infinity, "input tokens");
+    integer(u.output_tokens, 0, Infinity, "output tokens");
     for (const k of ["image_count", "image_tokens"]) {
       if (u[k] !== undefined) {
         integer(u[k], 0, Infinity, "usage " + k);
@@ -241,15 +239,15 @@ function metadata(value: unknown) {
   }
   if (m.reasoning != null) {
     const r = object(m.reasoning, "reasoning metadata");
-    check(typeof r.fired === "boolean" && typeof r.ran === "boolean", "reasoning fired/ran");
+    check(typeof r.ran === "boolean", "reasoning ran");
     if (r.finished != null) {
       check(typeof r.finished === "boolean", "reasoning finished");
     }
     if (r.tokens != null) {
       integer(r.tokens, 0, Infinity, "reasoning tokens");
     }
-    if (r.margin != null) {
-      number(r.margin, -Infinity, Infinity, "reasoning margin");
+    if (r.forced !== undefined) {
+      check(typeof r.forced === "boolean", "reasoning forced");
     }
     if (r.limited != null) {
       check(
@@ -321,10 +319,23 @@ export function parseSageResponse(value: unknown, q: SageQuestion, c: SageConten
       });
       break;
     }
-    case "scale":
-      number(r.expectation, 0, 4, "expectation");
+    case "scale": {
+      const levels = q.levels.map((level) => level.level);
+      number(r.expectation, Math.min(...levels), Math.max(...levels), "expectation");
       number(r.confidence, -Infinity, Infinity, "confidence");
+      const probabilities = array(
+        r.probabilities,
+        levels.length,
+        levels.length,
+        "level probabilities",
+      );
+      probabilities.forEach((p, i) => {
+        const estimate = object(p, "level probability");
+        check(estimate.level === levels[i], "level correlation");
+        number(estimate.probability, 0, 1, "level probability");
+      });
       break;
+    }
     case "sort": {
       check(typeof c === "object" && c.kind === "list", "sort content");
       const ids = c.value.map((item) => item.id);

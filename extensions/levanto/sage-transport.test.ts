@@ -1,8 +1,14 @@
 import assert from "node:assert/strict";
+import { lookup } from "node:dns/promises";
 import { createDeferred } from "openclaw/plugin-sdk/extension-shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { executeSageRequest } from "./sage-transport.js";
 import type { SageBatchRequest, SageRequest } from "./sage-wire.js";
+
+vi.mock("node:dns/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:dns/promises")>();
+  return { ...actual, lookup: vi.fn(actual.lookup) };
+});
 
 const request: SageRequest = {
   content: "synthetic document",
@@ -13,7 +19,7 @@ const answer = {
   id: "q",
   kind: "yesno",
   result: { answer: null, probability: 0.51 },
-  meta: { model: "levanto-sage-v1.1", usage: { billed_input_tokens: 5 } },
+  meta: { model: "levanto-sage-v1.3", usage: { input_tokens: 5, output_tokens: 1 } },
 };
 function transport(fetchFn: typeof fetch) {
   return {
@@ -23,11 +29,13 @@ function transport(fetchFn: typeof fetch) {
     fetchFn,
     mode: "strict" as const,
     dispatcherPolicy: { mode: "direct" as const },
+    beforeRequest: () => {},
   };
 }
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
+  vi.mocked(lookup).mockReset();
 });
 
 describe("Sage through the real guarded provider HTTP helper", () => {
@@ -67,7 +75,7 @@ describe("Sage through the real guarded provider HTTP helper", () => {
           ],
         },
       ],
-      meta: { request_count: 1, question_count: 2, usage: { billed_input_tokens: 9 } },
+      meta: { request_count: 1, question_count: 2, usage: { input_tokens: 9, output_tokens: 1 } },
     };
     const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(Response.json(result));
     expect(await executeSageRequest(batch, transport(fetchFn))).toEqual(result);
@@ -76,6 +84,32 @@ describe("Sage through the real guarded provider HTTP helper", () => {
     const body = fetchFn.mock.calls[0]![1]?.body;
     assert(typeof body === "string");
     expect(JSON.parse(body)).toEqual(batch);
+  });
+  it("rechecks admission after DNS and preserves the authority error without fetching", async () => {
+    const started = createDeferred<void>();
+    const resolved = createDeferred<{ address: string; family: number }[]>();
+    vi.mocked(lookup).mockImplementationOnce(async () => {
+      started.resolve();
+      return resolved.promise;
+    });
+    const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(Response.json(answer));
+    const authorityError = new Error("synthetic owner closed during DNS");
+    let admitted = true;
+    const pending = executeSageRequest(request, {
+      ...transport((input, init) => fetchFn(input, init)),
+      baseUrl: "https://sage.example/prefix",
+      beforeRequest: () => {
+        if (!admitted) {
+          throw authorityError;
+        }
+      },
+    });
+    const rejected = expect(pending).rejects.toBe(authorityError);
+    await started.promise;
+    admitted = false;
+    resolved.resolve([{ address: "93.184.216.34", family: 4 }]);
+    await rejected;
+    expect(fetchFn).not.toHaveBeenCalled();
   });
   it.each([400, 401, 402, 429, 500, 503])(
     "does not retry HTTP %s and redacts reflected auth",

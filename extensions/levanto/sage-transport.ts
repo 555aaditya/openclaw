@@ -1,11 +1,16 @@
 import { buildTimeoutAbortSignal } from "openclaw/plugin-sdk/extension-shared";
 import {
+  shouldUseEnvHttpProxyForUrl,
+  withTrustedEnvProxyGuardedFetchMode,
+} from "openclaw/plugin-sdk/fetch-runtime";
+import {
   assertOkOrThrowProviderError,
   createProviderOperationTimeoutResolver,
-  postJsonRequest,
   readProviderJsonResponse,
+  type postJsonRequest,
   type ProviderOperationDeadline,
 } from "openclaw/plugin-sdk/provider-http";
+import { fetchWithSsrFGuard } from "openclaw/plugin-sdk/ssrf-runtime";
 import {
   parseSageBatchResponse,
   parseSageResponse,
@@ -40,6 +45,7 @@ type SageTransport = Pick<
   deadline: ProviderOperationDeadline;
   signal?: AbortSignal;
   probeImage?: SageImageProbe;
+  beforeRequest: () => void;
 };
 
 export function executeSageRequest(
@@ -112,20 +118,29 @@ export async function executeSageRequest(
     base.pathname.replace(/\/+$/, "") + ("requests" in request ? "/decide/batch" : "/decide");
   const headers = new Headers(transport.headers);
   headers.set("content-type", "application/json");
-  const result = await postJsonRequest({
+  const guardedRequest = {
     url: base.href,
-    headers,
-    body: request,
+    init: { method: "POST", headers, body: JSON.stringify(request) },
     timeoutMs: remaining(),
     signal: transport.signal,
-    fetchFn: transport.fetchFn,
+    fetchImpl: transport.fetchFn,
     dispatcherPolicy: transport.dispatcherPolicy,
-    ssrfPolicy: transport.ssrfPolicy,
-    allowPrivateNetwork: transport.allowPrivateNetwork,
+    policy: transport.allowPrivateNetwork
+      ? { ...transport.ssrfPolicy, allowPrivateNetwork: true }
+      : transport.ssrfPolicy,
     mode: transport.mode,
     auditContext: "levanto-sage",
-    // No retryStage: a billable POST is attempted once, including abstentions and 503s.
-  });
+    // Recheck the owner after image validation and DNS, before each HTTP effect.
+    beforeRequest: transport.beforeRequest,
+  };
+  // Preserve the provider HTTP helper's implicit proxy policy without retrying a billable POST.
+  const result = await fetchWithSsrFGuard(
+    transport.mode === undefined &&
+      !transport.dispatcherPolicy &&
+      shouldUseEnvHttpProxyForUrl(base.href)
+      ? withTrustedEnvProxyGuardedFetchMode(guardedRequest)
+      : guardedRequest,
+  );
   try {
     await assertOkOrThrowProviderError(result.response, "Sage request failed", {
       signal: transport.signal,

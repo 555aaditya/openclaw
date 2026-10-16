@@ -39,8 +39,8 @@ export type SageBatchRequest = {
 export type SageJson = null | boolean | number | string | SageJson[] | { [key: string]: SageJson };
 export type SageMetadata = { [key: string]: SageJson };
 export type SageUsage = SageMetadata & {
-  billed_input_tokens: number;
-  rendered_tokens?: number | null;
+  input_tokens: number;
+  output_tokens: number;
   image_count?: number;
   image_tokens?: number;
 };
@@ -52,12 +52,11 @@ export type SageMeta = SageMetadata & {
   usage?: SageUsage | null;
   reasoning?:
     | (SageMetadata & {
-        fired: boolean;
         ran: boolean;
         finished?: boolean | null;
         tokens?: number | null;
-        margin?: number | null;
         limited?: "cap" | "timeout" | "budget" | null;
+        forced?: boolean;
       })
     | null;
 };
@@ -73,7 +72,14 @@ export type SageResponse = ResponseBase &
           probabilities: { option: string; probability: number }[];
         };
       }
-    | { kind: "scale"; result: { expectation: number; confidence: number } }
+    | {
+        kind: "scale";
+        result: {
+          expectation: number;
+          confidence: number;
+          probabilities: { level: number; probability: number }[];
+        };
+      }
     | { kind: "sort"; result: { sorted: string[]; confidence?: number | null } }
     | {
         kind: "tags";

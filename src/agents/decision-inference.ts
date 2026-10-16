@@ -1,5 +1,11 @@
+import {
+  findConfiguredProviderModel,
+  resolveMergedModelProviderEntry,
+} from "../config/model-provider-config.js";
+import { requiredWorkerHelperError } from "../config/required-worker-profile.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { DecisionProviderContextV2 } from "../decisions/provider-context.js";
+import type { PreparedDecisionBilling } from "../decisions/provider-host.js";
 import type {
   DecisionBatchV2,
   DecisionEvaluateOptionsV2,
@@ -7,13 +13,26 @@ import type {
   ProviderDecisionOutcomeV2,
 } from "../decisions/types-v2.js";
 import { validateDecisionResultV2 } from "../decisions/validation-v2.js";
+import { createProviderModelCatalogIdNormalizer } from "../plugins/provider-model-routes.js";
 import type { PluginProviderRegistration } from "../plugins/provider-plugin.types.js";
 import { normalizeProviderTransportWithPlugin } from "../plugins/provider-runtime.js";
-import { normalizeResolvedTransportApi } from "./embedded-agent-runner/model.inline-provider.js";
+import {
+  normalizeResolvedTransportApi,
+  sanitizeModelHeaders,
+} from "./embedded-agent-runner/model.inline-provider.js";
 import { resolveApiKeyForProviderCore } from "./model-auth-provider.js";
 import type { ResolvedProviderAuth } from "./model-auth-runtime-shared.js";
+import { applySecretRefHeaderSentinels } from "./model-auth.js";
 import type { ModelCatalogEntry } from "./model-catalog.types.js";
+import { modelTransportRoutesMatch } from "./model-compat-catalog.js";
+import { splitTrailingAuthProfile } from "./model-ref-profile.js";
 import { withPreparedModelInference } from "./prepared-model-inference.js";
+import {
+  attachModelProviderRequestTransport,
+  getModelProviderRequestTransport,
+  resolveProviderRequestConfig,
+  sanitizeConfiguredModelProviderRequest,
+} from "./provider-request-config.js";
 import {
   unwrapSecretSentinelsForProviderEgress,
   unwrapModelHeaderSentinelsForProviderEgress,
@@ -35,7 +54,25 @@ function supportsInput(
   ) {
     return false;
   }
+  if (batch.state.type === "image" && capability.limits?.image) {
+    const image = capability.limits.image;
+    const [prefix, payload = ""] = batch.state.dataUri.split(",", 2);
+    const mime = prefix?.slice(5).split(";", 1)[0];
+    if (
+      !image.mimeTypes.some((allowed) => allowed === mime) ||
+      Buffer.byteLength(payload, "base64") > image.maxBytes
+    ) {
+      return false;
+    }
+  }
   for (const question of Object.values(batch.questions)) {
+    if (
+      reasoning === "on" &&
+      capability.reasoning?.questionTypes &&
+      !capability.reasoning.questionTypes.includes(question.type)
+    ) {
+      return false;
+    }
     const kind = capability.questions?.[question.type];
     if (!kind) {
       if (capability.questions) {
@@ -83,28 +120,36 @@ export async function executePreparedDecision(params: {
   options: DecisionEvaluateOptionsV2;
   signal: AbortSignal;
   deadlineMonotonicMs: number;
-  assertCurrent: () => void;
+  isAdmissible: () => boolean;
+  onPreparedBilling?: (facts: PreparedDecisionBilling) => void;
 }): Promise<ProviderDecisionOutcomeV2> {
   const assertCurrent = () => {
-    params.assertCurrent();
     params.signal.throwIfAborted();
-    if (performance.now() >= params.deadlineMonotonicMs) {
-      throw new Error("Decision preparation deadline exhausted.");
-    }
+    return params.isAdmissible() && performance.now() < params.deadlineMonotonicMs;
   };
-  assertCurrent();
+  if (!assertCurrent() || requiredWorkerHelperError(params.config)) {
+    return { status: "unavailable", reason: "unsupported-input" };
+  }
+  const selected = splitTrailingAuthProfile(params.modelId);
+  const modelId = selected.model;
+  const profileId = params.profileId ?? selected.profile;
   return withPreparedModelInference(
     { cfg: params.config, agentId: params.options.agentId, signal: params.signal },
-    { provider: params.registration.provider.id, modelId: params.modelId },
+    { provider: params.registration.provider.id, modelId },
     async (context) => {
       const prepared = context.preparedModelRuntime;
       const assertPrepared = () => {
-        assertCurrent();
+        if (!assertCurrent()) {
+          return false;
+        }
         if (!prepared.isCurrent()) {
           throw new Error("Decision model generation is no longer current.");
         }
+        return true;
       };
-      assertPrepared();
+      if (!assertPrepared()) {
+        return { status: "unavailable", reason: "unsupported-input" };
+      }
       const canonical = prepared.pluginRegistry?.providers.find(
         (entry) => entry.provider.id === params.registration.provider.id,
       );
@@ -115,10 +160,28 @@ export async function executePreparedDecision(params: {
       ) {
         return { status: "unavailable", reason: "unsupported-input" };
       }
-      const row = prepared.modelCatalog.entries.find(
-        (entry) => entry.provider === canonical.provider.id && entry.id === params.modelId,
+      let row = prepared.modelCatalog.entries.find(
+        (entry) => entry.provider === canonical.provider.id && entry.id === modelId,
       );
-      if (!row || !supportsInput(row, params.batch, params.options.reasoning)) {
+      if (!row) {
+        return { status: "unavailable", reason: "unsupported-input" };
+      }
+      // Reuse the selected normal provider's existing catalog hook for protocol facts,
+      // including explicitly configured custom model IDs. No provider rediscovery or chat Model.
+      const supplemental = await canonical.provider.augmentModelCatalog?.({
+        config: prepared.config,
+        agentDir: prepared.agentDir,
+        workspaceDir: context.workspaceDir,
+        env: process.env,
+        entries: [structuredClone(row)],
+      });
+      if (!assertPrepared()) {
+        return { status: "unavailable", reason: "unsupported-input" };
+      }
+      row =
+        supplemental?.find((entry) => entry.provider === row?.provider && entry.id === modelId) ??
+        row;
+      if (!supportsInput(row, params.batch, params.options.reasoning)) {
         return { status: "unavailable", reason: "unsupported-input" };
       }
       const normalized = normalizeProviderTransportWithPlugin({
@@ -140,6 +203,35 @@ export async function executePreparedDecision(params: {
         api: normalizeResolvedTransportApi(normalized?.api) ?? row.api,
         ...(normalized?.baseUrl ? { baseUrl: normalized.baseUrl } : {}),
       };
+      const providerConfig = resolveMergedModelProviderEntry(
+        prepared.config,
+        row.provider,
+      )?.providerConfig;
+      if (providerConfig) {
+        const configuredModel = findConfiguredProviderModel(
+          providerConfig,
+          row.provider,
+          row.id,
+          createProviderModelCatalogIdNormalizer(row.provider),
+        );
+        const request = sanitizeConfiguredModelProviderRequest(providerConfig.request);
+        // Catalog projections omit authored headers; use the normal model resolver's
+        // provider → model → request precedence before private provider handoff.
+        const resolved = resolveProviderRequestConfig({
+          provider: row.provider,
+          api: model.api,
+          baseUrl: model.baseUrl,
+          capability: "other",
+          providerHeaders: sanitizeModelHeaders(providerConfig.headers),
+          modelHeaders: sanitizeModelHeaders(configuredModel?.headers),
+          authHeader: providerConfig.authHeader,
+          request,
+        });
+        model = applySecretRefHeaderSentinels(
+          attachModelProviderRequestTransport({ ...model, headers: resolved.headers }, request),
+          prepared.config,
+        );
+      }
       let auth: ResolvedProviderAuth;
       try {
         if (canonical.provider.prepareRuntimeAuth) {
@@ -153,7 +245,7 @@ export async function executePreparedDecision(params: {
               agentId: params.options.agentId,
               provider: row.provider,
               modelId: row.id,
-              profileId: params.profileId,
+              profileId,
               bindAuthOwner: true,
               agentDir: prepared.agentDir,
               workspaceDir: context.workspaceDir,
@@ -172,19 +264,24 @@ export async function executePreparedDecision(params: {
             baseUrl: completion.model.baseUrl,
             headers: completion.model.headers,
           };
+          const request = getModelProviderRequestTransport(completion.model);
+          if (request) {
+            model = attachModelProviderRequestTransport(model, request);
+          }
         } else {
           auth = await resolveApiKeyForProviderCore({
             provider: row.provider,
             modelId: row.id,
             modelApi: model.api,
             modelBaseUrl: model.baseUrl,
-            profileId: params.profileId,
-            ...(params.profileId ? { lockedProfile: true, allowAuthProfileFallback: false } : {}),
+            profileId,
+            ...(profileId ? { lockedProfile: true, allowAuthProfileFallback: false } : {}),
             cfg: prepared.config,
             agentDir: prepared.agentDir,
             workspaceDir: context.workspaceDir,
             signal: params.signal,
             secretSentinels: true,
+            capability: "decision",
           });
         }
       } catch {
@@ -193,22 +290,33 @@ export async function executePreparedDecision(params: {
         assertPrepared();
         return { status: "unavailable", reason: "credentials-unavailable" };
       }
-      assertPrepared();
+      if (!assertPrepared()) {
+        return { status: "unavailable", reason: "unsupported-input" };
+      }
       // A route rewrite cannot carry a hosted billing claim into another endpoint.
-      if ((model.baseUrl !== row.baseUrl || model.api !== row.api) && model.inference?.decision) {
+      if (!modelTransportRoutesMatch(row, model) && model.inference?.decision) {
         const { billing: _billing, ...decision } = model.inference.decision;
         model.inference = { ...model.inference, decision };
       }
       const offered = structuredClone(params.batch);
+      const egressModel = unwrapModelHeaderSentinelsForProviderEgress(
+        model,
+        "decision provider handoff",
+      );
+      const request = getModelProviderRequestTransport(egressModel);
+      // Structured cloning omits symbol-attached exchange overrides. Preserve their private owner facts too.
+      const privateModel = attachModelProviderRequestTransport(
+        structuredClone(egressModel),
+        request ? structuredClone(request) : undefined,
+      );
       const providerContext: DecisionProviderContextV2 = {
-        model: structuredClone(
-          unwrapModelHeaderSentinelsForProviderEgress(model, "decision provider handoff"),
-        ),
+        model: privateModel,
         config: prepared.config,
         agentId: params.options.agentId,
         workspaceDir: context.workspaceDir,
         auth: {
-          ...auth,
+          mode: auth.mode,
+          ...(auth.profileId ? { profileId: auth.profileId } : {}),
           ...(auth.apiKey
             ? {
                 apiKey: unwrapSecretSentinelsForProviderEgress(
@@ -221,10 +329,20 @@ export async function executePreparedDecision(params: {
         signal: params.signal,
         deadlineMonotonicMs: params.deadlineMonotonicMs,
         reasoning: params.options.reasoning,
+        isAdmissible: assertPrepared,
       };
-      assertPrepared();
+      if (!assertPrepared()) {
+        return { status: "unavailable", reason: "unsupported-input" };
+      }
+      params.onPreparedBilling?.({
+        provider: model.provider,
+        model: model.id,
+        billing: model.inference?.decision?.billing,
+      });
       const result = await params.provider.evaluate(params.batch, providerContext);
-      assertPrepared();
+      if (!assertPrepared()) {
+        return { status: "unavailable", reason: "unsupported-input" };
+      }
       const status = result.status;
       if (status === "ok") {
         const value = result.result;

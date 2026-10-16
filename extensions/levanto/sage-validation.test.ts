@@ -39,12 +39,23 @@ const image: SageContent = {
     "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aOZkAAAAASUVORK5CYII=",
 };
 const meta = {
-  model: "levanto-sage-v1.1",
-  usage: { billed_input_tokens: 12, image_count: 0 },
-  reasoning: { fired: true, ran: true, finished: false, tokens: 32, limited: "timeout" },
-  vendor_extension: { decision_units: 1 },
+  model: "levanto-sage-v1.3",
+  usage: { input_tokens: 12, output_tokens: 33, image_count: 0 },
+  reasoning: { ran: true, finished: false, tokens: 32, limited: "timeout", forced: false },
+  vendor_extension: { request_class: "synthetic" },
 };
 const response = (q: SageQuestion, result: unknown) => ({ id: q.id, kind: q.kind, result, meta });
+const scaleResult = {
+  expectation: 2.89,
+  confidence: 0.66,
+  probabilities: [
+    { level: 0, probability: 0 },
+    { level: 1, probability: 0.01 },
+    { level: 2, probability: 0.12 },
+    { level: 3, probability: 0.84 },
+    { level: 4, probability: 0.03 },
+  ],
+};
 
 describe("Sage native protocol", () => {
   it.each([yesno, choice, scale, sort, tags])(
@@ -62,13 +73,13 @@ describe("Sage native protocol", () => {
       expect(parseSageResponse(value, yesno, "doc")).toBe(value);
     },
   );
-  it("preserves independent option estimates and does not choose an argmax", () => {
+  it("preserves categorical option estimates and native abstention", () => {
     const value = response(choice, {
       chosen: "a",
       probability: 0.7,
       probabilities: [
         { option: "a", probability: 0.7 },
-        { option: "b", probability: 0.8 },
+        { option: "b", probability: 0.3 },
       ],
     });
     expect(parseSageResponse(value, choice, "doc")).toBe(value);
@@ -76,8 +87,8 @@ describe("Sage native protocol", () => {
       chosen: null,
       probability: null,
       probabilities: [
-        { option: "a", probability: 0.7 },
-        { option: "b", probability: 0.8 },
+        { option: "a", probability: 0.49 },
+        { option: "b", probability: 0.51 },
       ],
     });
     expect(parseSageResponse(abstention, choice, "doc")).toBe(abstention);
@@ -86,15 +97,14 @@ describe("Sage native protocol", () => {
       probability: null,
       probabilities: [
         { option: "a", probability: 0.7 },
-        { option: "b", probability: 0.8 },
+        { option: "b", probability: 0.3 },
       ],
     });
     expect(parseSageResponse(nullableSelected, choice, "doc")).toBe(nullableSelected);
   });
   it("preserves fractional scale, native sort confidence and text tag abstention", () => {
     for (const [q, c, r] of [
-      [scale, "doc", { expectation: 2.4, confidence: 0.71 }],
-      [scale, "doc", { expectation: 2.4, confidence: 1.4 }],
+      [scale, "doc", scaleResult],
       [sort, list, { sorted: ["b", "a"], confidence: null }],
       [
         tags,
@@ -138,8 +148,18 @@ describe("Sage native protocol", () => {
         ],
       },
     ],
-    [scale, { expectation: 4.01, confidence: 0.5 }],
-    [scale, { expectation: 2, confidence: "0.5" }],
+    [scale, { ...scaleResult, expectation: 4.01 }],
+    [scale, { ...scaleResult, confidence: "0.5" }],
+    [scale, { ...scaleResult, probabilities: undefined }],
+    [scale, { ...scaleResult, probabilities: scaleResult.probabilities.slice(1) }],
+    [scale, { ...scaleResult, probabilities: [...scaleResult.probabilities].reverse() }],
+    [
+      scale,
+      {
+        ...scaleResult,
+        probabilities: [{ level: 0, probability: 1.1 }, ...scaleResult.probabilities.slice(1)],
+      },
+    ],
     [sort, { sorted: ["a", "a"] }],
     [sort, { sorted: ["a", "other"] }],
     [
@@ -171,8 +191,11 @@ describe("Sage native protocol", () => {
       { id: "other" },
       { kind: "choice" },
       { meta: [] },
-      { meta: { usage: { billed_input_tokens: -1 } } },
-      { meta: { reasoning: { fired: "yes", ran: false } } },
+      { meta: { usage: { input_tokens: -1, output_tokens: 1 } } },
+      { meta: { usage: { input_tokens: 1, output_tokens: -1 } } },
+      { meta: { usage: { input_tokens: 1 } } },
+      { meta: { reasoning: { ran: "yes" } } },
+      { meta: { reasoning: { ran: true, forced: "yes" } } },
     ]) {
       expect(() => parseSageResponse({ ...v, ...patch }, yesno, "doc")).toThrow("Invalid Sage");
     }
@@ -237,7 +260,7 @@ describe("Sage native protocol", () => {
     { content: "doc", question: sort },
     { content: list, question: sort, grounding: {} },
     { content: list, question: { ...sort, strategy: "pairwise" } },
-    { content: "doc", question: yesno, model: "levanto-sage-v1.1" },
+    { content: "doc", question: yesno, model: "levanto-sage-v1.3" },
     { content: "doc", question: yesno, reasoning: "low" },
     { requests: [{ content: "doc", questions: [yesno], grounding: {} }] },
   ])("rejects unsupported native request %#", async (r) => {

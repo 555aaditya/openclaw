@@ -7,6 +7,7 @@ import {
   type DecisionQuestionV2,
   type JsonValue,
 } from "openclaw/plugin-sdk/decisions";
+import { resolveMergedModelProviderConfig } from "openclaw/plugin-sdk/provider-catalog-shared";
 import {
   createProviderOperationDeadline,
   ProviderHttpError,
@@ -113,6 +114,7 @@ function answer(response: SageResponse): DecisionAnswerV2 {
         type: "score",
         score: response.result.expectation,
         confidence: response.result.confidence,
+        probabilities: response.result.probabilities.map((entry) => entry.probability),
         metadata,
       };
     case "sort":
@@ -160,7 +162,7 @@ export function createSageDecisionProvider(probeImage: SageImageProbe): Decision
         for (const q of questions) {
           if (
             (q.kind === "sort" && batch.state.type !== "list") ||
-            (q.kind === "scale" && q.levels.length !== 5) ||
+            (q.kind === "scale" && (q.levels.length < 2 || q.levels.length > 26)) ||
             (q.kind === "choice" && q.options.length > (batch.state.type === "image" ? 20 : 120)) ||
             (q.kind === "tags" && q.tags.length > 120)
           ) {
@@ -181,7 +183,19 @@ export function createSageDecisionProvider(probeImage: SageImageProbe): Decision
       }
       const single = { content: nativeContent, question: first, ...reasoning };
       const batchRequest = { requests: [{ content: nativeContent, questions }], ...reasoning };
+      let admissionError: { error: unknown } | undefined;
       try {
+        const configuredRequest = resolveMergedModelProviderConfig(
+          context.config,
+          "levanto",
+        )?.request;
+        // The host has already resolved header/SecretRef precedence and explicit auth.
+        // Only network policy is read here; never resolve or replay configured credentials.
+        const networkRequest = sanitizeConfiguredModelProviderRequest({
+          proxy: configuredRequest?.proxy,
+          tls: configuredRequest?.tls,
+          allowPrivateNetwork: configuredRequest?.allowPrivateNetwork,
+        });
         const route = resolveProviderHttpRequestConfig({
           provider: "levanto",
           baseUrl: context.model.baseUrl,
@@ -190,10 +204,12 @@ export function createSageDecisionProvider(probeImage: SageImageProbe): Decision
           capability: "other",
           transport: "http",
           headers: context.model.headers,
-          defaultHeaders: { Authorization: `Bearer ${context.auth.apiKey}` },
-          request: sanitizeConfiguredModelProviderRequest(
-            context.config.models?.providers?.levanto?.request,
-          ),
+          defaultHeaders:
+            configuredRequest?.auth?.mode === "header" ||
+            configuredRequest?.auth?.mode === "authorization-bearer"
+              ? undefined
+              : { Authorization: `Bearer ${context.auth.apiKey}` },
+          request: networkRequest,
         });
         const budget = context.deadlineMonotonicMs - performance.now();
         if (budget <= 0) {
@@ -205,6 +221,19 @@ export function createSageDecisionProvider(probeImage: SageImageProbe): Decision
           signal: context.signal,
           fetchFn: globalThis.fetch,
           probeImage,
+          beforeRequest: () => {
+            let admitted: boolean;
+            try {
+              admitted = context.isAdmissible();
+            } catch (error) {
+              // Host authority failures must not become a retryable provider failure.
+              admissionError = { error };
+              throw error;
+            }
+            if (!admitted) {
+              throw new Error("Sage evaluation is no longer admitted.");
+            }
+          },
         };
         const response =
           questions.length === 1
@@ -236,7 +265,15 @@ export function createSageDecisionProvider(probeImage: SageImageProbe): Decision
         const result = {
           model: response.meta.model ?? context.model.id,
           answers,
-          ...(usage ? { usage: { inputTokens: usage.billed_input_tokens, raw: usage } } : {}),
+          ...(usage
+            ? {
+                usage: {
+                  inputTokens: usage.input_tokens,
+                  outputTokens: usage.output_tokens,
+                  raw: usage,
+                },
+              }
+            : {}),
           // Call-level accounting and partial error text stay on an object, never array.meta.
           metadata: { native: response },
         };
@@ -244,6 +281,9 @@ export function createSageDecisionProvider(probeImage: SageImageProbe): Decision
           ? { status: "ok", result }
           : { status: "unavailable", reason: "invalid-response" };
       } catch (error) {
+        if (admissionError) {
+          throw admissionError.error;
+        }
         context.signal.throwIfAborted();
         if (error instanceof ProviderHttpError) {
           const reason =

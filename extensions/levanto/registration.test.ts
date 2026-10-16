@@ -10,7 +10,6 @@ import { createTestPluginApi } from "openclaw/plugin-sdk/plugin-test-api";
 import { afterEach, expect, it, vi } from "vitest";
 import plugin from "./index.js";
 import manifest from "./openclaw.plugin.json" with { type: "json" };
-import pkg from "./package.json" with { type: "json" };
 
 const batch: DecisionBatchV2 = {
   state: { type: "text", text: "Explicit synthetic evidence" },
@@ -21,9 +20,9 @@ const reported = {
   kind: "yesno",
   result: { answer: null, probability: 0.51 },
   meta: {
-    model: "levanto-sage-v1.1",
-    usage: { billed_input_tokens: 12, rendered_tokens: 15 },
-    reasoning: { fired: true, ran: false, finished: null, tokens: null },
+    model: "levanto-sage-v1.3",
+    usage: { input_tokens: 12, output_tokens: 3 },
+    reasoning: { ran: true, finished: false, tokens: 2, limited: "timeout", forced: true },
   },
 };
 function fixture() {
@@ -52,6 +51,7 @@ function fixture() {
     auth: { mode: "api-key", apiKey: "synthetic-prepared-key" },
     signal: new AbortController().signal,
     deadlineMonotonicMs: performance.now() + 500,
+    isAdmissible: () => true,
   };
   return { provider, context, probe };
 }
@@ -83,21 +83,20 @@ it("registers a decision-only agent-scoped provider with standard credential set
       chat: false,
       decision: {
         questions: {
-          choice: { probabilities: "independent", maxImageOptions: 20 },
-          score: { probabilities: "none", minOptions: 5, maxOptions: 5 },
+          choice: { probabilities: "categorical", maxImageOptions: 20 },
+          score: { probabilities: "categorical", minOptions: 2, maxOptions: 26 },
         },
-        billing: { unit: "decision-units" },
+        reasoning: { default: "off" },
+        billing: { unit: "tokens" },
       },
     },
   });
   for (const key of ["api", "cost", "contextWindow", "maxTokens"]) {
     expect(catalog.models[0]).not.toHaveProperty(key);
   }
-  expect(pkg.openclaw.compat.pluginApi).toBe(">=2026.9.6");
-  expect(pkg.openclaw.install.minHostVersion).toBe(">=2026.9.6");
   expect(fetch).not.toHaveBeenCalled();
 });
-it("executes the registered native route once and forwards actual usage without fake cost/output", async () => {
+it("accepts current native usage and reasoning without double-counting tokens or inventing cost", async () => {
   const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(Response.json(reported));
   vi.stubGlobal("fetch", fetch);
   const { provider, context } = fixture();
@@ -105,16 +104,15 @@ it("executes the registered native route once and forwards actual usage without 
   expect(outcome).toMatchObject({
     status: "ok",
     result: {
-      model: "levanto-sage-v1.1",
+      model: "levanto-sage-v1.3",
       answers: { q: { type: "boolean", answer: null, probabilityTrue: 0.51 } },
-      usage: { inputTokens: 12, raw: reported.meta.usage },
+      usage: { inputTokens: 12, outputTokens: 3, raw: reported.meta.usage },
       metadata: { native: reported },
     },
   });
   assert(outcome.status === "ok");
   expect(validateDecisionResultV2(batch, outcome.result)).toBe(true);
   expect(outcome.result.usage).not.toHaveProperty("costUsd");
-  expect(outcome.result.usage).not.toHaveProperty("outputTokens");
   expect(outcome.result.usage).not.toHaveProperty("units");
   expect(fetch).toHaveBeenCalledOnce();
   const call = fetch.mock.calls[0];
@@ -176,10 +174,10 @@ it("uses one native batch for mixed scalar kinds and retains partial failures an
                 probability: 0.7,
                 probabilities: [
                   { option: "a", probability: 0.7 },
-                  { option: "b", probability: 0.8 },
+                  { option: "b", probability: 0.3 },
                 ],
               },
-              meta: { model: "levanto-sage-v1.1" },
+              meta: { model: "levanto-sage-v1.3" },
             },
           },
           {
@@ -187,7 +185,17 @@ it("uses one native batch for mixed scalar kinds and retains partial failures an
             result: {
               id: "s",
               kind: "scale",
-              result: { expectation: 2.41, confidence: 0.71 },
+              result: {
+                expectation: 2.41,
+                confidence: 0.71,
+                probabilities: [
+                  { level: 0, probability: 0.02 },
+                  { level: 1, probability: 0.03 },
+                  { level: 2, probability: 0.49 },
+                  { level: 3, probability: 0.44 },
+                  { level: 4, probability: 0.02 },
+                ],
+              },
               meta: {},
             },
           },
@@ -210,10 +218,10 @@ it("uses one native batch for mixed scalar kinds and retains partial failures an
       },
     ],
     meta: {
-      model: "levanto-sage-v1.1",
+      model: "levanto-sage-v1.3",
       request_count: 1,
       question_count: 5,
-      usage: { billed_input_tokens: 41 },
+      usage: { input_tokens: 41, output_tokens: 5 },
       latency_ms: 30,
     },
   };
@@ -224,8 +232,8 @@ it("uses one native batch for mixed scalar kinds and retains partial failures an
   assert(outcome.status === "ok");
   expect(validateDecisionResultV2(input, outcome.result)).toBe(true);
   expect(outcome.result.answers).toMatchObject({
-    c: { choice: "a", probability: 0.7, probabilities: { a: 0.7, b: 0.8 } },
-    s: { score: 2.41, confidence: 0.71 },
+    c: { choice: "a", probability: 0.7, probabilities: { a: 0.7, b: 0.3 } },
+    s: { score: 2.41, confidence: 0.71, probabilities: [0.02, 0.03, 0.49, 0.44, 0.02] },
     t: {
       tags: [
         { id: "a", applies: null, probability: 0.51 },
@@ -234,10 +242,9 @@ it("uses one native batch for mixed scalar kinds and retains partial failures an
     },
     failed: { type: "error", code: "provider-error" },
   });
-  expect(outcome.result.answers.s).not.toHaveProperty("probabilities");
   const serialized = JSON.stringify(outcome.result.metadata);
   expect(JSON.parse(serialized)).toEqual({ native });
-  expect(outcome.result.usage?.inputTokens).toBe(41);
+  expect(outcome.result.usage).toMatchObject({ inputTokens: 41, outputTokens: 5 });
   expect(fetch).toHaveBeenCalledOnce();
   const call = fetch.mock.calls[0];
   assert(call);
@@ -253,6 +260,53 @@ it("uses one native batch for mixed scalar kinds and retains partial failures an
     true,
   );
 });
+it.each([2, 26])(
+  "executes a %i-level rubric and preserves its native distribution",
+  async (count) => {
+    const input: DecisionBatchV2 = {
+      ...batch,
+      questions: {
+        score: { type: "score", criteria: Array.from({ length: count }, (_, i) => `Level ${i}`) },
+      },
+    };
+    const probabilities = Array.from({ length: count }, (_, level) => ({
+      level,
+      probability: level === count - 1 ? 1 : 0,
+    }));
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(
+      Response.json({
+        id: "score",
+        kind: "scale",
+        result: { expectation: count - 1, confidence: 0.8, probabilities },
+        meta: {},
+      }),
+    );
+    vi.stubGlobal("fetch", fetch);
+    const { provider, context } = fixture();
+    const outcome = await provider.evaluate(input, context);
+    expect(outcome).toMatchObject({
+      status: "ok",
+      result: {
+        answers: {
+          score: {
+            type: "score",
+            score: count - 1,
+            confidence: 0.8,
+            probabilities: probabilities.map((entry) => entry.probability),
+          },
+        },
+      },
+    });
+    assert(outcome.status === "ok");
+    expect(outcome.result.usage).toBeUndefined();
+    expect(fetch).toHaveBeenCalledOnce();
+    const body = fetch.mock.calls[0]?.[1]?.body;
+    assert(typeof body === "string");
+    expect(JSON.parse(body).question.levels).toEqual(
+      Array.from({ length: count }, (_, level) => ({ level, description: `Level ${level}` })),
+    );
+  },
+);
 it("preserves native sort without pairwise fan-out", async () => {
   const input: DecisionBatchV2 = {
     state: {
@@ -280,7 +334,11 @@ it("preserves native sort without pairwise fan-out", async () => {
   expect(fetch).toHaveBeenCalledOnce();
 });
 it.each<DecisionBatchV2>([
-  { ...batch, questions: { s: { type: "score", criteria: ["a", "b"] } } },
+  { ...batch, questions: { s: { type: "score", criteria: ["only"] } } },
+  {
+    ...batch,
+    questions: { s: { type: "score", criteria: Array.from({ length: 27 }, () => "level") } },
+  },
   {
     ...batch,
     questions: {
@@ -334,6 +392,50 @@ it("uses the common image probe once and rejects invalid dimensions before HTTP"
   });
   expect(fetch).not.toHaveBeenCalled();
 });
+it.each(["false", "throw"])(
+  "stops after image preparation when host admission returns %s",
+  async (kind) => {
+    const started = createDeferred<void>();
+    const dimensions = createDeferred<{ width: number; height: number }>();
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(Response.json(reported));
+    vi.stubGlobal("fetch", fetch);
+    const { provider, context, probe } = fixture();
+    probe.mockImplementationOnce(() => {
+      started.resolve();
+      return dimensions.promise;
+    });
+    let admitted = true;
+    const authorityError = new Error("synthetic owner closed during image preparation");
+    const pending = provider.evaluate(
+      {
+        ...batch,
+        state: {
+          type: "image",
+          dataUri:
+            "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aOZkAAAAASUVORK5CYII=",
+        },
+      },
+      {
+        ...context,
+        isAdmissible: () => {
+          if (!admitted && kind === "throw") {
+            throw authorityError;
+          }
+          return admitted;
+        },
+      },
+    );
+    const settled =
+      kind === "throw"
+        ? expect(pending).rejects.toBe(authorityError)
+        : expect(pending).resolves.toEqual({ status: "unavailable", reason: "transport" });
+    await started.promise;
+    admitted = false;
+    dimensions.resolve({ width: 1, height: 1 });
+    await settled;
+    expect(fetch).not.toHaveBeenCalled();
+  },
+);
 it.each([401, 402, 429, 503])(
   "classifies HTTP %s without retries or private diagnostics",
   async (status) => {
@@ -444,3 +546,74 @@ it.each(["abort", "deadline"])(
     expect(fetch).not.toHaveBeenCalled();
   },
 );
+
+it.each(["levanto", "Levanto"])(
+  "consumes prepared SecretRef/auth headers for %s without replaying config credentials",
+  async (providerId) => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(Response.json(reported));
+    vi.stubGlobal("fetch", fetch);
+    const { provider, context } = fixture();
+    const outcome = await provider.evaluate(batch, {
+      ...context,
+      model: {
+        ...context.model,
+        headers: {
+          "X-Prepared-Auth": "synthetic-resolved-auth",
+          "X-Managed": "synthetic-resolved-header",
+        },
+      },
+      config: {
+        models: {
+          providers: {
+            [providerId]: {
+              baseUrl: "https://sage.levanto.ai",
+              models: [],
+              headers: {
+                "X-Managed": { source: "env", provider: "default", id: "SAGE_HEADER_FIXTURE" },
+              },
+              request: {
+                headers: { "X-Managed": "must-not-replay" },
+                auth: {
+                  mode: "header",
+                  headerName: "X-Prepared-Auth",
+                  value: { source: "env", provider: "default", id: "SAGE_AUTH_FIXTURE" },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    expect(outcome.status).toBe("ok");
+    expect(fetch).toHaveBeenCalledOnce();
+    const headers = new Headers(fetch.mock.calls[0]?.[1]?.headers);
+    expect(headers.get("X-Prepared-Auth")).toBe("synthetic-resolved-auth");
+    expect(headers.get("X-Managed")).toBe("synthetic-resolved-header");
+    expect(headers.has("authorization")).toBe(false);
+  },
+);
+
+it("keeps prepared bearer auth for an explicit provider-default policy", async () => {
+  const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(Response.json(reported));
+  vi.stubGlobal("fetch", fetch);
+  const { provider, context } = fixture();
+  const outcome = await provider.evaluate(batch, {
+    ...context,
+    config: {
+      models: {
+        providers: {
+          levanto: {
+            baseUrl: "https://sage.levanto.ai",
+            models: [],
+            request: { auth: { mode: "provider-default" } },
+          },
+        },
+      },
+    },
+  });
+  expect(outcome.status).toBe("ok");
+  expect(fetch).toHaveBeenCalledOnce();
+  expect(new Headers(fetch.mock.calls[0]?.[1]?.headers).get("authorization")).toBe(
+    "Bearer synthetic-prepared-key",
+  );
+});

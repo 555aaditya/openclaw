@@ -19,7 +19,6 @@ Typed decision provider for hosted Jev and local System One models.
 
 ## Surface
 
-- Providers: `typesafe`
 - Contracts: `decisionProviders`
 
 ## Related docs
