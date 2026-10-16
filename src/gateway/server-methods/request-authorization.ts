@@ -21,18 +21,26 @@ import { withPluginRuntimeRegistryScope } from "../../plugins/runtime/gateway-re
 import { getAsyncWorkSignal } from "../../shared/async-work-scope.js";
 import type { SessionOperatorScope } from "../../shared/session-method-scopes-base.js";
 import {
+  AgentDatabaseAdmissionError,
   createAgentDatabaseAdmissionErrorShape,
   listAgentDatabaseAdmissionRefusals,
   readAgentDatabaseAdmissionRefusal,
 } from "../../state/agent-database-admission.js";
+import { waitForAgentDatabaseWriteAdmission } from "../../state/agent-database-preparation-context.js";
 import type { ExpectedProfileBinding } from "../expected-profile.js";
 import type { GatewayMethodRegistryView } from "../methods/descriptor.js";
 import {
   prepareGatewaySessionAccessAuthority,
   type GatewaySessionAccessAuthority,
 } from "../session-access-authority.js";
-import { sessionMutationTargetFields } from "../session-method-policy.js";
-import { resolveRequestedSessionAgentId } from "../session-request-agent.js";
+import {
+  isDirectSessionReadMethod,
+  sessionMutationTargetFields,
+} from "../session-method-policy.js";
+import {
+  resolveRequestedSessionAgentId,
+  resolveSessionCreateAgentId,
+} from "../session-request-agent.js";
 import type { SessionRowReadView } from "../session-row-prepared-read.js";
 import { getSessionRowProjection } from "../session-row-projection-access.js";
 import { resolveSessionMutationAuthorizationAsync } from "../session-sharing-authorization-async.js";
@@ -42,6 +50,7 @@ import {
   resolveChatSendAuthorizationParams,
   resolveDirectIncognitoTargets,
   resolveDirectSessionTargets,
+  resolveSessionMutationTargets,
 } from "../session-sharing-target-input.js";
 import { isGatewayAdmin, SessionMutationAuthorizationChangedError } from "../session-sharing.js";
 import type { SessionSubscribePhase } from "../slow-request-diagnostics.js";
@@ -62,6 +71,45 @@ const startupReadMethods = new Set([
   "sessions.describe",
   "models.list",
 ]);
+
+function startupWriteAgents(
+  params: { method: string; requestParams: unknown; context: GatewayRequestContext },
+  cfg: OpenClawConfig,
+) {
+  const refusals = listAgentDatabaseAdmissionRefusals();
+  const targets = resolveSessionMutationTargets(params) ?? [];
+  const selected = targets.map((target) =>
+    resolveRequestedSessionAgentId(cfg, target.sessionKey, target.agentId),
+  );
+  if (params.method === "sessions.create") {
+    selected.push(
+      resolveSessionCreateAgentId(cfg, {
+        key: readSessionSharingStringParam(params.requestParams, "key"),
+        agentId: readSessionSharingStringParam(params.requestParams, "agentId"),
+        parentSessionKey: readSessionSharingStringParam(params.requestParams, "parentSessionKey"),
+      }),
+    );
+  } else if (params.method === "agent" && targets.length === 0) {
+    selected.push(
+      resolveRequestedSessionAgentId(
+        cfg,
+        undefined,
+        readSessionSharingStringParam(params.requestParams, "agentId"),
+      ),
+    );
+  }
+  return [
+    ...new Set(
+      selected.flatMap((result) =>
+        result.ok
+          ? [result.agentId]
+          : refusals
+              .filter((refusal) => refusal === result.error.details)
+              .map(({ agentId }) => agentId),
+      ),
+    ),
+  ];
+}
 
 function startupReadAgents(method: string, requestParams: unknown, cfg: OpenClawConfig) {
   const refusals = listAgentDatabaseAdmissionRefusals();
@@ -98,6 +146,14 @@ async function prepareStartupReadAgents(
   if (method === "models.list" && !readSessionSharingStringParam(requestParams, "sessionKey")) {
     return agents;
   }
+  return prepareStartupAgentTargets(agents, cfg, signal);
+}
+
+async function prepareStartupAgentTargets(
+  agents: string[],
+  cfg: OpenClawConfig,
+  signal: AbortSignal,
+) {
   const targets = await Promise.all(
     agents.map((agentId) =>
       prepareSqliteTargetFromSessionStorePath(
@@ -215,6 +271,57 @@ export async function authorizeGatewayRequestPreDispatch(params: {
     if (unavailableError) {
       return { error: unavailableError };
     }
+    if (
+      params.context.agentDatabaseStartup?.hasPendingAgents &&
+      params.methodRegistry.getScope(params.method) !== "operator.read" &&
+      !params.methodRegistry.isObservation(params.method) &&
+      !isDirectSessionReadMethod(params.method)
+    ) {
+      const waitSignal = AbortSignal.any(
+        [params.signal, params.client?.connectionSignal, getAsyncWorkSignal()].filter(
+          (candidate): candidate is AbortSignal => candidate !== undefined,
+        ),
+      );
+      const cfg = params.context.getRuntimeConfig();
+      let agents = startupWriteAgents(params, cfg);
+      const refusal = agents
+        .map((agentId) => readAgentDatabaseAdmissionRefusal(agentId))
+        .find((entry) => entry && entry.code !== "agent-database-inspection-pending");
+      if (refusal) {
+        return { error: createAgentDatabaseAdmissionErrorShape(refusal) };
+      }
+      try {
+        if (!isPerAgentSessionStoreConfig(cfg.session?.store)) {
+          agents = await prepareStartupAgentTargets(agents, cfg, waitSignal);
+          if (params.context.getRuntimeConfig() !== cfg) {
+            continue;
+          }
+          const physicalRefusal = agents
+            .map((agentId) => readAgentDatabaseAdmissionRefusal(agentId))
+            .find((entry) => entry && entry.code !== "agent-database-inspection-pending");
+          if (physicalRefusal) {
+            return { error: createAgentDatabaseAdmissionErrorShape(physicalRefusal) };
+          }
+        }
+        const waiting = agents.flatMap((agentId) => {
+          const wait = waitForAgentDatabaseWriteAdmission(agentId, {
+            signal: waitSignal,
+            owner: params.context.agentDatabaseStartup,
+          });
+          return wait ? [wait] : [];
+        });
+        if (waiting.length > 0) {
+          await Promise.all(waiting);
+          // Admission publishes new storage facts; authorize again before retaining any.
+          continue;
+        }
+      } catch (error) {
+        if (error instanceof AgentDatabaseAdmissionError) {
+          return { error: createAgentDatabaseAdmissionErrorShape(error.refusal) };
+        }
+        throw error;
+      }
+    }
     const startup =
       startupReadMethods.has(params.method) &&
       (params.method !== "sessions.list" ||
@@ -237,11 +344,11 @@ export async function authorizeGatewayRequestPreDispatch(params: {
         if (remainingMs <= 0) {
           const agents =
             previous?.agents ?? startupReadAgents(params.method, params.requestParams, cfg);
-          const refusal = agents
+          const physicalRefusal = agents
             .map((agentId) => readAgentDatabaseAdmissionRefusal(agentId))
             .find(Boolean);
-          if (refusal) {
-            return { error: createAgentDatabaseAdmissionErrorShape(refusal) };
+          if (physicalRefusal) {
+            return { error: createAgentDatabaseAdmissionErrorShape(physicalRefusal) };
           }
           if (!previous?.agents) {
             return {

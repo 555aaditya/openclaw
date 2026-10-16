@@ -2453,6 +2453,18 @@ describe("cron method validation", () => {
       });
     });
 
+    it("keeps untargeted role-free wakes independent of default-agent resolution", async () => {
+      setRuntimeConfig({ agents: { ownership: "explicit", entries: { ops: {}, dev: {} } } });
+      const context = createCronContext();
+      context.cron.getDefaultAgentId.mockImplementation(() => {
+        throw new Error("No default agent");
+      });
+      const { respond } = await invokeCron("wake", { mode: "now", text: "ping" }, { context });
+      expect(context.cron.wake).toHaveBeenCalledOnce();
+      expect(context.cron.getDefaultAgentId).not.toHaveBeenCalled();
+      expect(respond).toHaveBeenCalledWith(true, { ok: true }, undefined);
+    });
+
     it.each([
       {
         name: "matching explicit agent",

@@ -526,8 +526,17 @@ remain held until execution ends.
 
 During startup, reaching the inspection's foreground deadline records pending
 preparation and marks that agent **degraded** while the Gateway continues with healthy agents.
-Its sessions remain unavailable, and its database is excluded from automatic
-migration and ordinary writes. The inspection continues in the background within
+Its database remains excluded from automatic migration and ordinary writes until
+admission completes.
+Write requests wait for that agent's existing preparation before normal admission,
+without holding database or session locks. The wait allows five minutes for slow
+hosts plus one minute per remaining two-agent inspection batch, measured when the
+request starts waiting. Client cancellation or Gateway shutdown ends the wait;
+expiry returns a retryable unavailable error explaining that the agent is still
+preparing. Reads keep their existing readiness behavior, and admitted requests do
+not join another agent's preparation. Cron jobs for preparing agents retain queued custody without consuming running
+slots. Admission completion wakes their queue; healthy agents remain eligible.
+The inspection continues in the background within
 the same concurrency limit. Expiring the wait does not establish corruption.
 
 A successful inspection alone does not make the agent available. The Gateway

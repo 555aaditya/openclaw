@@ -43,6 +43,7 @@ import {
 import { resolveStoredModelOverrideAsync } from "../../sessions/stored-model-overrides.js";
 import { createLazyImportLoader } from "../../shared/lazy-promise.js";
 import { readAgentDatabaseAdmissionRefusal } from "../../state/agent-database-admission.js";
+import { waitForAgentDatabaseWriteAdmission } from "../../state/agent-database-preparation-context.js";
 import {
   sessionDeliveryChannel,
   sessionDeliveryOrigin,
@@ -173,6 +174,9 @@ async function resolveReplyFromConfig(
   const initialAgentScope = await resolverTiming.measure("reply.resolve_agent_scope", () =>
     resolveReplyAgentScope({ cfg, ctx: finalized }),
   );
+  await waitForAgentDatabaseWriteAdmission(initialAgentScope.agentId, {
+    signal: opts?.abortSignal,
+  });
   assertReplyPreprocessingActive(opts?.abortSignal);
   opts?.operatorAuthority?.assertCurrent();
   opts?.internalEventExecution?.assertCurrent?.();
