@@ -1,16 +1,16 @@
+import { createEffect, createMemo, onSettled, Show, untrack } from "solid-js";
 import {
-  createEffect,
-  createMemo,
-  createSignal,
-  onCleanup,
-  onSettled,
-  Show,
-  untrack,
-} from "solid-js";
+  availableLinkReaders,
+  availableLinkPreviewReaders,
+} from "../../app/link-reader-routing.ts";
+import { nativeGatewaysCapability } from "../../app/native-gateways.runtime.ts";
+import { LinkReaderHovercard } from "../../components/link-reader-hovercard.ts";
+import { projectGateway } from "../../lib/reactive/application.ts";
 import { projectProgressCard } from "../../lib/reactive/domain-keyed.ts";
 import { i18nRevision } from "../../lib/reactive/i18n.ts";
-import { projectOwner, projectSource } from "../../lib/reactive/projection.ts";
+import { projectSource } from "../../lib/reactive/projection.ts";
 import { useVisiblePoll } from "../../lib/reactive/visible-poll.ts";
+import { parseAgentSessionKey } from "../../lib/sessions/session-key.ts";
 import { ChatComposerCapabilityDialogs } from "./chat-composer-capability-host.tsx";
 import { PaneLayout } from "./chat-pane-layout-view.tsx";
 import type { ChatPaneRuntime } from "./chat-pane-render.ts";
@@ -20,16 +20,24 @@ import {
   type ChatProviderReviewOwner,
 } from "./chat-provider-review-controller.tsx";
 import { installChatComposerPickerDismissal } from "./components/chat-picker-overlay.ts";
+import { createChatPane, type ChatPaneOwner } from "./create-chat-pane.ts";
 import { createSolidRenderLifecycle } from "./solid-render-lifecycle.ts";
 
-function MountedChatPaneRuntime(props: { runtime: ChatPaneRuntime }) {
-  const runtime = untrack(() => props.runtime);
+function MountedChatPaneRuntime(props: { pane: ChatPaneOwner }) {
+  // One runtime belongs to this mounted pane for its entire lifetime.
+  const pane = untrack(() => props.pane);
+  const runtime = pane.runtime;
+  const context = runtime.context;
+  const gateway = projectGateway(context.gateway);
+  const presented = () => {
+    pane.revision();
+    return runtime.presented;
+  };
   runtime.mountPanelActions();
-  runtime.mountToolIcons();
-  const owner = projectOwner(runtime, (value) => value);
+  runtime.mountToolIcons(pane.revision);
   const progressScope = createMemo(
     () => {
-      owner.revision();
+      pane.revision();
       return runtime.readProgressCardScope();
     },
     {
@@ -61,38 +69,42 @@ function MountedChatPaneRuntime(props: { runtime: ChatPaneRuntime }) {
     cacheProgress();
     return stop;
   });
-  const sources = [runtime.context.plugins, runtime.context.navigation].map((source) =>
+  const sources = [
+    runtime.context.plugins,
+    runtime.context.navigation,
+    nativeGatewaysCapability(),
+  ].map((source) =>
     projectSource(source, {
       read: (capability) => capability,
       subscribe: (capability, notify) => capability?.subscribe(notify) ?? (() => {}),
       equality: "revision",
     }),
   );
-  onSettled(() => installChatComposerPickerDismissal(runtime.ownerDocument));
+  onSettled(() => installChatComposerPickerDismissal(runtime.element.ownerDocument));
   // Relative labels tick only while this retained pane is presented.
-  const minutePoll = useVisiblePoll(60_000, () => runtime.requestUpdate());
+  const minutePoll = useVisiblePoll(60_000, () => runtime.invalidate());
   const lifecycle = createSolidRenderLifecycle({
     host: runtime.element,
-    presented: () => owner.read().presented && document.visibilityState !== "hidden",
+    presented: () => presented() && document.visibilityState !== "hidden",
     read: () => {
+      pane.revision();
       progress.read();
       i18nRevision();
       sources.forEach((source) => source.read());
-      runtime.prepareRender();
+      pane.prepareRender();
       return runtime.render(() => providerReview);
     },
   });
-  const unsubscribe = owner.subscribe(() => lifecycle.invalidate());
   const frame = createMemo(() => lifecycle.snapshot());
   const providerReview: ChatProviderReviewOwner = createChatProviderReview({
     source: () => frame().providerReviewSource,
     readState: () => runtime.readProviderReviewState(),
   });
   createEffect(
-    () => ({ frame: frame(), presented: owner.read().presented }),
+    () => ({ frame: frame(), presented: presented() }),
     (next, previous) => {
       if (next.frame !== previous?.frame) {
-        runtime.commitRender();
+        pane.commitRender();
       }
       if (next.presented) {
         minutePoll.start();
@@ -101,37 +113,38 @@ function MountedChatPaneRuntime(props: { runtime: ChatPaneRuntime }) {
       }
     },
   );
-  onCleanup(unsubscribe);
+  const sessionKey = () => {
+    frame();
+    return runtime.sessionKey;
+  };
+  const agentId = () => {
+    frame();
+    return runtime.agentId ?? parseAgentSessionKey(runtime.sessionKey)?.agentId;
+  };
   return (
-    <>
+    <LinkReaderHovercard
+      client={gateway.read().snapshot.phase === "connected" ? gateway.read().snapshot.client : null}
+      readers={availableLinkPreviewReaders(gateway.read().snapshot)}
+      claimedReaders={availableLinkReaders(gateway.read().snapshot)}
+      pagePreviewContext={context}
+      agentId={agentId()}
+      sessionKey={sessionKey()}
+    >
       <PaneLayout layout={frame().layout} />
       <ChatProviderReviewDialog owner={providerReview} />
       <Show when={frame().capabilityDialogs}>
         {(dialogs) => <ChatComposerCapabilityDialogs {...dialogs()} />}
       </Show>
-    </>
+    </LinkReaderHovercard>
   );
 }
 
 export function ChatPaneRuntimeView(props: { runtime: ChatPaneRuntime }) {
-  const [ready, setReady] = createSignal(false);
-  let initialized = false;
-  onSettled(() => {
-    if (!props.runtime.isConnected) {
-      props.runtime.connectedCallback();
-    }
-    props.runtime.performUpdate();
-    initialized = true;
-    setReady(true);
-  });
-  onCleanup(() => {
-    if (initialized) {
-      props.runtime.disconnectedCallback();
-    }
-  });
+  // The bridge keeps this runtime identity for the mounted pane's lifetime.
+  const pane = createChatPane({ runtime: untrack(() => props.runtime) });
   return (
-    <Show when={ready()}>
-      <MountedChatPaneRuntime runtime={props.runtime} />
+    <Show when={pane.ready()}>
+      <MountedChatPaneRuntime pane={pane} />
     </Show>
   );
 }
