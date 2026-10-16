@@ -276,7 +276,8 @@ export function readPluginSdkSurfaceBudgets(env: NodeJS.ProcessEnv = process.env
       // +1: approved jsonPathValue on the experimental database-engine worker entrypoint.
       // +11: approved experimental engine-owned search capabilities on existing entrypoints.
       // +14: versioned Decision data contracts, lossless codecs, validation, and typed errors.
-      3786,
+      // +1: approved boot-selected family lookup on the database-engine runtime.
+      3787,
       env,
     ),
     publicFunctionExports: readPluginSdkSurfaceBudgetEnv(
@@ -314,7 +315,8 @@ export function readPluginSdkSurfaceBudgets(env: NodeJS.ProcessEnv = process.env
       // +1: the same approved database-engine JSON path helper.
       // +1: the same engine-owned search admission helper.
       // +6: four lossless Decision codecs and two bounded V2 validators.
-      2203,
+      // +1: the same boot-selected family lookup.
+      2204,
       env,
     ),
     publicDeprecatedExports: readPluginSdkSurfaceBudgetEnv(
