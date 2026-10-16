@@ -88,24 +88,25 @@ export function DailyColumns(props: {
         onPointerMove={pointer}
         onPointerLeave={() => setHover(null)}
       >
-        <For each={days()}>
+        {/* Days hold their slot; segments follow their provider across range changes. */}
+        <For each={days()} keyed={false}>
           {(segments, index) => (
             <g
               class={[
                 "usage-columns__day",
-                { "usage-columns__day--dim": hover() !== null && hover()?.index !== index() },
+                { "usage-columns__day--dim": hover() !== null && hover()?.index !== index },
               ]}
             >
-              <For each={segments}>
+              <For each={segments()} keyed={(segment) => segment.id}>
                 {(segment, position) => (
                   <rect
                     class="usage-columns__bar"
-                    style={{ "--oc-chart-color": segment.color }}
-                    x={index() * 10 + 1}
-                    y={segment.y}
+                    style={{ "--oc-chart-color": segment().color }}
+                    x={index * 10 + 1}
+                    y={segment().y}
                     width="8"
                     // A surface seam between stacked providers keeps them distinct.
-                    height={Math.max(0.5, segment.height - (position() > 0 ? 0.6 : 0))}
+                    height={Math.max(0.5, segment().height - (position() > 0 ? 0.6 : 0))}
                   />
                 )}
               </For>

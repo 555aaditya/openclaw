@@ -5,6 +5,7 @@ import {
   createProviderAmountFormatter,
   groupUsageWindows,
 } from "../../components/solid/provider-usage.tsx";
+import { formatDurationCompact } from "../../lib/format-duration.ts";
 import { formatUiExternalText } from "../../lib/format-error.ts";
 import { t } from "../../lib/reactive/i18n.ts";
 import "../../styles/carapace-data.css";
@@ -15,16 +16,6 @@ const NEAR_LIMIT_PERCENT = 80;
 const SUMMARY_WINDOWS = 2;
 
 type ProviderUsage = NonNullable<ModelProviderCard["usage"]>;
-
-function formatDuration(ms: number): string {
-  const minutes = Math.max(1, Math.round(ms / 60_000));
-  const days = Math.floor(minutes / 1_440);
-  const hours = Math.floor((minutes % 1_440) / 60);
-  if (days > 0) {
-    return hours > 0 ? `${days}d ${hours}h` : `${days}d`;
-  }
-  return hours > 0 ? `${hours}h ${minutes % 60}m` : `${minutes}m`;
-}
 
 function usedPercent(window: UsageWindow): number {
   return Math.max(0, Math.min(100, Math.round(window.usedPercent)));
@@ -57,6 +48,17 @@ export function hasProviderLimits(usage: ProviderUsage | undefined): usage is Pr
 }
 
 /** Summary-line limits: the first windows as compact meters, or the first balance. */
+type BillingEntry = NonNullable<ProviderUsage["billing"]>[number];
+
+const billingLabel = (entry: BillingEntry) => entry.label ?? t(`usage.providerUsage.${entry.type}`);
+
+function billingText(entry: BillingEntry): string {
+  const format = createProviderAmountFormatter(entry.unit);
+  return entry.type === "budget"
+    ? `${format(entry.used)} / ${format(entry.limit)}`
+    : format(entry.amount);
+}
+
 export function ProviderLimitSummary(props: { usage: ProviderUsage | undefined }) {
   const windows = () => props.usage?.windows.slice(0, SUMMARY_WINDOWS) ?? [];
   const balance = () => (windows().length === 0 ? props.usage?.billing?.[0] : undefined);
@@ -74,18 +76,8 @@ export function ProviderLimitSummary(props: { usage: ProviderUsage | undefined }
       <Show when={balance()}>
         {(entry) => (
           <span class="provider-limit-chip">
-            <span class="provider-limit-chip__label">
-              {entry().label ?? t(`usage.providerUsage.${entry().type}`)}
-            </span>
-            <span class="provider-limit-chip__value">
-              {(() => {
-                const value = entry();
-                const format = createProviderAmountFormatter(value.unit);
-                return value.type === "budget"
-                  ? `${format(value.used)} / ${format(value.limit)}`
-                  : format(value.amount);
-              })()}
-            </span>
+            <span class="provider-limit-chip__label">{billingLabel(entry())}</span>
+            <span class="provider-limit-chip__value">{billingText(entry())}</span>
           </span>
         )}
       </Show>
@@ -103,7 +95,9 @@ export function ProviderLimitDetails(props: { usage: ProviderUsage; now: number 
   const groups = createMemo(() => [...groupUsageWindows(props.usage.windows)]);
   const reset = (window: UsageWindow) =>
     window.resetAt && window.resetAt > props.now
-      ? t("modelProviders.limits.resetsIn", { time: formatDuration(window.resetAt - props.now) })
+      ? t("modelProviders.limits.resetsIn", {
+          time: formatDurationCompact(window.resetAt - props.now) ?? "",
+        })
       : t("modelProviders.limits.resetUnknown");
   return (
     <div class="provider-limits">
@@ -133,22 +127,13 @@ export function ProviderLimitDetails(props: { usage: ProviderUsage; now: number 
           )}
         </For>
         <For each={props.usage.billing ?? []}>
-          {(entry) => {
-            const format = createProviderAmountFormatter(entry.unit);
-            return (
-              <div class="oc-menu-panel-usage-row provider-limit">
-                <span class="oc-menu-panel-usage-label">
-                  {entry.label ?? t(`usage.providerUsage.${entry.type}`)}
-                </span>
-                <span />
-                <span class="oc-menu-panel-usage-value">
-                  {entry.type === "budget"
-                    ? `${format(entry.used)} / ${format(entry.limit)}`
-                    : format(entry.amount)}
-                </span>
-              </div>
-            );
-          }}
+          {(entry) => (
+            <div class="oc-menu-panel-usage-row provider-limit">
+              <span class="oc-menu-panel-usage-label">{billingLabel(entry)}</span>
+              <span />
+              <span class="oc-menu-panel-usage-value">{billingText(entry)}</span>
+            </div>
+          )}
         </For>
       </div>
       <Show when={props.usage.summary}>
