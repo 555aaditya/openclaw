@@ -7,6 +7,7 @@ import { chromium, type Browser } from "playwright";
 import { buildSandboxHostPath } from "../src/agents/sandbox-host.js";
 import { createSandboxHostHttpServer } from "../src/gateway/mcp-app-sandbox-http.js";
 import { shareSidebarSessionRows } from "../src/gateway/session-row-presentation.js";
+import { addArtifactSourceFixture } from "../ui/src/test-helpers/control-ui-artifact-source-fixture.ts";
 import { createColdLoadProbeInitScript } from "../ui/src/test-helpers/control-ui-cold-load-probes.ts";
 import {
   createControlUiMockBootstrapConfig,
@@ -295,8 +296,10 @@ const fixture = createControlUiTeamScaleFixture({
   sidebarListChurn: values["sidebar-list-churn"],
   sidebarLiveChurn: values["sidebar-live-churn"],
   duplicateBootReads: values["duplicate-boot-reads"],
-  artifactSourceReads: values["artifact-source-reads"],
 });
+const artifactSources = values["artifact-source-reads"]
+  ? addArtifactSourceFixture(fixture.scenario, fixture.selectedSessionKey)
+  : undefined;
 const streamingReply = values["streaming-reply"] ? createControlUiStreamingReply() : undefined;
 const extraInitScripts = await Promise.all(
   values["init-script"].map((file) => readFile(file, "utf8")),
@@ -383,8 +386,8 @@ try {
     const asset = assets.get(new URL(route.request().url()).pathname);
     return asset ? route.fulfill({ status: 200, ...asset }) : route.fallback();
   });
-  if (fixture.artifactSources) {
-    const source = fixture.artifactSources;
+  if (artifactSources) {
+    const source = artifactSources;
     await page.route(`**${source.path}*`, (route) =>
       route.fulfill({
         status: values["artifact-http-failure"] ? 404 : 200,
@@ -585,7 +588,7 @@ try {
     }
     await page.reload({ waitUntil: "domcontentloaded" });
     await settle();
-    if (fixture.artifactSources) {
+    if (artifactSources) {
       await page.waitForFunction(() => {
         const images = [
           ...document.querySelectorAll<HTMLImageElement>('img[alt^="Shared artifact "]'),

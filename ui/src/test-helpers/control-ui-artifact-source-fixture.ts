@@ -1,3 +1,19 @@
+import type { ControlUiMockGatewayScenario } from "./control-ui-e2e.ts";
+
+export function addArtifactSourceFixture(
+  scenario: ControlUiMockGatewayScenario,
+  sessionKey: string,
+) {
+  const fixture = createArtifactSourceFixture(sessionKey);
+  (scenario.historyMessages ??= []).push({
+    role: "assistant",
+    content: fixture.images,
+    timestamp: Date.now(),
+  });
+  scenario.methodResponses = { ...scenario.methodResponses, ...fixture.methodResponses };
+  return fixture;
+}
+
 export function createArtifactSourceFixture(sessionKey: string, now = Date.now()) {
   const artifactId = "artifact_transcript_image_shared";
   const path = "/api/artifacts/download/fixture/shared-image";

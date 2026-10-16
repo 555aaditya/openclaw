@@ -11,7 +11,6 @@ import type {
 } from "../api/types.ts";
 import type { PresencePayload } from "../app/user-profile.ts";
 import type { BoardSnapshot } from "../lib/board/types.ts";
-import { createArtifactSourceFixture } from "./control-ui-artifact-source-fixture.ts";
 import { createTeamScaleDuplicateReadFixture } from "./control-ui-duplicate-read-fixture.ts";
 import { defaultControlUiFeatureMethods } from "./control-ui-e2e-defaults.ts";
 import type { ControlUiMockGatewayScenario } from "./control-ui-e2e.ts";
@@ -55,7 +54,6 @@ type FixtureOptions = {
   sidebarListChurn?: boolean;
   sidebarLiveChurn?: boolean;
   duplicateBootReads?: boolean;
-  artifactSourceReads?: boolean;
 };
 
 function personId(index: number) {
@@ -180,9 +178,6 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
   const pinnedRows = sessions.slice(-counts.pinned);
   const pinnedKeys = pinnedRows.map((row) => row.key);
   const selectedSessionKey = pinnedKeys[0]!;
-  const artifactSources = options.artifactSourceReads
-    ? createArtifactSourceFixture(selectedSessionKey, now)
-    : undefined;
   const duplicateReads = options.duplicateBootReads
     ? createTeamScaleDuplicateReadFixture(selectedSessionKey, now)
     : undefined;
@@ -259,7 +254,6 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
     __openclaw: { id, seq: index + 1 },
     timestamp: now - (counts.transcriptMessages - index) * 60_000,
     content: [
-      ...(artifactSources && index === counts.transcriptMessages - 1 ? artifactSources.images : []),
       ...(duplicateReads && index === counts.transcriptMessages - 1
         ? duplicateReads.attachments
         : []),
@@ -447,7 +441,6 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
     methodResponses: {
       "question.list": { questions: [] },
       ...duplicateReads?.methodResponses,
-      ...artifactSources?.methodResponses,
       "agents.list": agents,
       "agent.identity.get": {
         cases: agents.agents.map((agent) => ({
@@ -718,6 +711,5 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
       : undefined,
     counts,
     assets,
-    artifactSources,
   };
 }

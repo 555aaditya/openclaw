@@ -1,3 +1,4 @@
+import { resolveArtifactDownloadSource } from "../../api/artifact-download.ts";
 import type { GatewaySessionRow } from "../../api/types.ts";
 import type { ApplicationContext } from "../../app/context.ts";
 import { t } from "../../i18n/index.ts";
@@ -7,11 +8,26 @@ import {
   resolveControlUiServerQueueMode,
 } from "../../lib/chat/follow-up-mode.ts";
 import { currentDisplayRuntimeConfig } from "../../lib/config/config-state-model.ts";
+import { scopedAgentParamsForSession } from "../../lib/sessions/index.ts";
 import { getChatHistoryLoadState } from "./chat-history-state.ts";
 import { chatSendPendingReason } from "./chat-send-support.ts";
 import type { ChatState } from "./chat-state-contract.ts";
 import type { ChatPageHost } from "./chat-state-host.ts";
 import type { ChatProps } from "./chat-view.tsx";
+import { assistantMediaPolicyKey } from "./components/chat-message-media.ts";
+
+export function createChatPaneArtifactResolver(
+  state: ChatPageHost,
+  session: GatewaySessionRow | undefined,
+): NonNullable<ChatProps["resolveArtifactDownload"]> {
+  return (params, signal) =>
+    resolveArtifactDownloadSource(
+      state,
+      { ...params, ...scopedAgentParamsForSession(state, params.sessionKey) },
+      signal,
+      assistantMediaPolicyKey(session, state.mediaPolicyEpoch),
+    );
+}
 
 export function createChatPaneRunRecoveryActions(
   state: Pick<
