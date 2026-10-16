@@ -487,7 +487,11 @@ it("runs both SDK versions through the source TypeSafe plugin, prepared auth, an
             state: { type: "text" as const, text: "synthetic evidence" },
             questions: { q: { type: "boolean" as const } },
           };
-          expect(await evaluate(batch, { ...options(), reasoning: "auto" })).toMatchObject({
+          const outcome = await evaluate(batch, { ...options(), reasoning: "auto" });
+          expect(
+            outcome,
+            JSON.stringify({ outcome, receivedRequests: received.length }),
+          ).toMatchObject({
             status: "ok",
             result: {
               answers: { q: { type: "boolean", probabilityTrue: 0.37 } },
@@ -497,6 +501,12 @@ it("runs both SDK versions through the source TypeSafe plugin, prepared auth, an
           expect(
             await legacy({ state: "synthetic evidence", questions: batch.questions }, options()),
           ).toMatchObject({ status: "ok", result: { answers: { q: { probabilityTrue: 0.37 } } } });
+          for (const reasoning of ["off", "on"] as const) {
+            await expect(evaluate(batch, { ...options(), reasoning })).resolves.toMatchObject({
+              status: "unavailable",
+              reason: "unsupported-input",
+            });
+          }
           for (const rejection of [413, 422]) {
             status = rejection;
             expect(await evaluate(batch, options())).toMatchObject({

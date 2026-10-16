@@ -135,6 +135,9 @@
                     "maxOptions": 10
                   }
                 },
+                "reasoning": {
+                  "modes": ["auto"]
+                },
                 "confidence": "provider-specific"
               }
             }
@@ -169,6 +172,9 @@
                     "maxOptions": 10
                   }
                 },
+                "reasoning": {
+                  "modes": ["auto"]
+                },
                 "confidence": "provider-specific"
               }
             }
@@ -201,6 +207,9 @@
                     "minOptions": 2,
                     "maxOptions": 10
                   }
+                },
+                "reasoning": {
+                  "modes": ["auto"]
                 },
                 "confidence": "provider-specific",
                 "limits": {
@@ -245,6 +254,9 @@
                     "minOptions": 2,
                     "maxOptions": 10
                   }
+                },
+                "reasoning": {
+                  "modes": ["auto"]
                 },
                 "confidence": "provider-specific"
               }
