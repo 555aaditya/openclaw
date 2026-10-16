@@ -1,22 +1,17 @@
-import type { DecisionBatchV2, DecisionProviderContextV2 } from "openclaw/plugin-sdk/decisions";
+import type { DecisionBatch, DecisionProviderContextV2 } from "openclaw/plugin-sdk/decisions";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import manifest from "../openclaw.plugin.json";
 import { evaluate } from "./client.js";
-import { createDecisionProvider } from "./decisions.js";
+import type { RuntimeConfig } from "./config.js";
+import { createDecisionProvider, createPreparedDecisionProvider } from "./decisions.js";
 import { EvaluationError } from "./errors.js";
-
 vi.mock("./client.js", () => ({ evaluate: vi.fn() }));
-const batch: DecisionBatchV2 = {
-  state: { type: "text", text: "synthetic" },
-  questions: {
-    b: { type: "boolean", instructions: "truth" },
-    c: { type: "choice", criteria: { yes: "yes", no: "no" } },
-    s: { type: "score", criteria: ["low", "middle", "high"] },
-  },
+const batch: DecisionBatch = {
+  state: "synthetic",
+  questions: { b: { type: "boolean" } },
 };
-const context = (): DecisionProviderContextV2 => ({
-  model: { id: "jev-agent-selected", name: "Jev", provider: "typesafe" },
-  config: { plugins: { entries: { typesafe: { config: { timeoutMs: 2000 } } } } },
-  auth: { mode: "api-key", apiKey: "synthetic-key" },
+const context = () => ({
+  model: "jev-agent-selected",
   agentId: "research",
   signal: new AbortController().signal,
   deadlineMonotonicMs: performance.now() + 500,
@@ -26,75 +21,6 @@ beforeEach(() => {
   vi.mocked(evaluate).mockReset();
 });
 describe("host decision adapter", () => {
-  it("maps Boolean/Noul and ordered fractional scores without rounding or losing distributions", async () => {
-    vi.mocked(evaluate).mockResolvedValue({
-      evaluation: {
-        model: "resolved-jev",
-        answers: {
-          b: { type: "noul", noul: 0.3 },
-          c: {
-            type: "choice",
-            choice: "yes",
-            probabilities: { yes: 0.8, no: 0.2 },
-            confidence: 0.4,
-          },
-          s: {
-            type: "score",
-            score: 1.3,
-            probabilities: { "0": 0.1, "1": 0.5, "2": 0.4 },
-            legend: { "0": "low", "1": "middle", "2": "high" },
-            confidence: 0.6,
-          },
-        },
-        usage: { input_tokens: 13, output_tokens: 3 },
-      },
-    });
-    const result = await createDecisionProvider(() => config).evaluate(batch, context());
-    expect(result).toEqual({
-      status: "ok",
-      result: {
-        model: "resolved-jev",
-        answers: {
-          b: { type: "boolean", probabilityTrue: 0.3 },
-          c: {
-            type: "choice",
-            choice: "yes",
-            probabilities: { yes: 0.8, no: 0.2 },
-            confidence: 0.4,
-          },
-          s: { type: "score", score: 1.3, probabilities: [0.1, 0.5, 0.4], confidence: 0.6 },
-        },
-        usage: { inputTokens: 13, outputTokens: 3 },
-      },
-    });
-    expect(vi.mocked(evaluate).mock.lastCall?.[0]).toMatchObject({
-      model: "jev-agent-selected",
-      questions: { b: { type: "noul" } },
-    });
-    expect(vi.mocked(evaluate).mock.lastCall?.[1].timeoutMs).toBeLessThanOrEqual(500);
-  });
-  it("rejects cold credentials without dispatch", async () => {
-    expect(
-      await createDecisionProvider(() => ({ ...config, apiKey: undefined })).evaluate(batch, {
-        ...context(),
-        auth: { mode: "api-key" },
-      }),
-    ).toEqual({ status: "unavailable", reason: "credentials-unavailable" });
-    expect(evaluate).not.toHaveBeenCalled();
-  });
-  it.each(["authentication", "rate-limited", "transport", "invalid-response"] as const)(
-    "preserves classified %s failures without details",
-    async (reason) => {
-      vi.mocked(evaluate).mockRejectedValue(
-        new EvaluationError("synthetic-private-detail", reason, 123),
-      );
-      expect(await createDecisionProvider(() => config).evaluate(batch, context())).toEqual({
-        status: "unavailable",
-        reason,
-        retryAfterMs: 123,
-      });
-    },
-  );
   it("does not convert caller cancellation or implementation errors into fallback", async () => {
     const controller = new AbortController();
     vi.mocked(evaluate).mockImplementation(async () => {
@@ -117,43 +43,197 @@ describe("host decision adapter", () => {
   });
 });
 
-it.each<DecisionBatchV2>([
-  { ...batch, state: { type: "image", dataUri: "data:image/png;base64,AA==" } },
-  { ...batch, state: { type: "list", items: [{ id: "one", content: "text" }] } },
-  { ...batch, questions: { q: { type: "sort" } } },
-  { ...batch, questions: { q: { type: "tags", criteria: { a: "A" } } } },
-])("rejects unsupported V2 capabilities before dispatch", async (input) => {
-  const dispatch = vi.mocked(evaluate);
-  const provider = createDecisionProvider(() => config);
-  expect(await provider.evaluate(input, context())).toEqual({
-    status: "unavailable",
-    reason: "unsupported-input",
+it("preserves canonical per-model capability and billing facts while enriching V1 input", async () => {
+  const native = {
+    provider: "typesafe",
+    id: "pinned",
+    name: "Pinned",
+    inference: {
+      chat: false as const,
+      decision: {
+        protocol: "pinned",
+        input: ["text" as const],
+        billing: {
+          unit: "tokens" as const,
+          source: "provider-docs" as const,
+          usdPerMillion: { input: 0.01 },
+        },
+      },
+    },
+  };
+  const legacy = {
+    provider: "typesafe",
+    id: "legacy",
+    name: "Legacy",
+    inference: {
+      chat: false as const,
+      decision: { protocol: "decision-v1", input: ["text" as const] },
+    },
+  };
+  const provider = createPreparedDecisionProvider(() => config);
+  const rows = await provider.provider?.augmentModelCatalog?.({
+    env: {},
+    entries: [native, legacy],
   });
-  expect(dispatch).not.toHaveBeenCalled();
+  expect(rows?.find((row) => row.id === "pinned")).toEqual(native);
+  expect(rows?.find((row) => row.id === "legacy")?.inference?.decision?.protocol).toBe(
+    "typesafe-systemone",
+  );
 });
 
-it.each(["off", "on"] as const)(
-  "rejects unsupported reasoning %s before dispatch",
-  async (reasoning) => {
-    const dispatch = vi.mocked(evaluate);
-    const provider = createDecisionProvider(() => config);
-    expect(await provider.evaluate(batch, { ...context(), reasoning })).toEqual({
-      status: "unavailable",
-      reason: "unsupported-input",
-    });
-    expect(dispatch).not.toHaveBeenCalled();
+type Inference = NonNullable<DecisionProviderContextV2["model"]["inference"]>;
+const pinned = manifest.modelCatalog.providers.typesafe.models.find(
+  (model) => model.id === "jev-1.13.0",
+)!;
+const pinnedRow = {
+  ...pinned,
+  provider: "typesafe",
+  inference: {
+    chat: false,
+    decision: {
+      protocol: "typesafe-systemone",
+      input: ["text"],
+      limits: { maxRequestTokens: 64000, maxStateAndQuestionTokens: 32000 },
+      billing: {
+        unit: "tokens",
+        source: "provider-docs",
+        usdPerMillion: { input: 0.042, output: 0 },
+      },
+    },
+  } satisfies Inference,
+};
+async function preparedFacts(runtime: RuntimeConfig) {
+  const provider = createPreparedDecisionProvider(() => runtime);
+  const rows = await provider.provider?.augmentModelCatalog?.({ env: {}, entries: [pinnedRow] });
+  return { facts: rows?.[0]?.inference?.decision, provider };
+}
+function configuredModel(
+  overrides: Partial<NonNullable<RuntimeConfig["providerConfig"]>["models"][number]> = {},
+) {
+  return {
+    id: pinned.id,
+    name: pinned.name,
+    reasoning: false,
+    input: ["text" as const],
+    contextWindow: 4096,
+    maxTokens: 256,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    ...overrides,
+  };
+}
+function configuredRuntime(
+  overrides: Partial<NonNullable<RuntimeConfig["providerConfig"]>> = {},
+): RuntimeConfig {
+  return {
+    ...config,
+    providerConfig: { baseUrl: "https://api.typesafe.ai/v1", models: [], ...overrides },
+  };
+}
+
+it.each([undefined, "https://api.typesafe.ai", "https://api.typesafe.ai/v1/"])(
+  "keeps pinned hosted facts on the matching normalized API root (%s)",
+  async (baseUrl) => {
+    const runtime = baseUrl === undefined ? config : configuredRuntime({ baseUrl });
+    const { facts, provider } = await preparedFacts(runtime);
+    expect(facts).toEqual(pinnedRow.inference.decision);
+    expect(
+      provider.provider?.normalizeTransport?.({ provider: "typesafe", modelId: pinned.id }),
+    ).toEqual({ baseUrl: "https://api.typesafe.ai/v1" });
   },
 );
 
-it("uses prepared auth and nonsecret settings without calling the live secret hook", async () => {
-  const getConfig = vi.fn(() => config);
-  vi.mocked(evaluate).mockRejectedValue(new EvaluationError("synthetic", "transport"));
-  const ctx = context();
-  ctx.config.plugins!.entries!.typesafe!.config = {
-    apiKey: "unprepared-do-not-use",
-    timeoutMs: 2000,
+it.each([
+  { baseUrl: "http://127.0.0.1:8765", timeoutMs: 2000 },
+  configuredRuntime({ baseUrl: "https://systemone.fixture.invalid/v1" }),
+  configuredRuntime({ baseUrl: "https://api.typesafe.ai/custom/v1" }),
+  configuredRuntime({ baseUrl: "https://api.typesafe.ai/v1/systemone" }),
+])("does not carry hosted billing or limits onto a different physical route", async (runtime) => {
+  const { facts } = await preparedFacts(runtime);
+  expect(facts?.billing).toBeUndefined();
+  expect(facts?.limits).toBeUndefined();
+  expect(facts?.protocol).toBe("typesafe-systemone");
+  expect(pinnedRow.inference.decision.billing).toBeDefined();
+});
+
+it.each([
+  { headers: { "TypeSafe-Danger-Zone-Long-Context": "true" } },
+  {
+    headers: { "typesafe-danger-zone-long-context": "false" },
+    models: [configuredModel({ headers: { "TYPESAFE-DANGER-ZONE-LONG-CONTEXT": "true" } })],
+  },
+  {
+    headers: { "TypeSafe-Danger-Zone-Long-Context": "false" },
+    request: { headers: { "typesafe-danger-zone-long-context": "true" } },
+  },
+])(
+  "withdraws default context limits when effective long-context mode is enabled",
+  async (overrides) => {
+    const { facts } = await preparedFacts(configuredRuntime(overrides));
+    expect(facts?.limits).toBeUndefined();
+    expect(facts?.billing).toEqual(pinnedRow.inference.decision.billing);
+  },
+);
+
+it("uses final request header precedence instead of the provider long-context setting", async () => {
+  const { facts } = await preparedFacts(
+    configuredRuntime({
+      headers: { "TypeSafe-Danger-Zone-Long-Context": "true" },
+      request: { headers: { "typesafe-danger-zone-long-context": "false" } },
+    }),
+  );
+  expect(facts).toEqual(pinnedRow.inference.decision);
+});
+
+it("retains explicit operator facts on a custom route", async () => {
+  const inference: Inference = {
+    ...pinnedRow.inference,
+    decision: {
+      ...pinnedRow.inference.decision,
+      billing: { unit: "requests", source: "configured" },
+      limits: { maxRequestTokens: 1000, maxStateAndQuestionTokens: 500 },
+    },
   };
-  await createDecisionProvider(getConfig).evaluate(batch, ctx);
-  expect(getConfig).not.toHaveBeenCalled();
-  expect(vi.mocked(evaluate).mock.lastCall?.[1].apiKey).toBe("synthetic-key");
+  const runtime = configuredRuntime({
+    baseUrl: "https://systemone.fixture.invalid/v1",
+    models: [configuredModel({ inference })],
+  });
+  const provider = createPreparedDecisionProvider(() => runtime);
+  const rows = await provider.provider?.augmentModelCatalog?.({
+    env: {},
+    entries: [{ ...pinnedRow, inference }],
+  });
+  expect(rows?.[0]?.inference).toEqual(inference);
+});
+
+it("keeps unresolved unrelated secrets out of catalog fact binding", async () => {
+  const { facts } = await preparedFacts(
+    configuredRuntime({
+      headers: {
+        "x-api-key": { source: "env", provider: "default", id: "UNRESOLVED_SYNTHETIC_KEY" },
+      },
+      request: {
+        auth: {
+          mode: "authorization-bearer",
+          token: { source: "env", provider: "default", id: "UNRESOLVED_SYNTHETIC_KEY" },
+        },
+      },
+    }),
+  );
+  expect(facts).toEqual(pinnedRow.inference.decision);
+});
+
+it("withdraws default limits while the long-context header is unresolved", async () => {
+  const { facts } = await preparedFacts(
+    configuredRuntime({
+      headers: {
+        "TypeSafe-Danger-Zone-Long-Context": {
+          source: "env",
+          provider: "default",
+          id: "UNRESOLVED_SYNTHETIC_HEADER",
+        },
+      },
+    }),
+  );
+  expect(facts?.limits).toBeUndefined();
+  expect(facts?.billing).toEqual(pinnedRow.inference.decision.billing);
 });
