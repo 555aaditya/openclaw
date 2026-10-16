@@ -2321,6 +2321,7 @@
                           "providers/ollama/troubleshooting"
                         ]
                       },
+                      "providers/omlx",
                       "providers/sglang",
                       "providers/vllm"
                     ]
