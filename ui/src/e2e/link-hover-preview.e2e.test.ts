@@ -218,7 +218,11 @@ suite.define(() => {
       const hovercardModule = controlUiE2eBuiltModuleRequest(
         "ui/src/components/link-reader-hovercard.ts",
       );
-      await page.route(hovercardModule, (route) => route.abort());
+      let runtimeRequests = 0;
+      await page.route(hovercardModule, (route) => {
+        runtimeRequests += 1;
+        return route.abort();
+      });
       const gateway = await installMockGateway(page, {
         automaticallyFetchFavicons: true,
         historyMessages: [
@@ -231,6 +235,8 @@ suite.define(() => {
       });
       await page.goto(suite.server.baseUrl + "chat");
       const link = page.getByRole("link", { name: "Field guide", exact: true });
+      await link.waitFor();
+      expect(runtimeRequests).toBe(0);
       // A missing hashed chunk reloads the page; wait before hovering the new document.
       await Promise.all([
         page.waitForEvent("requestfailed", (request) => hovercardModule.test(request.url())),
@@ -300,12 +306,8 @@ suite.define(() => {
       await link.hover();
       await page.clock.runFor(400);
       expect(await gateway.getRequests("controlUi.linkPreview")).toEqual([]);
+      await page.clock.resume();
       await page.getByRole("link", { name: "Control", exact: true }).hover();
-      // Network module loading is not virtual time; await it before advancing the open timer.
-      await page.evaluate(() =>
-        customElements.whenDefined("openclaw-link-reader-hovercard-provider"),
-      );
-      await page.clock.runFor(400);
       await page.locator(".link-hovercard").getByText(preview.title).waitFor();
       expect(
         (await gateway.getRequests("controlUi.linkPreview")).map((request) => request.params),

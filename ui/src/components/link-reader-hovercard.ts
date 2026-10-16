@@ -22,7 +22,7 @@ const properties = {
 
 const owners = new WeakMap<LinkReaderHovercardProvider, HovercardOwner>();
 
-export const LinkReaderHovercard = defineSolidBridge<HovercardProperties, HovercardMethods>(
+defineSolidBridge<HovercardProperties, HovercardMethods>(
   LINK_READER_HOVERCARD_PROVIDER_TAG,
   (props, host) => {
     let owner = owners.get(host);
