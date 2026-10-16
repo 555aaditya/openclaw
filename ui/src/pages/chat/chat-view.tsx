@@ -9,11 +9,10 @@ import {
   KEYBOARD_SHORTCUT_COMBOS,
   matchesShortcutCombo,
 } from "../../lib/keyboard-shortcut-contract.ts";
+import { PRESENTATION_CHANGED_EVENT } from "../../lib/presentation.ts";
 import { ApplicationProvider, useOptionalApplication } from "../../lib/reactive/context.ts";
 import { t } from "../../lib/reactive/i18n.ts";
 import { scopedSessionArtifactKey } from "../../lib/sessions/session-key.ts";
-import { PRESENTATION_CHANGED_EVENT } from "../../lit/presentation-binding.ts";
-import { LitContent } from "../../lit/solid-content.tsx";
 import { PluginSurface } from "../../plugins/control-ui-view.solid.tsx";
 import { getChatHistoryLoadState } from "./chat-history-state.ts";
 import { loadChatPendingInputs } from "./chat-pending-inputs.ts";
@@ -26,7 +25,7 @@ import {
 import { ChatCommentController } from "./components/chat-comment-controller.ts";
 import {
   ComposerQuestionDock,
-  resolveComposerQuestionPanel,
+  createComposerQuestionPanel,
 } from "./components/chat-composer-question.tsx";
 import { ComposerQueue } from "./components/chat-composer-regions.tsx";
 import { getChatComposerState, hasTerminalRunStatus } from "./components/chat-composer-state.ts";
@@ -177,19 +176,17 @@ function ChatComposerView(input: ChatViewInput) {
 }
 
 function ChatComposerCompanion(input: ChatViewInput) {
+  const questionPanel = createComposerQuestionPanel(
+    () => ({ ...input.props, asyncQuestions: input.frame.asyncQuestions }),
+    getChatComposerState(untrack(() => input.props.paneId)),
+  );
   return (
     <div class="chat-footer__context">
       <ChatFooterContent {...input} />
       <div class="agent-chat__composer-notices">
         <ChatComposerNoticesView {...input.props} />
       </div>
-      <ComposerQuestionDock
-        panel={resolveComposerQuestionPanel(
-          { ...input.props, asyncQuestions: input.frame.asyncQuestions },
-          getChatComposerState(input.props.paneId),
-          input.frame.requestUpdate,
-        )}
-      />
+      <ComposerQuestionDock panel={questionPanel()} />
       <ComposerQueue
         composer={{ ...input.props, displayQueue: input.frame.displayQueue }}
         showAbortableUi={

@@ -41,7 +41,7 @@ export function registerSharedClientLifetimeTests(
   registerSharedClientAuthRefreshTests();
 
   it.each(["shared", "isolated"] as const)(
-    "joins %s transport startup and closes a client returned after its deadline",
+    "joins %s transport startup and closes a client returned after the startup deadline",
     async (kind) => {
       vi.useFakeTimers();
       const harness = createClientHarness({ autoEmitExit: false });
@@ -56,14 +56,17 @@ export function registerSharedClientLifetimeTests(
           ? getLeasedSharedCodexAppServerClient
           : createIsolatedCodexAppServerClient;
       let settled = false;
-      const pending = acquire({ timeoutMs: 50 });
+      const pending = acquire({
+        timeoutMs: kind === "shared" ? 1_000 : 50,
+        pluginConfig: { appServer: { requestTimeoutMs: 10 } },
+      });
       const rejected = expect(pending).rejects.toThrow("codex app-server initialize timed out");
       void pending.catch(() => {
         settled = true;
       });
       await vi.advanceTimersByTimeAsync(0);
       expect(startSpy).toHaveBeenCalledOnce();
-      await vi.advanceTimersByTimeAsync(50);
+      await vi.advanceTimersByTimeAsync(kind === "shared" ? 100 : 50);
       try {
         expect(settled).toBe(false);
         finishStart(harness.client);
@@ -79,10 +82,32 @@ export function registerSharedClientLifetimeTests(
     },
   );
 
+  it.each(["shared", "isolated"] as const)(
+    "preserves a %s registration failure after its startup deadline",
+    async (kind) => {
+      vi.useFakeTimers();
+      const starting = createDeferred<CodexAppServerClient>();
+      const startSpy = vi.spyOn(CodexAppServerClient, "start").mockReturnValue(starting.promise);
+      const acquire =
+        kind === "shared"
+          ? getLeasedSharedCodexAppServerClient
+          : createIsolatedCodexAppServerClient;
+      const failure = new Error("Cannot inspect Codex processes: inspection deadline exceeded");
+      const pending = acquire({
+        timeoutMs: kind === "shared" ? 1_000 : 50,
+        pluginConfig: { appServer: { requestTimeoutMs: 10 } },
+      });
+      const rejected = expect(pending).rejects.toBe(failure);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(startSpy).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(kind === "shared" ? 100 : 50);
+      starting.reject(failure);
+      await rejected;
+    },
+  );
+
   it.each([
     ["shared", "validation"],
-    ["shared", "abort"],
-    ["shared", "timeout"],
     ["isolated", "validation"],
     ["isolated", "abort"],
     ["isolated", "timeout"],
