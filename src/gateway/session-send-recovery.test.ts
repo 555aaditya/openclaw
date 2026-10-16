@@ -95,8 +95,8 @@ const input: SessionPendingInput = {
   },
 };
 const config: OpenClawConfig = {
-  agents: { entries: { main: {} } },
-  tools: { sessions: { visibility: "all" } },
+  agents: { entries: { main: {}, secondary: {} } },
+  tools: { sessions: { visibility: "all" }, agentToAgent: { enabled: true } },
   session: { communication: { send: "always", receive: "always" } },
 };
 let sourceEntry: {
@@ -338,6 +338,67 @@ it("retries discovery without losing the saved delivery", async () => {
   await Promise.all([recovery, vi.runAllTimersAsync()]);
   expect(dispatch).toHaveBeenCalledOnce();
   expect(io.report).not.toHaveBeenCalled();
+});
+
+it("recovers a logical agent's input from a shared physical store", async () => {
+  const sharedDelivery = {
+    ...delivery,
+    target: { ...delivery.target, agentId: "secondary", sessionKey: "agent:secondary:target" },
+  };
+  const sharedInput = {
+    ...input,
+    message: { ...input.message, __openclaw: { sessionSendDelivery: sharedDelivery } },
+  };
+  io.entries.mockResolvedValue([
+    { sessionKey: sharedDelivery.target.sessionKey, entry: targetEntry },
+  ]);
+  io.pending.mockResolvedValue({ items: [sharedInput], total: 1 });
+  io.source.mockResolvedValue({
+    snapshot: {
+      current: true,
+      pending: {
+        input_id: input.id,
+        state: "interrupted",
+        consumed_event_id: null,
+        message_json: JSON.stringify(sharedInput.message),
+      },
+    },
+    assertCurrent() {},
+  });
+  io.load.mockImplementation(async ({ key }: { key: string }) => ({
+    agentId: key === delivery.source.sessionKey ? "main" : "secondary",
+    canonicalKey: key,
+    storePath: "/fixture/shared.sqlite",
+    store: { [key]: key === delivery.source.sessionKey ? sourceEntry : targetEntry },
+  }));
+  await recoverSessionSendDeliveries(context, controller().signal);
+  expect(dispatch).toHaveBeenCalledOnce();
+  expect(dispatch.mock.calls[0]![0]).toMatchObject({
+    agentId: "secondary",
+    sessionKey: "agent:secondary:target",
+  });
+  expect(io.report).not.toHaveBeenCalled();
+});
+
+it("retains changed-content conflicts with a typed reason and no retry", async () => {
+  dispatch.mockRejectedValue(
+    new GatewayClientRequestError({
+      code: "UNAVAILABLE",
+      message: "Input completion idempotency key conflicts with the accepted input",
+      details: { code: "SESSION_INPUT_IDEMPOTENCY_CONFLICT" },
+      retryable: false,
+    }),
+  );
+  await recoverSessionSendDeliveries(context, controller().signal);
+  expect(dispatch).toHaveBeenCalledOnce();
+  expect(io.report.mock.calls[0]![1].selectReport(undefined).details.inputs).toEqual([
+    {
+      inputId: input.id,
+      sourceSessionKey: delivery.source.sessionKey,
+      reason: "idempotency-conflict",
+      attempts: 1,
+    },
+  ]);
 });
 
 it.each([
