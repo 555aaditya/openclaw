@@ -5,6 +5,7 @@ import {
   resetSubagentRegistryForTests,
 } from "../agents/subagents/registry/subagent-registry.test-helpers.js";
 import { consumeSwarmStructuredOutput } from "../agents/tools/structured-output-tool.js";
+import { captureRuntimeConfigAsyncReader } from "../config/io.runtime.js";
 import {
   createOpenClawTestState,
   type OpenClawTestState,
@@ -26,6 +27,7 @@ export function useMcpCollectorRegistry(
   beforeEach(async () => {
     await resetSubagentRegistryForTests({ persist: false });
     await configureMockSubagentRegistryPersistence({ persistRegistryRows: () => {} });
+    await captureRuntimeConfigAsyncReader()();
     await addSubagentRunForTests({ ...entry, collect: true });
   });
   afterEach(async () => {
