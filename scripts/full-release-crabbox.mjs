@@ -556,7 +556,7 @@ async function main() {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main().catch((error) => {
+  main().catch((/** @type {unknown} */ error) => {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;
   });

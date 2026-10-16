@@ -115,7 +115,9 @@ describe("release runner reservation", () => {
       expect(evaluateWorkflowRunner(selector, context)).toBe(label);
     }
     for (const [name, workflow] of workflows) {
-      if (["android-release-e2e", "ci-published-driver-update"].includes(name)) continue;
+      if (["android-release-e2e", "ci-published-driver-update"].includes(name)) {
+        continue;
+      }
       const pinnedJob = credentialedJobs[name];
       if (pinnedJob) {
         expect(credentialed(name, workflow.jobs[pinnedJob]!)).toBe(true);
@@ -220,7 +222,9 @@ describe("release runner reservation", () => {
               trustedWorkflowJson: JSON.stringify({ crabboxRunnerLabel: label }),
             };
             for (const [jobName, job] of Object.entries(workflow.jobs)) {
-              if (!job["runs-on"]) continue;
+              if (!job["runs-on"]) {
+                continue;
+              }
               const baseline = evaluateWorkflowRunner(job["runs-on"], ordinary);
               expect(
                 evaluateWorkflowRunner(job["runs-on"], selected),
@@ -240,7 +244,9 @@ describe("release runner reservation", () => {
       }
       for (const [jobName, job] of Object.entries(workflow.jobs)) {
         const child = /^\.\/\.github\/workflows\/(.+)\.yml$/u.exec(job.uses ?? "")?.[1];
-        if (!child || !graph.has(child)) continue;
+        if (!child || !graph.has(child)) {
+          continue;
+        }
         expect(
           evaluateWorkflowRunner(job.with?.crabbox_runner_label, {
             ...context,
