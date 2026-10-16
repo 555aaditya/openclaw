@@ -10,6 +10,12 @@ import { formatUiError } from "../lib/format-error.ts";
 const BROWSER_WEBSOCKET_CONSTRUCTOR_ERROR_CODE = "BROWSER_WEBSOCKET_CONSTRUCTOR_ERROR";
 export const BROWSER_WEBSOCKET_SECURITY_ERROR_CODE = "BROWSER_WEBSOCKET_SECURITY_ERROR";
 
+declare global {
+  var openclawEarlyGatewaySocket:
+    | ((url: string) => { socket: WebSocket; frames: string[] } | undefined)
+    | undefined;
+}
+
 export function formatBrowserWebSocketConstructorError(err: unknown, url: string): ErrorShape {
   const name = err && typeof err === "object" && "name" in err ? err.name : undefined;
   const browserErrorName = typeof name === "string" && name.trim() ? name : undefined;
@@ -75,7 +81,9 @@ export function createBrowserGatewaySocket(
   handlers: GatewayProtocolSocketHandlers,
   maxPayloadBytes?: () => number | undefined,
 ): GatewayProtocolSocket {
-  const socket = new WebSocket(gatewayWebSocketTransportUrl(url));
+  const transportUrl = gatewayWebSocketTransportUrl(url);
+  const early = globalThis.openclawEarlyGatewaySocket?.(transportUrl);
+  const socket = early?.socket ?? new WebSocket(transportUrl);
   let opening = true;
   let openingTimeoutReason: string | undefined;
   let openingTimer: ReturnType<typeof setTimeout> | undefined;
@@ -119,6 +127,16 @@ export function createBrowserGatewaySocket(
       socket.close();
     }
   }, DEFAULT_PREAUTH_HANDSHAKE_TIMEOUT_MS);
+
+  if (early && socket.readyState === WebSocket.OPEN) {
+    // The protocol owner must receive its adapter before replaying the challenge.
+    queueMicrotask(() => {
+      if (!opening || socket.readyState !== WebSocket.OPEN) return;
+      finishOpening();
+      handlers.open();
+      for (const frame of early.frames) handlers.message(frame);
+    });
+  }
 
   return {
     isOpen: () => socket.readyState === WebSocket.OPEN,

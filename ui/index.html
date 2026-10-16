@@ -21,6 +21,53 @@
       globalThis.__zod_globalConfig.jitless = true;
 
       (function () {
+        try {
+          if (localStorage.getItem("openclaw.experiment.early-websocket") !== "1") return;
+          var base =
+            document.documentElement.getAttribute("data-openclaw-control-ui-base-path") || "";
+          var url = new URL(base || "/", location.origin);
+          url.protocol = location.protocol === "https:" ? "wss:" : "ws:";
+          var socket = new WebSocket(url.href);
+          var frames = [];
+          var bytes = 0;
+          var timer = setTimeout(discard, 10000);
+          function buffer(event) {
+            bytes += String(event.data).length;
+            if (frames.length >= 8 || bytes > 65536) discard();
+            else frames.push(String(event.data));
+          }
+          function detach() {
+            clearTimeout(timer);
+            socket.removeEventListener("message", buffer);
+            socket.removeEventListener("error", discard);
+            socket.removeEventListener("close", discard);
+            window.removeEventListener("pagehide", discard);
+            delete globalThis.openclawEarlyGatewaySocket;
+          }
+          function discard() {
+            detach();
+            frames.length = 0;
+            socket.close();
+          }
+          socket.addEventListener("message", buffer);
+          socket.addEventListener("error", discard);
+          socket.addEventListener("close", discard);
+          window.addEventListener("pagehide", discard, { once: true });
+          globalThis.openclawEarlyGatewaySocket = function (requestedUrl) {
+            if (
+              new URL(requestedUrl, location.href).href !== socket.url ||
+              socket.readyState > WebSocket.OPEN
+            ) {
+              discard();
+              return;
+            }
+            detach();
+            return { socket: socket, frames: frames };
+          };
+        } catch (e) {}
+      })();
+
+      (function () {
         var THEMES = {
           claw: 1,
           knot: 1,

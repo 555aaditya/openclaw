@@ -1,4 +1,6 @@
 /** @vitest-environment node */
+import { readFileSync } from "node:fs";
+import { runInNewContext } from "node:vm";
 import { DEFAULT_PREAUTH_HANDSHAKE_TIMEOUT_MS } from "@openclaw/gateway-client/browser";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBrowserGatewaySocket } from "./gateway-browser-socket.ts";
@@ -28,7 +30,14 @@ class MockWebSocket {
     this.handlers.set(type, handlers);
   }
 
-  send(_data: string) {}
+  removeEventListener(type: string, handler: MockSocketHandler) {
+    this.handlers.set(
+      type,
+      (this.handlers.get(type) ?? []).filter((value) => value !== handler),
+    );
+  }
+
+  send = vi.fn();
 
   emit(type: string, event: MockSocketEvent = {}) {
     for (const handler of this.handlers.get(type) ?? []) {
@@ -127,5 +136,117 @@ describe("createBrowserGatewaySocket", () => {
   it("maps protocol policy-violation closes to the browser-safe connect failure code", () => {
     expect(() => socketAdapter.close(1008, "connect failed")).not.toThrow();
     expect(socket.close).toHaveBeenCalledWith(4008, "connect failed");
+  });
+});
+
+describe("document socket handoff", () => {
+  const bootstrap = readFileSync(new URL("../../index.html", import.meta.url), "utf8").match(
+    /<script data-cfasync="false">([\s\S]*?)<\/script>/u,
+  )![1]!;
+  const url = "wss://gateway.example/";
+  let early: MockWebSocket;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    sockets.length = 0;
+    vi.stubGlobal("WebSocket", MockWebSocket);
+    const context = {
+      WebSocket: MockWebSocket,
+      URL,
+      location: {
+        origin: "https://gateway.example",
+        protocol: "https:",
+        href: "https://gateway.example/chat/a/dashboard/b",
+      },
+      localStorage: { getItem: () => "1" },
+      document: { documentElement: { getAttribute: () => null } },
+      window: {
+        addEventListener() {},
+        removeEventListener() {},
+        matchMedia() {
+          return { matches: false };
+        },
+      },
+      setTimeout,
+      clearTimeout,
+    };
+    runInNewContext(bootstrap, context);
+    vi.stubGlobal("openclawEarlyGatewaySocket", (requested: string) => {
+      vi.stubGlobal("openclawEarlyGatewaySocket", undefined);
+      return Reflect.get(context, "openclawEarlyGatewaySocket")?.(requested);
+    });
+    early = sockets[0]!;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("buffers the challenge without sending and replays only after adapter creation", async () => {
+    early.readyState = MockWebSocket.OPEN;
+    early.emit("open");
+    early.emit("message", { data: "challenge" });
+    expect(early.send).not.toHaveBeenCalled();
+    const handlers = createHandlers();
+    const adapter = createBrowserGatewaySocket(url, handlers);
+    expect(handlers.open).not.toHaveBeenCalled();
+    await vi.runAllTicks();
+    expect(handlers.open).toHaveBeenCalledOnce();
+    expect(handlers.message).toHaveBeenCalledExactlyOnceWith("challenge");
+    expect(sockets).toHaveLength(1);
+    adapter.send("connect");
+    expect(early.send).toHaveBeenCalledExactlyOnceWith("connect");
+    early.emit("message", { data: "hello" });
+    expect(handlers.message).toHaveBeenLastCalledWith("hello");
+  });
+
+  it("adopts a connecting socket and retains native open/message ordering", () => {
+    const handlers = createHandlers();
+    createBrowserGatewaySocket(url, handlers);
+    early.readyState = MockWebSocket.OPEN;
+    early.emit("open");
+    early.emit("message", { data: "challenge" });
+    expect(handlers.open).toHaveBeenCalledOnce();
+    expect(handlers.message).toHaveBeenCalledExactlyOnceWith("challenge");
+    expect(sockets).toHaveLength(1);
+  });
+
+  it.each(["wss://other.example/", `${url}?different=1`])(
+    "discards a different target %s",
+    (target) => {
+      createBrowserGatewaySocket(target, createHandlers());
+      expect(early.close).toHaveBeenCalledOnce();
+      expect(sockets).toHaveLength(2);
+      expect(sockets[1]?.url).toBe(target);
+    },
+  );
+
+  it.each(["error", "close"])("discards an early %s", (event) => {
+    early.emit(event);
+    createBrowserGatewaySocket(url, createHandlers());
+    expect(early.close).toHaveBeenCalled();
+    expect(sockets).toHaveLength(2);
+  });
+
+  it("retires an unclaimed socket after the preauth budget", async () => {
+    await vi.advanceTimersByTimeAsync(10000);
+    createBrowserGatewaySocket(url, createHandlers());
+    expect(early.close).toHaveBeenCalledOnce();
+    expect(sockets).toHaveLength(2);
+  });
+
+  it("cancels queued replay on stop and uses a fresh socket on reconnect/auth failure", async () => {
+    early.readyState = MockWebSocket.OPEN;
+    early.emit("message", { data: "challenge" });
+    const handlers = createHandlers();
+    const adapter = createBrowserGatewaySocket(url, handlers);
+    adapter.close(1008, "connect failed");
+    await vi.runAllTicks();
+    expect(handlers.open).not.toHaveBeenCalled();
+    expect(handlers.message).not.toHaveBeenCalled();
+    createBrowserGatewaySocket(url, createHandlers());
+    expect(sockets).toHaveLength(2);
+    expect(early.close).toHaveBeenCalledExactlyOnceWith(4008, "connect failed");
   });
 });
