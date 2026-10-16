@@ -1,16 +1,22 @@
 /** Captured mailbox batch cleanup and summary bookkeeping. */
 import type { FollowupRun } from "../auto-reply/reply/queue/types.js";
+import { getGatewayRestartDrainSignal } from "../process/gateway-work-admission.js";
 import { defaultRuntime } from "../runtime.js";
 import { isCurrentSessionControllerTurnInput } from "./session-controller.context.js";
 import {
   inputCancellation,
   abortSessionControllerInput,
+  completeSessionControllerSourceLifecycle,
   retireSessionControllerInput,
 } from "./session-controller.mailbox-source.js";
 import type {
   SessionControllerInput,
   SessionControllerMailbox,
 } from "./session-controller.mailbox.types.js";
+import { runWithSessionControllerCleanup } from "./session-controller.owner-context.js";
+import { sessionControllers } from "./session-controller.state.js";
+
+let followedRestartDrainSignal: AbortSignal | undefined;
 
 /** Snapshots aggregate summary sources shared by selection and captured cleanup. */
 export function captureSessionControllerMailboxSummarySources(
@@ -145,4 +151,46 @@ export function clearSessionControllerMailbox(
     mailbox.wake();
   }
   return cleared;
+}
+
+/**
+ * Binds the current Gateway restart drain signal, once, to cancel every waiting mailbox
+ * input. An input claimed by a turn stays with that turn: shutdown drain waits for it or
+ * aborts it for restart, which records it for restart recovery. That includes a turn whose
+ * own tool requested the restart. Input reservation binds, so every mailbox is covered.
+ */
+export function bindSessionControllerMailboxRestartDrain(): void {
+  const signal = getGatewayRestartDrainSignal();
+  if (followedRestartDrainSignal === signal) {
+    return;
+  }
+  followedRestartDrainSignal = signal;
+  signal.addEventListener(
+    "abort",
+    () => {
+      // Capture owners before cleanup can mutate the registry or publish a successor.
+      const mailboxes = [...sessionControllers.values()].flatMap((owner) =>
+        owner.mailbox ? [owner.mailbox] : [],
+      );
+      // Cancellation effects must not inherit the context of a turn that emitted restart.
+      runWithSessionControllerCleanup(() => {
+        for (const mailbox of mailboxes) {
+          const waiting = mailbox.entries.filter((input) => !input.claim || input.claim.released);
+          clearSessionControllerMailbox(mailbox, completeRestartClearedSource, waiting);
+        }
+      });
+    },
+    { once: true },
+  );
+}
+
+// Settles a cleared source against the same custody that retirement completes.
+function completeRestartClearedSource(source: FollowupRun): void {
+  const input = source.controllerInput;
+  if (input) {
+    completeSessionControllerSourceLifecycle(
+      source,
+      source.controllerClaim?.custody ?? input.custody,
+    );
+  }
 }

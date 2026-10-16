@@ -14,13 +14,11 @@ import { deferSessionControllerClaimBeforeExecution } from "../../../sessions/se
 import {
   detachSessionControllerSources,
   getExistingSessionControllerMailbox,
-  sessionControllerMailboxes,
   releaseSessionControllerClaim,
   trackSessionControllerSourceWork,
   type SessionControllerMailbox,
   type SessionControllerMailboxClaim,
 } from "../../../sessions/session-controller.mailbox.js";
-import { runWithSessionControllerCleanup } from "../../../sessions/session-controller.owner-context.js";
 import { createUserTurnTranscriptRecorder } from "../../../sessions/user-turn-transcript.js";
 import { buildCollectPrompt, previewQueueSummaryPrompt } from "../../../utils/queue-helpers.js";
 import { resolveCollectedRun } from "./collected-run.js";
@@ -40,11 +38,9 @@ import {
   completeFollowupRunLifecycle,
   retireFollowupRunCancellation,
 } from "./lifecycle.js";
-import { clearFollowupQueue, followupQueueSources } from "./state.js";
+import { followupQueueSources } from "./state.js";
 import { consumeQueueSummaryDelivery } from "./summary-consumption.js";
 import { isFollowupRunAborted, type FollowupRun } from "./types.js";
-
-let followedRestartDrainSignal: AbortSignal | undefined;
 
 // Overflow retries must reuse one transcript identity, while the same provider-local
 // message ID on a different channel route remains an independent user turn.
@@ -68,26 +64,6 @@ function buildOverflowTranscriptIdempotencyKey(source: FollowupRun, prompt: stri
   return `followup-overflow:${source.run.sessionId}:${routeHash}:${source.messageId ?? source.enqueuedAt}:${promptHash}`;
 }
 
-function bindRestart(): void {
-  const signal = getGatewayRestartDrainSignal();
-  if (followedRestartDrainSignal === signal) {
-    return;
-  }
-  followedRestartDrainSignal = signal;
-  signal.addEventListener(
-    "abort",
-    () => {
-      // Capture owners before cleanup can mutate the registry or publish a successor.
-      // Restart clears every input, including a claimed turn whose work requested it.
-      runWithSessionControllerCleanup(() => {
-        for (const mailbox of Array.from(sessionControllerMailboxes())) {
-          clearFollowupQueue(mailbox.key, mailbox);
-        }
-      });
-    },
-    { once: true },
-  );
-}
 /** Executes an already-selected claim. This adapter never chooses a successor. */
 async function executeClaim(
   claim: SessionControllerMailboxClaim,
@@ -274,7 +250,6 @@ export function rememberFollowupDrainCallback(
   if (!mailbox) {
     return;
   }
-  bindRestart();
   mailbox.dispatch = async (claim) => {
     for (;;) {
       let entered = false;

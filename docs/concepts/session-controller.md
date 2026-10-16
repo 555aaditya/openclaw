@@ -236,7 +236,9 @@ result commits wait.
 A mutation closes competing admission, targets exact current owners, waits for
 real settlement, and then acquires its mutation boundary. In-band commands must
 not wait for their own admitted stack, and a mailbox clear they request does not
-select their own claimed input. Restart drain still cancels every input. A
+select their own claimed input. Restart drain cancels every waiting input but no
+claimed one, including the claim of a turn that requested the restart: shutdown
+drain waits for that turn or aborts it for restart, so restart recovery resumes it. A
 mutation body that owns no turn and requests one for its own session, such as
 `sessions.compact` or a native `/compact`, receives that turn under its own fence,
 ahead of the inputs it keeps waiting. Mutations queued behind it do not block that

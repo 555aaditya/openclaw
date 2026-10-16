@@ -32,7 +32,6 @@ import {
   installQueueRuntimeErrorSilencer,
 } from "./queue.test-helpers.js";
 import { clearSessionQueues } from "./queue/cleanup.js";
-import { rememberFollowupDrainCallback } from "./queue/drain.js";
 import { resetRecentQueuedMessageIdDedupe } from "./queue/enqueue.test-support.js";
 import { clearFollowupQueue, getExistingFollowupQueue } from "./queue/state.js";
 
@@ -578,27 +577,57 @@ describe("followup queue drain restart after idle window", () => {
     expect(staleCalls).toHaveLength(0);
     expect(getExistingFollowupQueue(key)?.items).toHaveLength(1);
   });
-  it("cancels the input of a claimed turn that begins restart drain itself", async () => {
-    const input = reserveSessionControllerSource(key, { policy: defaults });
-    // Registering a drain callback binds the restart-drain listener under test.
-    rememberFollowupDrainCallback(key, async () => {});
-    const claim = tryClaimSessionControllerTask(input);
+  // A turn whose own tool requested the restart gets no exemption either way: its
+  // claimed input stays with it, like every running turn's input.
+  it.each(["outside the turn", "inside the turn"] as const)(
+    "leaves a running turn's claimed input to the turn when restart drain begins %s",
+    async (requester) => {
+      // An earlier followup on another session registers that session's queue drain.
+      const queued = createRun({ prompt: "queued before restart" });
+      enqueueFollowupRun(`${key}-other`, queued, defaults, "message-id", async () => {}, false);
+      const input = reserveSessionControllerSource(key, { policy: defaults });
+      const claim = tryClaimSessionControllerTask(input);
+      if (!claim) {
+        throw new Error("expected turn claim");
+      }
+      const operation = createReplyOperation({
+        sessionKey: key,
+        sessionId: "running-session",
+        resetTriggered: false,
+        mailboxClaim: claim,
+        upstreamAbortSignal: claim.abortController.signal,
+      });
+      try {
+        if (requester === "inside the turn") {
+          withSessionControllerOwner(operation, () => markGatewayRestartDraining());
+        } else {
+          markGatewayRestartDraining();
+        }
+        await queued.controllerInput!.settlement.promise;
+        expect(getExistingFollowupQueue(`${key}-other`)).toBeUndefined();
+        // The claim stays with its turn; shutdown drain owns that turn's restart abort.
+        expect(input.abortSignal.reason).toBeUndefined();
+        expect(claim.abortController.signal.aborted).toBe(false);
+        expect(operation.abortSignal.aborted).toBe(false);
+      } finally {
+        operation.complete();
+        releaseSessionControllerClaim(claim);
+        await claim.settlement.promise;
+      }
+    },
+  );
+  it("cancels inputs waiting behind a running turn even when no followup was ever queued", async () => {
+    const running = reserveSessionControllerSource(key, { policy: defaults });
+    const claim = tryClaimSessionControllerTask(running);
     if (!claim) {
       throw new Error("expected turn claim");
     }
-    const operation = createReplyOperation({
-      sessionKey: key,
-      sessionId: "restarting-session",
-      resetTriggered: false,
-      mailboxClaim: claim,
-      upstreamAbortSignal: claim.abortController.signal,
-    });
+    const waiting = reserveSessionControllerSource(key, { policy: defaults });
     try {
-      // Restart is process-wide; the turn whose tool emitted it gets no exemption.
-      withSessionControllerOwner(operation, () => markGatewayRestartDraining());
-      expect(input.abortSignal.aborted).toBe(true);
+      markGatewayRestartDraining();
+      expect(waiting.abortSignal.reason).toEqual(new Error("Session mailbox cleared"));
+      expect(running.abortSignal.aborted).toBe(false);
     } finally {
-      operation.complete();
       releaseSessionControllerClaim(claim);
       await claim.settlement.promise;
     }

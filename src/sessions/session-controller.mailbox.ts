@@ -14,7 +14,10 @@ import { createDeferredCore } from "../shared/deferred.js";
 import { evaluateTurnAdmission, isMutationOwnedTurn } from "./session-controller.admission-rule.js";
 import { logSessionControllerSourceClaim } from "./session-controller.diagnostics.js";
 import { captureSessionTarget, type SessionTarget } from "./session-controller.lifecycle.js";
-import { captureSessionControllerMailboxSummarySources as summaryCandidates } from "./session-controller.mailbox-cleanup.js";
+import {
+  bindSessionControllerMailboxRestartDrain,
+  captureSessionControllerMailboxSummarySources as summaryCandidates,
+} from "./session-controller.mailbox-cleanup.js";
 import {
   inputCancellation,
   bindSessionControllerSource,
@@ -432,6 +435,7 @@ export function reserveOrJoinSessionControllerSource(
       retireSessionControllerInput(existing);
     }
   }
+  bindSessionControllerMailboxRestartDrain();
   const mailbox = getSessionControllerMailbox(key, target);
   const cancellation = new AbortController();
   const injectionOrder = createDeferredCore<boolean>();
