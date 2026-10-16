@@ -430,12 +430,14 @@ async function loadDreamingResourceSpec<Key extends DreamingResourceKey>(
 export async function runDreamDiaryAction(
   state: DreamingState,
   method: DreamDiaryActionMethod,
+  isCurrent: () => boolean = () => true,
 ): Promise<boolean> {
   const client = state.client;
   const agentId = resolveSelectedAgentId(state);
   if (
     !client ||
     !agentId ||
+    !isCurrent() ||
     !canCallDreamingMethod(state, method, "operator.write") ||
     state.dreamDiaryActionLoading
   ) {
@@ -448,13 +450,22 @@ export async function runDreamDiaryAction(
   state.dreamDiaryActionArchivePath = null;
   try {
     const payload = await client.request<DoctorMemoryDreamActionPayload>(method, { agentId });
+    if (!isCurrent()) {
+      return false;
+    }
     if (
       method !== "doctor.memory.resetGroundedShortTerm" &&
       method !== "doctor.memory.repairDreamingArtifacts"
     ) {
       await loadDreamingResource(state, "dreamDiary");
     }
+    if (!isCurrent()) {
+      return false;
+    }
     await loadDreamingResource(state, "dreamingStatus");
+    if (!isCurrent()) {
+      return false;
+    }
     state.dreamDiaryActionArchivePath =
       method === "doctor.memory.repairDreamingArtifacts"
         ? (normalizeTrimmedString(payload?.archiveDir) ?? null)
@@ -465,6 +476,9 @@ export async function runDreamDiaryAction(
     };
     return true;
   } catch (err) {
+    if (!isCurrent()) {
+      return false;
+    }
     const message = formatUiError(err);
     state.dreamingStatusError = message;
     state.lastError = message;
@@ -472,7 +486,9 @@ export async function runDreamDiaryAction(
     state.dreamDiaryActionMessage = { kind: "error", text: message };
     return false;
   } finally {
-    state.dreamDiaryActionLoading = false;
+    if (isCurrent()) {
+      state.dreamDiaryActionLoading = false;
+    }
   }
 }
 
@@ -571,12 +587,17 @@ export async function updateDreamingEnabled(
       note: "Dreaming settings updated from the Dreaming tab.",
       canDispatch,
     });
+    if (!canDispatch()) {
+      return false;
+    }
     if (!updated) {
       state.dreamingStatusError =
         config.state.lastError ?? state.lastError ?? t("dreaming.actions.updateFailed");
     }
   } finally {
-    state.dreamingModeSaving = false;
+    if (canDispatch()) {
+      state.dreamingModeSaving = false;
+    }
   }
   if (updated && state.dreamingStatus) {
     state.dreamingStatus = {

@@ -22,7 +22,7 @@ import {
   jobToForm,
   normalizeCronFormState,
 } from "./form.ts";
-import { loadCronJobsPage } from "./jobs.ts";
+import { loadCronJobsPage, retireCronJobsRequest } from "./jobs.ts";
 import { buildCronPayload, getCronJobPayload } from "./payload.ts";
 import { cronRunNotStartedMessage } from "./run-feedback.ts";
 import { clearCronRunsPage, loadCronRuns, retireCronRunsRequest } from "./runs.ts";
@@ -210,6 +210,7 @@ type CronStatusRequest = {
   queued?: Deferred;
 };
 const activeCronStatusRequests = new WeakMap<CronStatusState, CronStatusRequest>();
+const activeCronMutations = new WeakMap<CronState, object>();
 
 function retireCronStatusRequest(state: CronStatusState) {
   activeCronStatusRequests.get(state)?.queued?.resolve();
@@ -300,14 +301,24 @@ export async function loadCronStatus(
 async function withCronBusy(
   state: CronState,
   job: Pick<CronJob, "id" | "name" | "displayName"> | undefined,
-  run: (client: GatewayBrowserClient, reportFeedback: (message: string) => void) => Promise<void>,
+  run: (
+    client: GatewayBrowserClient,
+    reportFeedback: (message: string) => void,
+    isCurrent: () => boolean,
+  ) => Promise<void>,
 ) {
   const client = state.client;
   if (!client || !state.connected || state.cronBusy) {
     return;
   }
   const target = job ? { id: job.id, name: job.displayName ?? job.name } : null;
+  const operation = {};
+  activeCronMutations.set(state, operation);
+  const isCurrent = () => activeCronMutations.get(state) === operation;
   const reportFeedback = (message: string) => {
+    if (!isCurrent()) {
+      return;
+    }
     state.cronError =
       target && state.cronEditingJob?.id !== target.id ? `${target.name}: ${message}` : message;
   };
@@ -315,12 +326,15 @@ async function withCronBusy(
   state.cronBusy = true;
   state.cronError = null;
   try {
-    await run(client, reportFeedback);
+    await run(client, reportFeedback, isCurrent);
   } catch (err) {
     reportFeedback(formatUiError(err));
   } finally {
-    retireCronStatusFeedback(state);
-    state.cronBusy = false;
+    if (isCurrent()) {
+      activeCronMutations.delete(state);
+      retireCronStatusFeedback(state);
+      state.cronBusy = false;
+    }
   }
 }
 
@@ -454,7 +468,7 @@ function extractSavedCronJobId(response: unknown): string | null {
 
 export async function addCronJob(state: CronState): Promise<CronSaveResult> {
   let result: CronSaveResult = { saved: false };
-  await withCronBusy(state, undefined, async (client) => {
+  await withCronBusy(state, undefined, async (client, _reportFeedback, isCurrent) => {
     const form = normalizeCronFormState(state.cronForm);
     if (form !== state.cronForm) {
       state.cronForm = form;
@@ -566,7 +580,7 @@ export async function addCronJob(state: CronState): Promise<CronSaveResult> {
       job.payload = payload;
     }
     if (editingJob) {
-      if (!(await updateCronJobDefinition(state, client, editingJob, job, "save"))) {
+      if (!(await updateCronJobDefinition(state, client, editingJob, job, "save", isCurrent))) {
         return;
       }
       result = { saved: true, jobId: editingJob.id };
@@ -575,9 +589,15 @@ export async function addCronJob(state: CronState): Promise<CronSaveResult> {
       try {
         response = await client.request("cron.add", job);
       } catch (error) {
+        if (!isCurrent()) {
+          return;
+        }
         if (state.cronForm === form && state.cronEditingJob === editingJob) {
           throw error;
         }
+        return;
+      }
+      if (!isCurrent()) {
         return;
       }
       if (state.cronForm === form && state.cronEditingJob === editingJob) {
@@ -587,6 +607,9 @@ export async function addCronJob(state: CronState): Promise<CronSaveResult> {
       result = { saved: true, jobId: extractSavedCronJobId(response) };
     }
     await reloadCronJobsSnapshot(state);
+    if (!isCurrent()) {
+      result = { saved: false };
+    }
   });
   return result;
 }
@@ -597,6 +620,7 @@ async function updateCronJobDefinition(
   job: CronJob,
   patch: Record<string, unknown>,
   operation: "save" | "toggle",
+  isCurrent: () => boolean,
 ): Promise<boolean> {
   const form = state.cronForm;
   const selectedJob = state.cronEditingJob;
@@ -607,6 +631,9 @@ async function updateCronJobDefinition(
       expectedConfigRevision: requireCronConfigRevision(job.configRevision),
       patch,
     });
+    if (!isCurrent()) {
+      return false;
+    }
     replaceLocalCronJob(state, updatedJob);
     if (ownsEditor()) {
       if (operation === "toggle") {
@@ -617,6 +644,9 @@ async function updateCronJobDefinition(
     }
     return true;
   } catch (error) {
+    if (!isCurrent()) {
+      return false;
+    }
     const details = isRecord(error) && isRecord(error.details) ? error.details : null;
     if (details?.code !== "CRON_JOB_CHANGED" || selectedJob !== job) {
       if (operation === "toggle" || ownsEditor()) {
@@ -625,18 +655,18 @@ async function updateCronJobDefinition(
       return false;
     }
     await reloadCronJobsSnapshot(state);
-    if (!ownsEditor()) {
+    if (!isCurrent() || !ownsEditor()) {
       return false;
     }
     try {
       const latestJob = await client.request<CronJob>("cron.get", { id: job.id });
-      if (ownsEditor()) {
+      if (isCurrent() && ownsEditor()) {
         startCronEdit(state, latestJob);
         state.cronError =
           "This automation changed on the Gateway. The latest definition is loaded; review it before retrying.";
       }
     } catch {
-      if (ownsEditor()) {
+      if (isCurrent() && ownsEditor()) {
         state.cronError =
           "This automation changed on the Gateway, but the latest definition could not be loaded. Refresh before retrying.";
       }
@@ -659,8 +689,8 @@ export async function toggleCronJob(
   // Report whether the update RPC itself succeeded; the follow-up list reload
   // can be queued or fail without invalidating the confirmed toggle.
   let updated = false;
-  await withCronBusy(state, job, async (client) => {
-    updated = await updateCronJobDefinition(state, client, job, { enabled }, "toggle");
+  await withCronBusy(state, job, async (client, _reportFeedback, isCurrent) => {
+    updated = await updateCronJobDefinition(state, client, job, { enabled }, "toggle", isCurrent);
     if (updated) {
       await reloadCronJobsSnapshot(state);
     }
@@ -673,8 +703,11 @@ export async function runCronJob(state: CronState, jobId: string, mode: "force" 
     state.cronEditingJob?.id === jobId
       ? state.cronEditingJob
       : (state.cronJobs.find((candidate) => candidate.id === jobId) ?? { id: jobId, name: jobId });
-  await withCronBusy(state, job, async (client, reportFeedback) => {
+  await withCronBusy(state, job, async (client, reportFeedback, isCurrent) => {
     const result = await client.request<CronRunResult>("cron.run", { id: jobId, mode });
+    if (!isCurrent()) {
+      return;
+    }
     if (!result.ok || ("ran" in result && !result.ran)) {
       reportFeedback(cronRunNotStartedMessage(result));
       // Invalid persisted specs create a skipped history entry with diagnostics;
@@ -692,8 +725,11 @@ export async function runCronJob(state: CronState, jobId: string, mode: "force" 
 }
 
 export async function removeCronJob(state: CronState, job: CronJob) {
-  await withCronBusy(state, job, async (client) => {
+  await withCronBusy(state, job, async (client, _reportFeedback, isCurrent) => {
     await client.request("cron.remove", { id: job.id });
+    if (!isCurrent()) {
+      return;
+    }
     const previousLength = state.cronJobs.length;
     state.cronJobs = state.cronJobs.filter((candidate) => candidate.id !== job.id);
     if (state.cronJobs.length !== previousLength) {
@@ -714,8 +750,15 @@ export function invalidateCronRefresh(state: CronState) {
   // Retire page reads without canceling an already accepted mutation chain.
   retireCronStatusRequest(state);
   retireCronRunsRequest(state);
+  retireCronJobsRequest(state);
   state.cronJobsReloadPending = false;
   state.cronJobsReloadPendingTableFilters = false;
+}
+
+export function invalidateCronMutation(state: CronState) {
+  // Already-dispatched writes may finish, but retired replies cannot change a retained draft.
+  activeCronMutations.delete(state);
+  state.cronBusy = false;
 }
 
 function setCronEditState(state: CronState, job: CronJob, form: CronFormState) {

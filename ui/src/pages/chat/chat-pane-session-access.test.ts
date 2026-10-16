@@ -1,14 +1,21 @@
 /* @vitest-environment jsdom */
 
+import { flush } from "solid-js";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import type { GatewaySessionRow } from "../../api/types.ts";
 import type { ApplicationContext } from "../../app/context.ts";
 import type { SessionCapability } from "../../lib/sessions/index.ts";
 import { sessionsResult } from "../../lib/sessions/session-capability.test-support.ts";
+import {
+  createModalDialogTestFixture,
+  submitInputDialog,
+  waitForInputDialog,
+} from "../../test-helpers/modal-dialog.ts";
 import { waitForSolid } from "../../test-helpers/solid-settle.ts";
 import {
   createPaneHeaderWorkspaceFixture,
+  createGatewayBrowserClientFixture,
   createSessionCapabilityFixture,
   createTestChatPane,
 } from "./chat-pane.test-support.ts";
@@ -142,6 +149,152 @@ describe("chat pane session access", () => {
     expect(Boolean(pane.headerRenameSession)).toBe(false);
     expect(patch).not.toHaveBeenCalled();
   });
+
+  it("retains inline rename text through a blip without submitting offline", () => {
+    const patch = vi.fn(async () => ({}));
+    const sessions = createSessionCapabilityFixture({ patch });
+    const client = { request: vi.fn(async () => ({})) } as unknown as GatewayBrowserClient;
+    const { pane, state } = createTestChatPane({ client, sessions });
+    state.loadAssistantIdentity = vi.fn(async () => undefined);
+    const connected = { ...pane.context.gateway.snapshot };
+    const session = {
+      key: state.sessionKey,
+      kind: "direct",
+      updatedAt: 0,
+    } satisfies GatewaySessionRow;
+    pane.beginHeaderRename(session);
+    pane.headerRenameValue = "Still editing";
+
+    Object.assign(pane.context.gateway.snapshot, { phase: "reconnecting", hello: null });
+    pane.applyGatewaySnapshot(pane.context.gateway.snapshot);
+    pane.commitHeaderRename();
+    expect(pane.headerRenameValue).toBe("Still editing");
+    expect(pane.headerRenameSession).not.toBeNull();
+    expect(patch).not.toHaveBeenCalled();
+
+    Object.assign(pane.context.gateway.snapshot, connected);
+    pane.applyGatewaySnapshot(pane.context.gateway.snapshot);
+    expect(pane.headerRenameSession).not.toBeNull();
+    expect(pane.headerRenameValue).toBe("Still editing");
+
+    pane.context.gateway.snapshot.hello = {
+      ...connected.hello,
+      auth: { role: "operator", scopes: ["operator.read"] },
+    } as ApplicationContext["gateway"]["snapshot"]["hello"];
+    pane.applyGatewaySnapshot(pane.context.gateway.snapshot);
+    expect(pane.headerRenameSession).toBeNull();
+    expect(patch).not.toHaveBeenCalled();
+  });
+
+  it("keeps the header new-group draft through reconnect and retires it with identity", async () => {
+    const modal = createModalDialogTestFixture();
+    const row: GatewaySessionRow = {
+      key: "agent:main:current",
+      sessionId: "current-session",
+      kind: "direct",
+      sharingRole: "owner",
+    };
+    const groupsPut = vi.fn(async () => "completed" as const);
+    const patch = vi.fn(async () => row);
+    const { pane, state } = createTestChatPane({
+      client: createGatewayBrowserClientFixture(),
+      sessions: createSessionCapabilityFixture({
+        groupsPut,
+        patch,
+        state: { groups: [], result: sessionsResult([row], 1) },
+      }),
+    });
+    state.loadAssistantIdentity = vi.fn(async () => undefined);
+    const connected = { ...pane.context.gateway.snapshot };
+    const open = () => modal.track(pane.handleHeaderSessionAction({ kind: "new-group" }, row));
+    try {
+      const completion = open();
+      const input = await waitForInputDialog();
+      input.value = "Unsent group";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      pane.applyGatewaySnapshot({ ...connected, phase: "reconnecting", hello: null });
+      flush();
+      expect(document.body.querySelector("openclaw-modal-dialog input")).toBe(input);
+      expect(input.value).toBe("Unsent group");
+      expect(input.disabled).toBe(false);
+      expect(
+        input.closest("form")?.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled,
+      ).toBe(true);
+      input
+        .closest("form")
+        ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      expect(groupsPut).not.toHaveBeenCalled();
+      expect(patch).not.toHaveBeenCalled();
+
+      pane.applyGatewaySnapshot(connected);
+      await submitInputDialog("Unsent group");
+      await completion;
+      expect(groupsPut).toHaveBeenCalledWith(["Unsent group"]);
+      expect(patch).toHaveBeenCalledWith(
+        row.key,
+        { category: "Unsent group" },
+        { agentId: "main", expectedSessionId: row.sessionId },
+      );
+
+      const retired = open();
+      await waitForInputDialog();
+      pane.applyGatewaySnapshot({
+        ...connected,
+        client: createGatewayBrowserClientFixture(),
+        phase: "reconnecting",
+        hello: null,
+      });
+      await retired;
+      expect(document.body.querySelector("openclaw-modal-dialog")).toBeNull();
+    } finally {
+      await modal.cleanup();
+    }
+  });
+
+  it.each(["failed", "stale"] as const)(
+    "keeps the header group draft after a %s assignment",
+    async (outcome) => {
+      const modal = createModalDialogTestFixture();
+      const row: GatewaySessionRow = {
+        key: "agent:main:current",
+        sessionId: "current-session",
+        kind: "direct",
+      };
+      const patch = vi.fn();
+      const { pane } = createTestChatPane({
+        client: createGatewayBrowserClientFixture(),
+        sessions: createSessionCapabilityFixture({
+          groupsPut: async () => "completed",
+          patch,
+          state: { groups: [], result: sessionsResult([row], 1) },
+        }),
+      });
+      patch.mockImplementationOnce(async () => {
+        if (outcome === "stale") {
+          pane.applyGatewaySnapshot({
+            ...pane.context.gateway.snapshot,
+            phase: "reconnecting",
+            hello: null,
+          });
+          return null;
+        }
+        throw new Error("Assignment rejected");
+      });
+      try {
+        modal.track(pane.handleHeaderSessionAction({ kind: "new-group" }, row));
+        await submitInputDialog("Keep this group");
+        await vi.waitFor(() =>
+          expect(document.body.querySelector("openclaw-modal-dialog [role=alert]")).not.toBeNull(),
+        );
+        expect((await waitForInputDialog()).value).toBe("Keep this group");
+        expect(document.body.textContent).toContain(
+          outcome === "failed" ? "Assignment rejected" : "Gateway connection replaced",
+        );
+      } finally {
+        await modal.cleanup();
+      }
+    },
+  );
 
   it("refuses archived-session restore without exact sessions.patch access", async () => {
     const patch = vi.fn(async () => ({}));

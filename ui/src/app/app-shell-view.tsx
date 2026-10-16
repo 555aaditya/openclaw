@@ -398,6 +398,7 @@ function ApplicationShell(props: { host: ShellViewHost }): SolidJSX.Element {
             prop:props={{
               queue: view().overlaySnapshot.approvalQueue,
               busy: view().overlaySnapshot.approvalBusy,
+              connected: view().gatewayConnected,
               canGrant: view().overlaySnapshot.approvalCanGrant,
               errors: view().overlaySnapshot.approvalErrors,
               onDecision: (

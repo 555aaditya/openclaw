@@ -1,5 +1,6 @@
 import { createMemo, createSignal, untrack } from "solid-js";
 import { formatUiError } from "../lib/format-error.ts";
+import { projectGateway } from "../lib/reactive/application.ts";
 import { t } from "../lib/reactive/i18n.ts";
 import type { InputDialogOptions } from "./input-dialog-types.ts";
 
@@ -10,6 +11,7 @@ export function InputDialogView(props: {
 }) {
   const options = untrack(() => props.options);
   const settled = untrack(() => props.settled);
+  const gateway = options.gateway ? projectGateway(options.gateway) : undefined;
   let input!: HTMLInputElement;
   let submitting = false;
   let failure: string | null = null;
@@ -23,6 +25,7 @@ export function InputDialogView(props: {
   const submitBlocked = (raw: string) => {
     const value = entryValue(raw);
     return (
+      (gateway !== undefined && gateway.read().snapshot.phase !== "connected") ||
       (options.requireValue === true && !value.length) ||
       (options.requireChange === true && value === (options.defaultValue ?? ""))
     );

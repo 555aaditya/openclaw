@@ -1,8 +1,10 @@
 import type { SessionCatalog } from "../../../packages/gateway-protocol/src/index.ts";
+import { roleScopesAllow } from "../../../src/shared/operator-scope-compat.js";
 import type { GatewayBrowserClient } from "../api/gateway.ts";
 import type { GatewaySessionRow, SessionsListResult } from "../api/types.ts";
 import { isSessionRouteId } from "../app-route-paths.ts";
 import type { ApplicationContext } from "../app/context.ts";
+import { gatewayPresentationScope } from "../app/gateway-presentation-scope.ts";
 import { readPresenceEntries, type PresencePayload } from "../app/user-profile.ts";
 import { rosterActivityStore } from "../lib/agents/roster-activity-store.ts";
 import { formatUiError } from "../lib/format-error.ts";
@@ -114,6 +116,10 @@ export class SessionDataController implements SolidController, SessionCatalogDat
   // Retiring the epoch aborts it so a dialog open across a reconnect dismisses
   // itself instead of confirming into a mutation scope that no longer applies.
   private sessionMutationAbortController = new AbortController();
+  // Editable dialogs belong to the identity, not to a socket request epoch.
+  private sessionDraftAbortController = new AbortController();
+  private sessionDraftOwner: number | undefined;
+  private sessionDraftAuth: { role?: string; scopes?: readonly string[] } | undefined;
   private readonly lineage = new SessionLineageController(
     this,
     () => ({ routeId: this.host.activeRouteId, key: this.host.getRouteSessionKey() }),
@@ -306,6 +312,8 @@ export class SessionDataController implements SolidController, SessionCatalogDat
     this.stopCatalogBrowserEvents = null;
     this.host.dismissTransientMenus();
     this.invalidateSessionMutations();
+    this.retireSessionDrafts();
+    this.sessionDraftAuth = undefined;
     this.gatewaySource = null;
     this.gatewayClient = null;
     this.gatewayConnected = false;
@@ -467,6 +475,7 @@ export class SessionDataController implements SolidController, SessionCatalogDat
     const sourceChanged = sessions !== this.sessionsSource;
     if (sourceChanged) {
       this.invalidateSessionMutations();
+      this.retireSessionDrafts();
       this.retireFilteredSessions();
       this.clearSessionCache();
       this.sessionsSource = sessions;
@@ -484,6 +493,25 @@ export class SessionDataController implements SolidController, SessionCatalogDat
 
   private synchronizeGateway(gateway: ApplicationContext["gateway"]): void {
     this.lineage.synchronize();
+    const draftOwner = gatewayPresentationScope(gateway).key;
+    const auth = gateway.snapshot.phase === "connected" ? gateway.snapshot.hello?.auth : undefined;
+    if (
+      (this.sessionDraftOwner !== undefined && this.sessionDraftOwner !== draftOwner) ||
+      (auth &&
+        auth !== this.sessionDraftAuth &&
+        this.sessionDraftAuth?.scopes &&
+        !roleScopesAllow({
+          role: auth.role ?? "operator",
+          requestedScopes: this.sessionDraftAuth.scopes,
+          allowedScopes: auth.scopes ?? [],
+        }))
+    ) {
+      this.retireSessionDrafts();
+    }
+    this.sessionDraftOwner = draftOwner;
+    if (auth) {
+      this.sessionDraftAuth = auth;
+    }
     const client = gateway.snapshot.client;
     const connected = gateway.snapshot.phase === "connected";
     const sessionSourceChanged =
@@ -508,6 +536,9 @@ export class SessionDataController implements SolidController, SessionCatalogDat
       return;
     }
     this.invalidateSessionMutations();
+    if (sourceOrClientChanged) {
+      this.retireSessionDrafts();
+    }
     this.ownerCounts.dispose();
     this.resetChildSessionState(true);
     this.gatewaySource = gateway;
@@ -725,6 +756,15 @@ export class SessionDataController implements SolidController, SessionCatalogDat
     this.sessionMutationAbortController.abort();
     this.sessionMutationAbortController = new AbortController();
     this.requestSessionDataUpdate();
+  }
+
+  get sessionDraftSignal(): AbortSignal {
+    return this.sessionDraftAbortController.signal;
+  }
+
+  private retireSessionDrafts(): void {
+    this.sessionDraftAbortController.abort();
+    this.sessionDraftAbortController = new AbortController();
   }
 
   beginSessionMutation(): SidebarSessionMutationScope | null {

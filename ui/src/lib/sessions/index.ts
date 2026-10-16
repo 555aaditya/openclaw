@@ -4,6 +4,7 @@ import { registerListener } from "../../../../src/shared/listeners.js";
 import type { SessionsListResult } from "../../api/types.ts";
 import type { BootRecord } from "../../app/boot-record.ts";
 import type { ConnectionBootstrapCoordinator } from "../../app/connection-bootstrap.ts";
+import { gatewayPresentationScope } from "../../app/gateway-presentation-scope.ts";
 import { type SelectedAgentSource, watchSelectedAgent } from "../agents/watch-selected-agent.ts";
 import { formatUiError } from "../format-error.ts";
 import { createGatewayConnectionLifecycle } from "../gateway-connection-lifecycle.ts";
@@ -112,6 +113,7 @@ export function createSessionCapability(
   });
 
   const connection = createGatewayConnectionLifecycle(gateway.snapshot);
+  let presentationKey = gatewayPresentationScope(gateway).key;
   const background = async (key: string | object, task: () => Promise<unknown>): Promise<void> => {
     const scope = connection.capture();
     const run = async () => {
@@ -435,18 +437,27 @@ export function createSessionCapability(
   const stopGateway = gateway.subscribe((next) => {
     const previousClient = connectionClient;
     const connected = next.phase === "connected";
-    const selfUserId = next.selfUser?.id.trim() || null;
-    const connectionChanged = connection.transition(next);
-    if (connected) {
+    const presentationScope = gatewayPresentationScope(gateway);
+    const selfUserId = presentationScope.displayUser?.id.trim() || null;
+    const nextPresentationKey = presentationScope.key;
+    const identityChanged =
+      previousClient !== next.client || presentationKey !== nextPresentationKey;
+    presentationKey = nextPresentationKey;
+    const transportChanged = connection.transition(next);
+    if (identityChanged && !transportChanged) {
+      connection.invalidate();
+    }
+    const connectionChanged = transportChanged || identityChanged;
+    if (connected && next.selfUser !== undefined) {
       if (presentationProfileId !== undefined && presentationProfileId !== selfUserId) {
         roster.retireWarmLists();
         retirePresentation();
         notifySubscribers();
       }
       presentationProfileId = selfUserId;
-    } else if (!next.client) {
+    } else if (!connected && !next.client) {
       retirePresentation();
-    } else if (presentation.result && reconnectListRevision === null) {
+    } else if (!connected && presentation.result && reconnectListRevision === null) {
       // Keep the paired presentation through partial startup reads until the canonical list lands.
       reconnectListRevision = canonicalListRevision + 1;
     }
@@ -455,14 +466,14 @@ export function createSessionCapability(
     connectionClient = next.client;
     githubPublication.observeRows([]);
     if (connectionChanged) {
-      if (previousClient !== next.client) {
+      if (identityChanged) {
         deletions.clear();
       }
       const hadPullRequestSummaries = pullRequestSummaries.size > 0;
       const hadSubscriptionError = sessionEventSubscriptionError !== null;
       thinkingClaims.reset();
       permissions.clear();
-      roster.reset();
+      roster.reset(identityChanged);
       sessionEventSubscription.reset();
       sessionEventSubscriptionError = null;
       retireOperationConnection(previousClient);
@@ -471,6 +482,26 @@ export function createSessionCapability(
       mutations.retireConnection();
       pullRequestSummaries.clear();
       pullRequestEpochs.clear();
+      if (identityChanged) {
+        hydratedClient = null;
+        hydratedSelfUserId = null;
+        presentationProfileId = selfUserId;
+        retirePresentation();
+        publish({
+          ...state,
+          result: null,
+          agentId: null,
+          resultCached: false,
+          modelOverrides: {},
+          groups: [],
+          groupSettings: [],
+          sectionOrder: [],
+          deletedSessions: [],
+          loading: false,
+          error: null,
+          startupPending: false,
+        });
+      }
       // Client replacement needs a publish; disconnect publishes cleared state below.
       if ((hadPullRequestSummaries || hadSubscriptionError) && connected && next.client) {
         publish({ ...state });

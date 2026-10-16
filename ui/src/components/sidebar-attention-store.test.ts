@@ -50,6 +50,35 @@ describe("sidebar attention source publication", () => {
     vi.unstubAllGlobals();
   });
 
+  it("keeps health attention across a same-client blip but clears it for another identity", async () => {
+    vi.useFakeTimers();
+    const refreshed = deferred<CompactCronPage>();
+    let reads = 0;
+    const harness = startAuthenticatedStore(
+      inventoryRequest(() => (++reads === 1 ? cronPage("retained") : refreshed.promise)),
+    );
+    store = harness.attention;
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.entries).toMatchObject([{ label: "retained" }]);
+    const hello = harness.gateway.snapshot.hello;
+    const selfUser = harness.gateway.snapshot.selfUser;
+    harness.update({ phase: "reconnecting", hello: null, selfUser: undefined });
+    expect(store.entries).toMatchObject([{ label: "retained" }]);
+    harness.update({ phase: "connected", hello });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.entries).toMatchObject([{ label: "retained" }]);
+    expect(reads).toBe(1);
+    harness.update({ selfUser });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.entries).toMatchObject([{ label: "retained" }]);
+    expect(reads).toBe(2);
+    refreshed.resolve(cronPage("refreshed"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.entries).toMatchObject([{ label: "refreshed" }]);
+    harness.update({ phase: "reconnecting", client: mockClient(async () => ({})) });
+    expect(store.entries).toEqual([]);
+  });
+
   it("retains cron inventory without reviving stale auth when returning to an agent", async () => {
     vi.useFakeTimers();
     const inventory = deferred<CompactCronPage>();
@@ -255,6 +284,7 @@ describe("sidebar attention source publication", () => {
       if (boundary === "reconnect") {
         harness.update({ phase: "reconnecting", selfUser: null });
         store.dismiss({ kind: "cronFailed", signature: "visible-incident" });
+        expect(store.entries).toEqual([]);
       }
       connect("bob");
       await waitForFast(() => expect(store?.entries).toHaveLength(2));
@@ -276,7 +306,9 @@ describe("sidebar attention source publication", () => {
       expect(store.entries).toMatchObject([{ label: "dismissed-incident" }]);
       connect("alice");
       await waitForFast(() =>
-        expect(store?.entries).toMatchObject([{ label: "visible-incident" }]),
+        expect(store?.entries).toMatchObject(
+          boundary === "reconnect" ? [] : [{ label: "visible-incident" }],
+        ),
       );
     },
   );
@@ -966,23 +998,24 @@ describe("sidebar attention source publication", () => {
       system: 1,
       automations: 1,
     });
+    const hello = harness.gateway.snapshot.hello;
     const dismissal = store.entries[0]?.dismissal;
     expect(dismissal?.kind).toBe("outbox");
     expect(JSON.stringify(store.entries[0])).not.toContain("private submission");
     harness.update({ phase: "reconnecting", hello: null });
     const calls = request.mock.calls.length;
-    expect(store.entries.map((entry) => entry.type)).toEqual(["outbox"]);
+    expect(store.entries.map((entry) => entry.type)).toEqual(["outbox", "attention"]);
     expect(sidebarInboxTabCounts(store.entries)).toMatchObject({
-      all: 1,
+      all: 2,
       system: 1,
-      automations: 0,
+      automations: 1,
     });
     store.dismiss(dismissal!);
-    expect(store.entries).toEqual([]);
+    expect(store.entries.map((entry) => entry.type)).toEqual(["attention"]);
     expect(request.mock.calls).toHaveLength(calls);
-    harness.update({ phase: "connected" });
+    harness.update({ phase: "connected", hello });
     expect(store.entries.some((entry) => entry.type === "outbox")).toBe(false);
     expect(removeStoredChatComposerQueueItem(host, host.sessionKey, row.id, row)).toBe(true);
-    expect(store.entries).toEqual([]);
+    expect(store.entries.map((entry) => entry.type)).toEqual(["attention"]);
   });
 });

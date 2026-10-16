@@ -354,6 +354,10 @@ export abstract class ChatPaneBase extends ControllerHost {
     this.headerSessionMutationAbortController.abort();
     this.headerSessionMutationAbortController = new AbortController();
   }
+  protected retireHeaderSessionDrafts(): void {
+    this.headerSessionDraftAbortController.abort();
+    this.headerSessionDraftAbortController = new AbortController();
+  }
   @viewState() draft?: string;
   @viewState() focusComposer = false;
   @viewState() dashboardExpanded = false;
@@ -516,6 +520,7 @@ export abstract class ChatPaneBase extends ControllerHost {
   // across a reconnect or pane teardown dismiss itself, matching
   // SessionDataController's own epoch-scoped controller for the sidebar.
   protected headerSessionMutationAbortController = new AbortController();
+  protected headerSessionDraftAbortController = new AbortController();
 
   @viewState() protected headerRenameValue = "";
   @viewState() protected headerPlatform: string | null = null;

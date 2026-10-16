@@ -284,8 +284,12 @@ export async function renameSession(
   session: SidebarRecentSession,
   scope: SidebarSessionMutationScope,
 ): Promise<void> {
+  if (!host.sessionData.isSessionMutationScopeCurrent(scope)) {
+    return;
+  }
   await showInputDialog({
-    signal: scope.signal,
+    signal: host.sessionData.sessionDraftSignal,
+    gateway: scope.gateway,
     title: t("sessionsView.renameSessionPrompt"),
     defaultValue: session.renameValue,
     submit: async (value) => {
@@ -293,18 +297,30 @@ export async function renameSession(
       if (!patch) {
         return null;
       }
+      const currentScope = host.sessionData.beginSessionMutation();
+      if (!currentScope) {
+        return t("sessionsView.actionRequiresConnection");
+      }
       let failure: string | null = null;
-      await patchSession(host, session, patch, scope, {
+      const result = await patchSession(host, session, patch, currentScope, {
         sessionScope: true,
         handleError: (error) => {
-          if (!/^label already in use:/iu.test(formatUiError(error))) {
-            return false;
-          }
-          failure = t("sessionsView.sessionNameInUse");
+          const message = formatUiError(error);
+          failure = /^label already in use:/iu.test(message)
+            ? t("sessionsView.sessionNameInUse")
+            : message;
           return true;
         },
       });
-      return failure;
+      return result === "completed"
+        ? null
+        : (failure ??
+            host.sessionData.sessionMutationError ??
+            t(
+              result === "stale"
+                ? "sessionsView.renameSessionStale"
+                : "sessionsView.renameSessionFailed",
+            ));
     },
   });
 }
@@ -382,29 +398,32 @@ export async function assignSessionCategory(
   scope: SidebarSessionMutationScope,
   patch: { pinned?: boolean } = {},
   options: { resolveSession?: () => SessionActionRow | null } = {},
-): Promise<void> {
+): Promise<SidebarSessionMutationResult> {
   if (!host.sessionData.isSessionMutationScopeCurrent(scope)) {
-    return;
+    return "stale";
   }
   const catalogChanged = Boolean(category && !host.knownSessionGroups().includes(category));
-  if (category && (await rememberSessionGroup(host, category, scope)) !== "completed") {
-    return;
+  if (category) {
+    const result = await rememberSessionGroup(host, category, scope);
+    if (result !== "completed") {
+      return result;
+    }
   }
   const currentSession = options.resolveSession ? options.resolveSession() : session;
   if (!currentSession) {
     showToast({
       message: t(catalogChanged ? "sessionsView.newGroupMoveSkipped" : "common.refresh"),
     });
-    return;
+    return "failed";
   }
   if (
     (currentSession.category ?? null) === category &&
     patch.pinned === undefined &&
     !needsGroupPromotion(currentSession)
   ) {
-    return;
+    return "completed";
   }
-  await patchSession(
+  return patchSession(
     host,
     currentSession,
     { category, ...patch, ...(needsGroupPromotion(currentSession) ? { sidebarRoot: true } : {}) },

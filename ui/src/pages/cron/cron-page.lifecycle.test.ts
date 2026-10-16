@@ -564,7 +564,7 @@ describe("CronPage lifecycle", () => {
     );
     schedulerStatus.triggersEnabled = false;
     gateway.emitSnapshot({ phase: "stopped" });
-    expect(page.cron.cronStatus).toBeNull();
+    expect(page.cron.cronStatus).toMatchObject({ enabled: true, jobs: 0 });
     gateway.emitSnapshot({ phase: "connected" });
 
     await waitForCronPage(() =>

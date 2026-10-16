@@ -14,6 +14,10 @@ import {
   type GatewayHelloOk,
 } from "../../api/gateway.ts";
 import type { SessionsListResult } from "../../api/types.ts";
+import type { ApplicationGatewaySnapshot } from "../../app/context.ts";
+import { createApplicationGateway } from "../../test-helpers/application-context-fixtures.ts";
+import { createTestGatewayClient } from "../../test-helpers/gateway-client.ts";
+import { gatewayHelloForMethods } from "../../test-helpers/gateway-methods.ts";
 import { waitForFast } from "../../test-helpers/wait-for.ts";
 import type { SessionCapability } from "./index.ts";
 import {
@@ -61,7 +65,86 @@ const targetedSessionReconciliationCases = [
 ];
 
 describe("session connection hydration", () => {
-  it("lets a queued foreground refresh supersede an owner-first bootstrap roster", async () => {
+  it.each(["account", "recovery scope"])(
+    "retires observed membership before the same client's %s replacement loads",
+    async (change) => {
+      const retained = sessionsResult([{ key: "agent:main:private", kind: "direct" }], 1);
+      const stale = createDeferred<SessionsListResult>();
+      const fresh = createDeferred<SessionsListResult>();
+      let reads = 0;
+      const request = vi.fn(async (method: string, params?: Record<string, unknown>) => {
+        if (method === "sessions.list") {
+          if (params?.archived === "all") {
+            reads += 1;
+            return reads === 1 ? retained : reads === 2 ? stale.promise : fresh.promise;
+          }
+          return sessionsResult([], 2);
+        }
+        return method === "sessions.subscribe"
+          ? { subscribed: true }
+          : { names: [], sectionOrder: [] };
+      });
+      const source = createApplicationGateway();
+      const hello = gatewayHelloForMethods(
+        ["sessions.list", "sessions.subscribe", "sessions.groups.list"],
+        ["operator.read"],
+      );
+      hello.auth!.recoveryScope = "alice-scope";
+      source.publish({
+        ...source.gateway.snapshot,
+        phase: "connected",
+        client: createTestGatewayClient(request),
+        hello,
+        selfUser: { id: "alice", name: "Alice" },
+      });
+      const sessions = createTestSessionCapability(source.gateway);
+      const query = { source: "agent-roster" as const, archivedFilter: "all" as const, limit: 50 };
+      const observed = sessions.observeList(query, () => {});
+      await sessions.refreshList(query);
+      expect(sessions.listSnapshot(query).result?.sessions).toEqual(retained.sessions);
+      source.publish({
+        ...source.gateway.snapshot,
+        phase: "reconnecting",
+        hello: null,
+        selfUser: undefined,
+      });
+      expect(sessions.listSnapshot(query).result?.sessions).toEqual(retained.sessions);
+      source.publish({
+        ...source.gateway.snapshot,
+        phase: "connected",
+        hello,
+        selfUser: undefined,
+      });
+      expect(sessions.listSnapshot(query).result?.sessions).toEqual(retained.sessions);
+      source.publish({ ...source.gateway.snapshot, selfUser: { id: "alice", name: "Alice" } });
+      expect(sessions.listSnapshot(query).result?.sessions).toEqual(retained.sessions);
+      const old = observed.refresh().catch((error: unknown) => error);
+      source.publish({
+        ...source.gateway.snapshot,
+        ...(change === "account"
+          ? { selfUser: { id: "bob", name: "Bob" } }
+          : {
+              selfUser: undefined,
+              hello: { ...hello, auth: { ...hello.auth!, recoveryScope: "bob-scope" } },
+            }),
+      });
+      expect(sessions.listSnapshot(query).result).toBeNull();
+      let replayed: SessionsListResult | null = retained;
+      const replacement = sessions.observeList(query, (snapshot) => {
+        replayed = snapshot.result;
+      });
+      expect(replayed).toBeNull();
+      stale.resolve(retained);
+      await old;
+      expect(sessions.listSnapshot(query).result).toBeNull();
+      fresh.resolve(sessionsResult([], 2));
+      await sessions.refreshList(query);
+      observed.dispose();
+      replacement.dispose();
+    },
+  );
+
+  it("lets a queued foreground refresh supersede bootstrap during profile hydration", async () => {
     const roster: SessionsListResult = {
       ...sessionsResult([], 1),
       count: 3,
@@ -109,7 +192,7 @@ describe("session connection hydration", () => {
       sessionKey: "agent:main:mine-new",
       assistantAgentId: "main" as string | null,
       hello: null as GatewayHelloOk | null,
-      selfUser: { id: "operator", name: "Operator" },
+      selfUser: undefined as ApplicationGatewaySnapshot["selfUser"],
     };
     let gatewayListener: ((next: typeof snapshot) => void) | undefined;
     const sessions = createTestSessionCapability({
@@ -144,7 +227,7 @@ describe("session connection hydration", () => {
     expect(request.mock.calls.filter(([method]) => method === "sessions.list")).toHaveLength(1);
     expect(sessions.state.result).toBeNull();
     const queuedRefresh = sessions.refresh({ agentId: "other", search: "queued", force: true });
-    snapshot = { ...snapshot, selfUser: { id: "collaborator", name: "Collaborator" } };
+    snapshot = { ...snapshot, selfUser: { id: "operator", name: "Operator" } };
     gatewayListener?.(snapshot);
 
     bootstrap.resolve(roster);

@@ -20,6 +20,7 @@ import { isGatewayAvailable } from "../../lib/gateway-availability.ts";
 import { createGatewayConnectionLifecycle } from "../../lib/gateway-connection-lifecycle.ts";
 import { isGatewayMethodAdvertised } from "../../lib/gateway-methods.ts";
 import { modelAuthEventInvalidates } from "../../lib/model-auth-request-state.ts";
+import { readSessionMethodAccess } from "../../lib/session-method-access.ts";
 import { isSessionRunActive } from "../../lib/session-run-state.ts";
 import { parseCatalogSessionKey } from "../../lib/sessions/catalog-key.ts";
 import { resolveSessionKey, scopedAgentParamsForSession } from "../../lib/sessions/index.ts";
@@ -471,10 +472,37 @@ export abstract class ChatPaneContext extends ChatPaneLifecycle {
       const presence = readPresenceEntries(snapshot.hello?.snapshot);
       this.presencePayload = presence ? { presence } : undefined;
     }
+    const rename = this.headerRenameSession;
+    if (
+      clientChanged ||
+      pairingOwnerChanged ||
+      (snapshot.phase === "connected" &&
+        !readSessionMethodAccess(snapshot, {
+          method: "sessions.groups.put",
+          requiredScope: "operator.write",
+        }).allowed)
+    ) {
+      this.retireHeaderSessionDrafts();
+    }
+    if (
+      clientChanged ||
+      pairingOwnerChanged ||
+      (rename &&
+        snapshot.phase === "connected" &&
+        !readSessionMethodAccess(snapshot, {
+          method: "sessions.patch",
+          params: { key: rename.key, label: null },
+          sessionScope: true,
+          session: state.sessionsResult?.sessions.find(
+            (row) => row.key === rename.key && row.sessionId === rename.sessionId,
+          ),
+        }).allowed)
+    ) {
+      this.cancelHeaderRename();
+    }
     if (sourceChanged) {
       this.resetSessionReadAcknowledgements();
       this.continueInTerminalDialog = null;
-      this.cancelHeaderRename();
       cancelChatScroll(state);
       releaseChatMediaResourceSubscriber(state.requestUpdate);
       if (wasConnected) {

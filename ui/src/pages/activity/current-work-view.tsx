@@ -85,19 +85,17 @@ function CurrentSession(props: { owner: CurrentWorkProps; row: GatewaySessionRow
 }
 
 export function renderCurrentWork(props: CurrentWorkProps) {
-  const rows = createMemo(() =>
-    props.connected && !props.error ? (props.result?.sessions ?? []) : [],
-  );
+  const rows = createMemo(() => props.result?.sessions ?? []);
   const message = createMemo(() =>
-    !props.connected
-      ? t("activity.currentWork.disconnected")
-      : props.error
-        ? t("activity.currentWork.loadFailed")
-        : !props.result || (rows().length === 0 && props.incomplete)
-          ? t("activity.currentWork.loading")
-          : rows().length === 0
-            ? t("activity.currentWork.empty")
-            : null,
+    rows().length > 0
+      ? null
+      : !props.connected
+        ? t("activity.currentWork.disconnected")
+        : props.error
+          ? t("activity.currentWork.loadFailed")
+          : !props.result || props.incomplete
+            ? t("activity.currentWork.loading")
+            : t("activity.currentWork.empty"),
   );
   return (
     <section
@@ -116,7 +114,7 @@ export function renderCurrentWork(props: CurrentWorkProps) {
               <button
                 type="button"
                 class="btn btn--sm"
-                disabled={props.loading}
+                disabled={!props.connected || props.loading}
                 onClick={props.onRetry}
               >
                 {t("common.retry")}

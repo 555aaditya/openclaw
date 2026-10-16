@@ -1,6 +1,7 @@
 import type { BoardGetParams } from "@openclaw/gateway-protocol";
 import { Show, createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js";
 import type { GatewayBrowserClient } from "../api/gateway.ts";
+import { gatewayPresentationScope } from "../app/gateway-presentation-scope.ts";
 import { Icon } from "../components/solid/icon.tsx";
 import {
   acquireBoardProviderForSession,
@@ -8,6 +9,8 @@ import {
   boardProviderCacheKey,
   type BoardViewCallbacks,
 } from "../lib/board/provider.ts";
+import { projectGateway } from "../lib/reactive/application.ts";
+import { useOptionalApplication } from "../lib/reactive/context.ts";
 import { projectBoardProvider } from "../lib/reactive/domain-board.ts";
 import { t } from "../lib/reactive/i18n.ts";
 import { defineSolidBridge, type SolidBridgeElement } from "../lit/solid-bridge.ts";
@@ -23,6 +26,8 @@ export type PluginSessionDashboardProps = {
 };
 
 function PluginSessionDashboardContent(props: PluginSessionDashboardProps) {
+  const context = useOptionalApplication();
+  const gateway = context ? projectGateway(context.gateway) : undefined;
   const [expanded, setExpanded] = createSignal(false);
   const [activeTabId, setActiveTabId] = createSignal("");
   const [viewError, setViewError] = createSignal<string | null>(null);
@@ -31,12 +36,21 @@ function PluginSessionDashboardContent(props: PluginSessionDashboardProps) {
   const [viewAttempt, setViewAttempt] = createSignal(0);
   const [expansionInitialized, setExpansionInitialized] = createSignal(false);
   const scope = createMemo(
-    () =>
-      props.client && props.session?.sessionKey.trim()
-        ? { client: props.client, cacheKey: boardProviderCacheKey(props.session) }
-        : null,
+    () => {
+      gateway?.revision();
+      return props.client && props.session?.sessionKey.trim()
+        ? {
+            client: props.client,
+            cacheKey: boardProviderCacheKey(props.session),
+            presentationScope: context ? gatewayPresentationScope(context.gateway) : undefined,
+          }
+        : null;
+    },
     {
-      equals: (left, right) => left?.client === right?.client && left?.cacheKey === right?.cacheKey,
+      equals: (left, right) =>
+        left?.client === right?.client &&
+        left?.cacheKey === right?.cacheKey &&
+        left?.presentationScope === right?.presentationScope,
     },
   );
   const resource = createMemo(() => {
@@ -53,6 +67,7 @@ function PluginSessionDashboardContent(props: PluginSessionDashboardProps) {
         false,
         props.canMutate,
         props.canGrant,
+        current.presentationScope,
       ),
     );
     onCleanup(() => lease.release());
@@ -182,8 +197,8 @@ function PluginSessionDashboardContent(props: PluginSessionDashboardProps) {
                       current().lease.provider.widgetFrameUrl(name, revision)
                     }
                     callbacks={current().callbacks}
-                    canMutate={props.canMutate}
-                    canGrant={props.canGrant}
+                    canMutate={props.connected && props.canMutate}
+                    canGrant={props.connected && props.canGrant}
                   />
                 )}
               </Show>

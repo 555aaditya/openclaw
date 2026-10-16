@@ -366,10 +366,10 @@ describe("application mention Inbox", () => {
 
   it.each([
     "profile",
+    "profileless",
     "connection",
     "gateway",
     "credentials",
-    "disconnect",
     "scope",
     "capability",
   ] as const)(
@@ -393,6 +393,8 @@ describe("application mention Inbox", () => {
 
       if (boundary === "profile") {
         harness.update({ selfUser: { id: "carol", identity: { type: "profile", id: "carol" } } });
+      } else if (boundary === "profileless") {
+        harness.update({ selfUser: null });
       } else if (boundary === "connection") {
         harness.update({ client: client(request) });
       } else if (boundary === "gateway") {
@@ -404,22 +406,55 @@ describe("application mention Inbox", () => {
         harness.update({ hello: { ...hello(), auth: { role: "operator", scopes: [] } } });
       } else if (boundary === "capability") {
         harness.update({ hello: { ...hello(), features: { methods: [] } } });
-      } else {
-        harness.update({ phase: "reconnecting", selfUser: null, hello: null });
       }
       expect(capability.snapshot.items).toEqual([]);
-      if (boundary !== "disconnect") {
-        await capability.refresh();
-      }
+      await capability.refresh();
       stale.resolve(result(99));
       await refresh;
 
       expect(capability.snapshot.items).toEqual([]);
       expect(capability.snapshot.phase).toBe(
-        ["disconnect", "scope", "capability"].includes(boundary) ? "unavailable" : "ready",
+        ["profileless", "scope", "capability"].includes(boundary) ? "unavailable" : "ready",
       );
     },
   );
+
+  it("retains visible mentions through a same-client blip and fences the old read", async () => {
+    const stale = deferred<MentionsListResult>();
+    const refreshed = deferred<MentionsListResult>();
+    const request = vi
+      .fn<RequestFn>()
+      .mockResolvedValueOnce(result(1))
+      .mockReturnValueOnce(stale.promise)
+      .mockReturnValueOnce(refreshed.promise);
+    const harness = gatewayForMentions(request);
+    const capability = createCapability(harness.gateway);
+    await capability.refresh();
+    const previous = capability.refresh();
+    await flushMicrotasks();
+    harness.update({ phase: "reconnecting", selfUser: null, hello: null });
+    expect(capability.snapshot).toMatchObject({ phase: "unavailable", items: [mention] });
+    await capability.dismiss([mention.id]);
+    expect(request).toHaveBeenCalledTimes(2);
+    stale.resolve(result(99, []));
+    await previous;
+    expect(capability.snapshot.items).toEqual([mention]);
+    harness.update({
+      phase: "connected",
+      hello: hello(),
+      selfUser: undefined,
+    });
+    expect(capability.snapshot).toMatchObject({ phase: "loading", items: [mention] });
+    await capability.dismiss([mention.id]);
+    expect(request).toHaveBeenCalledTimes(2);
+    harness.update({
+      selfUser: { id: "bob", identity: { type: "profile", id: "bob" } },
+    });
+    expect(capability.snapshot.items).toEqual([mention]);
+    refreshed.resolve(result(2, []));
+    await capability.refresh();
+    expect(capability.snapshot.items).toEqual([]);
+  });
 
   it("hydrates the new profile when an earlier profile's bootstrap is still queued", async () => {
     const bootstrap = createConnectionBootstrapCoordinator();

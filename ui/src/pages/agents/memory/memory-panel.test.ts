@@ -266,7 +266,64 @@ describe("AgentMemoryPanel gateway lifecycle", () => {
     expect(page.state.view().dreaming.dreamDiaryContent).toBeNull();
   });
 
-  it.each(["agent", "client", "reconnect", "unmount"] as const)(
+  it("retains diary, preview and toggle drafts through reconnect while rejecting old reads", async () => {
+    const stale = deferred<unknown>();
+    let refresh = false;
+    const fresh = deferred<unknown>();
+    const request = vi.fn((method: string) => {
+      if (method === "doctor.memory.dreamDiary") {
+        return refresh
+          ? fresh.promise
+          : Promise.resolve({ found: true, path: "DREAMS.md", content: "Retained diary" });
+      }
+      if (method === "wiki.get") {
+        return stale.promise;
+      }
+      return Promise.resolve(emptyReply(method));
+    });
+    const context = contextWithGateway(createTestGatewayClient(request), true);
+    const hello = context.gateway.snapshot.hello;
+    const page = await createPage(context);
+    await waitForSolid(() =>
+      expect(page.state.view().dreaming.dreamDiaryContent).toBe("Retained diary"),
+    );
+    click(page.container, "#dreams-tab-diary");
+    const preview = page.state.view().dreaming.onOpenWikiPage("retained.md");
+    page.state.setEnabled(false);
+    flush();
+    context.emit({ phase: "reconnecting", hello: null });
+    flush();
+    expect(page.state.view().dreaming.dreamDiaryContent).toBe("Retained diary");
+    expect(page.state.view().dreaming.wikiPreview?.page.path).toBe("retained.md");
+    expect(page.state.view().toggle).toMatchObject({ open: true, disabled: true });
+    expect(
+      page.container.querySelector<HTMLButtonElement>(".exec-approval-actions button")?.disabled,
+    ).toBe(true);
+    refresh = true;
+    context.emit({ phase: "connected", hello });
+    await waitForSolid(() =>
+      expect(
+        request.mock.calls.filter(([method]) => method === "doctor.memory.dreamDiary"),
+      ).toHaveLength(2),
+    );
+    expect(page.state.view().dreaming.dreamDiaryContent).toBe("Retained diary");
+    stale.resolve({ title: "Old", path: "retained.md", content: "Stale preview" });
+    await preview;
+    expect(page.state.view().dreaming.wikiPreview?.page.content).toBe("");
+    expect(page.state.view().toggle.open).toBe(true);
+    fresh.resolve({ found: true, path: "DREAMS.md", content: "Fresh diary" });
+    await waitForSolid(() =>
+      expect(page.state.view().dreaming.dreamDiaryContent).toBe("Fresh diary"),
+    );
+
+    context.emit({ client: createTestGatewayClient(vi.fn(async (method) => emptyReply(method))) });
+    flush();
+    expect(page.state.view().dreaming.dreamDiaryContent).toBeNull();
+    expect(page.state.view().dreaming.wikiPreview).toBeNull();
+    expect(page.state.view().toggle.open).toBe(false);
+  });
+
+  it.each(["agent", "client", "access", "unmount"] as const)(
     "retires pending wiki requests and modal state on %s replacement",
     async (replacement) => {
       const pending = deferred<unknown>();
@@ -289,9 +346,8 @@ describe("AgentMemoryPanel gateway lifecycle", () => {
         context.emit({
           client: createTestGatewayClient(vi.fn(async (method) => emptyReply(method))),
         });
-      } else if (replacement === "reconnect") {
-        context.emit({ phase: "stopped" });
-        context.emit({ phase: "connected" });
+      } else if (replacement === "access") {
+        context.emit({ hello: gatewayHelloForMethods([], []) });
       } else {
         page.unmount();
       }

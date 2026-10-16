@@ -172,6 +172,25 @@ export function createMentionsCapability(
       return;
     }
     clearTimeout(connection?.retryTimer);
+    const sameIdentity =
+      connection?.client === next.client &&
+      connection?.connectionRevision === gateway.connectionRevision &&
+      (!profileId || connection.profileId === profileId) &&
+      (!gatewayInstanceId || connection.gatewayInstanceId === gatewayInstanceId);
+    if (!disposed && next.phase !== "connected" && sameIdentity) {
+      publish({ phase: "unavailable", dismissing: [], error: null });
+      return;
+    }
+    if (
+      !disposed &&
+      sameIdentity &&
+      next.selfUser === undefined &&
+      canCallGatewayMethod(next, "mentions.list", "operator.read")
+    ) {
+      // A fresh hello precedes users.self; unresolved identity is not access loss.
+      publish({ phase: "loading", dismissing: [], error: null });
+      return;
+    }
     if (
       disposed ||
       next.phase !== "connected" ||
@@ -199,7 +218,12 @@ export function createMentionsCapability(
       retryAttempt: 0,
     };
     connection = owner;
-    publish({ phase: "loading", items: [], dismissing: [], error: null });
+    publish({
+      phase: "loading",
+      ...(!sameIdentity ? { items: [] } : {}),
+      dismissing: [],
+      error: null,
+    });
     if (!isCurrent(owner)) {
       return;
     }

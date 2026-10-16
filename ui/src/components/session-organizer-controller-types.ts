@@ -19,6 +19,7 @@ export interface SessionOrganizerControllerHost extends SolidControllerHost {
     | "refreshSidebarSessions"
     | "resetSessionList"
     | "sessionMutationError"
+    | "sessionDraftSignal"
   >;
   readonly sidebarEntries: readonly string[];
   readonly onUpdateSidebarEntries?: (entries: string[]) => void;
