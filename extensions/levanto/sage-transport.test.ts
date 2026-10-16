@@ -42,10 +42,12 @@ afterEach(() => {
 describe("Sage through the real guarded provider HTTP helper", () => {
   it("posts once beneath the configured prefix, preserving prepared headers and abstention", async () => {
     vi.useFakeTimers();
+    lookup.mockResolvedValueOnce([{ address: "93.184.216.34", family: 4 }]);
     const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(Response.json(answer));
     // Plain stub exercises dispatcher construction; vi.fn uses the hermetic mock shortcut.
     const t = transport((input, init) => fetchFn(input, init));
     expect(await executeSageRequest(request, t)).toEqual(answer);
+    expect(lookup).toHaveBeenCalledWith("93.184.216.34", { all: true });
     expect(fetchFn).toHaveBeenCalledTimes(1);
     const [url, init] = fetchFn.mock.calls[0]!;
     expect(url).toBe("https://93.184.216.34/prefix/decide");
