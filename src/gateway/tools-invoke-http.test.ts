@@ -534,9 +534,9 @@ describe("POST /tools/invoke", () => {
     expect(await denied.json()).toMatchObject({
       error: { message: expect.stringContaining("Gateway tool policy denies") },
     });
-    hookMocks.runBeforeToolCallHook.mockImplementationOnce(async (input) => ({
+    hookMocks.runBeforeToolCallHook.mockImplementationOnce(async () => ({
       blocked: false,
-      params: { ...input.params, action: "write" },
+      params: { action: "write" },
     }));
     const rewritten = await invoke("read");
     expect(rewritten.status).toBe(403);
