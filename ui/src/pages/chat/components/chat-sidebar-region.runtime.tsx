@@ -44,7 +44,26 @@ function activePanelTab(root: ParentNode | null | undefined) {
 }
 
 function Region(props: RegionProps, host: RegionElement) {
-  let previousGeometry = "";
+  const contentWidths = new Map<Element, number | undefined>();
+  const geometryObserver = new ResizeObserver((entries) => {
+    let widthChanged = false;
+    for (const entry of entries) {
+      if (contentWidths.has(entry.target)) {
+        widthChanged ||= contentWidths.get(entry.target) !== entry.contentRect.width;
+        contentWidths.set(entry.target, entry.contentRect.width);
+      }
+    }
+    if (widthChanged) {
+      host.parentElement
+        ?.querySelector(".sidebar-region__right-runtime > .side-panel")
+        ?.dispatchEvent(
+          new CustomEvent(SIDEBAR_GEOMETRY_COMMIT_EVENT, {
+            bubbles: true,
+            detail: { widthChanged: true },
+          }),
+        );
+    }
+  });
   let focusFrame: number | null = null;
   let focusedSurface: Element | null = null;
   let focusBeforeSideLock: HTMLElement | null = null;
@@ -237,27 +256,30 @@ function Region(props: RegionProps, host: RegionElement) {
       if (!host.isConnected || !shell) {
         return undefined;
       }
-      const panel = shell.querySelector<HTMLElement>(
-        ".sidebar-region__right-runtime > .side-panel",
-      );
-      const geometry = Array.from(
+      const contents = new Set<Element>(
         shell.querySelectorAll<HTMLElement>(".sidebar-region__primary, .side-panel__panel"),
-        (content) =>
-          `${content.dataset.panelSlot ?? "conversation"}:${content.getBoundingClientRect().width}`,
-      ).join(":");
-      // The manual panel render is the commit boundary for its transcript.
-      // Track content, not region roles: swapping can keep the same main/side
-      // widths while changing the transcript width and its row measurements.
+      );
+      for (const content of contentWidths.keys()) {
+        if (!contents.has(content)) {
+          geometryObserver.unobserve(content);
+          contentWidths.delete(content);
+        }
+      }
+      // Observe content rather than main/side roles: swapping preserves region
+      // widths while changing the width of the transcript inside them.
+      for (const content of contents) {
+        if (!contentWidths.has(content)) {
+          contentWidths.set(content, undefined);
+          geometryObserver.observe(content);
+        }
+      }
       return () => {
-        panel?.dispatchEvent(
+        shell.querySelector(".sidebar-region__right-runtime > .side-panel")?.dispatchEvent(
           new CustomEvent(SIDEBAR_GEOMETRY_COMMIT_EVENT, {
             bubbles: true,
-            detail: {
-              widthChanged: geometry !== previousGeometry,
-            },
+            detail: { widthChanged: false },
           }),
         );
-        previousGeometry = geometry;
       };
     });
   }
@@ -416,6 +438,7 @@ function Region(props: RegionProps, host: RegionElement) {
     listeners.abort();
     focusedSurface = null;
     cancelLayout(host);
+    geometryObserver.disconnect();
     if (focusFrame !== null) {
       cancelAnimationFrame(focusFrame);
     }

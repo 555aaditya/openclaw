@@ -207,6 +207,8 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
   });
   const historyMessages = Array.from({ length: counts.transcriptMessages }, (_, index) => ({
     role: index % 2 ? "assistant" : "user",
+    __openclaw: { id: `team-scale-message-${index}`, seq: index + 1 },
+    ...(index % 2 ? { usage: { input: 46_000, output: 300, cost: { total: 0.12 } } } : {}),
     timestamp: now - (counts.transcriptMessages - index) * 60_000,
     content: [
       {
@@ -349,6 +351,20 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
     sessions,
     presenceUsers: people,
     historyMessages,
+    sessionReactions: {
+      [selectedSessionKey]: Object.fromEntries(
+        historyMessages.map((message, index) => [
+          message.__openclaw.id,
+          [
+            {
+              emoji: "👍",
+              count: 1,
+              identities: [{ id: personId(index % 8), label: people[index % 8]!.name }],
+            },
+          ],
+        ]),
+      ),
+    },
     ...(options.liveRun
       ? {
           inFlightRun: {

@@ -8,9 +8,11 @@ export class TranscriptEndAnchor {
   private frame: number | null = null;
 
   isResizeAnchor(element: HTMLDivElement | null): boolean {
+    if (this.offset === null) {
+      return false;
+    }
     const max = maxTranscriptScrollOffset(element);
     return (
-      this.offset !== null &&
       max !== null &&
       element !== null &&
       Math.abs(element.scrollTop - this.offset) <= 1 &&

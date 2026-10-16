@@ -30,10 +30,10 @@ export class TranscriptViewportRect {
   constructor(private readonly owner: ViewportRectOwner) {}
 
   commit(widthChanged: boolean): void {
-    this.owner.positionRail.sync();
     if (!widthChanged) {
       return;
     }
+    this.owner.positionRail.sync();
     const rect = this.owner.getScrollElement()?.getBoundingClientRect();
     if (!rect?.width || !rect.height) {
       return;

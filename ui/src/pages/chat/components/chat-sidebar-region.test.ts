@@ -1,6 +1,6 @@
 /* @vitest-environment jsdom */
 
-import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { GatewayBrowserClient } from "../../../api/gateway.ts";
 import { emptyLegacyContent, solidContent } from "../../../lit/solid-content.tsx";
 import { createControlUiPluginHost } from "../../../plugins/control-ui-host.ts";
@@ -97,7 +97,19 @@ function root(region: Region): HTMLElement {
   return region.parentElement!;
 }
 
+beforeEach(() => {
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+});
+
 afterEach(() => {
+  vi.unstubAllGlobals();
   for (const region of regions.splice(0)) {
     region.parentElement?.remove();
   }
@@ -176,10 +188,46 @@ describe("chat sidebar region", () => {
     expect(label()?.textContent).toBe("Chat");
   });
 
-  it("coalesces committed geometry and retires disconnected measurements", async () => {
+  it("publishes observed content widths without rescanning them on data updates", async () => {
     vi.useFakeTimers({ toFake: ["requestAnimationFrame", "cancelAnimationFrame"] });
+    const observers: ResizeObserver[] = [];
+    const deliveries: Array<(target: Element, width: number) => void> = [];
+    vi.stubGlobal(
+      "ResizeObserver",
+      class implements ResizeObserver {
+        readonly targets = new Set<Element>();
+        constructor(callback: ResizeObserverCallback) {
+          observers.push(this);
+          deliveries.push((target, width) => {
+            if (this.targets.has(target))
+              callback(
+                [
+                  {
+                    target,
+                    contentRect: new DOMRect(0, 0, width, 600),
+                    borderBoxSize: [],
+                    contentBoxSize: [],
+                    devicePixelContentBoxSize: [],
+                  },
+                ],
+                this,
+              );
+          });
+        }
+        observe(target: Element) {
+          this.targets.add(target);
+        }
+        unobserve(target: Element) {
+          this.targets.delete(target);
+        }
+        disconnect() {
+          this.targets.clear();
+        }
+      },
+    );
     onTestFinished(() => {
       vi.useRealTimers();
+      vi.unstubAllGlobals();
     });
     const region = await createRegion();
     region.narrow = true;
@@ -187,46 +235,37 @@ describe("chat sidebar region", () => {
     const shell = root(region);
     const primary = shell.querySelector<HTMLElement>(".sidebar-region__primary")!;
     const panel = shell.querySelector<HTMLElement>(".side-panel__panel")!;
-    let mainWidth = 800;
-    let sideWidth = 400;
-    const measure = vi
-      .spyOn(primary, "getBoundingClientRect")
-      .mockImplementation(() => new DOMRect(0, 0, mainWidth, 600));
-    vi.spyOn(panel, "getBoundingClientRect").mockImplementation(
-      () => new DOMRect(0, 0, sideWidth, 600),
-    );
+    const measure = vi.spyOn(primary, "getBoundingClientRect");
     const commits: boolean[] = [];
     shell.addEventListener(SIDEBAR_GEOMETRY_COMMIT_EVENT, (event) => {
       commits.push((event as CustomEvent<{ widthChanged: boolean }>).detail.widthChanged);
     });
+    const deliver = (target: Element, width: number) =>
+      deliveries.forEach((emit) => emit(target, width));
     vi.advanceTimersToNextFrame();
-    measure.mockClear();
+    deliver(primary, 800);
+    deliver(panel, 400);
     commits.length = 0;
-
+    measure.mockClear();
     for (let index = 0; index < 4; index++) {
       region.layout = { ...region.layout };
       await region.updateComplete;
+      vi.advanceTimersToNextFrame();
     }
+    deliver(primary, 800);
     expect(measure).not.toHaveBeenCalled();
-    expect(commits).toEqual([]);
-    vi.advanceTimersToNextFrame();
-    expect(measure).toHaveBeenCalledTimes(1);
-    expect(commits).toEqual([false]);
+    expect(commits).toEqual([false, false, false, false]);
+    commits.length = 0;
 
-    // Swapping content can keep the total width while changing each transcript.
-    mainWidth = 400;
-    sideWidth = 800;
-    region.layout = { ...region.layout };
-    await region.updateComplete;
-    vi.advanceTimersToNextFrame();
-    expect(commits).toEqual([false, true]);
-
-    measure.mockClear();
-    region.layout = { ...region.layout };
-    await region.updateComplete;
+    // Content swaps can preserve total width while changing each transcript.
+    deliver(primary, 400);
+    deliver(panel, 800);
+    expect(commits).toEqual([true, true]);
     shell.remove();
-    vi.advanceTimersToNextFrame();
-    expect(measure).not.toHaveBeenCalled();
+    await region.updateComplete;
+    deliver(primary, 600);
+    expect(commits).toEqual([true, true]);
+    expect(observers.length).toBeGreaterThan(0);
   });
 
   it("claims native Close for the focused side tab and preserves its neighbor", async () => {

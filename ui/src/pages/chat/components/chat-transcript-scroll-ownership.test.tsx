@@ -55,6 +55,24 @@ describe("chat transcript scroll ownership", () => {
   beforeEach(installTranscriptDomMocks);
   afterEach(resetTranscriptTestDom);
 
+  it("does not measure a resize anchor before capture or after reader takeover", () => {
+    const element = document.createElement("div");
+    const readHeight = vi.fn(() => 1000);
+    Object.defineProperties(element, {
+      clientHeight: { value: 400 },
+      scrollHeight: { get: readHeight },
+    });
+    element.scrollTop = 600;
+    const anchor = new TranscriptEndAnchor();
+    expect(anchor.isResizeAnchor(element)).toBe(false);
+    expect(readHeight).not.toHaveBeenCalled();
+    anchor.capture(element);
+    anchor.clear();
+    readHeight.mockClear();
+    expect(anchor.isResizeAnchor(element)).toBe(false);
+    expect(readHeight).not.toHaveBeenCalled();
+  });
+
   it("records a changed end edge without an extra pane render", async () => {
     const paneId = "offset-end-edge";
     saveChatSessionScrollPosition(paneId, `agent:main:${paneId}`, {

@@ -19,6 +19,24 @@ function measurementClock() {
     }
     observe(target: Element) {
       this.targets.add(target);
+      this.emit(target);
+    }
+    emit(target: Element) {
+      const width = target.classList.contains("hover-marquee__text")
+        ? target.scrollWidth
+        : target.clientWidth;
+      this.callback(
+        [
+          {
+            target,
+            contentRect: new DOMRect(0, 0, width, 20),
+            borderBoxSize: [],
+            contentBoxSize: [],
+            devicePixelContentBoxSize: [],
+          },
+        ],
+        this,
+      );
     }
     unobserve(target: Element) {
       this.targets.delete(target);
@@ -60,14 +78,16 @@ function measurementClock() {
       return [...observers].some((observer) => observer.targets.has(target));
     },
     flush() {
-      const pending = [...frames.values()];
-      frames.clear();
-      pending.forEach((callback) => callback(0));
+      while (frames.size) {
+        const pending = [...frames.values()];
+        frames.clear();
+        pending.forEach((callback) => callback(0));
+      }
     },
     resize(target: Element) {
       for (const observer of observers) {
         if (observer.targets.has(target)) {
-          observer.callback([], observer);
+          observer.emit(target);
         }
       }
     },
@@ -172,7 +192,7 @@ describe("hover marquee measurement budget", () => {
     clock.flush();
     expect(labels[0]!.classList.contains("hover-marquee--overflowing")).toBe(false);
     expect(labels[1]!.classList.contains("hover-marquee--overflowing")).toBe(true);
-    expect(operations).toEqual(["read", "write", "write"]);
+    expect(operations).toEqual(["write", "write"]);
   });
 
   it("avoids style resolution at zero width and resumes through the existing resize observer", () => {
@@ -247,12 +267,14 @@ describe("hover marquee measurement budget", () => {
     expect(operations).toHaveLength(0);
 
     show("Short");
+    for (const label of labels) clock.resize(label.querySelector(".hover-marquee__text")!);
     await Promise.resolve();
     clock.flush();
     expect(labels.every((label) => !label.classList.contains("hover-marquee--overflowing"))).toBe(
       true,
     );
     show("A long conversation title");
+    for (const label of labels) clock.resize(label.querySelector(".hover-marquee__text")!);
     await Promise.resolve();
     clock.flush();
     show("A long conversation title", "session-name renamed");
@@ -265,13 +287,13 @@ describe("hover marquee measurement budget", () => {
     document.documentElement.dir = "rtl";
     await Promise.resolve();
     clock.flush();
-    expect(operations.filter((operation) => operation === "read")).toHaveLength(100);
+    expect(operations.filter((operation) => operation === "read")).toHaveLength(0);
 
     Object.defineProperty(labels[0]!, "clientWidth", { configurable: true, value: 500 });
     operations.length = 0;
     clock.resize(labels[0]!);
     clock.flush();
-    expect(operations.filter((operation) => operation === "read")).toHaveLength(1);
+    expect(operations.filter((operation) => operation === "read")).toHaveLength(0);
     expect(labels[0]!.classList.contains("hover-marquee--overflowing")).toBe(false);
 
     const text = labels[0]!.querySelector<HTMLElement>(".hover-marquee__text")!;

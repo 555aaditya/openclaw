@@ -556,7 +556,7 @@ export class ChatSessionVirtualizerHost implements SolidControllerHost, ChatTran
     return (
       // Intermediate end-command movement remains owned until native input cancels it.
       (this.offsetState.scrollCommand?.target === "end" && this.canAutoFollow()) ||
-      (this.endAnchor.isResizeAnchor(this.scrollElement) && this.canAutoFollow()) ||
+      (this.canAutoFollow() && this.endAnchor.isResizeAnchor(this.scrollElement)) ||
       isTranscriptMaintenanceScroll(this.offsetState, this.scrollElement)
     );
   }

@@ -21,6 +21,8 @@ export class HoverMarqueeController {
   private options: MarqueeOptions = {};
   private className?: string;
   private shift = 0;
+  private width = 0;
+  private textWidth = 0;
 
   update(label: HTMLElement | undefined, options: MarqueeOptions, className: string) {
     this.label = label;
@@ -53,6 +55,7 @@ export class HoverMarqueeController {
       this[key] = undefined;
     }
     this.visible = false;
+    this.width = this.textWidth = 0;
     this.motion?.removeEventListener("change", this.schedule);
     for (const event of ["pointerenter", "pointerleave", "focusin", "focusout"]) {
       this.host?.removeEventListener(event, this.schedule);
@@ -102,11 +105,20 @@ export class HoverMarqueeController {
       this.motion.addEventListener("change", this.schedule);
       // Observe each node once per connected lifetime. Transforms do not resize
       // the text, so scrolling cannot invalidate its own measurement.
-      this.observer = new ResizeObserver(this.schedule);
+      this.observer = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          if (entry.target === label) {
+            this.width = entry.contentRect.width;
+          } else {
+            this.textWidth = entry.contentRect.width;
+          }
+        }
+        this.schedule();
+      });
       this.observer.observe(label);
       this.observer.observe(this.text);
-      // Text can change auto direction without resizing; touch menus change
-      // intent without another pointer/focus event. Observe those actual inputs.
+      // Intrinsic text size arrives through ResizeObserver. Direction and touch
+      // menu intent can change without resizing either box.
       this.contentObserver = new MutationObserver(this.schedule);
       this.contentObserver.observe(label, {
         childList: true,
@@ -129,14 +141,12 @@ export class HoverMarqueeController {
       this.visibilityObserver = undefined;
       this.visible = true;
     }
-    const width = label.clientWidth;
+    const width = this.width;
     if (width <= 0) {
       return () => this.clearOverflow(label);
     }
     const text = this.text!;
-    const style = getComputedStyle(label);
-    const padding = Number.parseFloat(style.paddingLeft) + Number.parseFloat(style.paddingRight);
-    const overflow = style.whiteSpace === "nowrap" ? text.scrollWidth + padding - width : 0;
+    const overflow = this.textWidth - width;
     const clipped = overflow > (this.options.loop ? 0 : 1);
     if (!clipped) {
       return () => this.clearOverflow(label);
@@ -153,6 +163,7 @@ export class HoverMarqueeController {
         this.stop();
       };
     }
+    const style = getComputedStyle(label);
     const fade = Number.parseFloat(style.getPropertyValue("--hover-marquee-fade-width"));
     const shift =
       (overflow + (this.options.loop ? 0 : fade)) * (style.direction === "rtl" ? 1 : -1);
