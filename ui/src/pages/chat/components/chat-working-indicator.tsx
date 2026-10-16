@@ -14,14 +14,15 @@ import { formatDurationLong } from "../../../lib/format-duration.ts";
 import { formatCompactTokenCount } from "../../../lib/format.ts";
 import { t } from "../../../lib/reactive/i18n.ts";
 import { projectSource } from "../../../lib/reactive/projection.ts";
-import { LitContent, type LegacyTemplateResult } from "../../../lit/solid-content.tsx";
 import type { TurnRecap } from "../chat-progress.ts";
 import type { ChatSubagentWait } from "../chat-subagent-wait.ts";
+import { ChatSubagentActivity } from "./chat-subagent-activity-live.ts";
+import type { SubagentActivityProps } from "./chat-subagent-activity.ts";
 import "./chat-retry-status.tsx";
 import { selectWorkingClawSurprise } from "./chat-working-indicator-surprise.ts";
 
 type ReadingIndicator = Extract<ChatItem, { kind: "reading-indicator" }>;
-export type ChatWorkingIndicatorOptions = {
+type ChatWorkingIndicatorOptions = {
   bubbleMode?: boolean;
   mascot?: ThemeMascot;
   workingIndicator?: ThemeWorkingIndicator;
@@ -29,7 +30,7 @@ export type ChatWorkingIndicatorOptions = {
   waitingApproval?: boolean;
   waitingSubagents?: ChatSubagentWait;
   runningSubagents?: number;
-  subagentActivity?: LegacyTemplateResult;
+  subagentActivity?: SubagentActivityProps;
   onOpenSubagents?: () => void;
   startupLabel?: string;
   retryAt?: number;
@@ -86,11 +87,21 @@ function WorkingStatus(props: WorkingProps & { branding: ThemeBranding }) {
       : props.options.startupLabel || t("common.working");
   return (
     <div
-      class={["chat-working-indicator", { "chat-working-indicator--continuation": continuation() }]}
+      class={[
+        "chat-working-indicator",
+        {
+          "chat-working-indicator--continuation": continuation(),
+          "chat-working-indicator--supporting": props.options.subagentActivity !== undefined,
+        },
+      ]}
       role="status"
       aria-live="off"
     >
-      <Show when={!continuation() && indicator() !== "none"}>
+      <Show
+        when={
+          !continuation() && props.options.subagentActivity === undefined && indicator() !== "none"
+        }
+      >
         <div
           class={[
             "chat-bubble chat-reading-indicator",
@@ -185,10 +196,10 @@ export function ChatWorkingIndicator(props: WorkingProps) {
           when={props.options.bubbleMode && working() && !(props.options.runningSubagents ?? 0)}
           fallback={
             <>
-              <WorkingStatus {...props} branding={branding.read()} />
               <Show when={props.options.subagentActivity !== undefined}>
-                <LitContent value={props.options.subagentActivity} />
+                <ChatSubagentActivity {...props.options.subagentActivity!} />
               </Show>
+              <WorkingStatus {...props} branding={branding.read()} />
             </>
           }
         >
@@ -205,16 +216,16 @@ export function ChatWorkingIndicator(props: WorkingProps) {
               </span>
             </summary>
             <div class="chat-bubble-activity__details">
-              <WorkingStatus {...props} branding={branding.read()} />
               <Show when={props.options.subagentActivity !== undefined}>
-                <LitContent value={props.options.subagentActivity} />
+                <ChatSubagentActivity {...props.options.subagentActivity!} />
               </Show>
+              <WorkingStatus {...props} branding={branding.read()} />
             </div>
           </details>
         </Show>
       }
     >
-      <LitContent value={props.options.subagentActivity} />
+      <ChatSubagentActivity {...props.options.subagentActivity!} />
     </Show>
   );
 }
@@ -240,10 +251,10 @@ export function TurnRecapRow(props: {
         </span>
       </Show>
       <Show when={typeof props.recap.outputTokens === "number"}>
-        <span>{outputTokensLabel(props.recap.outputTokens!)}</span>
+        <span>{outputTokensLabel(props.recap.outputTokens!)}</span>{" "}
         <span class="chat-turn-recap__sep" aria-hidden="true">
           ·
-        </span>
+        </span>{" "}
       </Show>
       <span>{t("chat.turnRecap.doneIn", { duration: duration() })}</span>
     </div>

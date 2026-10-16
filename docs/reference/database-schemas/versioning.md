@@ -41,6 +41,50 @@ approvals, port-guardian state, Gateway startup, and updater admission retain
 their backend schema-version checks. Apps predating this exception still need
 an app update when their local backend advances beyond their supported schema.
 
+### Local credential-store preparation
+
+The prepared client credential format is SQLite schema version 1 at
+`<resolved-client-root>/client/credentials.sqlite`, independent of the selected
+Gateway engine. It contains client identities, device and Gateway-scoped token
+caches, local native socket credentials, and a migration receipt. This stage
+does not switch production clients or import or remove shared-state records.
+The native shared-table contract above remains in use until the later atomic
+cutover.
+
+The TypeScript owner and Swift adapter use exclusive SQLite custody in DELETE
+journal mode. A macOS app may retain that custody while serving bounded local
+operations; other clients must use that owner and must not fall back to direct
+access when its IPC fails. App-absent operations release custody at completion.
+iOS app and extension operations use the same Swift owner for a bounded
+operation and close before suspension. No owner selects an identity or token
+by comparing timestamps with another store. Maintenance must drain and close
+an active native owner before capturing or restoring the file.
+The TypeScript adapter refuses existing macOS ACL entries instead of removing
+them. A directory with custom deny or mixed ACLs requires explicit permission
+repair before that adapter can use it.
+
+Update and Doctor recovery capture the local file exactly, including its
+absence, alongside the shared database. Ordinary backup archives preserve
+client identity and cached-token records, but remove the local socket token,
+matching shared approval backup sanitization. Restoring an ordinary archive
+therefore requires local socket credentials to be initialized again.
+
+This preparation creates no credential store in production. A published SQLite
+updater therefore captures the shared database while it still contains the
+credential tables. If a later cutover candidate fails, rollback restores those
+tables and the old version ignores the orphaned local credential store. Credentials
+issued between upgrade and rollback are lost; affected clients must pair again.
+The next cutover must rebuild an orphan from authoritative shared records unless
+its completed receipt matches the shared database identity, generation, and source
+hash. It must never merge stale local credentials into the restored shared state.
+Shared records remain authoritative until the verified receipt completes and
+their retirement finishes under the same maintenance custody.
+
+Releases predating this local format do not support PostgreSQL shared state.
+PostgreSQL installations start with an engine-aware updater that includes this local family's capture and
+restore support. Their failed-candidate recovery restores the captured shared and
+local stores together. The later cutover must prove both update paths before use.
+
 When Gateway startup encounters a newer database schema, it exits with status 78 so the generated systemd service does not restart it repeatedly. On macOS, it also parks its managed LaunchAgent to stop `KeepAlive` retries. This applies to failures during CLI bootstrap as well as server startup and does not depend on the database-backed crash counter. Start the Gateway with a build that supports the existing schemas. The older install cannot repair them with `openclaw doctor --fix`; run `openclaw doctor --fix` from the compatible install if further migration is required, then restart through the service or deployment owner.
 
 Read admission reports the newer published schema version even when this build
@@ -48,10 +92,27 @@ cannot parse its catalog. A known legacy index defect must not replace that
 refusal with advice to repair the database using the older build. Doctor checks
 compatibility before stopping the Gateway service.
 
-Shared-state [schema 22](/reference/database-schemas/state-schema-history#state-schema-22)
-adds portable ACP resume columns and explicit cursor identities. Builds supporting
-only schema 21 or earlier refuse it. Existing cursor values are preserved; binary
-rollback requires the verified pre-upgrade backup and its matching build.
+Shared-state [schema 24](/reference/database-schemas/state-schema-history#state-schema-24)
+replaces eleven retained task indexes with a runtime/run lookup and two ordered
+Cron history indexes. Rows and history ordering are unchanged. Builds supporting
+only schema 23 or earlier refuse it; binary rollback requires the verified
+pre-upgrade backup and its matching build.
+
+Shared-state [schema 25](/reference/database-schemas/state-schema-history#state-schema-25)
+requires recovered subagent completions to retain their original operator
+restriction. Older readers ignore the optional recovery source and can dispatch
+a cold-restored requester continuation as System, so a version fence is required
+even though tables and indexes are unchanged. The migration publishes metadata
+only; retained subagent payloads are not rewritten or backfilled. Older builds
+refuse schema 25. Restore the verified pre-upgrade backup with its matching build
+for rollback; never lower schema markers.
+
+Agent [schema 28](/reference/database-schemas/agent-schema-history#agent-schema-28)
+and shared-state [schema 26](/reference/database-schemas/state-schema-history#state-schema-26)
+reduce index and table write amplification without changing logical rows or
+keys. Their SQLite rebuilds and PostgreSQL forward steps advance schema metadata
+atomically. These versions are bundled for one upgrade; older binaries require
+the verified pre-upgrade backup for rollback.
 
 Target-release checks distinguish the target's schema support from the running
 inspector's capabilities. When shared state is too new for the target but still
@@ -660,11 +721,11 @@ Older same-schema readers ignore the new tables but cannot provide managed-libra
 Recent version migrations are separate from same-version repair. Agent schema
 25 and later advances leave unrelated additive indexes to the writable repair
 owner. Missing startup columns required by current session readers are still
-installed before an upgraded store is exposed; their tables belong in the
-complete migration scope. Shared-state schema 20 and 21 advances run only their pending version
-steps and install indexes for those tables when the source needs no unrelated
-schema repair. Older sources and sources requiring repair retain the historical
-runner and full backup.
+installed by subsequent admission before an upgraded store is exposed. Declared
+version phases leave those additive repairs outside their checkpoint. Declared
+shared-state advances likewise run only their pending version steps and install
+indexes for those tables. Unrelated same-version repairs run afterward. Older
+sources without a complete declaration retain the historical runner and full backup.
 
 An agent version advance from the canonical media schema does not repeat media
 row or archive repair. The Doctor migration prelude also defers session-entry
@@ -680,7 +741,7 @@ Startup migrations default to a verified full-file backup. A migration owner may
 register the tables it rewrites in `src/state/schema-migration-backup-tables.ts`,
 keyed by database kind and destination schema version. Every pending version must
 have a declaration; one missing declaration keeps the whole pending set on full
-backups. Same-version repairs and plugin Doctor repairs also keep full backups.
+backups. General Doctor and updater rollback still use full backups.
 The backup owner adds `schema_meta`, the SQLite user version, and, for shared
 state, `config_machine_state` for deferred schema publication.
 
@@ -695,10 +756,32 @@ a helper-only test does not prove the owning migration's scope. Declare
 `sqlite_stat1` and `sqlite_stat4` together when rebuilding analyzed tables or
 indexes. No existing migration is implicitly declared by its read set.
 
+Agent schema 27 declares `context_engine_turn_outbox` and both planner-statistics
+tables. Doctor verifies source integrity before taking this checkpoint. If orphan
+history blocks admission, its recovery owner preserves the original before repair
+and checkpoint capture. Doctor then commits and validates the version phase before
+entering general maintenance; its recovery inventory is completed at that boundary.
+Startup columns, same-version index and memory repair, session normalization,
+transcript repairs, deletion recovery, and plugin hooks run afterward under their
+existing owners. Destructive recovery and retained-content rewrites preserve full
+originals only when actual repair work exists. Ordinary metadata repairs remain
+transactional. An eligible clean version bump therefore needs no full agent image.
+The version-phase fixture verifies that every undeclared table's schema and
+typed contents remain unchanged, including populated retained history.
+
+Shared-state schema 23 declares only `meeting_transcript_sessions`. Its version
+phase runs before agent maintenance leases can open or modify shared state. The
+scoped backup includes the two publication metadata tables, while unrelated
+repairs and planner statistics remain untouched. Restoration preserves live
+undeclared planner statistics with the archive’s byte-preserving row codec across
+its table rebuilds; explicitly declared
+statistics, such as agent schema 27's, are restored from the archive instead.
+
 For a fully declared migration, Doctor can write a sibling
 `<database>.pre-startup-migration-<id>.scoped.bak` containing the selected schema
 SQL, rows, and version metadata. Only this smaller archive gets the backup
-integrity scan. AUTOINCREMENT, virtual/shadow tables, unsupported SQLite runtimes,
+integrity scan; the migration's source integrity admission still checks the full
+database once. AUTOINCREMENT, virtual/shadow tables, unsupported SQLite runtimes,
 or sources outside the active state directory fall back to full backups.
 The shared database accompanying agent
 migrations retains its full backup for registry and receipt recovery.

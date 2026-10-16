@@ -134,7 +134,7 @@ Each screenshot gets one capture attempt. A failed capture or Xcode test result 
 
 Screenshot tests disable Xcode's verbose failure diagnostics, such as sysdiagnose, while retaining command logs, screenshots, and per-attempt result bundles.
 
-CI pins SimSlim 0.10.0 for the `ios-build` iPhone test simulator and the SimSlim
+CI pins SimSlim 0.11.0 for the `ios-build` iPhone test simulator and the SimSlim
 arms of [native release qualification](#native-release-qualification) compare mode.
 It disables only search and family services, and preparation must succeed before
 tests run. Screenshot capture, Watch, and default local runs use stock simulators.
@@ -294,6 +294,11 @@ readonly encrypted signing assets, a job-owned temporary keychain, and the share
 For a failure after upload, use [staging recovery](../VERSIONING.md#staging-recovery)
 with the saved destination; do not repeat the upload.
 
+The `release` path also runs every Monday at 11:00 AM Pacific, with native
+qualification and the same store environment. Weekly runs send Discord results;
+manual operations do not. See [weekly mobile releases](https://docs.openclaw.ai/ci/scheduled-workflows#weekly-mobile-store-releases)
+for webhook setup and scheduling behavior.
+
 Create `ios-testflight` as a GitHub environment restricted to `main` with no
 required reviewers, and make the secrets below available to it. Keep the
 `ios-store-release` environment's existing approval policy.
@@ -315,9 +320,9 @@ gh workflow run ios-store-release.yml --ref main -f operation=testflight
 
 Inspect `testflight-result.json` in the recovery artifact and the matching build
 and group in App Store Connect. Once the manual flow is verified, set repository
-variable `IOS_TESTFLIGHT_ENABLED` to `true` to enable scheduled runs. Manual
+variable `IOS_TESTFLIGHT_ENABLED` to `true` to enable daily TestFlight runs. Manual
 TestFlight dispatch is available regardless of that activation variable. Set it
-back to `false` to stop future scheduled jobs without disabling manual releases.
+back to `false` to stop daily TestFlight jobs without disabling weekly or manual releases.
 
 Repository/environment secrets required by name:
 

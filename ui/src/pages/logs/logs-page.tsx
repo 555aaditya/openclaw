@@ -44,7 +44,6 @@ type LogsPayload = {
 };
 
 export function LogsPage() {
-  let host!: HTMLElement;
   const context = useApplication();
   const [status, setStatus] = createSignal(createPanelRefreshStatus(), { ownedWrite: true });
   const [file, setFile] = createSignal<string | null>(null, { ownedWrite: true });
@@ -60,9 +59,9 @@ export function LogsPage() {
   });
   const [forceFollow, setForceFollow] = createSignal(0);
   let cursor: number | null = null;
+  let cursorBootId: string | undefined;
   let request: AbortController | null = null;
   let pollTimer: ReturnType<typeof setInterval> | undefined;
-  let connected = false;
   let disposed = false;
   let atBottom = true;
   let stream: HTMLElement | undefined;
@@ -74,7 +73,8 @@ export function LogsPage() {
     setRequestState("idle");
   };
   const updatePolling = () => {
-    const shouldPoll = connected && document.visibilityState !== "hidden";
+    const shouldPoll =
+      gateway.connected && gateway.client !== null && document.visibilityState !== "hidden";
     if (!shouldPoll && pollTimer !== undefined) {
       clearInterval(pollTimer);
       pollTimer = undefined;
@@ -88,6 +88,7 @@ export function LogsPage() {
     getGateway: () => context.gateway,
     onIdentityChange: () => {
       cursor = null;
+      cursorBootId = undefined;
       setStatus(createPanelRefreshStatus());
       setFile(null);
       setEntries([]);
@@ -95,13 +96,12 @@ export function LogsPage() {
       atBottom = true;
     },
     invalidateRequests: cancelRequest,
-    onSnapshot: (change) => {
-      connected = change.snapshot.phase === "connected" && change.snapshot.client !== null;
-      updatePolling();
-    },
+    onSnapshot: updatePolling,
     ensureInitialData: (change) => {
       const quiet = !change.identityChanged && untrack(status).hasLoaded;
-      void loadLogs({ reset: true, quiet }).then((current) => {
+      // A same-Gateway reconnect resumes the cursor; a full window costs a busy Gateway one
+      // file read and redaction pass per reconnect.
+      void loadLogs({ reset: !quiet || cursor === null, quiet }).then((current) => {
         if (current && !quiet) {
           setForceFollow((revision) => revision + 1);
         }
@@ -120,7 +120,9 @@ export function LogsPage() {
     request = current;
     setRequestState(options.quiet ? "quiet" : "visible");
     setStatus((previous) => beginPanelRefresh(previous, { clearError: !options.quiet }));
-    const previousCursor = options.reset ? null : cursor;
+    const bootId = gateway.snapshot?.hello?.server?.bootId;
+    const resetCursor = options.reset || bootId !== cursorBootId;
+    const previousCursor = resetCursor ? null : cursor;
     const previousFile = untrack(file);
     const isCurrent = () =>
       !disposed && request === current && context.gateway === source && gateway.isCurrent(scope);
@@ -135,9 +137,9 @@ export function LogsPage() {
       if (!isCurrent()) {
         return false;
       }
-      // Cursors belong to one file. Finish the reset before publishing a new source.
+      // Cursors belong to one server boot and file. Finish the reset before publishing a new source.
       const sourceChanged =
-        !options.reset &&
+        !resetCursor &&
         previousFile !== null &&
         payload.file !== undefined &&
         payload.file !== previousFile;
@@ -150,12 +152,13 @@ export function LogsPage() {
       const nextEntries = Array.isArray(payload.lines)
         ? payload.lines.filter((line): line is string => typeof line === "string").map(parseLogLine)
         : [];
-      const reset = options.reset || sourceChanged || payload.reset || previousCursor === null;
+      const reset = resetCursor || sourceChanged || payload.reset || previousCursor === null;
       setEntries((previous) =>
         reset ? nextEntries : [...previous, ...nextEntries].slice(-LOG_BUFFER_LIMIT),
       );
       if (typeof payload.cursor === "number") {
         cursor = payload.cursor;
+        cursorBootId = bootId;
       }
       if (typeof payload.file === "string") {
         setFile(payload.file);
@@ -242,9 +245,8 @@ export function LogsPage() {
     document.removeEventListener("visibilitychange", visibilityChanged);
   });
   onSettled(() => {
-    stream = host.querySelector<HTMLElement>(".log-stream") ?? undefined;
     const resetContentScroll = () => {
-      const content = host.closest<HTMLElement>(".content");
+      const content = stream?.closest<HTMLElement>(".content");
       if (content) {
         content.scrollTop = 0;
         content.scrollLeft = 0;
@@ -256,7 +258,7 @@ export function LogsPage() {
   });
 
   return (
-    <openclaw-logs-page ref={(element) => (host = element)}>
+    <openclaw-logs-page>
       <ShellLayoutBoundary traits={{ logsPage: true, toolbarHeader: true }}>
         <section class="content-header">
           <div>
@@ -274,6 +276,7 @@ export function LogsPage() {
             levelFilters={levelFilters()}
             autoFollow={autoFollow()}
             truncated={truncated()}
+            onStreamRef={(element) => (stream = element)}
             onFilterTextChange={setFilterText}
             onLevelToggle={(level, enabled) =>
               setLevelFilters((previous) => ({ ...previous, [level]: enabled }))

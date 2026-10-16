@@ -7,8 +7,6 @@ let collectedMemory = { heapUsed: 0, external: 0 };
 let session: Session | null | undefined;
 let pending: NodeJS.Timeout | undefined;
 let collecting = false;
-let idle = false;
-let generation = 0;
 
 function hasIdleGarbageGrowth(): boolean {
   // These isolate-local counters avoid heap walks; external already includes ArrayBuffers.
@@ -24,7 +22,6 @@ async function collectWorkerIdleGarbage(): Promise<void> {
   if (!hasIdleGarbageGrowth()) {
     return;
   }
-  const collectingGeneration = generation;
   collecting = true;
   try {
     if (!session) {
@@ -35,20 +32,16 @@ async function collectWorkerIdleGarbage(): Promise<void> {
       session = connection;
     }
     await session.post("HeapProfiler.collectGarbage");
-    collecting = false;
-    if (collectingGeneration === generation) {
-      collectedMemory = process.memoryUsage();
-    } else if (idle) {
-      // A successor finished while GC was pending; its released heap needs a new sample.
-      scheduleWorkerIdleGc();
-    }
+    // A task overlapping collection can leave garbage until the next idle growth sample.
+    collectedMemory = process.memoryUsage();
   } catch (error) {
-    collecting = false;
     if (error instanceof Error && error.message.startsWith("Inspector error -32601:")) {
       session = null;
     } else {
       process.emitWarning(error instanceof Error ? error : String(error));
     }
+  } finally {
+    collecting = false;
   }
 }
 
@@ -57,7 +50,6 @@ export function scheduleWorkerIdleGc(): void {
   if (isMainThread || session === null) {
     return;
   }
-  idle = true;
   if (pending || collecting) {
     return;
   }
@@ -72,8 +64,6 @@ export function scheduleWorkerIdleGc(): void {
 
 /** A new operation takes precedence over collection of the preceding idle heap. */
 export function cancelWorkerIdleGc(): void {
-  generation++;
-  idle = false;
   clearTimeout(pending);
   pending = undefined;
 }

@@ -44,10 +44,88 @@ Doctor completes recognized schema-1 databases that predate the audit ledger bef
 | 20      | Cron receipt delivery-attempt fence prevents replay of ambiguous one-shot completions                                                                                                                                                                                                                                                          | `v2026.10.1-beta.1` |
 | 21      | Derived meeting-transcript selectors, summary overview, and bounded delivery-retention columns                                                                                                                                                                                                                                                 | Unreleased          |
 | 22      | Portable ACP resume columns and explicit approval, cron, execution-decision, and Skill Workshop cursor identities                                                                                                                                                                                                                              | Unreleased          |
+| 23      | Persisted normalized meeting-transcript start timestamps and chronological index                                                                                                                                                                                                                                                               | Unreleased          |
+| 24      | Retained task indexes replaced with runtime/run lookup and ordered Cron history indexes                                                                                                                                                                                                                                                        | Unreleased          |
+| 25      | Original operator restriction retained for recovered subagent completions; metadata-only downgrade fence                                                                                                                                                                                                                                       | Unreleased          |
+| 26      | Session state heads stored directly by their composite primary key                                                                                                                                                                                                                                                                             | Unreleased          |
 
 Earlier beta releases first included schema 1 in `v2026.5.30-beta.1`, schema 2
 in `v2026.7.2-beta.1`, schema 3 in `v2026.7.2-beta.2`, schema 5 in
 `v2026.7.2-beta.4`, and schema 6 in `v2026.7.2-beta.5`.
+
+### State schema 26
+
+Schema 26 stores SQLite `session_state_heads` as `STRICT, WITHOUT ROWID`, using
+the existing `(session_key, agent_id)` primary key directly. Sequence values,
+pruned-history watermarks, cross-agent isolation, and event write semantics are
+unchanged. The migration preserves compatible local columns, indexes, and
+triggers and publishes its version in the same transaction as the rebuild.
+
+The declared backup scope is `session_state_heads`, `sqlite_stat1`, and
+`sqlite_stat4`, plus schema and content-version metadata included by the backup
+owner. Other pending migration or repair work can require a full backup. Source
+integrity admission still examines the complete database. Reclaimed pages remain
+available for reuse without vacuuming or shrinking the file.
+
+PostgreSQL keeps its existing table layout and advances schema metadata through
+the forward-migration runner, which verifies and records the destination catalog
+fingerprint. Older builds refuse schema 26; rollback requires the verified
+pre-upgrade backup and its matching build.
+
+### State schema 25
+
+Schema 25 fences the optional `operatorRecoverySource` in retained subagent JSON.
+Recovery re-admits the original parent/operator source under current policy and
+requester ownership. A missing or refused source stays restricted. Older readers
+ignore that source and can dispatch a cold-restored requester continuation as
+System, which makes binary-only downgrade unsafe.
+
+The migration updates only version metadata. It creates no table or index,
+scans no subagent payloads, and performs no backfill or row rewrite. Existing
+backup and integrity admission still apply. PostgreSQL uses the same version
+and unchanged catalog, with a metadata-only forward artifact. Restore the verified
+pre-upgrade backup and its matching build for rollback; do not lower schema markers.
+
+### State schema 24
+
+Schema 24 replaces eleven nonunique `task_runs` indexes with one runtime/run
+lookup and two partial Cron indexes ordered by creation time and task ID, with
+and without a job ID. Cron history avoids a temporary sort; retained non-Cron
+rows no longer occupy the Cron ordering indexes. Doctor retains its indexed
+runtime/run lookup. The task table, rowids, payloads, history ordering, retention,
+and durability are unchanged.
+
+Startup and Doctor retire only the superseded canonical index names and install
+the replacements in the existing schema transaction. Unrelated local indexes
+and triggers remain intact. A failed migration rolls back index changes with
+schema publication. Reclaimed index pages become reusable free space; migration
+does not shrink or vacuum the database file.
+
+Index creation reads retained task rows once per replacement index. The existing
+pre-upgrade backup and integrity work still apply, so allow space for full
+backups even when the replacement indexes are smaller. Older builds refuse
+schema 24; rollback requires restoring the verified pre-upgrade backup with its
+matching build. Never lower schema markers to bypass admission.
+
+### State schema 23
+
+Schema 23 adds nullable `started_at_ms` to `meeting_transcript_sessions` and
+indexes it with the existing session ID and original start-string tiebreakers.
+Meeting listings, date filters, and cursor pages use the persisted instant on
+SQLite and PostgreSQL. Unparsable dates remain last and do not match date filters.
+Original `started_at` strings and transcript identities are unchanged.
+
+The `meeting-transcript-start-time` migration parses existing dates once inside
+the state migration transaction using `parseDateStringTimestampMs`. Timezone-free
+strings use the migrating process's timezone, freezing their interpretation at
+migration time. New sessions normalize their start date when written; later
+metadata updates preserve that instant. Reads in a different timezone do not
+reinterpret stored dates. Date-filter inputs still use the requesting process's
+timezone.
+
+Only `meeting_transcript_sessions` changes. A failed migration rolls back with
+the state transaction. Older builds refuse the new schema; restore the verified
+pre-upgrade backup and matching build to roll back instead of lowering markers.
 
 ### State schema 22
 

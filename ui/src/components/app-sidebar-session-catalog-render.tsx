@@ -16,6 +16,8 @@ import { renderHoverMarquee } from "../lib/solid/hover-marquee.tsx";
 import { renderCatalogSessionRow } from "./app-sidebar-session-catalog-row.tsx";
 import {
   catalogErrorMessages,
+  catalogSessionActivity,
+  catalogSessionRowsByKey,
   type SidebarSessionCatalog,
 } from "./app-sidebar-session-catalogs.ts";
 import type { SessionCatalogGroupsParams } from "./app-sidebar-session-render-types.ts";
@@ -28,15 +30,7 @@ const CATALOG_SESSION_GROUP_LIMIT = 5;
 export function renderSessionCatalogGroups(params: SessionCatalogGroupsParams) {
   // Adopted rows use canonical local labels and title snapshots; native catalog
   // refreshes must not rename them or replace the regular session presentation.
-  const liveRowsByKey = createMemo(() => {
-    const rows = new Map<string, GatewaySessionRow>();
-    for (const row of params.liveRows) {
-      if (!rows.has(row.key)) {
-        rows.set(row.key, row);
-      }
-    }
-    return rows;
-  });
+  const liveRowsByKey = createMemo(() => catalogSessionRowsByKey(params.liveRows));
   return (
     <For each={params.catalogs} keyed={(catalog) => catalog.id}>
       {(catalog) => renderCatalogGroup(catalog, liveRowsByKey, params)}
@@ -155,7 +149,10 @@ function renderCatalogHostGroup(
           </span>
           <span class="sidebar-session-catalog-host__label">{readHost().label}</span>
           <span
-            class={`sidebar-session-catalog-host__count ${readHost().error ? "sidebar-session-catalog-host__count--error" : ""}`}
+            class={[
+              "sidebar-session-catalog-host__count",
+              { "sidebar-session-catalog-host__count--error": Boolean(readHost().error) },
+            ]}
             aria-hidden="true"
           >
             {readHost().error ? <Icon name="alertTriangle" /> : readHost().sessions.length}
@@ -237,16 +234,11 @@ function renderCatalogGroup(
   const sectionId = untrack(() => `catalog:${readCatalog().id}`);
   const collapsed = createMemo(() => params.collapsedSections.has(sectionId));
   const rows = createMemo(() => readCatalog().visibleHosts.flatMap((host) => host.sessions));
-  const liveRows = createMemo(() => {
-    const rowsValue = rows();
-    const readLiveRowsByKeyValue = readLiveRowsByKey();
-    return rowsValue.flatMap((session) => {
-      const row = session.sessionKey ? readLiveRowsByKeyValue.get(session.sessionKey) : undefined;
-      return row ? [row] : [];
-    });
-  });
-  const hasActiveRun = createMemo(() => liveRows().some(params.isRunVisuallyActive));
-  const hasUnread = createMemo(() => liveRows().some((row) => row.unread === true));
+  const activity = createMemo(() =>
+    catalogSessionActivity(rows(), readLiveRowsByKey(), params.isRunVisuallyActive),
+  );
+  const hasActiveRun = createMemo(() => activity().running);
+  const hasUnread = createMemo(() => activity().unread);
   const hasBrandIcon = createMemo(() => hasProviderBrandIcon(readCatalog().id));
   const loadingMore = createMemo(() => params.loadingMoreCatalogIds.has(readCatalog().id));
   const hasMore = createMemo(() => readCatalog().hosts.some((host) => Boolean(host.nextCursor)));
@@ -259,23 +251,17 @@ function renderCatalogGroup(
       error: errorMessage(),
     }),
   );
-  const sectionClass = createMemo(() => {
-    const collapsedValue = collapsed();
-    return [
-      "sidebar-recent-sessions__group",
-      "sidebar-recent-sessions__group--zone-coding",
-      collapsedValue ? "sidebar-recent-sessions__group--collapsed" : "",
-      params.draggingSectionId === sectionId ? "sidebar-recent-sessions__group--dragging" : "",
-      params.sectionDropTarget?.sectionId === sectionId
-        ? `sidebar-recent-sessions__group--section-drop-${params.sectionDropTarget.position}`
-        : "",
-    ]
-      .filter(Boolean)
-      .join(" ");
-  });
   return (
     <div
-      class={sectionClass()}
+      class={[
+        "sidebar-recent-sessions__group sidebar-recent-sessions__group--zone-coding",
+        params.sectionDropTarget?.sectionId === sectionId &&
+          `sidebar-recent-sessions__group--section-drop-${params.sectionDropTarget.position}`,
+        {
+          "sidebar-recent-sessions__group--collapsed": collapsed(),
+          "sidebar-recent-sessions__group--dragging": params.draggingSectionId === sectionId,
+        },
+      ]}
       data-session-section={sectionId}
       onDragOver={(event: DragEvent) => {
         if (!params.sectionDragDisabledReason) {
@@ -304,7 +290,10 @@ function renderCatalogGroup(
                 onToggle: () => params.onToggleSection(sectionId),
                 content: (
                   <span
-                    class={`sidebar-session-group-count ${hasError() ? "sidebar-session-group-count--error" : ""}`}
+                    class={[
+                      "sidebar-session-group-count",
+                      { "sidebar-session-group-count--error": hasError() },
+                    ]}
                     data-session-catalog-error={hasError() ? readCatalog().id : undefined}
                     aria-hidden="true"
                   >
@@ -345,7 +334,10 @@ function renderCatalogGroup(
               onClick={() => params.onToggleSection(sectionId)}
             >
               <span
-                class={`sidebar-session-group-toggle__lead ${hasBrandIcon() ? "sidebar-session-group-toggle__lead--branded" : ""}`}
+                class={[
+                  "sidebar-session-group-toggle__lead",
+                  { "sidebar-session-group-toggle__lead--branded": hasBrandIcon() },
+                ]}
                 aria-hidden="true"
               >
                 {hasBrandIcon() ? (
@@ -372,7 +364,10 @@ function renderCatalogGroup(
             </button>
             <button
               type="button"
-              class={`sidebar-session-group-actions sidebar-session-sort sidebar-session-catalog-grouping ${params.ownerFilterActive ? "sidebar-session-sort--filtered" : ""}`}
+              class={[
+                "sidebar-session-group-actions sidebar-session-sort sidebar-session-catalog-grouping",
+                { "sidebar-session-sort--filtered": params.ownerFilterActive },
+              ]}
               data-session-catalog-view-menu={readCatalog().id}
               title={t("chat.sidebar.catalogViewOptions")}
               aria-label={t("chat.sidebar.catalogViewOptions")}
@@ -398,7 +393,7 @@ function renderCatalogGroup(
                       catalogId: readCatalog().id,
                     };
                   },
-                  get className() {
+                  get class() {
                     return "sidebar-session-group-actions sidebar-session-new sidebar-session-catalog-new";
                   },
                   get label() {

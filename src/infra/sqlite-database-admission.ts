@@ -3,7 +3,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import { threadId } from "node:worker_threads";
 import { resolveGlobalSingleton } from "../shared/global-singleton.js";
-import { notifyListeners, registerListener } from "../shared/listeners.js";
+import { notifyListeners } from "../shared/listeners.js";
 import { hasErrnoCode } from "./errno.js";
 import {
   isPostgresSqlConnection,
@@ -12,7 +12,6 @@ import {
   type EngineConnection,
 } from "./sql-connection.js";
 import {
-  captureSqliteDatabaseAdmissions,
   installSqliteDatabaseAdmissions,
   sqliteDatabaseAdmissionState as state,
 } from "./sqlite-database-admission-context.js";
@@ -49,6 +48,7 @@ export type {
   SqliteDatabaseAdmissionKey,
 } from "./sqlite-database-admission-record.js";
 export { beginSqliteDatabaseAdmissionOperation } from "./sqlite-native-admission.js";
+
 export {
   captureSqliteDatabaseAdmissions,
   installSqliteDatabaseAdmissions,
@@ -107,15 +107,17 @@ export function prepareSqliteDatabaseCleanClose(database: DatabaseSync) {
 const scopedWrites = createSqliteDatabaseWriteReceipts({
   admission,
   pathAdmission,
+  writeListeners: state.writeListeners,
   readRevision: readSqliteDatabaseWriteRevision,
   writer: (database) => state.dataWriters.get(database),
   suspended: (database) => state.suspended.has(database),
-  publish(record) {
-    state.registry.publish(record);
+  publish(record, keys) {
+    state.registry.publish(record, keys);
     exchange(record);
   },
 });
 export const {
+  onSqliteDatabaseWriteSettled,
   retireSqliteDatabaseWriteScopes,
   withSqliteDatabaseWriteScope,
   withoutSqliteDatabaseWriteScope,
@@ -137,13 +139,17 @@ function exchange(target: string | Admission, create?: boolean): void {
   try {
     const scope = typeof target === "string" ? { location: target } : { admissions: [target] };
     const retired = typeof target !== "string" && isRetired(target);
+    const admissions = state.registry.captureExchange(scope, target);
     installSqliteDatabaseAdmissions(
       current(
-        retired ? [target] : captureSqliteDatabaseAdmissions(undefined, scope),
+        admissions,
         retired ? undefined : typeof target === "string" ? target : target.location,
         create,
       ),
     );
+  } catch (error) {
+    state.registry.resetExchangeCursor();
+    throw error;
   } finally {
     state.exchanging = false;
   }
@@ -433,24 +439,10 @@ export function beginSqliteDatabaseWrite(database: DatabaseSync, unscoped = fals
   if (state.dataWriters.has(database)) {
     return;
   }
-  state.dataWriters.set(database, admission(database));
-}
-
-/** Local sibling writers notify maintenance after publishing their shared write revision. */
-export function onSqliteDatabaseWriteSettled(
-  database: DatabaseSync,
-  listener: () => void,
-): (() => void) | undefined {
-  const record = admission(database);
-  if (!record) {
-    return undefined;
+  state.dataWriters.set(database, record);
+  if (record) {
+    Atomics.add(new Int32Array(record.references.get(threadId)!), 1, 1);
   }
-  let listeners = state.writeListeners.get(record);
-  if (!listeners) {
-    listeners = new Set();
-    state.writeListeners.set(record, listeners);
-  }
-  return registerListener(listeners, listener);
 }
 
 /** Native settlement invalidates row caches, including failed or rolled-back writes. */
@@ -464,6 +456,8 @@ export function finishSqliteDatabaseWrite(database: DatabaseSync): void {
   scopedWrites.finish(database, record);
   if (record) {
     advanceSqliteDatabaseGeneration(record, "writeRevision");
+    // Clear only after publishing both receipts; a native COMMIT can outlive its worker.
+    Atomics.sub(new Int32Array(record.references.get(threadId)!), 1, 1);
     const listeners = state.writeListeners.get(record);
     if (listeners) {
       notifyListeners(listeners, undefined);
@@ -498,13 +492,18 @@ export function readSqliteDatabaseSiblingWriteRevision(
     : (revision - (state.localWriteRevisions.get(database) ?? 0)) | 0;
 }
 
-/** A stopped worker may have committed before delivering its row-cache receipt. */
+/** Settle interrupted native writes before releasing the departed worker's handles. */
 export function trackSqliteDatabaseAdmissionWorker(worker: {
   readonly threadId: number;
   once(event: "exit", listener: (code: number | undefined) => void): unknown;
 }): void {
   const owner = worker.threadId;
-  worker.once("exit", () => state.registry.releaseWorker(owner));
+  worker.once("exit", () => {
+    for (const record of state.registry.records.values()) {
+      scopedWrites.settleWorker(record, owner);
+    }
+    state.registry.releaseWorker(owner);
+  });
 }
 
 export function hasPendingSqliteDatabaseSchemaMutation(
