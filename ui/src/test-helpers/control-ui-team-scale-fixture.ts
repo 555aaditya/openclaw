@@ -53,6 +53,7 @@ type FixtureOptions = {
   liveRun?: boolean;
   sidebarListChurn?: boolean;
   sidebarLiveChurn?: boolean;
+  sidebarSessionEvents?: boolean;
   duplicateBootReads?: boolean;
 };
 
@@ -155,7 +156,7 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
       lastMessagePreview: `Synthetic project ${index + 1}: reviewed the implementation and recorded the next concrete step.`,
     };
   });
-  if (options.sidebarListChurn || options.sidebarLiveChurn) {
+  if (options.sidebarListChurn || options.sidebarLiveChurn || options.sidebarSessionEvents) {
     for (const [index, row] of sessions.entries()) {
       const owner = people[index % counts.owners]!;
       row.owner = {
@@ -172,6 +173,37 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
           ...row.participants!,
           { identity: { type: "profile", id: people[0]!.id }, label: people[0]!.name },
         ];
+      }
+    }
+  }
+  if (options.sidebarSessionEvents) {
+    for (const [index, row] of sessions.entries()) {
+      row.createdVia = index < 24 ? "spawn" : "operator";
+      row.lifecycleRevision = `fixture-generation-${index}`;
+      row.activeRunIds = index < 24 ? [`fixture-active-run-${index}`] : [];
+      row.lastActivityAt = row.updatedAt;
+      row.lastReadAt = now - 60_000;
+      row.archived = false;
+      row.permissionMode = "workspace";
+      row.worktree = {
+        id: `fixture-worktree-${index}`,
+        branch: `fixture/task-${index}`,
+        repoRoot: "/workspace/synthetic-project",
+      };
+      row.activitySummary = {
+        state: "current",
+        text: `Synthetic task ${index + 1}: checking the implementation and recording the next action.`,
+        updatedAt: now,
+      };
+      if (index < 24) {
+        const parent = sessions[120 + Math.floor(index / 4)]!;
+        row.spawnedBy = parent.key;
+        row.parentSessionKey = parent.key;
+        row.parentSessionId = parent.sessionId;
+        row.childOwnerSessionKeys = [parent.key];
+        row.spawnDepth = 1;
+        row.subagentRole = "leaf";
+        parent.childSessions = [...(parent.childSessions ?? []), row.key];
       }
     }
   }
@@ -627,6 +659,45 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
   if (options.sidebarListChurn) {
     prepareTeamScaleSidebarListChurn({ sessions, people, liveEvents, selectedSessionKey, now });
   }
+  if (options.sidebarSessionEvents) {
+    liveEvents.splice(0);
+    // Full rows repeat envelope facts, as Gateway publication does. Keep real
+    // lineage and receipts instead of inflating payloads with unused padding.
+    for (let index = 0; index < 240; index++) {
+      const atMs = (index + 1) * 125;
+      const ts = now + atMs;
+      const source = sessions[index % 24]!;
+      const row: TeamScaleSession = {
+        ...source,
+        snapshotAt: ts,
+        updatedAt: ts,
+        lastActivityAt: ts,
+        totalTokens: source.totalTokens! + index * 17,
+        lastMessagePreview: `Synthetic checkpoint ${index + 1}: validated task ${(index % 24) + 1}.`,
+        activitySummary: {
+          ...source.activitySummary!,
+          updatedAt: ts,
+          text: `Synthetic task ${(index % 24) + 1}: checkpoint ${index + 1} completed; checking the next change.`,
+        },
+      };
+      const parent = sessions[120 + Math.floor((index % 24) / 4)]!;
+      const ancestor = { ...parent, snapshotAt: ts };
+      liveEvents.push({
+        atMs,
+        kind: "sessions.changed.active-child",
+        event: "sessions.changed",
+        payload: {
+          ...row,
+          sessionKey: row.key,
+          reason: index % 2 ? "agent.run.updated" : "patch",
+          ts,
+          session: row,
+          ancestorSessions: [ancestor],
+        },
+        sessionMutation: { upsert: [row, ancestor] },
+      });
+    }
+  }
   if (options.sidebarLiveChurn) {
     // Changes stop at 14 seconds; allow a second to settle before the quiet window.
     liveEvents.splice(0);
@@ -687,15 +758,16 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
     sidebarLiveChurn: options.sidebarLiveChurn
       ? { equivalentAfterMs: 14_000, quietAfterMs: 15_000, durationMs: 20_000 }
       : undefined,
-    sidebarListChurn: options.sidebarListChurn
-      ? {
-          rows: sessions,
-          viewerProfileId: people[0]!.id,
-          now,
-          defaults: list([]).defaults,
-          owners: list([]).owners,
-        }
-      : undefined,
+    sidebarListChurn:
+      options.sidebarListChurn || options.sidebarSessionEvents
+        ? {
+            rows: sessions,
+            viewerProfileId: people[0]!.id,
+            now,
+            defaults: list([]).defaults,
+            owners: list([]).owners,
+          }
+        : undefined,
     liveHistory: options.liveRun
       ? {
           sessionId: pinnedRows[0]!.sessionId,

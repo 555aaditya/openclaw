@@ -209,6 +209,7 @@ const { values } = parseArgs({
     "init-script": { type: "string", multiple: true, default: [] },
     "sidebar-list-churn": { type: "boolean", default: false },
     "sidebar-live-churn": { type: "boolean", default: false },
+    "sidebar-session-events": { type: "boolean", default: false },
     "duplicate-boot-reads": { type: "boolean", default: false },
     "capture-ms": { type: "string", default: "0" },
     "sidebar-row-transfer": { type: "string", default: "full" },
@@ -234,6 +235,12 @@ if (values["sidebar-list-churn"] && values.untraced) {
 }
 if (values["sidebar-live-churn"] && (!values["live-events"] || values["sidebar-list-churn"])) {
   throw new Error("sidebar-live-churn requires live-events and excludes sidebar-list-churn");
+}
+if (
+  values["sidebar-session-events"] &&
+  (!values["live-events"] || values["sidebar-list-churn"] || values["sidebar-live-churn"])
+) {
+  throw new Error("sidebar-session-events requires live-events and excludes other sidebar streams");
 }
 const sidebarRowTransfer = values["sidebar-row-transfer"];
 if (!["full", "delta", "interleaved"].includes(sidebarRowTransfer)) {
@@ -292,6 +299,7 @@ const fixture = createControlUiTeamScaleFixture({
   liveRun: values["live-events"] || values["streaming-reply"],
   sidebarListChurn: values["sidebar-list-churn"],
   sidebarLiveChurn: values["sidebar-live-churn"],
+  sidebarSessionEvents: values["sidebar-session-events"],
   duplicateBootReads: values["duplicate-boot-reads"],
 });
 const streamingReply = values["streaming-reply"] ? createControlUiStreamingReply() : undefined;
@@ -553,6 +561,7 @@ try {
         ? "delta"
         : "full";
     const cdp = await context.newCDPSession(page);
+    await cdp.send("Performance.enable");
     const rawTrace: unknown[] = [];
     let collectedTrace = rawTrace;
     cdp.on("Tracing.dataCollected", (data) => collectedTrace.push(...data.value));
@@ -808,11 +817,14 @@ try {
       const liveTrace: unknown[] = [];
       collectedTrace = liveTrace;
       if (!values.untraced) {
+        await cdp.send("Profiler.start");
         await cdp.send("Tracing.start", {
-          categories: "toplevel,blink.user_timing,devtools.timeline",
+          categories:
+            "toplevel,blink.user_timing,devtools.timeline,disabled-by-default-v8.cpu_profiler",
           transferMode: "ReportEvents",
         });
       }
+      const performanceBefore = await cdp.send("Performance.getMetrics");
       const listOffset = sidebarLists?.stats().length ?? 0;
       await page.evaluate((captureProbes) => {
         if (captureProbes) {
@@ -854,7 +866,17 @@ try {
         }
       }
       await page.evaluate(() => Reflect.get(window, "__coldLoad").finishLive());
+      const performanceAfter = await cdp.send("Performance.getMetrics");
+      const performanceDelta = (name: string) =>
+        ((performanceAfter.metrics.find((metric) => metric.name === name)?.value ?? 0) -
+          (performanceBefore.metrics.find((metric) => metric.name === name)?.value ?? 0)) *
+        1000;
       if (!values.untraced) {
+        const liveProfile = await cdp.send("Profiler.stop");
+        await writeFile(
+          path.join(artifactDir, `run-${run + 1}.live.cpuprofile`),
+          JSON.stringify(liveProfile.profile),
+        );
         const liveComplete = new Promise<void>((resolve) => {
           cdp.once("Tracing.tracingComplete", () => resolve());
         });
@@ -890,6 +912,13 @@ try {
       live = {
         ...liveMetrics,
         head,
+        scriptingMs: performanceDelta("ScriptDuration"),
+        mainThreadBusyMs: performanceDelta("TaskDuration"),
+        scriptingMsPerEvent: performanceDelta("ScriptDuration") / fixture.liveEvents.length,
+        mainThreadBusyMsPerEvent: performanceDelta("TaskDuration") / fixture.liveEvents.length,
+        trace: values.untraced
+          ? undefined
+          : summarizeColdLoadTrace(liveTrace.map(prepareColdLoadTraceEvent), liveMetrics.elapsedMs),
         sidebarRowTransfer: values["sidebar-list-churn"] ? runTransfer : undefined,
         sidebarLists: sidebarReads,
         sidebarWindows: sidebarReads
@@ -977,6 +1006,16 @@ try {
         streamingReply: values["streaming-reply"],
         sidebarListChurn: values["sidebar-list-churn"],
         sidebarLiveChurn: fixture.sidebarLiveChurn,
+        sidebarSessionEvents: values["sidebar-session-events"]
+          ? {
+              activeSessions: 24,
+              eventCount: fixture.liveEvents.length,
+              durationMs: fixture.liveEvents.at(-1)!.atMs,
+              eventBytes: fixture.liveEvents.map((event) =>
+                Buffer.byteLength(JSON.stringify(event.payload)),
+              ),
+            }
+          : undefined,
         duplicateBootReads: values["duplicate-boot-reads"],
         traced: !values.untraced,
         sidebarRowTransfer,
