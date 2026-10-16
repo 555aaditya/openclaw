@@ -366,7 +366,7 @@ test("refreshes cached lists after placement readiness and refuses disposed resp
   });
 });
 
-test("shares concurrent list selection across row modes and refilters only published partitions", async () => {
+test("shares concurrent list selection across row modes and refilters only published rows", async () => {
   await withStateDirEnv("openclaw-list-selection-repeat-", async () => {
     resetPluginRuntimeStateForTest();
     setActivePluginRegistry(createEmptyPluginRegistry());
@@ -426,11 +426,16 @@ test("shares concurrent list selection across row modes and refilters only publi
         const changed = await read("compact");
         expect(changed.sessions.map((row) => row.sessionId)).toEqual(["s0", "s127"]);
         expect(changed.totalCount).toBe(128);
+        expect(changed.activityExpiresAt).toBe(now + 60_001);
         expect(owner.mock.calls.length).toBeLessThan(32);
+        // Unchanged off-page owners need no new filtering work after an exact publication.
+        expect(new Set(owner.mock.calls.map(([entry]) => entry.sessionId))).toEqual(
+          new Set(["s0"]),
+        );
         const other = await read("compact", bob);
         expect(other.sessions.map((row) => row.sessionId)).toEqual(["s127", "s126"]);
         expect(other.totalCount).toBe(127);
-        // An exact publication must not hide an expired retained partition.
+        // An exact publication must not hide an expired retained selection.
         clock.mockReturnValue(now + 60_128);
         replaceSessionEntrySync(
           { agentId: "main", sessionKey: "agent:main:selection-1" },
@@ -442,6 +447,7 @@ test("shares concurrent list selection across row modes and refilters only publi
         const expired = await read("compact");
         expect(expired.sessions.map((row) => row.sessionId)).toEqual(["s1", "s0"]);
         expect(expired.totalCount).toBe(2);
+        expect(expired.activityExpiresAt).toBe(now + 60_200);
         setDisplayName(alice.authenticatedUserProfile!.profileId, "Renamed Alice");
         replaceSessionEntrySync(
           { agentId: "main", sessionKey: "agent:main:selection-127" },

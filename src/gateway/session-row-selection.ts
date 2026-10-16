@@ -8,7 +8,11 @@ import {
   projectSessionParticipants,
   projectSessionProfileInvolvements,
 } from "./session-identity-projection.js";
-import { compareSessionEntryPairs, type SessionEntryPair } from "./session-list-order.js";
+import {
+  compareSessionEntryPairs,
+  updateSessionEntryOrder,
+  type SessionEntryPair,
+} from "./session-list-order.js";
 import {
   identity as rowIdentity,
   type SelectionRow as SelectionTarget,
@@ -41,15 +45,6 @@ export function createSessionRowSelection(
       entries: SessionEntryPair[];
     }
   >();
-  // Fixed partitions bound refiltering after exact publications without retaining old rosters.
-  let partitions: Array<{ revision: object; entries: Map<string, SessionEntryPair> }> | undefined;
-  const partitionFor = (key: string) => {
-    let hash = 0;
-    for (let i = 0; i < key.length; i++) {
-      hash = (Math.imul(hash, 31) + key.charCodeAt(i)) | 0;
-    }
-    return partitions?.[hash & 63];
-  };
   const personalInvolvements = new Map<string, Set<string>>();
   const relatedInvolvements = new Map<string, Set<string>>();
   const rowInvolvements = new Map<string, { personal: Set<string>; related: Set<string> }>();
@@ -227,15 +222,6 @@ export function createSessionRowSelection(
     }
     updateCreator(oldWinner, true);
     updateCreator(winner);
-    const partition = partitionFor(key);
-    if (partition) {
-      partition.revision = {};
-      if (winner) {
-        partition.entries.set(key, winner.pair);
-      } else {
-        partition.entries.delete(key);
-      }
-    }
     if (involvementRevision) {
       // Publication records only the changed metadata; identity preparation stays in the reader.
       removeInvolvement(key);
@@ -246,25 +232,12 @@ export function createSessionRowSelection(
       }
     }
     for (const { sortBy, archived, entries } of orders.values()) {
-      const locate = (pair: SessionEntryPair) => {
-        let lo = 0,
-          hi = entries.length;
-        while (lo < hi) {
-          const mid = (lo + hi) >>> 1;
-          if (compareSessionEntryPairs(entries[mid]!, pair, sortBy) < 0) {
-            lo = mid + 1;
-          } else {
-            hi = mid;
-          }
-        }
-        return lo;
-      };
-      if (oldWinner && matchesSessionArchiveFilter(oldWinner.row.entry, archived)) {
-        entries.splice(locate(oldWinner.pair), 1);
-      }
-      if (winner && matchesSessionArchiveFilter(winner.row.entry, archived)) {
-        entries.splice(locate(winner.pair), 0, winner.pair);
-      }
+      updateSessionEntryOrder(
+        entries,
+        oldWinner?.pair,
+        winner && matchesSessionArchiveFilter(winner.row.entry, archived) ? winner.pair : undefined,
+        sortBy,
+      );
     }
   };
   return {
@@ -308,18 +281,8 @@ export function createSessionRowSelection(
       candidates?: Iterable<Pick<SelectionTarget, "key" | "agentId">>,
     ) {
       assertCanonical();
-      if (!candidates && !partitions) {
-        partitions = Array.from({ length: 64 }, () => ({
-          revision: {},
-          entries: new Map<string, SessionEntryPair>(),
-        }));
-        for (const [key, target] of winners) {
-          partitionFor(key)!.entries.set(key, target.pair);
-        }
-      }
       return {
         configuredAgentIds,
-        partitions: candidates ? undefined : partitions,
         entries(this: void, archived: SessionsListParams["archived"]) {
           const orderKey = `${sortBy}:${archived ?? false}`;
           let entries = !candidates && sortBy && orders.get(orderKey)?.entries;

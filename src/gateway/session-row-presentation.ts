@@ -21,7 +21,8 @@ import {
   projectSessionParticipant,
   projectSessionProfileInvolvements,
 } from "./session-identity-projection.js";
-import type { SessionEntrySelection, SessionListFilteredEntries } from "./session-list-filters.js";
+import type { SessionEntrySelection } from "./session-list-filters.js";
+import type { SessionListSelectionState } from "./session-list-selection.js";
 import { tryResolveSessionCompatibilityOwnerAgentId } from "./session-request-agent.js";
 import type { SessionRowReadView } from "./session-row-prepared-read.js";
 import type * as records from "./session-row-projection-record.js";
@@ -80,7 +81,7 @@ type Publication = {
       selection?: SessionEntrySelection;
       selectedAt?: number;
       activityExpiresAt?: number;
-      partitions?: WeakMap<object, SessionListFilteredEntries>;
+      incremental?: SessionListSelectionState;
     }
   >;
 };
@@ -248,6 +249,11 @@ export function prepareSessionRowPublication(
         retained.revision = undefined;
         for (const list of retained.lists.values()) {
           list.selection = undefined;
+          list.incremental?.changed.add(change.key);
+          // Dormant views retire rather than accumulating an unbounded publication backlog.
+          if ((list.incremental?.changed.size ?? 0) >= 1024) {
+            list.incremental = undefined;
+          }
         }
       });
       projection.onFactsChange((change) => {
@@ -655,7 +661,7 @@ export function prepareProjectedSessionPresentation(
     },
     select(
       opts: SessionsListParams,
-      select: (retained?: WeakMap<object, SessionListFilteredEntries>) => SessionEntrySelection,
+      select: (retained?: SessionListSelectionState) => SessionEntrySelection,
     ) {
       // These queries consume clock or transient run facts independently of row publications.
       if (opts.search || opts.spawnedBy || opts.activeOnly || opts.activityPulseBoundaries) {
@@ -668,11 +674,14 @@ export function prepareProjectedSessionPresentation(
         (now < view.selectedAt || now > (view.activityExpiresAt ?? Infinity))
       ) {
         view.selection = undefined;
-        view.partitions = undefined;
+        view.incremental = undefined;
       }
       if (!view.selection) {
+        // Person resolution and counts require the whole visible roster.
+        const incremental =
+          !opts.includePeople && !opts.involvingProfileId && !opts.includeOwnerSessionCounts;
         const { entries, ownerSessionProfiles, ...facets } = select(
-          (view.partitions ??= new WeakMap()),
+          incremental ? (view.incremental ??= { changed: new Set() }) : undefined,
         );
         Object.freeze(entries);
         view.selection = Object.freeze({

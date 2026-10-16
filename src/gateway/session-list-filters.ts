@@ -175,6 +175,10 @@ function createActivityPulse(opts: SessionsListParams): SessionActivityPulse | u
 export function* filterSessionEntries(
   params: SessionListFilterParams,
   window?: { offset: number; limit?: number; ownerLimit: number },
+  capture?: {
+    owner(key: string, owner: SessionOwnerFacetIdentity): void;
+    activity(key: string, expiresAt: number): void;
+  },
 ): SynchronousWork<SessionListFilteredEntries> {
   const { cfg, opts, now, shouldYield, configuredAgentIds } = params;
   let rowContext: SessionListRowContext | undefined;
@@ -466,6 +470,7 @@ export function* filterSessionEntries(
       }
       // Facets include candidates absent from the selected person or returned page.
       activityExpiresAt = Math.min(activityExpiresAt, expiresAt);
+      capture?.activity(key, expiresAt);
     }
     const effectiveOwner = projectOwner(entry, identities, cfg, configuredAgentIds)?.actor;
     if (
@@ -490,6 +495,7 @@ export function* filterSessionEntries(
     }
     if (effectiveOwner) {
       addSessionOwnerFacetIdentity(ownerFacet, effectiveOwner);
+      capture?.owner(key, effectiveOwner);
     }
     if (creatorId && entry.createdActor?.id !== creatorId) {
       continue;

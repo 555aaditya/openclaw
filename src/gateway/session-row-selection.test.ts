@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import type { SessionsListParams } from "../../packages/gateway-protocol/src/index.js";
+import { expandSessionRowFacts } from "../../packages/gateway-protocol/src/session-row-fields.js";
 import { buildSubagentRunReadIndexFromRuns } from "../agents/subagents/registry/subagent-registry-queries.js";
 import {
   persistRegistryFixture,
@@ -13,6 +15,10 @@ import {
   replaceSessionEntrySync,
 } from "../config/sessions/session-accessor.js";
 import { writeSessionEntry } from "../config/sessions/session-accessor.sqlite-entry-store.js";
+import {
+  addSessionMember,
+  removeSessionMember,
+} from "../config/sessions/session-sharing-store.native.js";
 import type { SessionEntry } from "../config/sessions/types.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { resetPluginRuntimeStateForTest, setActivePluginRegistry } from "../plugins/runtime.js";
@@ -24,15 +30,19 @@ import {
   resolveOpenClawAgentSqlitePath,
   runOpenClawAgentWriteTransaction,
 } from "../state/openclaw-agent-db.js";
+import { setUserProfileRole } from "../state/user-profile-writes.worker.js";
+import { ensureProfileForEmail } from "../state/user-profiles.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import { createSessionConversationTestRegistry } from "../test-utils/session-conversation-registry.js";
 import { registerChatAbortController } from "./chat-abort.js";
+import { prepareGatewayRecipientProfile } from "./expected-profile.js";
 import { requestContext } from "./server-methods/sessions-read-cache.test-support.js";
 import { listSessionFixture } from "./session-list.test-support.js";
 import { retainSessionListForegroundWork } from "./session-projection-work.js";
 import { create as createSessionRow } from "./session-row-projection-record.js";
 import { createSessionRowProjection } from "./session-row-projection.js";
 import { createSessionRowProjectionFixture } from "./session-row-projection.test-support.js";
+import { rolePolicyConfig, sharingPolicyClient } from "./session-sharing.test-utils.js";
 import * as childOwners from "./session-utils-core.js";
 import {
   filterAndSortSessionEntries,
@@ -67,8 +77,10 @@ it("maintains list order across metadata changes and archived-row rematerializat
     const projection = await createSessionRowProjection({ cfg, modelCatalog: [] });
     const scan = vi.spyOn(projection, "selectEntries");
     try {
+      const read = (opts: SessionsListParams) =>
+        listProjectedSessions({ projection, opts, acceptsSerializedJson: true });
       const list = async (sortBy?: "lastInteractionAt" | "activity") =>
-        (await listProjectedSessions({ projection, opts: { limit: 1, sortBy } })).sessions;
+        (await read({ limit: 1, sortBy })).sessions;
       expect((await list())[0]?.key).toBe(first);
       scan.mockClear();
       emitSessionTranscriptUpdate({
@@ -79,11 +91,31 @@ it("maintains list order across metadata changes and archived-row rematerializat
       expect((await list("lastInteractionAt"))[0]?.key).toBe(second);
       expect((await list("activity"))[0]?.key).toBe(second);
       expect((await list())[0]?.key).toBe(first);
+      const modes = ["sidebar", "compact", undefined] as const;
+      const unchangedPages = await Promise.all(modes.map((rowMode) => read({ rowMode, limit: 2 })));
       replaceSessionEntrySync(
         { agentId: "main", sessionKey: second },
         { sessionId: second, updatedAt: 3, label: "Changed metadata" },
       );
       expect((await list())[0]).toMatchObject({ key: second, label: "Changed metadata" });
+      for (const [index, rowMode] of modes.entries()) {
+        const changed = await read({ rowMode, limit: 2 });
+        expect(changed.sessions[0]).toMatchObject({ key: second, label: "Changed metadata" });
+        const initial = unchangedPages[index]!;
+        if (rowMode === "sidebar") {
+          const original = expandSessionRowFacts(initial.sessions, initial.sharedFacts)[0]!;
+          const unchanged = expandSessionRowFacts(changed.sessions, changed.sharedFacts)[1]!;
+          expect(unchanged).toMatchObject({
+            key: original.key,
+            sessionId: original.sessionId,
+            updatedAt: original.updatedAt,
+            lastInteractionAt: original.lastInteractionAt,
+            rowMode,
+          });
+        } else {
+          expect(changed.sessions[1]).toBe(initial.sessions[0]);
+        }
+      }
       const third = "agent:main:third";
       replaceSessionEntrySync(
         { agentId: "main", sessionKey: third },
@@ -91,9 +123,7 @@ it("maintains list order across metadata changes and archived-row rematerializat
       );
       expect((await list())[0]?.key).toBe(third);
       expect((await list("lastInteractionAt"))[0]?.key).toBe(third);
-      expect(
-        await listProjectedSessions({ projection, opts: { limit: 1, offset: 1 } }),
-      ).toMatchObject({
+      expect(await read({ limit: 1, offset: 1 })).toMatchObject({
         totalCount: 3,
         nextOffset: 2,
         hasMore: true,
@@ -104,14 +134,14 @@ it("maintains list order across metadata changes and archived-row rematerializat
         { sessionId: third, updatedAt: 4, lastInteractionAt: 3, archivedAt: 5 },
       );
       expect((await list())[0]?.key).toBe(second);
-      const archived = await listProjectedSessions({ projection, opts: { archived: true } });
+      const archived = await read({ archived: true });
       expect(archived.sessions.map((row) => row.key)).toEqual([third]);
       replaceSessionEntrySync(
         { agentId: "main", sessionKey: third },
         { sessionId: third, updatedAt: 4, lastInteractionAt: 3 },
       );
       expect((await list())[0]?.key).toBe(third);
-      expect(await listProjectedSessions({ projection, opts: { archived: true } })).toMatchObject({
+      expect(await read({ archived: true })).toMatchObject({
         sessions: [],
         totalCount: 0,
       });
@@ -121,17 +151,16 @@ it("maintains list order across metadata changes and archived-row rematerializat
         { sessionId: third, updatedAt: 4, lastInteractionAt: 3, archivedAt: 0 },
       );
       expect((await list())[0]?.key).toBe(second);
-      expect(
-        await listProjectedSessions({ projection, opts: { archived: true, limit: 1 } }),
-      ).toMatchObject({ sessions: [{ key: third }], totalCount: 1, hasMore: false });
+      expect(await read({ archived: true, limit: 1 })).toMatchObject({
+        sessions: [{ key: third }],
+        totalCount: 1,
+        hasMore: false,
+      });
       const archivedQuery = { agentId: "main", key: third };
       sessionChanges.emit({ all: true, scope: "catalog" });
       await projection.ensureMaterialized();
       expect(projection.capture(archivedQuery)?.materialized).toBeUndefined();
-      const rematerialized = await listProjectedSessions({
-        projection,
-        opts: { archived: true },
-      });
+      const rematerialized = await read({ archived: true });
       expect(rematerialized.sessions.map((row) => row.key)).toEqual([third]);
       expect(rematerialized.totalCount).toBe(1);
       expect(projection.capture(archivedQuery)?.materialized).toBeDefined();
@@ -143,10 +172,7 @@ it("maintains list order across metadata changes and archived-row rematerializat
         archiveTranscript: false,
         target: { canonicalKey: third, storeKeys: [third] },
       });
-      const remaining = await listProjectedSessions({
-        projection,
-        opts: { archived: "all", sortBy: "activity" },
-      });
+      const remaining = await read({ archived: "all", sortBy: "activity" });
       expect(remaining.sessions.map((row) => row.key)).toEqual([second, first]);
       expect(remaining).toMatchObject({ totalCount: 2, nextOffset: null, hasMore: false });
       // Deletion publishes topology; keyed updates must reuse the rebuilt scope.
@@ -181,6 +207,98 @@ it("maintains list order across metadata changes and archived-row rematerializat
       scan.mockRestore();
       projection.dispose();
       release();
+    }
+  });
+});
+
+it("keeps cached pages and owner facets current for each query and viewer", async () => {
+  await withOpenClawTestState({ scenario: "minimal", prepareProfileCatalog: true }, async () => {
+    const cfg = { ...rolePolicyConfig(), agents: { entries: { main: {} } } };
+    setRuntimeConfigSnapshot(cfg);
+    const owner = ensureProfileForEmail("owner@incremental-list.test");
+    const peer = ensureProfileForEmail("peer@incremental-list.test");
+    const [ownerClient, peerClient] = [owner, peer].map((profile) => {
+      const client = sharingPolicyClient({ user: profile.id });
+      prepareGatewayRecipientProfile(client);
+      return client;
+    });
+    const mine = "agent:main:mine";
+    const middle = "agent:main:middle";
+    const recent = "agent:main:recent";
+    for (const [sessionKey, updatedAt, profile] of [
+      [mine, 1, owner],
+      [middle, 2, peer],
+      [recent, 3, peer],
+    ] as const) {
+      replaceSessionEntrySync(
+        { agentId: "main", sessionKey },
+        {
+          sessionId: sessionKey,
+          updatedAt,
+          category: "keep",
+          visibility: "read-only",
+          createdActor: { type: "human", source: "profile", id: profile.id },
+        },
+      );
+    }
+    const projection = await createSessionRowProjection({ cfg, modelCatalog: [] });
+    const list = (opts: SessionsListParams, client = ownerClient) =>
+      listProjectedSessions({
+        projection,
+        client,
+        opts: { group: "keep", limit: 1, ...opts },
+        acceptsSerializedJson: true,
+      });
+    try {
+      for (const rowMode of ["sidebar", "compact", undefined] as const) {
+        const first = await list({ rowMode, ownerFirst: true });
+        expect(first.sessions.map((row) => row.key)).toEqual([mine, recent]);
+        expect(first).toMatchObject({ totalCount: 3, nextOffset: 1, hasMore: true });
+        expect((await list({ rowMode, ownerFirst: true, offset: 1 })).sessions).toMatchObject([
+          { key: middle },
+        ]);
+        const owned = await list({ rowMode, ownerId: owner.id });
+        expect(owned.sessions).toMatchObject([{ key: mine }]);
+        expect(owned.owners?.map(({ id }) => id).toSorted()).toEqual(
+          [owner.id, peer.id].toSorted(),
+        );
+        expect(owned).toMatchObject({ totalCount: 1, nextOffset: null, hasMore: false });
+      }
+      await patchSessionEntryCore({ agentId: "main", sessionKey: middle }, () => ({
+        category: "excluded",
+      }));
+      for (const rowMode of ["sidebar", "compact", undefined] as const) {
+        const changed = await list({ rowMode, ownerFirst: true, offset: 1 });
+        expect(changed.sessions).toMatchObject([{ key: mine }]);
+        expect(changed).toMatchObject({ totalCount: 2, nextOffset: null, hasMore: false });
+      }
+      const scope = { agentId: "main", sessionKey: recent };
+      expect((await list({})).sessions[0]).toMatchObject({ key: recent, sharingRole: "viewer" });
+      expect((await list({}, peerClient)).sessions[0]).toMatchObject({
+        key: recent,
+        sharingRole: "owner",
+      });
+      addSessionMember(scope, { identityId: owner.id, addedBy: peer.id });
+      expect((await list({})).sessions[0]?.sharingRole).toBe("member");
+      removeSessionMember(scope, owner.id);
+      expect((await list({})).sessions[0]?.sharingRole).toBe("viewer");
+      await patchSessionEntryCore(scope, () => ({ visibility: "draft" }));
+      expect((await list({})).sessions).toMatchObject([{ key: mine }]);
+      expect((await list({}, peerClient)).sessions[0]?.key).toBe(recent);
+      const hiddenOwner = await list({ ownerId: peer.id });
+      expect(hiddenOwner).toMatchObject({ sessions: [], totalCount: 0 });
+      expect(hiddenOwner.owners?.map(({ id }) => id)).toEqual([owner.id]);
+      await patchSessionEntryCore(scope, () => ({ visibility: "read-only" }));
+      expect((await list({})).sessions[0]?.key).toBe(recent);
+      setUserProfileRole(owner.id, "none");
+      prepareGatewayRecipientProfile(ownerClient!);
+      expect((await list({})).sessions).toMatchObject([{ key: mine }]);
+      expect((await list({}, peerClient)).sessions[0]?.key).toBe(recent);
+      setUserProfileRole(owner.id, "view");
+      prepareGatewayRecipientProfile(ownerClient!);
+      expect((await list({})).sessions[0]?.key).toBe(recent);
+    } finally {
+      projection.dispose();
     }
   });
 });
@@ -220,6 +338,7 @@ it("refreshes agent owner facets when the sidebar roster changes", async () => {
       const list = (scoped = true) =>
         listProjectedSessions({
           projection,
+          acceptsSerializedJson: true,
           opts: {
             agentId: scoped ? "main" : undefined,
             configuredAgentsOnly: true,

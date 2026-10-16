@@ -325,6 +325,12 @@ rows refresh with the new catalog. Startup still waits for the first catalog.
 Renewals that retain identical catalog content do not dirty resident rows.
 
 Concurrent lists share metadata preparation and selected-row materialization.
+Ordinary list queries retain ordered entry references for each viewer policy and
+update only published session keys. Profile, policy, and topology changes retire
+these views; activity-age filters also retire them at their next expiry. People
+facets and transient activity queries still select against their full candidate
+set. Unchanged presented rows are shared across requests without copying the
+roster into another worker.
 Selected pages yield to the event loop between bounded materialization batches,
 including when stored facts are already cached. A long `materialize` wait does
 not by itself indicate an event-loop stall or repeated work for each caller.

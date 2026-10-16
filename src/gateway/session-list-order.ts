@@ -6,7 +6,6 @@ import type { InternalSessionEntry as SessionEntry } from "../config/sessions/ty
 import { sessionActivityTimestamp } from "../shared/session-activity-timestamp.js";
 import { sortAndLimitByWork } from "../shared/sort-and-limit.js";
 import type { SynchronousWork } from "../shared/synchronous-work.js";
-
 export type SessionEntryPair = [string, SessionEntry];
 
 export function compareSessionEntryPairs(
@@ -31,6 +30,37 @@ export function compareSessionEntryPairs(
   }
   // Stable key ties keep offset paging deterministic across calls.
   return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0;
+}
+
+/** Replace one published entry without sorting the unchanged roster again. */
+export function updateSessionEntryOrder(
+  entries: SessionEntryPair[],
+  previous: SessionEntryPair | undefined,
+  next: SessionEntryPair | undefined,
+  sortBy: SessionsListParams["sortBy"],
+): void {
+  const locate = (pair: SessionEntryPair) => {
+    let lo = 0;
+    let hi = entries.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (compareSessionEntryPairs(entries[mid]!, pair, sortBy) < 0) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    return lo;
+  };
+  if (previous) {
+    const index = locate(previous);
+    if (entries[index] === previous) {
+      entries.splice(index, 1);
+    }
+  }
+  if (next) {
+    entries.splice(locate(next), 0, next);
+  }
 }
 
 export function* sortAndLimitSessionEntries(
