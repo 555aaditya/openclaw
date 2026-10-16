@@ -64,6 +64,33 @@ const workflows = new Map(
     (name) => [name, parse(readFileSync(`.github/workflows/${name}.yml`, "utf8")) as Workflow],
   ),
 );
+const standalone = new Map(
+  (
+    [
+      ["browser-mcp-contract", []],
+      ["codeql", ["scope"]],
+      ["codeql-critical-quality", ["quality-shards"]],
+      ["opengrep-precise", []],
+      ["opengrep-precise-full", []],
+      ["plugin-init-scaffold-validation", ["scope"]],
+      ["sandbox-common-smoke", []],
+      ["website-installer-sync", ["static", "sync-website"]],
+      ["workflow-sanity", []],
+      ["docs", []],
+      ["dependency-audit", []],
+      [
+        "openclaw-release-telegram-qa",
+        ["trusted_identity", "attest_candidate", "run_telegram", "advisory_status"],
+      ],
+    ] as const
+  ).map(([name, hostedJobs]) => [
+    name,
+    {
+      hostedJobs,
+      workflow: parse(readFileSync(`.github/workflows/${name}.yml`, "utf8")) as Workflow,
+    },
+  ]),
+);
 const group = 'Release "reserved"';
 const context = {
   matrix: { runner: "ubuntu-24.04", group: "fixture", task: "test", check_name: "fixture" },
@@ -255,6 +282,52 @@ describe("release runner reservation", () => {
           }),
           `${name}/${jobName} -> ${child}`,
         ).toBe(label);
+      }
+    }
+  });
+
+  it("routes explicit standalone Linux dispatches while preserving automatic and hosted-only jobs", () => {
+    const label = "crabbox-frv-012345abcdef";
+    for (const [name, { workflow, hostedJobs }] of standalone) {
+      for (const runnerBackend of ["github", "hybrid", "blacksmith"] as const) {
+        for (const eventName of [
+          "workflow_dispatch",
+          "push",
+          "pull_request",
+          "schedule",
+        ] as const) {
+          for (const runner of ["ubuntu-24.04", "macos-26", "windows-2025"]) {
+            const ordinary = {
+              ...context,
+              eventName,
+              runnerBackend,
+              // GitHub's absent event fields compare as empty values; the JS
+              // evaluator needs the property chain represented explicitly.
+              githubEvent: {
+                pull_request: {
+                  head: {
+                    repo: { full_name: eventName === "pull_request" ? "contributor/fork" : "" },
+                  },
+                },
+              },
+              matrix: { ...context.matrix, runs_on: runner },
+            };
+            for (const [jobName, job] of Object.entries(workflow.jobs)) {
+              if (!job["runs-on"]) {
+                continue;
+              }
+              const baseline = evaluateWorkflowRunner(job["runs-on"], ordinary);
+              const eligible =
+                eventName === "workflow_dispatch" &&
+                !hostedJobs.some((hosted) => hosted === jobName) &&
+                /^(?:ubuntu-|blacksmith-)/u.test(String(baseline));
+              expect(
+                evaluateWorkflowRunner(job["runs-on"], { ...ordinary, crabboxRunnerLabel: label }),
+                `${name}/${jobName}/${eventName}/${runnerBackend}/${runner}`,
+              ).toEqual(eligible ? ["self-hosted", "crabbox", label, baseline] : baseline);
+            }
+          }
+        }
       }
     }
   });
