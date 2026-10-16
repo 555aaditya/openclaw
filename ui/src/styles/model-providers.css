@@ -30,13 +30,6 @@
   min-block-size: 2.75rem;
 }
 
-.model-providers__identity {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  min-width: 0;
-}
-
 .model-providers__checking {
   display: inline-flex;
   align-items: center;
@@ -124,8 +117,7 @@
 }
 
 .model-providers__profile-grip,
-.model-providers__profile-logout,
-.model-providers__account-refresh {
+.model-providers__profile-logout {
   display: inline-grid;
   width: 44px;
   min-width: 44px;
@@ -137,15 +129,13 @@
   color: var(--muted);
 }
 
-.model-providers__profile-logout:disabled,
-.model-providers__account-refresh:disabled {
+.model-providers__profile-logout:disabled {
   color: color-mix(in srgb, var(--muted) 24%, transparent);
   cursor: default;
 }
 
 .model-providers__profile-grip svg,
-.model-providers__profile-logout svg,
-.model-providers__account-refresh svg {
+.model-providers__profile-logout svg {
   width: 16px;
   height: 16px;
 }
@@ -393,14 +383,10 @@
     flex-wrap: wrap;
   }
 
-  .model-providers__identity,
   .model-providers__head > .settings-row__control {
     flex: 1 1 100%;
-    width: 100%;
-  }
-
-  .model-providers__head > .settings-row__control {
     justify-content: flex-start;
+    width: 100%;
   }
 
   .model-providers__credentials {
