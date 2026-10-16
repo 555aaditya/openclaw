@@ -19,7 +19,6 @@ import { LitContent as LegacyOutlet } from "./solid-bridge.ts";
 import {
   LitContent,
   mountLitContent,
-  renderLegacyTemplate,
   solidContent,
   SolidContentPresentation,
 } from "./solid-content.tsx";
@@ -65,8 +64,8 @@ describe("Lit and Solid content boundaries", () => {
       expect(button.textContent).toBe("Second");
       expect(disconnected).not.toHaveBeenCalled();
 
-      renderLegacyTemplate(undefined, container);
-      renderLegacyTemplate(undefined, container);
+      mounted.dispose();
+      mounted.dispose();
       expect(container.childNodes).toHaveLength(0);
       expect(disconnected).toHaveBeenCalledOnce();
 
