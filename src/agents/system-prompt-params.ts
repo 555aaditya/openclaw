@@ -1,3 +1,8 @@
+/**
+ * System prompt runtime parameter resolver.
+ *
+ * Collects repository, channel, and shell facts for prompt rendering.
+ */
 import fs from "node:fs";
 import path from "node:path";
 import { normalizeStringEntries } from "@openclaw/normalization-core/string-normalization";

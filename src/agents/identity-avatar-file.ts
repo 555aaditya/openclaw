@@ -1,3 +1,4 @@
+// Internal local-avatar resolution and pinned file reads.
 import fs from "node:fs";
 import path from "node:path";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";

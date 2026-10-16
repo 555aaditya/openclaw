@@ -1,4 +1,5 @@
 /**
+ * Update-hunk application for the apply_patch parser.
  * Locates expected old lines with tolerant matching, applies chunks in order,
  * and retains source bytes that the patch does not change.
  */
@@ -35,6 +36,7 @@ type SourceFile = {
 
 type Replacement = [number, number, SourceLine[]];
 
+/** Apply parsed update chunks to one file and return the new file contents. */
 export async function applyUpdateHunk(
   filePath: string,
   chunks: UpdateFileChunk[],

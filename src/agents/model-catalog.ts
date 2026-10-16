@@ -1,3 +1,6 @@
+/**
+ * Loads bundled, manifest, and discovered model catalog entries.
+ */
 import { resolveClaudeFable5ModelIdentity } from "@openclaw/llm-core";
 import { buildModelCatalogMergeKey } from "@openclaw/model-catalog-core/model-catalog-refs";
 import { normalizeProviderId } from "@openclaw/model-catalog-core/provider-id";

@@ -1,4 +1,5 @@
 /**
+ * Effective tool inventory resolver.
  *
  * Builds model-visible tool lists after profile, provider, plugin, policy, and compatibility filters.
  */

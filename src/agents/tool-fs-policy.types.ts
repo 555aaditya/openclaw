@@ -5,6 +5,7 @@ export type PreparedSessionPermissionPolicy = Readonly<{
   mode: SessionPermissionMode;
 }>;
 
+/** Filesystem policy for agent tools that can touch local paths. */
 export type ToolFsPolicy = {
   workspaceOnly: boolean;
   root?: string;

@@ -1,3 +1,8 @@
+/**
+ * Process-control tool factory.
+ * Lists, polls, logs, writes to, sends keys to, pastes into, kills, clears,
+ * and removes background exec sessions.
+ */
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import type { Static } from "typebox";
 import { getAgentToolExecutionContext } from "../../packages/agent-core/src/tool-execution-context.js";
@@ -47,6 +52,7 @@ import { PROCESS_TOOL_DISPLAY_SUMMARY } from "./tool-description-presets.js";
 import { ToolInputError, type AgentToolWithMeta } from "./tools/common.js";
 import { textResult } from "./tools/tool-results.js";
 
+/** Defaults injected by tests, agent scopes, and scoped process registries. */
 export type ProcessToolDefaults = {
   hasCronTool?: boolean;
   inputWaitIdleMs?: number;
@@ -247,6 +253,7 @@ function assertSupportedProcessParams(args: unknown): void {
   }
 }
 
+/** Build the process-control tool with optional scope and input-idle defaults. */
 export function createProcessTool(
   defaults?: ProcessToolDefaults,
 ): AgentToolWithMeta<typeof processSchema, unknown> {
@@ -635,4 +642,5 @@ export function createProcessTool(
   };
 }
 
+/** Shared process-control tool instance used by the default Bash tool barrel. */
 export const processTool = createProcessTool();

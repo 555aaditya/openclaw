@@ -120,7 +120,9 @@ export function loadPromptTemplates({
         // Keep the loaded prefix if metadata resolution fails on a later file.
         templates.push(...loadedTemplates);
       }
-    } catch {}
+    } catch {
+      // Ignore read failures
+    }
   }
 
   return templates;

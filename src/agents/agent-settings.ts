@@ -1,3 +1,4 @@
+/** Applies agent compaction settings and small-context overflow guards. */
 import { normalizeProviderId } from "@openclaw/model-catalog-core/provider-id";
 import type { AgentCompactionMode } from "../config/types.agent-defaults.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
@@ -15,6 +16,7 @@ function toPositiveInt(value: unknown): number | undefined {
   return Math.floor(value);
 }
 
+/** Applies configured compaction reserve/keep-recent settings to an agent settings manager. */
 export function applyAgentCompactionSettingsFromConfig(params: {
   settingsManager: SettingsManager;
   cfg?: OpenClawConfig;

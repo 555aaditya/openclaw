@@ -1,3 +1,5 @@
+/** Applies persisted ACP ownership to agent runtime classification. */
+
 /**
  * Leaf type for agent runtime classification. Defined here so that
  * agent-runtime-metadata.ts can import applyAcpRuntimeOverlay without

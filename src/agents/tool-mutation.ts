@@ -1,3 +1,4 @@
+/** Tool mutation and replay-safety classification. */
 import { asOptionalObjectRecord as asRecord } from "@openclaw/normalization-core/record-coerce";
 import {
   normalizeLowercaseStringOrEmpty,

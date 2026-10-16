@@ -1,3 +1,4 @@
+/** Resolves per-user agent directories for CLI and runtime callers. */
 import { join } from "node:path";
 import { readCurrentConfigForResolution } from "../config/io.runtime.js";
 import { resolveInstallAgentDir } from "./install-agent-dir.js";

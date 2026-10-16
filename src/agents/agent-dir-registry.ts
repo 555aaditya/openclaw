@@ -1,3 +1,4 @@
+/** Process-local reverse registry from prepared agent directories to agent ids. */
 import path from "node:path";
 import { isMainThread } from "node:worker_threads";
 import { resolveIdentityPathViaExistingAncestorSync } from "../infra/boundary-path.js";
@@ -84,6 +85,7 @@ export function normalizeAgentDirRegistryPath(
   return resolveIdentityPathViaExistingAncestorSync(resolveUserPath(agentDir, env));
 }
 
+/** Register a resolved agent directory for later reverse lookup. */
 export function registerResolvedAgentDir(params: {
   agentId: string;
   agentDir: string;
@@ -118,6 +120,7 @@ export function unregisterResolvedAgentDir(params: {
   return true;
 }
 
+/** Resolve the agent id previously registered for an agent directory. */
 export function resolveRegisteredAgentIdForDir(
   agentDir: string,
   env?: NodeJS.ProcessEnv,

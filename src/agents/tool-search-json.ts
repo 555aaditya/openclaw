@@ -1,3 +1,4 @@
+/** Convert bridge and transcript values into detached JSON-compatible data. */
 export function toToolSearchJsonSafe(value: unknown): unknown {
   try {
     const serialized = JSON.stringify(value);

@@ -1,9 +1,13 @@
 /**
+ * Git source parsing helpers.
+ *
  * Normalizes git-style package references into host/path identity.
  */
 import hostedGitInfo from "hosted-git-info";
 
+/** Parsed git URL information. */
 export type GitSource = {
+  /** Always "git" for git sources */
   type: "git";
   /** Git host domain (e.g., "github.com") */
   host: string;
@@ -116,6 +120,8 @@ function parseHostedGitUrl(url: string): GitSource | null {
 }
 
 /**
+ * Parse git source into a GitSource.
+ *
  * Rules:
  * - With git: prefix, accept all historical shorthand forms.
  * - Without git: prefix, only accept explicit protocol URLs.

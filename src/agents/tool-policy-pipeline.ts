@@ -49,6 +49,7 @@ function rememberToolPolicyWarning(warning: string): boolean {
   return true;
 }
 
+/** One named policy layer in the effective runtime tool policy pipeline. */
 export type ToolPolicyPipelineStep = {
   policy: ToolPolicyLike | undefined;
   label: string;

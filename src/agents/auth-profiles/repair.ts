@@ -1,4 +1,5 @@
 /**
+ * Auth profile repair helpers.
  * Migrates legacy provider:default OAuth config references to safer modern
  * profile ids chosen from store metadata and auth order.
  */

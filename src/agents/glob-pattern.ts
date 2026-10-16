@@ -1,3 +1,6 @@
+/**
+ * Compiles and matches lightweight glob patterns used by agent policies.
+ */
 import { escapeRegExp } from "../shared/regexp.js";
 
 type CompiledGlobPattern =

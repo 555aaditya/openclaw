@@ -1,3 +1,5 @@
+/** Embedded-agent helper barrel for bootstrap, provider error, media, and turn sanitizers. */
+
 export {
   buildBootstrapContextFiles,
   resolveBootstrapMaxChars,

@@ -4,6 +4,7 @@ function displayAction(label: string, detailKeys: string[]) {
   return { label, detailKeys };
 }
 
+/** Display metadata for the transport-neutral message action surface. */
 export const MESSAGE_TOOL_DISPLAY_SPEC = {
   icon: "mail",
   title: "Message",

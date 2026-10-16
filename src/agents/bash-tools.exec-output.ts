@@ -1,4 +1,5 @@
 /**
+ * Rendering helpers for exec output/status updates.
  * Keeps no-output placeholders and warning placement consistent across exec
  * progress, polling, and completion surfaces.
  */
@@ -51,6 +52,7 @@ export function appendExecTimeoutRetryGuidance(
 
 const DEFAULT_NOTIFY_SNIPPET_CHARS = 180;
 
+/** Normalizes notification snippets to a compact single-line form. */
 export function normalizeNotifyOutput(value: string) {
   return value.replace(/\s+/g, " ").trim();
 }

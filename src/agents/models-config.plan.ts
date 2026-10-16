@@ -105,6 +105,7 @@ function buildPluginCatalogWrites(
   );
 }
 
+/** Resolves providers for models.json. */
 async function resolveProvidersForModelsJson(params: {
   context: PreparedModelsConfigContext;
   authStore?: AuthProfileStore;

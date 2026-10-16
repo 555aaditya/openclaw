@@ -1,4 +1,5 @@
 /**
+ * Gateway-host exec approval and allowlist handling.
  * Evaluates shell allowlists, auto-review, durable approvals, follow-up routing,
  * and approved command execution for gateway-backed exec calls.
  */

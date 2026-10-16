@@ -1,4 +1,5 @@
 /**
+ * Human-readable session slug generator.
  * Produces short adjective/noun IDs with numbered and random fallbacks when
  * collisions are reported by the session store.
  */

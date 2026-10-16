@@ -3,6 +3,7 @@ import {
   type ToolParameterSchemaOptions,
 } from "@openclaw/ai/internal/tool-schema";
 /**
+ * Tool schema normalization wrappers.
  * Applies provider-compatible parameter schema cleanup while preserving
  * identity-backed metadata on normalized tools.
  */
@@ -47,6 +48,7 @@ function schemaHasRequiredParams(schema: Record<string, unknown>): boolean {
   return false;
 }
 
+/** Normalize a tool's parameter schema for the selected provider/model. */
 export function normalizeToolParameters(
   tool: AnyAgentTool,
   options?: ToolParameterSchemaOptions,

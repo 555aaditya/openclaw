@@ -6,6 +6,7 @@ import {
   extractToolResultIds,
 } from "../../packages/agent-core/src/harness/session/tool-result-pairing.js";
 /**
+ * Tool call id normalization and extraction helpers.
  *
  * Keeps provider-specific id formats replay-safe while preserving allowed native ids.
  */
@@ -373,6 +374,7 @@ export function rewriteToolResultIds(params: {
 /**
  * Sanitize tool call IDs for provider compatibility.
  *
+ * @param messages - The messages to sanitize
  * @param mode - "strict" (alphanumeric only) or "strict9" (alphanumeric length 9)
  * @param options.duplicateToolCallIdStyle - Optional provider-safe style for repeated IDs
  */

@@ -1,4 +1,5 @@
 /**
+ * Transcript replay policy resolution.
  * Combines provider plugin replay hooks with core transport fallbacks so chat
  * history sanitization, tool IDs, thinking blocks, and turn validation align.
  */

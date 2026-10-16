@@ -98,9 +98,11 @@ export type OpenClawSharedToolsOptions = {
   /** Registers run-owned cleanup for tools that hold node resources. */
   registerRunCleanup?: (cleanup: (reason: string) => Promise<void>) => void;
   inboundEventKind?: InboundEventKind;
+  /** If true, omit the message tool from the tool list. */
   disableMessageTool?: boolean;
   swarmCollector?: boolean;
   swarmOutputSchema?: Record<string, unknown>;
+  /** If true, include the heartbeat response tool for structured heartbeat outcomes. */
   enableHeartbeatTool?: boolean;
   /** Host-only observation after a canonical progress-card replacement commits. */
   onProgressCardPlanSaved?: (unfinished: boolean) => void;
@@ -190,6 +192,7 @@ export type OpenClawToolsOptions = {
    * already in flight.
    */
   assertCollectorWriteAuthority?: () => void;
+  /** If true, skip plugin tool resolution and return only shipped core tools. */
   disablePluginTools?: boolean;
   /** Override or extend the default hook context used by construction-time wrapping. */
   beforeToolCallHookContext?: HookContext;

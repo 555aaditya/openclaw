@@ -1,4 +1,6 @@
 /**
+ * Shared Gateway tool schema fragments.
+ *
  * Keeps gateway URL/token/timeout parameters aligned across tools that call Gateway methods.
  */
 import { Type } from "typebox";

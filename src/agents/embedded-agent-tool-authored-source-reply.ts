@@ -1,3 +1,4 @@
+/** Capture of replies authored by `canDeliverSourceReply` tools. */
 import { resolveAgentAssistantTurnId } from "../../packages/agent-core/src/tool-execution-context.js";
 import type { AssistantMessage } from "../llm/types.js";
 import { extractToolAuthoredSourceReplyPayload } from "./embedded-agent-messaging-extraction.js";

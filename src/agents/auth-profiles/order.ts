@@ -1,4 +1,5 @@
 /**
+ * Auth profile ordering and eligibility.
  * Resolves configured/stored auth order, provider aliases, cooldowns, and
  * profile compatibility for provider auth selection.
  */
@@ -60,6 +61,7 @@ function prepareProviderCompatibility(params: {
   };
 }
 
+/** Returns true when a stored credential can authenticate the requested provider. */
 export function isStoredCredentialCompatibleWithAuthProvider(params: {
   cfg?: OpenClawConfig;
   authAliasLookupParams?: ProviderAuthAliasLookupParams;
@@ -69,6 +71,7 @@ export function isStoredCredentialCompatibleWithAuthProvider(params: {
   return prepareProviderCompatibility(params).matchesStoredProvider(params.credential.provider);
 }
 
+/** Returns true when config declares an aws-sdk auth profile for a provider. */
 export function isConfiguredAwsSdkAuthProfileForProvider(params: {
   cfg?: OpenClawConfig;
   authAliasLookupParams?: ProviderAuthAliasLookupParams;

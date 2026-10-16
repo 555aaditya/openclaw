@@ -1,3 +1,4 @@
+/** Projects CLI run usage onto the persisted assistant transcript record. */
 import type { NormalizedUsage } from "./usage.js";
 
 export type CliTranscriptUsage = Pick<

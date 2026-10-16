@@ -1,4 +1,8 @@
 import { parseDateFirstTimestampMs } from "@openclaw/normalization-core/number-coercion";
+/**
+ * Shared helpers for clearing assistant usage snapshots invalidated by
+ * transcript compaction.
+ */
 import type { AgentMessage } from "./runtime/index.js";
 import { makeZeroUsageSnapshot } from "./usage.js";
 

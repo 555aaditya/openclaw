@@ -1,5 +1,6 @@
 import type { MediaGenerationOperation } from "./media-generation-activity.js";
 
+/** Build tool details that point callers at the already-active async task. */
 export function buildSessionAsyncTaskStatusDetails(
   task: MediaGenerationOperation,
 ): Record<string, unknown> {

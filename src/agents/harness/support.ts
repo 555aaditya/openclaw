@@ -99,6 +99,7 @@ export function projectPreparedModelProvider(params: {
   };
 }
 
+/** Builds the provider/model facts passed to registered harness support probes. */
 export function buildAgentHarnessSupportContext(
   params: {
     provider: string;
@@ -244,6 +245,7 @@ function resolveHarnessRouteRuntimePolicy(
   };
 }
 
+/** Resolves the registered plugin harness that auto selection would choose. */
 export function resolveAutoAgentHarnessId(
   params: {
     provider: string;

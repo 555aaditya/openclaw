@@ -17,6 +17,7 @@ export function isPrimaryBootstrapRun(sessionKey?: string): boolean {
   return !isSubagentSessionKey(sessionKey) && !isAcpSessionKey(sessionKey);
 }
 
+/** Inputs that decide whether this run should inject workspace bootstrap context. */
 type WorkspaceBootstrapRoutingInput = {
   isWorkspaceBootstrapPending: (workspaceDir: string) => Promise<boolean>;
   bootstrapFilesProvideAccess?: boolean;

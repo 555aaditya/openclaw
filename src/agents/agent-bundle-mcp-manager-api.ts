@@ -1,3 +1,4 @@
+/** Module-level session MCP runtime manager entry APIs. */
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import type { GatewayScheduler } from "../infra/gateway-scheduler.js";
 import { getBoundLegacyPluginSdkResourceHost } from "../plugins/legacy-sdk-resource-host.js";

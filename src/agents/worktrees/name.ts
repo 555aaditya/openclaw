@@ -13,6 +13,7 @@ export function appendNameOrdinal(name: string, ordinal: number): string {
   return `${name.slice(0, WORKTREE_NAME_MAX_LENGTH - suffix.length).replace(/-+$/g, "")}${suffix}`;
 }
 
+/** Converts a short human-readable title into a valid managed-worktree name. */
 export function slugifyWorktreeTitle(title: string): string | undefined {
   const slug = title
     .normalize("NFKD")

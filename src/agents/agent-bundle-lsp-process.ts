@@ -1,3 +1,4 @@
+/** Spawns bundled LSP server processes with sanitized environment and platform handling. */
 import { sanitizeHostExecEnv } from "../infra/host-env-security.js";
 import {
   materializeWindowsSpawnProgram,

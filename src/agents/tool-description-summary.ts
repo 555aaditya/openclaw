@@ -1,3 +1,8 @@
+/**
+ * Tool description summary helpers.
+ *
+ * Produces compact one-line summaries for verbose tool descriptions in inventory/list views.
+ */
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 
@@ -45,6 +50,7 @@ function isExcludedDescriptionLine(line: string): boolean {
   );
 }
 
+/** Build a short one-line summary from a tool description. */
 export function summarizeToolDescriptionText(params: {
   rawDescription?: string | null;
   displaySummary?: string | null;

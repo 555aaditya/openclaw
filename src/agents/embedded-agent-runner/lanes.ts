@@ -1,3 +1,6 @@
+/**
+ * Resolves command queue lane names for embedded-agent sessions and global work.
+ */
 import {
   CommandLane,
   SUBAGENT_LANE_PREFIX,

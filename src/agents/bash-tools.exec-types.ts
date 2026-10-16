@@ -1,4 +1,9 @@
 import type { NodePermissionRequest } from "../../packages/gateway-protocol/src/node-permissions.js";
+/**
+ * Shared type contracts for bash exec tools.
+ * Defines defaults, approval follow-up payloads, elevated policy defaults, and
+ * tool result details consumed across exec hosts and process controls.
+ */
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { EventSessionRoutingPolicy } from "../infra/event-session-routing.js";
 import type {
@@ -20,6 +25,7 @@ import type { EmbeddedFullAccessBlockedReason } from "./embedded-agent-runner/ty
 import type { ExecReviewerConfig } from "./exec-auto-reviewer.js";
 import type { PreparedGitHubToolEnvironment } from "./github-tool-identity.types.js";
 
+/** Failure categories used to explain exec process exits. */
 type ExecProcessFailureKind =
   | "shell-command-not-found"
   | "shell-not-executable"

@@ -1,5 +1,6 @@
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 /**
+ * Plugin-defined text replacement transforms for stream boundaries.
  *
  * Provider and CLI plugins can rewrite prompt/event text without owning the transport implementation.
  */

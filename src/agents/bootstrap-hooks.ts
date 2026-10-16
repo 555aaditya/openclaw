@@ -7,6 +7,7 @@ import { createInternalHookEvent, triggerInternalHook } from "../hooks/internal-
 import { resolveAgentIdFromSessionKey } from "../routing/session-key.js";
 import type { WorkspaceBootstrapFile } from "./workspace.js";
 
+/** Runs bootstrap hooks and returns the effective bootstrap file list. */
 export async function applyBootstrapHookOverrides(params: {
   files: WorkspaceBootstrapFile[];
   workspaceDir: string;

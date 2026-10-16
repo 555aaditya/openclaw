@@ -1,4 +1,5 @@
 /**
+ * Adapts runtime AgentTool objects into session ToolDefinition entries.
  * Owns hook execution, client-tool delegation, result coercion, and safe
  * logging for failed tool calls.
  */

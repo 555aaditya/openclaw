@@ -1,4 +1,6 @@
 /**
+ * Live-provider model error classifiers.
+ *
  * Probe and fallback code uses these string checks to distinguish missing or
  * deprecated model ids from generic provider/runtime failures.
  */

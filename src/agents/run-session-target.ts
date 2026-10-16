@@ -37,6 +37,7 @@ class AgentRunSessionTargetResolutionError extends Error {
   }
 }
 
+/** Resolves the active runtime target used by current run/session internals. */
 export async function resolveAgentRunSessionTarget(
   input: {
     agentId?: string;

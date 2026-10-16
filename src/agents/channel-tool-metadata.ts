@@ -12,6 +12,7 @@ export function getChannelAgentToolMeta(tool: ChannelAgentTool): ChannelAgentToo
   return channelAgentToolMeta.get(tool);
 }
 
+/** Attach channel ownership metadata to a concrete agent tool. */
 export function setChannelAgentToolMeta(tool: ChannelAgentTool, meta: ChannelAgentToolMeta): void {
   channelAgentToolMeta.set(tool, meta);
 }

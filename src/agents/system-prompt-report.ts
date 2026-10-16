@@ -1,4 +1,5 @@
 /**
+ * System prompt report builder.
  *
  * Session metadata uses this report to account for prompt size, bootstrap file
  * injection, skills, and tool schema footprint without storing raw prompt text.
@@ -120,6 +121,7 @@ function resolveRenderedSkillsPrompt(systemPrompt: string, skillsPrompt: string)
   return "";
 }
 
+/** Builds the stored report for a rendered system prompt and its inputs. */
 export function buildSystemPromptReport(params: {
   source: SessionSystemPromptReport["source"];
   generatedAt: number;

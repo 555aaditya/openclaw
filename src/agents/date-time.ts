@@ -1,3 +1,6 @@
+/**
+ * Normalizes timestamps and formats user-facing dates/times for agent prompts.
+ */
 import { execFileSync } from "node:child_process";
 import { resolveDateTimestampMs } from "@openclaw/normalization-core/number-coercion";
 
@@ -17,7 +20,9 @@ export function resolveUserTimezone(configured?: string): string {
     try {
       getDateStampFormatter(trimmed);
       return trimmed;
-    } catch {}
+    } catch {
+      // ignore invalid timezone
+    }
   }
   const host = Intl.DateTimeFormat().resolvedOptions().timeZone;
   return host?.trim() || "UTC";

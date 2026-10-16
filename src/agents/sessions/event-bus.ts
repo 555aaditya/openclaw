@@ -1,4 +1,6 @@
 /**
+ * Tiny event bus abstraction for session UI/runtime notifications.
+ *
  * Isolates handler failures so one bad subscriber cannot break later listeners.
  */
 import { EventEmitter } from "node:events";

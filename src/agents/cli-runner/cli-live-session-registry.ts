@@ -79,6 +79,7 @@ export function getCliLiveSessionApprovalGrants(
   return record?.owner === context.preparedBackend ? record.approvalGrants : undefined;
 }
 
+/** Closes the live execution session associated with a prepared run context, if one exists. */
 export async function closeCliLiveSession(
   context: PreparedCliRunContext,
   reason: CliBackendLiveSessionCloseReason,

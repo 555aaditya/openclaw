@@ -134,6 +134,7 @@ export function adoptMediaGenerationProgressDraft(
         ? [
             [
               operation.runId,
+              // `image_generation` → `Image generation`
               `${operation.taskKind.charAt(0).toUpperCase()}${operation.taskKind.slice(1).replaceAll("_", " ")}`,
             ] as const,
           ]

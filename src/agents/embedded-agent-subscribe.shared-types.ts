@@ -1,4 +1,7 @@
 import type { PreparedReplyTranscriptStart } from "../auto-reply/get-reply-options.types.js";
+/**
+ * Shared display and chunking types for embedded-agent subscription handlers.
+ */
 import type { AgentCommandOutputEventFields } from "../infra/agent-activity-events.js";
 export type { BlockReplyChunking } from "./embedded-agent-block-chunker.js";
 

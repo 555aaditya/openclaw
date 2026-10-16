@@ -1,4 +1,6 @@
 /**
+ * TypeBox schemas for shell/process tools exposed to model providers.
+ *
  * Keep these schemas provider-friendly: flat fields, string enums, and explicit
  * descriptions that match runtime validation.
  */
@@ -21,6 +23,7 @@ const PROCESS_TOOL_ACTIONS = [
   "remove",
 ] as const;
 
+/** Parameters accepted by the exec tool. */
 export const execSchema = Type.Object({
   title: executionTitleSchema(),
   command: Type.String({ description: "Shell command." }),
@@ -115,6 +118,7 @@ export const nodeExecSchema = Type.Object({
   node: execSchema.properties.node,
 });
 
+/** Parameters accepted by the process-control tool. */
 export const processSchema = Type.Object({
   action: Type.String({
     enum: [...PROCESS_TOOL_ACTIONS],

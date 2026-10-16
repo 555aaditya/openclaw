@@ -1,4 +1,5 @@
 /**
+ * Shared tool-call name validation helpers.
  * Keeps model-supplied tool names compact, normalized, and policy-checked
  * before routing them to any tool execution surface.
  */

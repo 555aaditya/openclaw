@@ -23,6 +23,7 @@ export async function resolveAcpAgentWorkspaceProvisioningForTurn(params: {
   workspaceDir?: string;
   /** Effective cwd explicitly selected for this invocation, when already known. */
   cwd?: string;
+  /** Session key for this invocation, when already known. */
   sessionKey?: string;
   /** Live session entry carrying ACP meta, when already at hand. */
   sessionEntry?: { acp?: SessionAcpMeta };

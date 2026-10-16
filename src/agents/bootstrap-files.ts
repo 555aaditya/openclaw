@@ -52,6 +52,7 @@ function rememberBootstrapWarning(key: string): boolean {
   return true;
 }
 
+/** Resolves the effective bootstrap injection mode for a session agent. */
 export function resolveContextInjectionMode(
   config?: OpenClawConfig,
   agentId?: string | null,

@@ -1,3 +1,9 @@
+/**
+ * Public facade for before_tool_call policy and execution handling.
+ *
+ * Implementation is split by ownership: approval transport, ordered policy
+ * orchestration, diagnostics/telemetry, and wrapped execution/finalization.
+ */
 export type {
   BeforeToolCallFailureDisposition,
   BeforeToolCallPolicyDiagnosticState,

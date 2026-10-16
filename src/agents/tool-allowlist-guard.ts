@@ -1,4 +1,6 @@
 /**
+ * Explicit tool allowlist guard.
+ *
  * Collects operator/user allowlist sources and explains when no callable tools remain.
  */
 import { normalizeStringEntries } from "@openclaw/normalization-core/string-normalization";

@@ -1,3 +1,6 @@
+/**
+ * Waits for tool-result streams to become idle before flushing output.
+ */
 import { resolveTimerTimeoutMs } from "@openclaw/normalization-core/number-coercion";
 import { raceWithTimeout } from "@openclaw/retry";
 import type { guardSessionManager } from "../session-tool-result-guard-wrapper.js";

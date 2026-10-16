@@ -1,3 +1,4 @@
+// Cron tool type declarations shared with the cron tool implementation.
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import type { CronRuntimeAuthority } from "../../cron/runtime-authority.js";
 import type { CronCreatorAuthorityGrant } from "../../gateway/cron-creator-authority-grant.types.js";

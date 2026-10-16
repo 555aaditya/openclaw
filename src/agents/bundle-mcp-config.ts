@@ -1,3 +1,7 @@
+/**
+ * Merges bundled plugin MCP servers with user-configured MCP servers for agent
+ * runtimes.
+ */
 import fs from "node:fs";
 import { normalizeConfiguredMcpServers } from "../config/mcp-config-normalize.js";
 import type { SessionToolOverrides } from "../config/sessions/types.js";

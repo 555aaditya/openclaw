@@ -198,6 +198,7 @@ export function createCliDispatchTranscriptRecorder(params: {
   };
 }
 
+/** Maps a sanitized CLI tool result onto transcript content blocks. */
 function normalizeToolResultContent(result: unknown): ToolResultMessage["content"] {
   if (typeof result === "string") {
     return result ? [{ type: "text", text: result }] : [];

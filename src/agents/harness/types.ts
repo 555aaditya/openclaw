@@ -2,6 +2,9 @@
 import type { ProviderModelRef as ModelRef } from "@openclaw/model-catalog-core/model-catalog-refs";
 import type { SessionToolOverrides } from "../../config/sessions/types.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
+/**
+ * Public native agent harness contracts and capability shapes.
+ */
 import type {
   ProviderModelRouteAuthRequirement,
   ProviderModelRouteRuntimePolicy,

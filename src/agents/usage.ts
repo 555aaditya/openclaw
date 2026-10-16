@@ -26,6 +26,7 @@ export type UsageLike = {
   contextUsage?: ContextUsage;
   usageReport?: Usage["usageReport"];
   total?: number;
+  // Common alternates across providers/SDKs.
   inputTokens?: number;
   outputTokens?: number;
   promptTokens?: number;
@@ -49,6 +50,7 @@ export type UsageLike = {
   cached_input_tokens?: number;
   cache_write_input_tokens?: number;
   cached?: number;
+  // Some agents/logs emit alternate naming.
   totalTokens?: number;
   total_tokens?: number;
   cache_read?: number;

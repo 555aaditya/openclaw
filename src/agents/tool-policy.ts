@@ -103,6 +103,7 @@ export function hasRestrictiveAllowPolicy(policy?: { allow?: string[] }): boolea
   );
 }
 
+/** Returns whether a policy removes at least one tool from the default surface. */
 export function toolPolicyRestrictsTools(policy?: ToolPolicyLike): boolean {
   if (!policy) {
     return false;

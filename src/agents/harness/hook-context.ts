@@ -23,6 +23,7 @@ export type AgentHarnessHookContext = Omit<
   config?: OpenClawConfig;
 };
 
+/** Builds the sparse hook context object passed to agent harness plugin hooks. */
 export function buildAgentHookContext(params: AgentHarnessHookContext): PluginHookAgentContext {
   const { memoryAudience } = params;
   if (memoryAudience) {

@@ -1,4 +1,5 @@
 /**
+ * Auth profile API-key/OAuth runtime resolver.
  * Converts selected auth profiles into provider API keys, refreshes OAuth
  * credentials, resolves SecretRefs, and maintains runtime store snapshots.
  */

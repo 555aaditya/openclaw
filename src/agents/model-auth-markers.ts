@@ -94,6 +94,7 @@ export function resolveOAuthApiKeyMarker(providerId: string): string {
   return `${OAUTH_API_KEY_MARKER_PREFIX}${providerId.trim()}`;
 }
 
+/** Return true when a marker value points at provider OAuth auth. */
 export function isOAuthApiKeyMarker(value: string): boolean {
   return value.trim().startsWith(OAUTH_API_KEY_MARKER_PREFIX);
 }
@@ -103,6 +104,7 @@ export function resolveEnvSecretRefHeaderValueMarker(envVarName: string): string
   return `${SECRETREF_ENV_HEADER_MARKER_PREFIX}${envVarName.trim()}`;
 }
 
+/** Return true for secret-ref placeholders used in auth header values. */
 export function isSecretRefHeaderValueMarker(value: string): boolean {
   const trimmed = value.trim();
   return (

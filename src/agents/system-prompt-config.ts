@@ -1,4 +1,6 @@
 /**
+ * Config-aware system prompt builder.
+ *
  * This module gathers agent/config knobs before rendering the canonical system
  * prompt so callers do not duplicate owner, TTS, alias, memory, or FS policy.
  */
@@ -27,6 +29,7 @@ function buildModelAliasLines(owner: ConfiguredAgentSystemPromptParams["prepared
     .map(({ alias, provider, model }) => `- ${alias}: ${provider}/${model}`);
 }
 
+/** Builds the agent system prompt after applying config-derived prompt fields. */
 export function buildConfiguredAgentSystemPrompt(params: ConfiguredAgentSystemPromptParams) {
   const {
     config,

@@ -1,3 +1,6 @@
+/**
+ * Public parameter types for subscribing to embedded-agent sessions.
+ */
 import type { HeartbeatToolResponse } from "../auto-reply/heartbeat-tool-response.js";
 import type { ReasoningLevel, ThinkLevel } from "../auto-reply/thinking.js";
 import type { AssistantMessage } from "../llm/types.js";

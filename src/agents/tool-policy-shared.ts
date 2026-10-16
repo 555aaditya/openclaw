@@ -1,4 +1,5 @@
 /**
+ * Shared runtime tool policy normalization.
  *
  * Keeps aliases, groups, profile expansion, and prefix matching consistent across allow/deny paths.
  */
@@ -23,6 +24,7 @@ type ToolAllowlistWithIntersection = readonly string[] & {
   [TOOL_ALLOWLIST_INTERSECTION]?: readonly string[][];
 };
 
+/** Core tool groups exposed to allow/deny policy config. */
 const TOOL_GROUPS: Record<string, string[]> = { ...CORE_TOOL_GROUPS };
 
 /**
@@ -71,11 +73,13 @@ export function createToolExecutionMatcher(allowNames: readonly string[]) {
   return (toolName: string) => allowed.has(normalizeToolPolicyName(toolName));
 }
 
+/** Normalizes a tool name or alias to the policy id used for matching. */
 export function normalizeToolPolicyName(name: string): string {
   const normalized = normalizeLowercaseStringOrEmpty(name);
   return TOOL_NAME_ALIASES.get(normalized) ?? normalized;
 }
 
+/** Checks whether an in-progress prefix can still resolve to an allowed tool or alias. */
 export function couldNormalizeToolNamePrefixToAllowedTool(
   prefix: string,
   allowedToolNames: Set<string>,
@@ -128,6 +132,7 @@ export function normalizeToolList(list?: string[]) {
   return list.map(normalizeToolPolicyName).filter(Boolean);
 }
 
+/** Expands named tool groups into concrete tool ids. */
 export function expandToolGroups(list?: string[]) {
   const normalized = normalizeToolList(list);
   const expanded: string[] = [];

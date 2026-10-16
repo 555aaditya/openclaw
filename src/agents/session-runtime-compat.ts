@@ -1,4 +1,5 @@
 /**
+ * Session runtime compatibility helpers.
  *
  * Resolves persisted runtime overrides without leaking provider-specific CLI runtime bindings across model routes.
  */
