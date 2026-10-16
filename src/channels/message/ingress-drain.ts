@@ -670,7 +670,11 @@ export function createChannelIngressDrain<
       // update arbitrates competing claimants without rereading the backlog.
       const claimed = await queue.claim(event.id, {
         ownerId,
-        laneKey: selectedLaneKey,
+        // Derived dispatch lanes may be ephemeral. Only channel-authorized
+        // reconciliation may replace an existing durable conversation lane.
+        laneKey: options.reconcileStoredLaneKey
+          ? selectedLaneKey
+          : (event.laneKey ?? selectedLaneKey),
       });
       if (!claimed) {
         // A competing owner may still hold the head; its tail waits for the next pass.

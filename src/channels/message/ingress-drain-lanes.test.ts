@@ -9,6 +9,32 @@ import {
 } from "./ingress-drain.test-helpers.js";
 
 describe("channel ingress drain lanes", () => {
+  it("keeps per-event dispatch lanes out of durable conversation claims", async () => {
+    await withTempState(async (stateDir) => {
+      const queue = createTestIngressQueue(stateDir);
+      await queue.enqueue("message-1", { text: "first" }, { laneKey: "chat:123", receivedAt: 1 });
+      await queue.enqueue("message-2", { text: "second" }, { laneKey: "chat:123", receivedAt: 2 });
+      const drain = createChannelIngressDrain<Payload>({
+        queue,
+        deriveLaneKey: (record) => `${record.laneKey}:${record.id}`,
+        dispatchClaimedEvent: () => ({ kind: "deferred" }),
+      });
+      try {
+        expect(await drain.drainOnce()).toEqual({ started: 2 });
+        await drain.waitForIdle();
+        expect(await queue.listClaims()).toMatchObject([
+          { id: "message-1", laneKey: "chat:123" },
+          { id: "message-2", laneKey: "chat:123" },
+        ]);
+        expect(drain.activeLaneKeys()).toEqual(
+          new Set(["chat:123:message-1", "chat:123:message-2"]),
+        );
+      } finally {
+        drain.dispose();
+      }
+    });
+  });
+
   it("keeps a competing lane head ahead of its tail while dispatching other lanes", async () => {
     await withTempState(async (stateDir) => {
       const queue = createTestIngressQueue(stateDir);
