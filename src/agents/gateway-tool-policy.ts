@@ -9,7 +9,7 @@ import { isCodeModeControlTool } from "./code-mode-control-tools.js";
 import { ToolAuthorizationError } from "./tool-input-error.js";
 import { normalizeToolPolicyName } from "./tool-policy-shared.js";
 
-type GatewayToolPolicyTarget = Pick<AnyAgentTool, "name" | "parameters">;
+type GatewayToolPolicyTarget = { name: string; parameters: unknown };
 
 function isExecutableTool(tool: GatewayToolPolicyTarget): tool is AnyAgentTool {
   return (
