@@ -53,6 +53,8 @@ export function createSessionTranscriptReadPool<Input extends SessionTranscriptW
     },
     workerOptions: { resourceLimits: { maxOldGenerationSizeMb: 512 } },
     maxWorkers,
+    scaleUpDelayMs: 25,
+    burstIdleTimeoutMs: 30_000,
     sharedCompute,
   });
   const stores = new Map<string, RetainedStore>();
@@ -160,6 +162,7 @@ export function createSessionTranscriptHistoryPool(
       workerUrl,
       workerOptions: { resourceLimits: { maxOldGenerationSizeMb: 512 } },
       maxWorkers,
+      scaleUpDelayMs: 25,
       idleTimeoutMs: 0,
       burstIdleTimeoutMs: 30_000,
       prepareWorker: () => {

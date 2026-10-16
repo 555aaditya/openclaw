@@ -78,6 +78,82 @@ beforeEach(() => {
   workers.splice(0);
 });
 
+it("reuses a worker for short bursts and grows only for sustained queued work", async () => {
+  vi.useFakeTimers();
+  const pool = createPool({ maxWorkers: 2, scaleUpDelayMs: 25 });
+  try {
+    const first = pool.run("first", {});
+    const primary = workerFor("first");
+    const brief = pool.run("brief", {});
+    void Promise.allSettled([first, brief]);
+    await vi.advanceTimersByTimeAsync(10);
+    expect(workers).toHaveLength(1);
+    reply(primary, "first");
+    await first;
+    expect(workerFor("brief")).toBe(primary);
+    reply(primary, "brief");
+    await brief;
+    await vi.advanceTimersByTimeAsync(25);
+    expect(workers).toHaveLength(1);
+
+    const held = pool.run("held", {});
+    const older = pool.run("older", {});
+    void Promise.allSettled([held, older]);
+    await vi.advanceTimersByTimeAsync(20);
+    const newer = pool.run("newer", {});
+    void newer.catch(() => undefined);
+    await vi.advanceTimersByTimeAsync(4);
+    expect(workers).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    const surplus = workerFor("older");
+    expect(surplus).not.toBe(primary);
+    expect(workers).toHaveLength(2);
+    reply(surplus, "older");
+    await older;
+    expect(workerFor("newer")).toBe(surplus);
+    reply(surplus, "newer");
+    reply(primary, "held");
+    await Promise.all([held, newer]);
+  } finally {
+    await pool.close();
+    vi.useRealTimers();
+  }
+});
+
+it.each(["abort", "timeout", "close"])(
+  "does not start a surplus worker after queued work ends through %s",
+  async (ending) => {
+    vi.useFakeTimers();
+    const pool = createPool({ maxWorkers: 2, scaleUpDelayMs: 25 });
+    const active = pool.run("active", {});
+    const activeResult = active.catch(() => undefined);
+    const controller = new AbortController();
+    const queued = pool.run("queued", {
+      signal: controller.signal,
+      ...(ending === "timeout" ? { timeoutMs: 10 } : {}),
+    });
+    const rejected = expect(queued).rejects.toThrow();
+    try {
+      if (ending === "abort") {
+        controller.abort(new Error("queued read cancelled"));
+      } else if (ending === "close") {
+        await pool.close();
+      }
+      await vi.advanceTimersByTimeAsync(25);
+      await rejected;
+      expect(workers).toHaveLength(1);
+      if (ending !== "close") {
+        reply(workerFor("active"), "active");
+      }
+      await activeResult;
+    } finally {
+      await pool.close();
+      await activeResult;
+      vi.useRealTimers();
+    }
+  },
+);
+
 it("retires burst workers without extending the first worker's idle lifetime", async () => {
   vi.useFakeTimers();
   const pool = createPool({ maxWorkers: 2, idleTimeoutMs: 60_000, burstIdleTimeoutMs: 5_000 });

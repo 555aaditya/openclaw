@@ -203,11 +203,16 @@ flushes the remaining batch. Fresh checkpoints remain untouched, and a failed or
 canceled scan leaves uncommitted derived totals for the next refresh. Persisted
 rollups, partitions, schemas, and report totals keep their existing format.
 
-Transcript history and search lanes likewise retire surplus workers after 30
-seconds idle. Each lane keeps one worker until its existing five-minute idle
+Transcript history, search, and model-context pools start with one worker and
+add a second only when a read has waited in the queue for 25 milliseconds.
+Existing idle workers accept reads immediately. Surplus workers retire after 30
+seconds idle. History and search keep one worker until their five-minute idle
 retirement, which waits for logical reader leases to be released. Surplus
 retirement preserves those leases and waits for active tasks; a later concurrent
-read starts another worker on demand.
+read can start another worker after the same queue wait. Model-context reads keep
+their existing one-minute idle timeout and reuse-based warm window. Independent
+history, search, maintenance, discovery, and usage lanes retain their separate
+capacity so host-side writes cannot block foreground reads.
 
 Canonical auth reads pass a compact projection of the live owner's schema facts
 (user version and the two auth table classifications) to the isolated child. The

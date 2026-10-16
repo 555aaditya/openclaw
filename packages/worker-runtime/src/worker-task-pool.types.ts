@@ -16,6 +16,8 @@ export type WorkerTaskPoolOptions<Output> = {
     releaseResources?: () => Promise<void>;
   };
   maxWorkers?: number;
+  /** Queue wait before adding a worker beyond the first; existing idle workers dispatch immediately. */
+  scaleUpDelayMs?: number;
   /** Share CPU admission with other stateless compute pools in this isolate. */
   sharedCompute?: boolean;
   /** Include queued, preparing, and running tasks until execution has settled. */

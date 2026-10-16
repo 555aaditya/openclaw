@@ -94,11 +94,7 @@ export class WorkerTaskPoolCore<Input, Output> {
   };
   private readonly retirement;
   private readonly queue: Task<Input, Output>[] = [];
-  private readonly bootstrap = createWorkerTaskPoolBootstrap(
-    this.slots,
-    this.queue,
-    (task, error) => this.finish(task, error),
-  );
+  private readonly bootstrap;
   private readonly maxWorkers: number;
   private readonly observeTask;
   private readonly maxPendingTasks: number;
@@ -122,6 +118,13 @@ export class WorkerTaskPoolCore<Input, Output> {
     private readonly publicDispatch?: WorkerTaskPoolDispatch,
     private readonly ownerOptions: WorkerTaskPoolOwnerOptions = {},
   ) {
+    this.bootstrap = createWorkerTaskPoolBootstrap(
+      this.slots,
+      this.queue,
+      (task, error) => this.finish(task, error),
+      runInWorkerPoolContext,
+      options.scaleUpDelayMs,
+    );
     this.observeTask = host.createTaskObserver?.(options.workerUrl);
     this.maxWorkers = host.maxWorkers ?? options.maxWorkers ?? availableParallelism();
     this.maxPendingTasks = options.maxPendingTasks ?? DEFAULT_WORKER_PENDING_TASKS;
@@ -150,14 +153,7 @@ export class WorkerTaskPoolCore<Input, Output> {
   }
 
   run(input: WorkerTaskInput<Input>, options: WorkerTaskOptions<Input>): Promise<Output> {
-    if (this.closedError) {
-      return Promise.reject(this.closedError);
-    }
-    const inputBytes = options.inputBytes ?? 0;
-    if (!Number.isSafeInteger(inputBytes) || inputBytes < 0) {
-      return Promise.reject(new RangeError("inputBytes must be a nonnegative safe integer"));
-    }
-    return this.enqueue(input, options, false, inputBytes).promise;
+    return this.enqueue(input, options, false).promise;
   }
 
   runTask(
@@ -299,6 +295,7 @@ export class WorkerTaskPoolCore<Input, Output> {
   }
 
   startRotate(): RetainedOperation<void> {
+    this.bootstrap.clearScaleUp();
     this.computeCapacity?.remove(this.resumeCompute);
     return this.retirement.startRotate();
   }
@@ -308,6 +305,7 @@ export class WorkerTaskPoolCore<Input, Output> {
     reason: WorkerRetirementReason = "closed",
   ): Promise<void> {
     this.closedError ??= error;
+    this.bootstrap.clearScaleUp();
     channel("openclaw.memory.critical").unsubscribe(this.retireIdleOnPressure);
     this.computeCapacity?.remove(this.resumeCompute);
     for (const task of this.queue.splice(0)) {
@@ -335,6 +333,7 @@ export class WorkerTaskPoolCore<Input, Output> {
   }
 
   private dispatch(): void {
+    this.bootstrap.clearScaleUp();
     if (!this.slots.size) {
       channel("openclaw.memory.critical").unsubscribe(this.retireIdleOnPressure);
     }
@@ -368,6 +367,9 @@ export class WorkerTaskPoolCore<Input, Output> {
               occupied.task.exchange.pressure.abort();
             }
           }
+          return;
+        }
+        if (this.bootstrap.deferScaleUp(this.resumeCompute)) {
           return;
         }
       }
