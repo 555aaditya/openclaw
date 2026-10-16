@@ -167,12 +167,10 @@ type SourceEntry = {
   expiresAt?: number;
 };
 type SourceCache = {
-  client: GatewayBrowserClient;
-  epoch: number | undefined;
-  basePath: string | undefined;
+  generation: number;
   entries: Map<string, SourceEntry>;
 };
-const sourceCaches = new WeakMap<ArtifactDownloadHost, SourceCache>();
+const sourceCaches = new WeakMap<GatewayBrowserClient, SourceCache>();
 
 export async function resolveArtifactDownloadSource(
   state: ArtifactDownloadHost,
@@ -181,16 +179,18 @@ export async function resolveArtifactDownloadSource(
   policyKey?: string,
 ): Promise<ArtifactSource> {
   const { client, connectionEpoch: epoch, resourceBasePath: basePath } = state;
-  if (!state.connected || !client || signal?.aborted) {
+  if (!state.connected || !client?.connected || signal?.aborted) {
     return null;
   }
-  let cache = sourceCaches.get(state);
-  if (cache?.client !== client || cache.epoch !== epoch || cache.basePath !== basePath) {
-    cache = { client, epoch, basePath, entries: new Map() };
-    sourceCaches.set(state, cache);
+  const generation = client.connectionGeneration;
+  let cache = sourceCaches.get(client);
+  if (cache?.generation !== generation) {
+    cache = { generation, entries: new Map() };
+    sourceCaches.set(client, cache);
   }
   const entries = cache.entries;
   const key = JSON.stringify([
+    basePath,
     policyKey,
     params.sessionKey,
     params.agentId,
@@ -208,7 +208,19 @@ export async function resolveArtifactDownloadSource(
     // so another consumer or virtual-row remount can reuse the same bytes.
     const created: SourceEntry = {
       subscribers: new Set(),
-      promise: loadArtifactDownloadSource(state, params).then(
+      promise: loadArtifactDownloadSource(
+        {
+          client,
+          resourceBasePath: basePath,
+          get connected() {
+            return client.connected;
+          },
+          get connectionEpoch() {
+            return client.connectionGeneration;
+          },
+        },
+        params,
+      ).then(
         (source) => {
           if (source) {
             created.expiresAt = source.expiresAt ? Date.parse(source.expiresAt) || 0 : Infinity;
@@ -232,7 +244,11 @@ export async function resolveArtifactDownloadSource(
   }
   try {
     const source = await subscribeToSharedRequest(entry, {}, signal);
-    return state.connected && state.client === client && state.connectionEpoch === epoch
+    return state.connected &&
+      state.client === client &&
+      state.connectionEpoch === epoch &&
+      client.connected &&
+      client.connectionGeneration === generation
       ? source
       : null;
   } catch (error) {

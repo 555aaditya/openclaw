@@ -108,21 +108,6 @@ export function ActivitySessionMedia(props: ActivitySessionMediaProps) {
   let observedPending: Promise<void> | undefined;
   let disposed = false;
 
-  const artifactDownloadHost = {
-    get client() {
-      return props.context.gateway.snapshot.client;
-    },
-    get connected() {
-      return !disposed && props.context.gateway.snapshot.phase === "connected";
-    },
-    get connectionEpoch() {
-      return props.context.gateway.snapshot.client?.connectionGeneration;
-    },
-    get resourceBasePath() {
-      return props.context.resourceBasePath;
-    },
-  };
-
   const isConnected = () => !disposed && host.isConnected;
 
   const refresh = () => {
@@ -328,7 +313,15 @@ export function ActivitySessionMedia(props: ActivitySessionMediaProps) {
         signal?: AbortSignal,
       ) =>
         resolveArtifactDownloadSource(
-          artifactDownloadHost,
+          {
+            get client() {
+              return gateway.snapshot.client;
+            },
+            get connected() {
+              return currentConnection();
+            },
+            resourceBasePath: props.context.resourceBasePath,
+          },
           { ...params, agentId },
           signal,
           assistantMediaPolicyKey(props.session),

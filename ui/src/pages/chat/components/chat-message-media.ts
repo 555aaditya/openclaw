@@ -61,11 +61,9 @@ export type ImageRenderOptions = {
 export function assistantMediaPolicyKey(
   session: GatewaySessionRow | undefined,
   configEpoch = 0,
-): string | undefined {
-  if (!session && configEpoch === 0) {
-    return undefined;
-  }
-  // These facts invalidate previews; the Gateway still owns the permission decision.
+): string {
+  // Missing rows and rows without policy facts share one identity.
+  // The Gateway still owns the permission decision.
   return JSON.stringify([
     configEpoch,
     session?.permissionMode,

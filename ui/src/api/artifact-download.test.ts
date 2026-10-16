@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../test/helpers/promise.js";
+import { assistantMediaPolicyKey } from "../pages/chat/components/chat-message-media.ts";
 import { resolveArtifactDownloadSource } from "./artifact-download.ts";
 
 describe("resolveArtifactDownloadSource", () => {
@@ -20,6 +21,60 @@ describe("resolveArtifactDownloadSource", () => {
   };
   const ticket = "/api/artifacts/download/connection/ticket";
 
+  it("keeps source admission stable while an unchanged session projection is absent", async () => {
+    const request = vi.fn().mockResolvedValue(inline);
+    const state = {
+      connected: true,
+      client: {
+        connected: true,
+        connectionGeneration: 1,
+        gatewayUrl: "wss://remote.test",
+        request,
+      } as never,
+    };
+    const params = { sessionKey: "agent:main:main", artifactId: artifact.id };
+    const session = { key: params.sessionKey };
+    await resolveArtifactDownloadSource(state, params, undefined, assistantMediaPolicyKey(session));
+    await resolveArtifactDownloadSource(
+      state,
+      params,
+      undefined,
+      assistantMediaPolicyKey(undefined),
+    );
+    await resolveArtifactDownloadSource(state, params, undefined, assistantMediaPolicyKey(session));
+    expect(request).toHaveBeenCalledOnce();
+    await resolveArtifactDownloadSource(
+      state,
+      params,
+      undefined,
+      assistantMediaPolicyKey({ ...session, permissionMode: "full" }),
+    );
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  it("shares an artifact across pane hosts on the same physical connection", async () => {
+    const response = createDeferred<typeof inline>();
+    const request = vi.fn(() => response.promise);
+    const client = {
+      connected: true,
+      connectionGeneration: 1,
+      gatewayUrl: "wss://remote.test",
+      request,
+    };
+    const firstHost = { connected: true, connectionEpoch: 1, client: client as never };
+    const nextHost = { connected: true, connectionEpoch: 8, client: client as never };
+    const params = { sessionKey: "main", artifactId: artifact.id };
+    const first = resolveArtifactDownloadSource(firstHost, params);
+    const next = resolveArtifactDownloadSource(nextHost, params);
+    response.resolve(inline);
+    expect(await first).toEqual({ url: "data:image/png;base64,cG5n" });
+    expect(await next).toEqual({ url: "data:image/png;base64,cG5n" });
+    expect(await resolveArtifactDownloadSource({ ...nextHost }, params)).toEqual({
+      url: "data:image/png;base64,cG5n",
+    });
+    expect(request).toHaveBeenCalledOnce();
+  });
+
   it.each([false, true])(
     "shares pending and settled sources after HTTP failure=%s",
     async (fails) => {
@@ -39,7 +94,12 @@ describe("resolveArtifactDownloadSource", () => {
       const state = {
         connected: true,
         connectionEpoch: 1,
-        client: { gatewayUrl: "wss://control.test", request } as never,
+        client: {
+          connected: true,
+          connectionGeneration: 1,
+          gatewayUrl: "wss://control.test",
+          request,
+        } as never,
       };
       const params = { sessionKey: "main", artifactId: artifact.id, variant: "thumbnail" as const };
       const first = resolveArtifactDownloadSource(state, params);
@@ -80,7 +140,12 @@ describe("resolveArtifactDownloadSource", () => {
       const state = {
         connected: true,
         connectionEpoch: 1,
-        client: { gatewayUrl: "wss://remote.test", request } as never,
+        client: {
+          connected: true,
+          connectionGeneration: 1,
+          gatewayUrl: "wss://remote.test",
+          request,
+        } as never,
       };
       const params = { sessionKey: "main", artifactId: artifact.id };
       await resolveArtifactDownloadSource(state, params);
@@ -98,6 +163,7 @@ describe("resolveArtifactDownloadSource", () => {
       }
       expect(request).toHaveBeenCalledTimes(7);
       state.connectionEpoch++;
+      Object.assign(state.client, { connectionGeneration: 2 });
       await resolveArtifactDownloadSource(state, params);
       expect(request).toHaveBeenCalledTimes(8);
       vi.setSystemTime(now + 1000);
@@ -162,7 +228,12 @@ describe("resolveArtifactDownloadSource", () => {
         {
           connected: true,
           resourceBasePath: "/mount",
-          client: { gatewayUrl: gateway, request } as never,
+          client: {
+            connected: true,
+            connectionGeneration: 1,
+            gatewayUrl: gateway,
+            request,
+          } as never,
         },
         { sessionKey: "agent:main:main", artifactId: artifact.id, variant },
       );
@@ -246,7 +317,15 @@ describe("resolveArtifactDownloadSource", () => {
         .mockResolvedValueOnce(download)
         .mockResolvedValue(variant === "thumbnail" ? preview : reject ? download : inline);
       const result = await resolveArtifactDownloadSource(
-        { connected: true, client: { gatewayUrl: "wss://control.test", request } as never },
+        {
+          connected: true,
+          client: {
+            connected: true,
+            connectionGeneration: 1,
+            gatewayUrl: "wss://control.test",
+            request,
+          } as never,
+        },
         { sessionKey: "agent:main:main", artifactId: artifact.id, variant },
       );
       if (variant === "thumbnail") {
@@ -281,7 +360,15 @@ describe("resolveArtifactDownloadSource", () => {
       vi.stubGlobal("fetch", fetchMock);
       const request = vi.fn().mockResolvedValue(preview);
       const result = await resolveArtifactDownloadSource(
-        { connected: true, client: { gatewayUrl: "wss://remote.test", request } as never },
+        {
+          connected: true,
+          client: {
+            connected: true,
+            connectionGeneration: 1,
+            gatewayUrl: "wss://remote.test",
+            request,
+          } as never,
+        },
         { sessionKey: "main", artifactId: artifact.id, variant: "thumbnail", previewWidth },
       );
       expect(result).toEqual({ url: "data:image/webp;base64,cHJldmlldw==" });
@@ -303,7 +390,15 @@ describe("resolveArtifactDownloadSource", () => {
       .mockResolvedValueOnce(null);
     expect(
       await resolveArtifactDownloadSource(
-        { connected: true, client: { gatewayUrl: "wss://control.test", request } as never },
+        {
+          connected: true,
+          client: {
+            connected: true,
+            connectionGeneration: 1,
+            gatewayUrl: "wss://control.test",
+            request,
+          } as never,
+        },
         { sessionKey: "main", artifactId: artifact.id, variant: "thumbnail", previewWidth: 480 },
       ),
     ).toBeNull();
@@ -330,7 +425,12 @@ describe("resolveArtifactDownloadSource", () => {
       const state = {
         connected: true,
         connectionEpoch: 1,
-        client: { gatewayUrl: "wss://control.test", request } as never,
+        client: {
+          connected: true,
+          connectionGeneration: 1,
+          gatewayUrl: "wss://control.test",
+          request,
+        } as never,
       };
       const pending = resolveArtifactDownloadSource(state, {
         sessionKey: "main",
@@ -339,6 +439,7 @@ describe("resolveArtifactDownloadSource", () => {
       });
       await started.promise;
       state.connectionEpoch += 1;
+      Object.assign(state.client, { connectionGeneration: 2 });
       transfer.reject(new TypeError("Connection changed"));
       expect(await pending).toBeNull();
       expect(request).toHaveBeenCalledOnce();
@@ -351,6 +452,8 @@ describe("resolveArtifactDownloadSource", () => {
       {
         connected: true,
         client: {
+          connected: true,
+          connectionGeneration: 1,
           request: async (method: string, params: unknown, options: unknown) => {
             requests.push({ method, params, options });
             return {
