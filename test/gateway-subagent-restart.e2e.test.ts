@@ -192,11 +192,9 @@ it.skipIf(process.platform === "win32").for([
       expect(child.kill(shutdownMode === "SIGKILL" ? "SIGKILL" : "SIGTERM")).toBe(true);
       if (legacyFixture && shutdownMode !== "SIGKILL") {
         // The fixture hook has no turn signal; release it only after the owner aborts the turn.
-        await vi.waitFor(
-          () =>
-            expect(instance.logs()).toMatch(/aborted \d+ active run\(s\) during restart shutdown/),
-          { timeout: 10_000 },
-        );
+        while (!/aborted \d+ active run\(s\) during restart shutdown/.test(instance.logs())) {
+          await once(child.stdout, "data", { signal });
+        }
         provider.releaseCheckpoint();
       }
       expect(await withinTest(closed, signal), instance.logs()).toEqual(
