@@ -192,6 +192,11 @@ idle timeout. Surplus readers retire after 30 seconds idle and restart on demand
 Retirement uses the pool's existing task and native-resource settlement so an
 active read or retained lease is not interrupted.
 
+Lease effects check their exact persisted owner once, without a separate worker
+liveness handshake. Independent renewal and ordinary shutdown settlement remain;
+asynchronous replies are bounded by committed expiry and the existing maximum
+operation deadline.
+
 Durable usage refreshes publish rollups in bounded transactions instead of one
 writer request per transcript. A batch flushes after 50 transcripts, 1 MiB of
 prepared payload, or one second of scanning, checked between whole transcripts;

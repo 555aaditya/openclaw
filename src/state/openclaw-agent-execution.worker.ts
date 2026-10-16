@@ -474,7 +474,6 @@ function openAgentDatabaseBackend(
     "session.archivePruning.reclaimPages": loadAgentArchivePruningOperations,
     "session.maintenance.prepare": loadMaintenanceOperations,
     "session.maintenance.metadata": loadMaintenanceOperations,
-    "session.maintenance.release": loadMaintenanceOperations,
     "usageCache.writeRollup": loadUsageCacheOperations,
     "usageCache.prune": loadUsageCacheOperations,
     "usageCache.retireLegacy": loadUsageCacheOperations,

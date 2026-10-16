@@ -11,7 +11,10 @@ import { AGENT_DATABASE_PREFLIGHT_CONCURRENCY } from "../../state/openclaw-agent
 import { registerOpenClawStateDatabaseAsyncResource } from "../../state/openclaw-state-db-cache.js";
 import { captureOpenClawStateWorkerContext } from "../../state/openclaw-state-worker-context.js";
 import type { SqliteSessionReclamationPlan } from "./session-accessor.sqlite-lifecycle-types.js";
-import type { SqliteMutationWorkerTransport } from "./session-accessor.sqlite-worker-transport.js";
+import type {
+  SqliteMutationWorkerTransport,
+  WorkerCleanup,
+} from "./session-accessor.sqlite-worker-transport.js";
 
 type DatabaseOptions = SqliteSessionReclamationPlan["databaseOptions"];
 const log = createSubsystemLogger("session-sqlite");
@@ -25,9 +28,7 @@ export type SqliteCanonicalValidationTaskMessage = {
   threadId: number;
   operationId: number;
 };
-export type SqliteCanonicalValidationTaskResult =
-  | { status: "closed" }
-  | { status: "failed"; error: string };
+export type SqliteCanonicalValidationTaskResult = WorkerCleanup;
 export type CanonicalWorkerPool = {
   pool: WorkerTaskPool<SqliteCanonicalValidationWorkerTask, SqliteCanonicalValidationTaskResult>;
   closed: boolean;
@@ -67,12 +68,6 @@ export async function withSqliteCanonicalValidationWorkerPool<T>(
       maxWorkers: AGENT_DATABASE_PREFLIGHT_CONCURRENCY,
       // The startup scope joins native workers after its database tasks close.
       idleTimeoutMs: 0,
-      validateResult: (result) => {
-        // Failed mutation/close replies retire the native slot before rejecting its task.
-        if (result.status !== "closed") {
-          throw new Error(result.error);
-        }
-      },
     }),
     closed: false,
     close: async () => {
@@ -143,7 +138,6 @@ export async function startCanonicalValidationTask(
         },
       },
     )
-    .then(() => undefined)
     .catch((error: unknown) => {
       execution.closed = true;
       execution.failure ??= toStringifiedError(error);
@@ -166,7 +160,6 @@ export async function startCanonicalValidationTask(
       threadId: started.threadId,
       initialOperationId: started.operationId,
       completion,
-      custodyReleased: () => custodyReleased,
       terminate: async () => {
         // This controller belongs to one task, never to its reused native slot.
         if (active) {

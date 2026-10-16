@@ -41,6 +41,11 @@ export function parseUserGitHubConnection(raw: string): UserGitHubConnection {
     throw new PersonalGitHubStateError();
   }
   const record = result.data;
+  registerUserGitHubConnectionSecrets(record);
+  return record;
+}
+
+export function registerUserGitHubConnectionSecrets(record: UserGitHubConnection): void {
   if (record.pending?.kind === "device") {
     registerSecretValueForRedaction(record.pending.deviceCode);
     if (record.pending.candidate) {
@@ -53,7 +58,6 @@ export function parseUserGitHubConnection(raw: string): UserGitHubConnection {
       registerTokens(record.selection.refresh.tokens);
     }
   }
-  return record;
 }
 
 function registerTokens(tokens: UserGitHubTokenPair): void {

@@ -65,16 +65,16 @@ export function prepareSessionDeletionInDatabase(
         ),
       };
     case "check":
-      return {
-        operation: planning.operation,
-        value: prepareSessionHistoricalReclamationInDatabase(
-          database,
-          planning.input,
-          expectedDatabaseIdentity,
-        ),
-      };
+      break;
   }
-  throw new Error("Unknown SQLite session deletion planning operation");
+  return {
+    operation: planning.operation,
+    value: prepareSessionHistoricalReclamationInDatabase(
+      database,
+      planning.input,
+      expectedDatabaseIdentity,
+    ),
+  };
 }
 
 /** Native identity is checked locally; it is never serialized into the planning input. */

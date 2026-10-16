@@ -79,11 +79,7 @@ export function resolveSessionRunError(
   outcome: { error?: string; errorKind?: unknown },
   status: SessionRunStatus,
 ): string | undefined {
-  if (
-    (status !== "failed" && status !== "timeout") ||
-    typeof outcome.error !== "string" ||
-    !outcome.error.trim()
-  ) {
+  if ((status !== "failed" && status !== "timeout") || !outcome.error?.trim()) {
     return undefined;
   }
   if (outcome.errorKind === "state_contention") {

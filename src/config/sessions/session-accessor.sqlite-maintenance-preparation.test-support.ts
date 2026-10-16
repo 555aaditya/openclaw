@@ -192,8 +192,7 @@ export function registerSessionMaintenancePreparationTests() {
         maintenancePreparationFixture(state);
       const prepared = createDeferredCore();
       const continuePreparation = createDeferredCore();
-      const preparations: string[] = [];
-      const released: string[] = [];
+      let preparations = 0;
       const published: string[] = [];
       const unsubscribe = sessionChanges.subscribe((change) => {
         if (
@@ -205,15 +204,11 @@ export function registerSessionMaintenancePreparationTests() {
         }
       });
       observeSessionMaintenancePlanningWorker({
-        async afterPrepare(id) {
-          preparations.push(id);
-          if (preparations.length === 1) {
+        async afterPrepare() {
+          if (++preparations === 1) {
             prepared.resolve();
             await continuePreparation.promise;
           }
-        },
-        afterRelease(id) {
-          released.push(id);
         },
       });
       const sql = observeHostDataSql();
@@ -248,20 +243,15 @@ export function registerSessionMaintenancePreparationTests() {
           }),
         });
         await racePromiseWithAbortSignal(foreground, signal);
-        expect(released).toEqual([]);
         expect(published).toEqual([stale.sessionKey]);
         continuePreparation.resolve();
         await expect(pending).resolves.toEqual({ kind: "maintenance-plan-stale" });
-        expect(released).toEqual([preparations[0]]);
         expect(published).toEqual([stale.sessionKey]);
         retry = runSqliteSessionReclamation({ plan });
         await expect(retry).resolves.toMatchObject({
           kind: "maintenance-plan",
           value: { archived: 1, archivedEntries, entryRemovals: [] },
         });
-        expect(preparations).toHaveLength(2);
-        expect(preparations[0]).not.toBe(preparations[1]);
-        expect(released).toEqual(preparations);
         expect(published).toEqual([stale.sessionKey, stale.sessionKey]);
         expect(sql.queries).toEqual([]);
       } finally {
@@ -277,45 +267,26 @@ export function registerSessionMaintenancePreparationTests() {
   });
 
   it.for(["caller revocation", "lost preparation reply"] as const)(
-    "joins preparation cleanup after %s without discarding another caller's preparation",
+    "preserves rows after %s and lets the next maintenance pass proceed",
     async (failure, { signal }) => {
       await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
         const { stale, plan, archivedEntries } = maintenancePreparationFixture(state);
         const firstPrepared = createDeferredCore();
-        const secondPrepared = createDeferredCore();
-        const releaseEntered = createDeferredCore();
         const continueFirst = createDeferredCore();
-        const continueSecond = createDeferredCore();
-        const continueRelease = createDeferredCore();
-        const preparations: string[] = [];
-        const released: string[] = [];
+        let preparations = 0;
         const cancelled = new Error(`Maintenance ${failure} after native preparation`);
         observeSessionMaintenancePlanningWorker({
-          async afterPrepare(id) {
-            preparations.push(id);
-            if (preparations.length === 1) {
+          async afterPrepare() {
+            if (++preparations === 1) {
               firstPrepared.resolve();
               await continueFirst.promise;
               if (failure === "lost preparation reply") {
                 throw cancelled;
               }
-            } else {
-              secondPrepared.resolve();
-              await continueSecond.promise;
             }
-          },
-          async beforeRelease(id) {
-            if (id === preparations[0]) {
-              releaseEntered.resolve();
-              await continueRelease.promise;
-            }
-          },
-          afterRelease(id) {
-            released.push(id);
           },
         });
         let current = true;
-        let settled = false;
         const published = vi.fn();
         const sql = observeHostDataSql();
         const first = runSqliteSessionReclamation({
@@ -328,19 +299,12 @@ export function registerSessionMaintenancePreparationTests() {
           },
         });
         const firstOutcome = first.then(
-          (value) => {
-            settled = true;
-            return { kind: "returned" as const, value };
-          },
-          (error: unknown) => {
-            settled = true;
-            return { kind: "failed" as const, error };
-          },
+          (value) => ({ kind: "returned" as const, value }),
+          (error: unknown) => ({ kind: "failed" as const, error }),
         );
         let second: ReturnType<typeof runSqliteSessionReclamation> | undefined;
-        let excess: ReturnType<typeof runSqliteSessionReclamation> | undefined;
         const premature = firstOutcome.then(() => {
-          throw new Error("Cancelled maintenance settled before its retained cleanup");
+          throw new Error("Maintenance settled before its preparation boundary");
         });
         void premature.catch(() => {});
         try {
@@ -350,49 +314,19 @@ export function registerSessionMaintenancePreparationTests() {
           );
           current = failure !== "caller revocation";
           continueFirst.resolve();
-          await racePromiseWithAbortSignal(
-            Promise.race([releaseEntered.promise, premature]),
-            signal,
-          );
-          expect(settled).toBe(false);
-          second = runSqliteSessionReclamation({ plan });
-          await racePromiseWithAbortSignal(
-            Promise.race([
-              secondPrepared.promise,
-              second.then(() => {
-                throw new Error("Sibling maintenance completed without preparation");
-              }),
-            ]),
-            signal,
-          );
-          expect(preparations).toHaveLength(2);
-          expect(preparations[0]).not.toBe(preparations[1]);
-          expect(released).toEqual([]);
-          expect(published).not.toHaveBeenCalled();
-          excess = runSqliteSessionReclamation({ plan });
-          await expect(racePromiseWithAbortSignal(excess, signal)).rejects.toThrow(
-            "Session maintenance preparation capacity is occupied",
-          );
-          expect(preparations).toHaveLength(2);
-          expect(released).toHaveLength(1);
-          const refusedId = expectDefined(released[0], "refused preparation discard");
-          expect(preparations).not.toContain(refusedId);
-          continueRelease.resolve();
           expect(await firstOutcome).toEqual({ kind: "failed", error: cancelled });
-          expect(released).toEqual([refusedId, preparations[0]]);
-          continueSecond.resolve();
+          expect(published).not.toHaveBeenCalled();
+          expect(loadSessionEntry(stale)?.archivedAt).toBeUndefined();
+          second = runSqliteSessionReclamation({ plan });
           await expect(second).resolves.toMatchObject({
             kind: "maintenance-plan",
             value: { archived: 1, archivedEntries },
           });
-          expect(released).toEqual([refusedId, ...preparations]);
           expect(published).not.toHaveBeenCalled();
           expect(sql.queries).toEqual([]);
         } finally {
           continueFirst.resolve();
-          continueSecond.resolve();
-          continueRelease.resolve();
-          await Promise.allSettled([firstOutcome, second, excess]);
+          await Promise.allSettled([firstOutcome, second]);
           sql.restore();
         }
         expect(loadSessionEntry(stale)?.archivedAt).toEqual(expect.any(Number));
@@ -419,7 +353,7 @@ export function registerSessionMaintenancePreparationTests() {
         let nativeClosed = false;
         let closeNative: (() => Promise<void>) | undefined;
         observeSessionMaintenancePlanningWorker({
-          async afterPrepare(_id, native) {
+          async afterPrepare(native) {
             if (closeNative) {
               return;
             }
@@ -503,76 +437,4 @@ export function registerSessionMaintenancePreparationTests() {
       });
     },
   );
-
-  it("preserves committed maintenance after joined preparation-discard failure", async ({
-    signal,
-  }) => {
-    await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
-      const { stale, plan, archivedEntries } = maintenancePreparationFixture(state);
-      const nativeClosed = createDeferredCore();
-      const continueClose = createDeferredCore();
-      const published = vi.fn();
-      let committed = false;
-      let settled = false;
-      let closeNative: (() => Promise<void>) | undefined;
-      const cleanupFailure = new Error("Preparation discard failed after committed maintenance");
-      observeSessionMaintenancePlanningWorker({
-        afterPrepare(_id, native) {
-          const close = native.store.close.bind(native.store);
-          closeNative = close;
-          vi.spyOn(native.store, "close").mockImplementation(async () => {
-            await close();
-            nativeClosed.resolve();
-            await continueClose.promise;
-          });
-        },
-        afterExecute(result) {
-          expect(result.kind).toBe("committed");
-          committed = true;
-        },
-        beforeRelease() {
-          expect(committed).toBe(true);
-          throw cleanupFailure;
-        },
-      });
-      const sql = observeHostDataSql();
-      const pending = runSqliteSessionReclamation({
-        plan,
-        onWorkerResult: published,
-      });
-      void pending
-        .finally(() => {
-          settled = true;
-        })
-        .catch(() => {});
-      try {
-        await racePromiseWithAbortSignal(
-          Promise.race([
-            nativeClosed.promise,
-            pending.then(() => {
-              throw new Error("Maintenance acknowledged before joining its native retirement");
-            }),
-          ]),
-          signal,
-        );
-        expect(published).toHaveBeenCalledOnce();
-        expect(settled).toBe(false);
-        continueClose.resolve();
-        await expect(pending).resolves.toMatchObject({
-          kind: "maintenance-plan",
-          value: { archived: 1, archivedEntries },
-        });
-        expect(sql.queries).toEqual([]);
-      } finally {
-        continueClose.resolve();
-        await Promise.allSettled([pending]);
-        try {
-          await closeNative?.();
-        } finally {
-          sql.restore();
-        }
-      }
-      expect(loadSessionEntry(stale)?.archivedAt).toEqual(expect.any(Number));
-    });
-  });
 }

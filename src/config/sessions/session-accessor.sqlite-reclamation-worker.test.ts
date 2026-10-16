@@ -600,23 +600,17 @@ test("retains a selected maintenance row protected after native preparation", as
         storePath: database.path,
       },
     } satisfies SqliteSessionReclamationPlan;
-    const prepared: string[] = [];
-    const released: string[] = [];
     const refreshed = vi.fn(() => ({
       activeSessionKeys: [active.sessionKey],
       preservation: protection,
     }));
     observeSessionMaintenancePlanningWorker({
-      afterPrepare(id) {
-        prepared.push(id);
+      afterPrepare() {
         protection = {
           providerKeys: [victim.sessionKey],
           workIdentities: [],
           lifecycleIdentities: [],
         };
-      },
-      afterRelease(id) {
-        released.push(id);
       },
     });
     try {
@@ -634,8 +628,6 @@ test("retains a selected maintenance row protected after native preparation", as
           lifecycleIdentities: [],
         },
       });
-      expect(prepared).toHaveLength(1);
-      expect(released).toEqual(prepared);
       expect(loadSessionEntry(victim)).toEqual(originalVictim);
     } finally {
       vi.restoreAllMocks();

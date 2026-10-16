@@ -51,14 +51,7 @@ export type SessionLifecycleMutationOperation =
   | "cron-cleanup"
   | "rollover"
   | "acp-spawn-cleanup";
-type Phase =
-  | "admission"
-  | "activation"
-  | "prepare"
-  | "run-admission"
-  | "run"
-  | "finalize"
-  | "release";
+type Phase = "admission" | "activation" | "prepare" | "run" | "finalize" | "release";
 type Holder = { operation: LifecycleDiagnosticOperation; acquiredAt: number };
 const SLOW_MS = 1_000;
 const MAX_HOLDERS = 128;

@@ -630,8 +630,9 @@ export function writeSessionEntry(
         })
       : {};
   const snapshots = persisted.snapshotsChanged ? persisted.snapshots : undefined;
+  let publishedEntry: SessionEntry | undefined;
   if (changed) {
-    publishSessionEntryCacheInvalidation(
+    publishedEntry = publishSessionEntryCacheInvalidation(
       database,
       {
         sessionKey,
@@ -670,7 +671,13 @@ export function writeSessionEntry(
   }
   const persistedEntry =
     actor || options.postimages
-      ? projectSessionEntryCacheUpdate(persisted.entryJson, sideMetadata, canonicalEntry, snapshots)
+      ? (publishedEntry ??
+        projectSessionEntryCacheUpdate(
+          persisted.entryJson,
+          sideMetadata,
+          canonicalEntry,
+          snapshots,
+        ))
       : undefined;
   const row = persistedEntry
     ? createSessionEntryWriteRow({

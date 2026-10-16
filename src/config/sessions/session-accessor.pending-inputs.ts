@@ -273,16 +273,12 @@ async function stagePreparedPendingInput(
   let finished = false;
   let owner: SessionPendingInputOwner | undefined;
   let completion: Promise<AgentRunTerminalOutcome> | undefined;
-  const assertPrepared = (
-    facts: PendingInputCustodyGrant | undefined,
-    guard: () => void,
-    assertSourceCurrent = store.assertCurrent,
-  ) => {
+  const assertPrepared = (facts: PendingInputCustodyGrant | undefined, guard: () => void) => {
     if (options.authority) {
       if (!facts?.authority) {
         throw new Error("Pending input grant omitted its current session authority");
       }
-      return options.authority.withPreparedCurrent(facts.authority, guard, assertSourceCurrent);
+      return options.authority.withPreparedCurrent(facts.authority, guard, store.assertCurrent);
     }
     return guard();
   };
@@ -305,7 +301,6 @@ async function stagePreparedPendingInput(
       throw new Error("Pending input read returned a different operation");
     }
     await assertCurrent();
-    assertAgentRunLifecycleGenerationCurrent(lifecycleGeneration);
     if (!snapshot.current) {
       return undefined;
     }
@@ -548,14 +543,16 @@ async function stagePreparedPendingInput(
         inputId,
         messageJson,
       },
-      (_stage, facts) => {
+      (stage, facts) => {
         assertPrepared(facts, () => {
-          options.assertCurrent();
-          assertAgentRunLifecycleGenerationCurrent(lifecycleGeneration);
-          assertUnowned(facts?.candidate);
+          if (stage === "commit") {
+            options.assertCurrent();
+            assertAgentRunLifecycleGenerationCurrent(lifecycleGeneration);
+            assertUnowned(facts?.candidate);
+          }
         });
       },
-      (facts, assertSourceCurrent) => {
+      (facts) => {
         const staged = facts?.receipt.stagedInput;
         if (!staged) {
           throw new SessionPendingInputCustodyError(
@@ -588,14 +585,6 @@ async function stagePreparedPendingInput(
         registerSessionPendingInputOwner(owner);
         retained = true;
         options.onCommitted?.(Object.assign(ownerReceipt(owner), completionMethods));
-        assertPrepared(
-          facts,
-          () => {
-            options.assertCurrent();
-            assertAgentRunLifecycleGenerationCurrent(lifecycleGeneration);
-          },
-          assertSourceCurrent,
-        );
       },
     );
     if (!owner) {

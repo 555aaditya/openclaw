@@ -86,7 +86,7 @@ export async function applySessionPatchProjection<
         replacements: [
           { entry: projected.entry, previousSessionKeys, sessionKey: target.primaryKey },
         ],
-        result: { ok: true, entry: structuredClone(cloned) },
+        result: { ok: true, entry: cloned },
       };
     },
   });

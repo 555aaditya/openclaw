@@ -33,18 +33,18 @@ export type GitHubPublicationRequesterSnapshot = Readonly<
 
 const MAX_REQUESTER_BYTES = 64 * 1024;
 
-function immutableRequester(value: RequesterData): GitHubPublicationRequesterSnapshot {
-  return Object.freeze({
+function canonicalRequester(value: RequesterData): GitHubPublicationRequesterSnapshot {
+  return {
     version: 1,
-    actor: Object.freeze(value.actor),
-    scopes: Object.freeze([...new Set(value.scopes)].toSorted()),
+    actor: value.actor,
+    scopes: [...new Set(value.scopes)].toSorted(),
     grant: value.grant
-      ? Object.freeze({
+      ? {
           ...value.grant,
-          aliasBindingIds: Object.freeze([...new Set(value.grant.aliasBindingIds)].toSorted()),
-        })
+          aliasBindingIds: [...new Set(value.grant.aliasBindingIds)].toSorted(),
+        }
       : null,
-  });
+  };
 }
 
 /** Only original admission writes this snapshot; its facts never replace current authority. */
@@ -55,7 +55,7 @@ export function encodeGitHubPublicationRequester(
   if (!parsed.success) {
     throw new Error("GitHub publication requester is invalid.");
   }
-  const json = JSON.stringify(immutableRequester(parsed.data));
+  const json = JSON.stringify(canonicalRequester(parsed.data));
   if (Buffer.byteLength(json, "utf8") > MAX_REQUESTER_BYTES) {
     throw new Error("GitHub publication requester is too large.");
   }
@@ -88,7 +88,7 @@ export function decodeGitHubPublicationRequester(
   }
   try {
     const parsed = requesterSchema.safeParse(JSON.parse(json));
-    return parsed.success ? immutableRequester(parsed.data) : undefined;
+    return parsed.success ? canonicalRequester(parsed.data) : undefined;
   } catch {
     return undefined;
   }

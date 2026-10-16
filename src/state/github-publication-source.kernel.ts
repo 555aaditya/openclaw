@@ -107,7 +107,7 @@ export function readGitHubPublicationSourceFacts(
   selector: GitHubPublicationSourceSelector,
 ): GitHubPublicationSourceFacts {
   const facts: GitHubPublicationSourceFacts =
-    "members" in source ? structuredClone(source) : readSessionFacts(source, selector);
+    "members" in source ? { ...source } : readSessionFacts(source, selector);
   if (selector.repositoryWorkspaceId) {
     facts.repositoryWorkspace = readSessionRepositoryWorkspaceInDatabase(
       stateDb,

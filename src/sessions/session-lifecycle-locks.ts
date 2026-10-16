@@ -15,6 +15,7 @@ export function createSessionIdentityLockRunner(state: {
     diagnostic?: LifecycleDiagnosticOperation,
     entryPhase?: "activation" | "run",
     kind: "lifecycle" | "mutation" = "lifecycle",
+    signal?: AbortSignal,
   ): Promise<T> {
     return await runStoreWriterAcquisitions(async (index, next) => {
       const identity = identities[index];
@@ -35,6 +36,7 @@ export function createSessionIdentityLockRunner(state: {
             ? "runExclusiveSessionLifecycleMutation"
             : "runExclusiveSessionLifecycle",
         reentrant: true,
+        signal,
         timing: observation?.timing,
         fn: async () => {
           const releaseObservation = observation?.enter();

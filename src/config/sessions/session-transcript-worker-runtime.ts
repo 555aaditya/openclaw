@@ -172,7 +172,10 @@ export function retainSessionHistoryWorkerDatabase(
           try {
             const reply = await admit((requestSignal, remaining) => {
               // A writer ahead of this read can renew the receipt during admission.
-              const validation = captureOpenClawAgentDatabaseReadValidation(database);
+              const validation = captureOpenClawAgentDatabaseReadValidation(
+                database,
+                owned.nativeSequences.has(requestLane) ? "retained" : "admission",
+              );
               return runWithSqliteDatabaseAdmissionTurn(
                 [database.path],
                 () =>

@@ -37,11 +37,8 @@ export function foldedSessionKeyAliasCandidates(normalizedKey: string): string[]
 /** The case-sensitive room/peer target an entry actually delivers to. Delivery
  *  metadata preserves the real opaque id even when the session KEY was lowercased
  *  by the bug, so it distinguishes a lowercased artifact from a distinct room. */
-function normalizeEntryTarget(value: unknown): string {
-  if (typeof value !== "string") {
-    return "";
-  }
-  const trimmed = value.trim();
+function normalizeEntryTarget(value: string | undefined): string {
+  const trimmed = value?.trim() ?? "";
   const sigilIndex = trimmed.search(/[!#]/);
   return sigilIndex < 0 ? trimmed : trimmed.slice(sigilIndex);
 }
@@ -53,15 +50,8 @@ function entryDeliveryTargets(entry: SessionCanonicalDeliveryEvidence | undefine
   return candidates.map(normalizeEntryTarget).filter(Boolean);
 }
 
-function normalizeEntryThreadId(value: unknown): string {
-  if (typeof value !== "string" && typeof value !== "number") {
-    return "";
-  }
-  return String(value).trim();
-}
-
 function entryThreadId(entry: SessionCanonicalDeliveryEvidence | undefined): string {
-  return normalizeEntryThreadId(deliveryContextFromSession(entry)?.threadId);
+  return String(deliveryContextFromSession(entry)?.threadId ?? "").trim();
 }
 
 /** Tail-preserved keys like Matrix rooms need delivery-target proof before a

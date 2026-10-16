@@ -73,6 +73,7 @@ type SessionWorkAdmission = HandoffSessionWorkAdmission & {
 type SessionLifecycleMutationOwner = {
   identities: readonly string[];
   kind?: SessionLifecycleMutationKind;
+  released: Promise<void>;
 };
 
 type SessionLifecycleAdmissionState = {
@@ -81,7 +82,6 @@ type SessionLifecycleAdmissionState = {
   activeAdmissions: Map<string, Set<SessionWorkAdmission>>;
   workReleaseListeners: Map<string, Set<() => void>>;
   activeMutationRuns: Set<SessionLifecycleMutationOwner>;
-  idleWaiters: Map<string, Set<() => void>>;
   currentAdmissions: AsyncLocalStorage<ReadonlySet<SessionWorkAdmission>>;
 };
 
@@ -110,7 +110,6 @@ const SESSION_LIFECYCLE_ADMISSION_STATE = resolveGlobalSingleton(
     activeAdmissions: new Map(),
     workReleaseListeners: new Map(),
     activeMutationRuns: new Set(),
-    idleWaiters: new Map(),
     currentAdmissions: new AsyncLocalStorage(),
   }),
 );
@@ -118,7 +117,6 @@ const {
   activeAdmissions: ACTIVE_SESSION_WORK_ADMISSIONS,
   workReleaseListeners: SESSION_WORK_RELEASE_LISTENERS,
   activeMutationRuns: ACTIVE_SESSION_LIFECYCLE_MUTATION_RUNS,
-  idleWaiters: SESSION_LIFECYCLE_IDLE_WAITERS,
   currentAdmissions: CURRENT_SESSION_WORK_ADMISSIONS,
 } = SESSION_LIFECYCLE_ADMISSION_STATE;
 const {
@@ -187,24 +185,14 @@ async function waitForNormalizedSessionLifecycleMutationIdle(
   identities: readonly string[],
   signal?: AbortSignal,
 ): Promise<void> {
-  const activeIdentities = identities.filter((identity) =>
-    hasActiveSessionLifecycleMutation([identity]),
+  const active = [...ACTIVE_SESSION_LIFECYCLE_MUTATION_RUNS].filter((run) =>
+    run.identities.some((identity) => identities.includes(identity)),
   );
-  if (activeIdentities.length === 0) {
-    return;
-  }
-  signal?.throwIfAborted();
-  const idle = Promise.all(
-    activeIdentities.map(
-      (identity) =>
-        new Promise<void>((resolve) => {
-          const waiters = SESSION_LIFECYCLE_IDLE_WAITERS.get(identity) ?? new Set();
-          waiters.add(resolve);
-          SESSION_LIFECYCLE_IDLE_WAITERS.set(identity, waiters);
-        }),
-    ),
+  await racePromiseWithAbortSignal(
+    Promise.all(active.map((run) => run.released)),
+    signal,
+    sessionWorkAdmissionAbortError,
   );
-  await racePromiseWithAbortSignal(idle, signal, sessionWorkAdmissionAbortError);
 }
 
 async function runExclusiveSessionLifecycle<T>(params: {
@@ -245,7 +233,7 @@ export async function runExclusiveSessionLifecycleMutation<T>(
   params: SessionLifecycleMutationParams<T>,
 ): Promise<T> {
   // Normalize every store and session into one globally ordered identity set.
-  // Cross-agent mutations then acquire one fence and count as one active run,
+  // Cross-agent mutations then share one FIFO and count as one active run,
   // instead of nesting store locks in caller-selected order.
   const identities =
     "targets" in params
@@ -266,11 +254,14 @@ export async function runExclusiveSessionLifecycleMutation<T>(
     signal,
     operation,
   );
-  const mutationRun: SessionLifecycleMutationOwner = { identities, kind: params.kind };
-  let mutationActivated = false;
-  let removeAbortListener = () => {};
+  const released = createDeferredCore();
+  const mutationRun: SessionLifecycleMutationOwner = {
+    identities,
+    kind: params.kind,
+    released: released.promise,
+  };
   let releaseWorkAdmissions: (() => void) | undefined;
-  const mutation = runWithSessionIdentityLocks(
+  return await runWithSessionIdentityLocks(
     identities,
     async () =>
       await CURRENT_SESSION_WORK_ADMISSIONS.run(callerAdmissions, async () => {
@@ -278,11 +269,12 @@ export async function runExclusiveSessionLifecycleMutation<T>(
           identities,
           async () => {
             signal?.throwIfAborted();
-            mutationActivated = true;
-            removeAbortListener();
             ACTIVE_SESSION_LIFECYCLE_MUTATION_RUNS.add(mutationRun);
           },
           diagnostic,
+          undefined,
+          "lifecycle",
+          signal,
         );
         // Cancellation may abandon a queued contender, but never an active
         // mutation whose caller must observe cleanup and completion.
@@ -296,66 +288,28 @@ export async function runExclusiveSessionLifecycleMutation<T>(
               releaseWorkAdmissions = closeNormalizedSessionWorkAdmissions(identities, reason);
             },
           });
-          diagnostic?.mark("run-admission");
-          return await runWithSessionIdentityLocks(identities, params.run, diagnostic, "run");
+          // Activation drained earlier admissions; this owner blocks later ones.
+          // Cleanup in prepare must remain outside the identity locks.
+          diagnostic?.mark("run");
+          return await params.run();
         } finally {
-          // Resource finalization is part of the mutation: successors remain
-          // fenced until rollback or exact-generation cleanup has completed.
+          // Successors wait for resource finalization, not just row publication.
           try {
             diagnostic?.mark("finalize");
             await params.finalize?.();
           } finally {
             diagnostic?.mark("release");
-            await runWithSessionIdentityLocks(
-              identities,
-              async () => {
-                ACTIVE_SESSION_LIFECYCLE_MUTATION_RUNS.delete(mutationRun);
-                for (const identity of identities) {
-                  if (hasActiveSessionLifecycleMutation([identity])) {
-                    continue;
-                  }
-                  const waiters = SESSION_LIFECYCLE_IDLE_WAITERS.get(identity);
-                  SESSION_LIFECYCLE_IDLE_WAITERS.delete(identity);
-                  for (const resolve of waiters ?? []) {
-                    resolve();
-                  }
-                }
-                releaseWorkAdmissions?.();
-              },
-              diagnostic,
-            );
+            ACTIVE_SESSION_LIFECYCLE_MUTATION_RUNS.delete(mutationRun);
+            releaseWorkAdmissions?.();
+            released.resolve();
           }
         }
       }),
     diagnostic,
     "activation",
     "mutation",
+    signal,
   );
-  if (!signal || mutationActivated) {
-    return await mutation;
-  }
-  const aborted = new Promise<never>((_, reject) => {
-    const onAbort = () => {
-      if (mutationActivated) {
-        return;
-      }
-      try {
-        signal.throwIfAborted();
-      } catch (error) {
-        reject(error instanceof Error ? error : new Error(String(error)));
-      }
-    };
-    removeAbortListener = () => signal.removeEventListener("abort", onAbort);
-    signal.addEventListener("abort", onAbort, { once: true });
-    if (signal.aborted) {
-      onAbort();
-    }
-  });
-  try {
-    return await Promise.race([mutation, aborted]);
-  } finally {
-    removeAbortListener();
-  }
 }
 
 export function isSessionLifecycleMutationActive(

@@ -223,10 +223,7 @@ const navigationReader = createSqliteQueryCache((database: DatabaseSync) =>
 );
 
 function readNavigation(database: DatabaseSync, input: NavigationInput): string | null {
-  const navigation = navigationReader(database)(input)?.navigation_json ?? null;
-  return navigation !== null && Buffer.byteLength(navigation, "utf8") <= MAX_NAVIGATION_BYTES
-    ? navigation
-    : null;
+  return navigationReader(database)(input)?.navigation_json ?? null;
 }
 
 /** Prepare canonical UTF-8 bytes and native query metadata before publishing a transcript row. */

@@ -48,7 +48,6 @@ export async function readSessionProviderReview(
   target: SessionProviderReviewTarget,
   assertCurrent: () => void,
 ): Promise<SessionEntry | undefined> {
-  assertCurrent();
   const { sessionId, lifecycleRevision } = target;
   return withProviderReviewDatabase(
     target,
@@ -79,17 +78,15 @@ export async function compareSessionProviderReview(
     assertCurrent: () => void;
   },
 ): Promise<SessionEntry> {
-  params.assertCurrent();
-  const capturedTarget = { ...target };
-  const input: SessionProviderReviewComparison = structuredClone({
+  const input: SessionProviderReviewComparison = {
     sessionKey: target.sessionKey,
     sessionId: target.sessionId,
     lifecycleRevision: target.lifecycleRevision,
     expectedReview: params.expectedReview,
     nextReview: params.nextReview,
-  });
+  };
   return withProviderReviewDatabase(
-    capturedTarget,
+    target,
     params.assertCurrent,
     async (options, sessionKey, assertHeld) => {
       input.sessionKey = sessionKey;

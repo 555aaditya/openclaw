@@ -458,7 +458,7 @@ request, the verifier logs the failure and keeps waiting for native exit; an
 undelivered signal does not mean the child has stopped. The original worker or
 IPC error remains the reported failure even if termination also fails.
 
-Agent database maintenance fences other writers with a 60-second lease in the shared state database. A dedicated worker renews that lease during synchronous integrity scans and migration phases. Maintenance still checks the exact persisted owner before mutations and commit, and stops if the heartbeat fails or ownership expires or changes. Finishing or cancelling maintenance stops renewal before releasing the lease; process death leaves at most the remaining lease duration.
+Agent database maintenance fences other writers with a 60-second lease in the shared state database. An independent worker renews that lease during synchronous integrity scans and migration phases. Maintenance checks the exact persisted owner before mutations and commit, without a separate liveness acknowledgment. Observed worker failure, expired ownership, or a changed owner stops maintenance. If worker-exit delivery is delayed, an exact unexpired persisted owner remains authoritative until that failure is observed. Finishing or cancelling maintenance stops renewal before releasing the lease; process death leaves at most the remaining lease duration.
 
 SQLite lock contention retries at 25 ms intervals within the lease acquisition
 budget or the heartbeat's durable expiry. Agent execution admission also retries
@@ -519,10 +519,10 @@ and different concurrency.
 Session startup certification reuses up to two worker threads for databases that
 need fresh session-validation proof. Valid receipts retain their existing fast path. Each
 certification task has fresh admission, its own commit gate, and full session
-validation. The task closes its database handles and leases and waits
-for the parent's close request to finish before releasing the thread for another
-database. If native cleanup is uncertain, writer admission and cleanup custody
-remain held until execution ends.
+validation. Each task closes its database handles and leases before returning its
+cleanup result; the parent joins that completion in its writer FIFO. No separate
+parent release handshake gates thread reuse. If native cleanup is uncertain,
+cleanup custody remains held until execution ends.
 
 During startup, reaching the inspection's foreground deadline records pending
 preparation and marks that agent **degraded** while the Gateway continues with healthy agents.

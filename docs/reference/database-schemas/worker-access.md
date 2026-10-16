@@ -900,8 +900,9 @@ certificate; retirement keeps conservative validation and lease cleanup.
 
 Agent executors admit schema, version, and journal facts when promoting a cold
 native handle. Warm operations consume those process-owned facts without
-re-admitting the same handle or replaying a schema-refused request. Migration and
-repair publish replacement facts. Bounded recovery from pre-entry writer
+polling the catalog or journal, or replaying a schema-refused request. Explicitly
+invalidated proof routes preparation to the worker before a host adopts it;
+migration and repair publish replacement facts. Bounded recovery from pre-entry writer
 contention remains; entered operations and failed cleanup are never replayed.
 
 Quarantine guards load each target pathname's decision once and consume committed
@@ -1025,12 +1026,6 @@ custody; it does not replace an awaited effect check. The never-stable
 `captureSessionEntryCurrentCheck` facade and its synchronous callback preparation
 path are removed. Incognito callers use the awaited actor operations and
 memory-held authority.
-
-After the host grants a current-entry effect, the worker uses that selected
-projection without rereading and comparing it after the callback returns. The
-next effect evaluates current facts again. Unsupported synchronous metadata
-changes inside the final grant callback may therefore use the already-selected
-facts; ordinary subsequent commits and security checks remain current.
 
 History readers can borrow existing physical and session admission without an
 open host reader. The receiving scope checks its actual file and the live receipt;
@@ -2616,6 +2611,12 @@ filesystem owner still renews every 15 seconds. Startup identity repair and
 explicit verification retain their current checks. Closing one lease leaves its siblings running;
 closing the last joins native worker exit. Renewal remains independent of the
 Gateway event loop, including during concurrent worktree creation.
+Synchronous effects check the exact persisted lease owner without a separate
+worker acknowledgment. Async verification and renewal wait for their actual
+reply within committed expiry and the existing maximum operation deadline,
+without occupancy or completion side channels. Slow native work and delayed
+delivery share that bound. Worker failure handlers still reject pending work;
+if their delivery is delayed, the persisted unexpired owner remains authoritative.
 Workspace reservation keeps its existing lease acquisition order and native
 preparation path. Each authority check reads placement and pending-result or
 reconciliation presence in one indexed statement, including orphan results when
@@ -3301,12 +3302,6 @@ its end, but never restarts an unfinished traversal. A plain completion flag
 replaces cross-request traversal counters and schema-generation comparisons.
 Each pass still bounds candidate and orphan work; continuously changing writes
 need not become quiet before discovered work can be reconciled.
-
-Retained agent validation no longer watches directories or restats a pathname
-when a reader captures admitted facts. Receiving native opens and privileged
-writes still check the selected physical identity. An unsupported replacement
-outside the Gateway can leave the host's cached facts until their next use;
-those facts cannot admit the replacement file as the old physical store.
 
 The same admission records the database's text encoding alongside its version.
 Transcript payload preparation consumes that published encoding, including across
@@ -4926,8 +4921,11 @@ settlement. Close and shutdown join accepted work and cleanup before releasing
 the store or replacing its generation.
 
 Cold archive requests open and validate their captured existing file in the
-reclamation worker, leaving the foreground executor available during integrity
-checks. Opening expectations do not grant native authority: the host accepts the
+reclamation worker. The request lifecycle owns creation and schema grants before
+the worker requests its single foreground writer turn, leaving the foreground
+executor available during integrity checks. That turn lasts through result
+publication or confirmed native exit; startup facts do not grant mutation authority.
+Opening expectations do not grant native authority: the host accepts the
 worker's actual file identity and retained lease before dispatching the mutation.
 Both directions preserve revocable validation proof. Caller permission refusal
 does not retire an otherwise healthy actor; source replacement or lifetime
@@ -4935,8 +4933,11 @@ retirement still refuses work and joins cleanup. Schemas, stored bytes, retentio
 and update behavior are unchanged.
 
 Session-reclamation retirement honors settled cleanup reported by its worker,
-including after a failed request. After an unsettled native exit, the shared-state
-cleanup worker releases the exact retained lease. Retirement joins lease deletion and cleanup
+including after a failed request. Close joins active work, native close and task
+completion in the existing parent writer FIFO, without another coordination or
+release exchange. Pooled task completion carries its cleanup result directly;
+failed termination does not certify native exit. After an unsettled native exit,
+the shared-state cleanup worker releases the exact retained lease. Retirement joins lease deletion and cleanup
 store close, keeping those writes off the host connection used by live snapshots.
 Automatic process-exit cleanup makes one attempt. A failed attempt retains worker
 and lease custody for an explicit lifecycle retry instead of repeatedly scheduling
@@ -4984,9 +4985,9 @@ the writer again, refreshes live protection, and checks current authority, selec
 rows, transcript versions, and active ancestry. Only changed or newly protected
 candidates invalidate the retained selection. Conflicting selections return
 for fresh planning; unrelated writes retain age hints, which entry receipts update
-without a second revision check. Each actor retains at most two preparations, allowing a revoked
-predecessor to finish cleanup alongside the coalesced planner. Cleanup of the exact
-operation and native close release those readers. No-op plans carry their current
+without a second revision check. Each actor retains one prepared selection. The
+metadata command consumes it; the next preparation or ordinary native close
+releases a selection left by a stopped pass. No-op plans carry their current
 age and count facts through settlement. Automatic maintenance prepares protection
 once before candidate selection, without a preliminary scan under writer admission.
 It prepares subagent protection through its existing

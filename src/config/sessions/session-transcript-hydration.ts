@@ -263,7 +263,6 @@ export function prepareSessionTranscriptHydration(
   };
   const readCohort: SessionTranscriptHydrationReader["readCohort"] = contextLimits
     ? (selection, consume) => {
-        const capturedSelection = structuredClone(selection);
         return withSessionTranscriptReadSource(
           target,
           async ({ scope, resolved, owner, expectedIdentity, assertCurrent: assertSource }) => {
@@ -285,7 +284,7 @@ export function prepareSessionTranscriptHydration(
                     assertSource();
                     const assertNative = captureSessionEntryNativeMutationWitness([database]);
                     const prepared =
-                      retainedRead(capturedSelection) ??
+                      retainedRead(selection) ??
                       (await owner.readTranscript(
                         {
                           target: scope,
@@ -293,7 +292,7 @@ export function prepareSessionTranscriptHydration(
                           expectedIdentity,
                           limits: contextLimits,
                           admission,
-                          transcript: capturedSelection,
+                          transcript: selection,
                           preparedEntry: readOwnedSessionTranscriptEntry(target),
                         },
                         signal,

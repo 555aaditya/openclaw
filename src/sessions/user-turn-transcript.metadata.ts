@@ -73,10 +73,8 @@ export function buildPersistedUserTurnMetadata(
     ...(senderName ? { senderName } : {}),
     ...(senderUsername ? { senderUsername } : {}),
     ...(senderIdentity && senderIdentity.id === senderId ? { senderIdentity } : {}),
-    ...(input.workContext ? { workContext: structuredClone(input.workContext) } : {}),
-    ...(input.mentions?.length
-      ? { humanMentions: input.mentions.map((mention) => ({ ...mention })) }
-      : {}),
+    ...(input.workContext ? { workContext: input.workContext } : {}),
+    ...(input.mentions?.length ? { humanMentions: input.mentions } : {}),
     ...(replyToId ? { replyToId } : {}),
     ...(replyPreviewText
       ? {
@@ -93,16 +91,14 @@ export function buildPersistedUserTurnMetadata(
           },
         }
       : {}),
-    ...(input.transport ? { transport: structuredClone(input.transport) } : {}),
+    ...(input.transport ? { transport: input.transport } : {}),
     ...(normalizedMedia.length > 0 ? { media: normalizedMedia } : {}),
     ...(input.mediaImageLayout
       ? {
           mediaImageLayout: {
-            slots: input.mediaImageLayout.slots.map((slot) => ({ ...slot })),
+            slots: input.mediaImageLayout.slots,
             ...(input.mediaImageLayout.suppressedFactIndexes?.length
-              ? {
-                  suppressedFactIndexes: [...input.mediaImageLayout.suppressedFactIndexes],
-                }
+              ? { suppressedFactIndexes: input.mediaImageLayout.suppressedFactIndexes }
               : {}),
           },
         }

@@ -523,7 +523,16 @@ export function createAgentDatabaseNativeGeneration(
       if (!store) {
         return undefined;
       }
-      if (!nativeIdentity) {
+      const schema = createIfMissing
+        ? getOpenClawAgentDatabaseValidationForTransfer({ agentId, path: pathname })?.schema
+        : undefined;
+      // Explicitly invalidated proof must be prepared in the worker before host adoption.
+      if (
+        !nativeIdentity ||
+        (createIfMissing &&
+          preparationPublished &&
+          (!schema || Atomics.load(new Int32Array(schema.valid), 0) !== 1))
+      ) {
         const registration = captureOpenClawAgentDatabaseRegistration({
           agentId,
           agentPath: pathname,

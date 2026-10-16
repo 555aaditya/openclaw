@@ -274,7 +274,7 @@ export async function writeConfigFileFromContext(
     return result;
   };
   // Validate authored structure before stamping can replace malformed parents.
-  validateCandidate(validationCandidate);
+  const validated = validateCandidate(validationCandidate);
   // SAFETY: the original resolved input was just validated; retain raw values, not parser defaults.
   const validatedCandidate = validationCandidate as OpenClawConfig;
   const previousSource =
@@ -292,7 +292,6 @@ export async function writeConfigFileFromContext(
     persistCandidate,
     createMergePatch(validationCandidate, materialized),
   );
-  const validated = validateCandidate(resolveValidationCandidate(persistCandidate));
   const previousWarningFingerprint = loggedConfigWarningFingerprints.get(configPath);
   // Capture before commit so rollback cannot restore a watcher-updated slot.
   options.assertConfigPathForWrite?.();

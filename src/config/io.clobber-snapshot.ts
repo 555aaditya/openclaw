@@ -247,6 +247,8 @@ export function persistBoundedClobberedConfigSnapshotSync(
   } finally {
     try {
       params.deps.fs.rmdirSync(paths.lockPath);
-    } catch {}
+    } catch {
+      // The forensic snapshot is already saved; stale-lock recovery handles cleanup failure.
+    }
   }
 }

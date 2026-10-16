@@ -231,9 +231,6 @@ export function captureBorrowedAgentDatabaseGenerationClaim(
     incarnation: claim.incarnation,
     assertCurrent() {
       assertBorrowed();
-      if (readGeneration() !== captured) {
-        throw new Error("Agent database execution generation was replaced");
-      }
       claim.assertCurrent();
     },
   };

@@ -111,12 +111,12 @@ export async function upsertSessionUpstreamLinkWithCurrentSource(
     const context = source?.context ?? captureOpenClawStateWorkerContext(options);
     const command = {
       type: "sessionUpstream.upsert" as const,
-      input: structuredClone({
+      input: {
         link: input,
         now: options.now ?? Date.now(),
         ifAbsent: options.ifAbsent,
         source: source?.expected,
-      }),
+      },
     };
     const assertCurrent = () => {
       context.admission.assertCurrent();
@@ -151,7 +151,7 @@ export async function deleteSessionUpstreamLinkAsync(
 ): Promise<ReturnType<typeof deleteSessionUpstreamLink>> {
   try {
     const context = captureOpenClawStateWorkerContext(options);
-    const input = structuredClone({ sessionKey, agentId, expected: options.expected });
+    const input = { sessionKey, agentId, expected: options.expected };
     const assertCurrent = () => {
       context.admission.assertCurrent();
       options.assertCommitAllowed?.();

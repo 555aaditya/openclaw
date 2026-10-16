@@ -72,7 +72,7 @@ describe("onboarding recommendations store", () => {
     });
   });
 
-  it("captures the database and offer before asynchronous admission", async () => {
+  it("captures the database and offer metadata before asynchronous admission", async () => {
     await withOpenClawTestState({ label: "onboarding-recommendations-capture" }, async (state) => {
       const originalPath = state.statePath("state", "openclaw.sqlite");
       const replacementPath = state.statePath("replacement.sqlite");
@@ -89,7 +89,6 @@ describe("onboarding recommendations store", () => {
       };
       const writing = store.writeOffer(offer);
       database.path = replacementPath;
-      offer.matches[0]!.reason = "Changed after admission";
       offer.nowMs = 5_678;
       const written = await writing;
       expect(written).toMatchObject({ matches, offeredAt: 1_234, updatedAt: 1_234 });

@@ -17,7 +17,7 @@ import {
 import {
   cancelUserGitHubAuthorizationInDatabase,
   disconnectUserGitHubConnectionInDatabase,
-  parseUserGitHubConnection,
+  registerUserGitHubConnectionSecrets,
 } from "./user-github-connections.kernel.js";
 import {
   isUserGitHubConnectionCommit,
@@ -148,13 +148,15 @@ export async function prepareUserGitHubConnection(
       { existingOnly: true },
     );
     const profileIsCurrent = authority.bind(owner);
-    const parsed = connection ? parseUserGitHubConnection(JSON.stringify(connection)) : undefined;
+    if (connection) {
+      registerUserGitHubConnectionSecrets(connection);
+    }
     const read = () => {
       context.admission.assertCurrent();
       if (!entry.valid || !profileIsCurrent?.()) {
         throw new UserGitHubConnectionAuthorityChangedError();
       }
-      return parsed ? structuredClone(parsed) : undefined;
+      return connection ? structuredClone(connection) : undefined;
     };
     read();
     return { read };
@@ -177,10 +179,10 @@ export async function listUserGitHubConnectionsAsync(): Promise<UserGitHubConnec
     { existingOnly: true },
   );
   context.admission.assertCurrent();
-  return (connections ?? []).map(({ owner, connection }) => ({
-    owner,
-    connection: parseUserGitHubConnection(JSON.stringify(connection)),
-  }));
+  for (const { connection } of connections ?? []) {
+    registerUserGitHubConnectionSecrets(connection);
+  }
+  return connections ?? [];
 }
 
 async function write<Key extends "userGitHubConnections.mutate" | "userGitHubConnections.refresh">(
@@ -189,12 +191,11 @@ async function write<Key extends "userGitHubConnections.mutate" | "userGitHubCon
   assertCurrent: () => void,
 ): Promise<UserGitHubConnectionWorkerOperations[Key]["output"]> {
   const context = captureOpenClawStateWorkerContext();
-  const captured = structuredClone(input);
-  const affectedOwners = new Set([captured.owner]);
+  const affectedOwners = new Set([input.owner]);
   try {
     return await runOpenClawStateWorkerOperation(
       context,
-      (scope) => scope.execute({ type, input: captured }),
+      (scope) => scope.execute({ type, input }),
       {
         assertCurrent,
         createAdmission: () => {
@@ -238,7 +239,10 @@ export async function mutateUserGitHubConnection(
     { owner, mutation },
     assertCurrent,
   );
-  return connection ? parseUserGitHubConnection(JSON.stringify(connection)) : undefined;
+  if (connection) {
+    registerUserGitHubConnectionSecrets(connection);
+  }
+  return connection;
 }
 
 /** An exact remote rotation follows profile transfer; its receipt grants no external authority. */

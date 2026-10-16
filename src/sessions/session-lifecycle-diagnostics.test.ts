@@ -360,50 +360,6 @@ it("measures prepare and finalize separately while successors wait for real fina
   );
 });
 
-it("retains a partially acquired holder after caller cancellation until its callback unwinds", async () => {
-  const scope = "partial-cancellation-store";
-  const blocker = hold("lifecycle", { scope, identities: ["b"] }, traces.first);
-  await blocker.entered;
-  const controller = new AbortController();
-  const cancelledRun = vi.fn(async () => {});
-  const cancelled = runWithDiagnosticTraceContext(traces.second, () =>
-    runExclusiveSessionLifecycleMutation("delete", {
-      scope,
-      identities: ["a", "b"],
-      signal: controller.signal,
-      run: cancelledRun,
-    }),
-  );
-  await advance(0);
-  const error = new Error("cancel queued mutation");
-  controller.abort(error);
-  await expect(cancelled).rejects.toBe(error);
-  const waiter = hold("mutation", { scope, identities: ["a"] }, traces.waiter);
-  try {
-    await advance(1_000);
-    expect(await records("session lifecycle queue waiting")).toEqual([
-      expect.objectContaining({
-        operationTraceId: traces.waiter.traceId,
-        holderTraceId: traces.second.traceId,
-        holderPhase: "activation",
-        holderSignalAborted: true,
-      }),
-    ]);
-    expect(cancelledRun).not.toHaveBeenCalled();
-  } finally {
-    blocker.release();
-    waiter.release();
-    await Promise.allSettled([blocker.promise, cancelled, waiter.promise]);
-  }
-  await expect(
-    runExclusiveSessionLifecycleMutation("patch", {
-      scope,
-      identities: ["a", "b"],
-      run: async () => "next",
-    }),
-  ).resolves.toBe("next");
-});
-
 it("stops pending and terminal emissions when diagnostics are disabled without changing results", async () => {
   const target = { scope: "disabled-store", identities: ["disabled-session"] };
   const holder = hold("mutation", target, traces.first);

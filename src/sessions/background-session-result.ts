@@ -121,13 +121,11 @@ export async function commitBackgroundResultToSession(params: {
       if (prior && (!priorMessage || !priorId)) {
         return { ok: false, reason: "background result transcript identity is unavailable" };
       }
-      const displayContent = priorMessage
-        ? undefined
-        : (await params.prepareDisplayContent?.())?.map((block) => Object.assign({}, block));
+      const displayContent = priorMessage ? undefined : await params.prepareDisplayContent?.();
       const message = {
         role: "assistant",
         content: [{ type: "text", text }],
-        ...(displayContent ? { [ASSISTANT_DISPLAY_CONTENT_FIELD]: displayContent } : {}),
+        ...(displayContent ? { [ASSISTANT_DISPLAY_CONTENT_FIELD]: [...displayContent] } : {}),
         api: OPENCLAW_TRANSCRIPT_ARTIFACT_API,
         provider: OPENCLAW_TRANSCRIPT_ARTIFACT_PROVIDER,
         model: AUTOMATION_RESULT_MODEL,

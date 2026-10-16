@@ -59,7 +59,7 @@ export type SessionEntryWorkerPreparation = (
 ) => {
   prepare: () => Promise<void>;
   beforeWrite: () => void;
-  release: () => Promise<void>;
+  release?: () => Promise<void>;
 };
 
 export async function withSessionEntryWorker<T>(
@@ -287,7 +287,7 @@ export async function withSessionEntryWorker<T>(
   const cleanupErrors: unknown[] = [];
   for (const cleanup of [
     () => releaseSource?.(),
-    () => preparation?.release(),
+    () => preparation?.release?.(),
     () => (retainedExecution ? undefined : execution.release()),
   ]) {
     try {

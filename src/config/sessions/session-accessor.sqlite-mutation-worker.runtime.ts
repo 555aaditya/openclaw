@@ -1,7 +1,6 @@
 import { on, once } from "node:events";
 import type { DatabaseSync } from "node:sqlite";
 import type { MessagePort } from "node:worker_threads";
-import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { clearNodeSqliteKyselyCacheForDatabase } from "../../infra/kysely-sync-cache-state.js";
 import { sqliteReaderDatabasePathKey } from "../../infra/sqlite-reader-lifecycle.js";
 import { onSqliteWalCheckpoint } from "../../infra/sqlite-wal-checkpoint.js";
@@ -101,16 +100,21 @@ export async function runColdMutationWorkerPort(
     request.coordination,
     data.plan.databaseOptions,
     (databaseOptions) =>
-      runColdMutationWorker(port, {
-        ...data,
-        plan: { ...data.plan, databaseOptions },
-      }),
+      runColdMutationWorker(
+        port,
+        { ...data, plan: { ...data.plan, databaseOptions } },
+        request.coordination.opening,
+      ),
   );
   port.postMessage(response);
   port.close();
 }
 
-async function runColdMutationWorker(port: MessagePort, data: SessionColdWorkerData) {
+async function runColdMutationWorker(
+  port: MessagePort,
+  data: SessionColdWorkerData,
+  opening?: SqliteMutationWorkerCoordination["opening"],
+) {
   const { mutateSessionColdTranscriptInWorker, prepareSessionColdRestoreInWorker } =
     await import("./session-cold-storage-worker.js");
   // Restore materialization must finish before requesting any write admission.
@@ -179,6 +183,8 @@ async function runColdMutationWorker(port: MessagePort, data: SessionColdWorkerD
           }
         }
       },
+      undefined,
+      opening,
     );
   } catch (error) {
     const cleanup = settleReclamationDatabase(data.plan.databaseOptions.path);
@@ -247,24 +253,22 @@ export async function runReclamationWorkerPort(
         pooledTask.operationId = operationId;
       }
       failureCleanup = undefined;
+      if (request.type === "close") {
+        const cleanup = closeDatabase();
+        if (pooledTask) {
+          if (!cleanup.settled) {
+            throw new Error("Canonical validation task could not close its agent database");
+          }
+          closeOpenClawStateDatabaseByPath(request.stateDatabasePath);
+        }
+        port.postMessage({ type: "closed", ...cleanup } satisfies SqliteReclamationWorkerMessage);
+        port.close();
+        return cleanup;
+      }
       const response = await runWithSqliteMutationWorkerCoordination(
         request.coordination,
         databaseOptions,
         async (options) => {
-          if (request.type === "close") {
-            const cleanup = closeDatabase();
-            if (pooledTask) {
-              if (!cleanup.settled) {
-                throw new Error("Canonical validation task could not close its agent database");
-              }
-              // Keep native close under this task's coordinator and parent's writer admission.
-              closeOpenClawStateDatabaseByPath(request.coordination.databasePath);
-            }
-            return {
-              type: "closed",
-              ...cleanup,
-            } satisfies SqliteReclamationWorkerMessage;
-          }
           try {
             claim?.assertCurrent();
             if (request.type === "reclaim") {
@@ -417,6 +421,7 @@ export async function runReclamationWorkerPort(
                 }
               },
               assertExpectedSource,
+              request.coordination.opening,
             );
             return {
               type: "reclaimed",
@@ -445,21 +450,6 @@ export async function runReclamationWorkerPort(
           }
         },
       );
-      if (response.type === "closed") {
-        port.postMessage(response);
-        if (pooledTask) {
-          const [release]: unknown[] = await once(port, "message");
-          if (
-            !isRecord(release) ||
-            release.type !== "release" ||
-            release.operationId !== operationId
-          ) {
-            throw new Error("Canonical validation task received an invalid close release");
-          }
-        }
-        port.close();
-        return response;
-      }
       // The matching settlement releases this victim's admission and all plan buffers.
       if (request.type === "reclaim") {
         request.plan.materializedPlans.length = 0;

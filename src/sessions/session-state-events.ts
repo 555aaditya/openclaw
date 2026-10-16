@@ -275,9 +275,7 @@ export async function recordSessionStateEventAsync(
   try {
     const context = options.context ?? captureOpenClawStateWorkerContext(options);
     const now = options.now ?? Date.now();
-    const event = structuredClone(input);
-    const expectedUpstream = options.expectedUpstream && structuredClone(options.expectedUpstream);
-    const acpControl = options.acpControl && structuredClone(options.acpControl);
+    const event = { ...input };
     let preparedWatchers: PreparedSessionWatcherStorePaths | undefined;
     const assertCurrent = () => {
       options.assertCurrent?.();
@@ -299,8 +297,8 @@ export async function recordSessionStateEventAsync(
             event,
             now,
             onlyIfWatched: options.onlyIfWatched,
-            expectedUpstream,
-            acpControl,
+            expectedUpstream: options.expectedUpstream,
+            acpControl: options.acpControl,
             sessionEntryCurrentSource: sessionEntryCurrent?.source,
           },
         });

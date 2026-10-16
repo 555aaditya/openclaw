@@ -26,22 +26,19 @@ export function deriveSessionOrigin(
   if (opts?.skipSystemEventOrigin && ctx.InternalTurnSource !== undefined) {
     return undefined;
   }
-  const providerRaw =
-    (typeof ctx.OriginatingChannel === "string" && ctx.OriginatingChannel) ||
-    ctx.Surface ||
-    ctx.Provider;
+  const providerRaw = ctx.OriginatingChannel || ctx.Surface || ctx.Provider;
   return mergeSessionOrigin(undefined, {
     label: normalizeOptionalString(resolveConversationLabel(ctx)),
     provider: normalizeMessageChannel(providerRaw),
     surface: normalizeOptionalLowercaseString(ctx.Surface),
-    chatType: normalizeChatType(ctx.ChatType) ?? undefined,
+    chatType: normalizeChatType(ctx.ChatType),
     from: normalizeOptionalString(ctx.From),
-    to: normalizeOptionalString(typeof ctx.OriginatingTo === "string" ? ctx.OriginatingTo : ctx.To),
+    to: normalizeOptionalString(ctx.OriginatingTo ?? ctx.To),
     nativeChannelId: normalizeOptionalString(ctx.NativeChannelId),
     nativeDirectUserId: normalizeOptionalString(ctx.NativeDirectUserId),
     avatar: normalizeOptionalString(ctx.ConversationAvatar),
     accountId: normalizeOptionalString(ctx.AccountId),
-    threadId: ctx.MessageThreadId ?? undefined,
+    threadId: ctx.MessageThreadId,
   });
 }
 

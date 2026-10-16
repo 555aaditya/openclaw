@@ -83,7 +83,7 @@ export function prepareOnboardingRecommendationOffer(
 ) {
   const nowMs = params.nowMs ?? Date.now();
   const inventoryHash = sha256Hex(JSON.stringify(canonicalInventory(params.inventory)));
-  const matches = OnboardingRecommendationMatchesSchema.parse(params.matches);
+  const matches = [...params.matches];
   return { inventoryHash, matches, answered: params.answered, nowMs };
 }
 
@@ -91,6 +91,6 @@ export function prepareOnboardingRecommendationPending(
   params: UpdatePendingOnboardingRecommendationsParams,
 ) {
   const nowMs = params.nowMs ?? Date.now();
-  const matches = OnboardingRecommendationMatchesSchema.parse(params.matches);
-  return { matches, expected: structuredClone(params.expected), nowMs };
+  const matches = [...params.matches];
+  return { matches, expected: params.expected, nowMs };
 }
