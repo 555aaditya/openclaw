@@ -44,6 +44,7 @@ import {
 } from "openclaw/plugin-sdk/agent-harness-tool-runtime";
 import { emitTrustedDiagnosticEvent } from "openclaw/plugin-sdk/diagnostic-runtime";
 import type { RemoteWorkspaceFileReader } from "openclaw/plugin-sdk/file-access-runtime";
+import { getRuntimeConfigSnapshot } from "openclaw/plugin-sdk/runtime-config-snapshot";
 import {
   asNonArrayRecord,
   asOptionalRecord,
@@ -276,22 +277,16 @@ export function createCodexDynamicToolBridge(params: {
       directToolNames,
       functionToolsOnly: params.functionToolsOnly,
     });
-  // Saved native declarations remain fingerprinted. Only the current projection
-  // is narrowed; retained calls are checked again before execution below.
-  const inheritedAvailableSchemas = inheritedSpecs
-    ? new Map(
-        applyGatewayToolPolicy(
-          flattenCodexDynamicToolFunctions(inheritedSpecs).map((spec) => ({
-            name: spec.name,
-            parameters: spec.inputSchema,
-          })),
-          params.hookContext?.config,
-        ).map((entry) => [entry.name, entry.parameters]),
-      )
-    : undefined;
+  // Keep saved declarations fingerprinted, and preserve their schemas when no
+  // Gateway policy applies. The managed view uses already-filtered concrete
+  // tools so genuine discovery controls retain their private identity.
+  const hasGatewayToolPolicy = Boolean(
+    params.hookContext?.config?.tools?.gatewayPolicy ||
+    getRuntimeConfigSnapshot()?.tools?.gatewayPolicy,
+  );
   const availableInheritedFunction = (spec: CodexDynamicToolFunctionSpec) => {
-    const inputSchema = inheritedAvailableSchemas?.get(spec.name);
-    return toolMap.has(spec.name) && inputSchema ? [{ ...spec, inputSchema }] : [];
+    const entry = toolMap.get(spec.name);
+    return entry ? [hasGatewayToolPolicy ? { ...spec, inputSchema: entry.inputSchema } : spec] : [];
   };
   const resolveAutomationsToolsAllow = createCodexAutomationsToolsAllowResolver(specs);
   let readRemoteWorkspaceFile: RemoteWorkspaceFileReader | undefined;
