@@ -13,15 +13,11 @@ import {
   runWithOwner,
 } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
+import { ContentPresentation as SolidContentPresentation } from "../lib/solid/presentation.ts";
 import { mountSolid } from "../test-helpers/mount-solid.ts";
 import { flush } from "../test-helpers/solid-settle.ts";
 import { LitContent as LegacyOutlet } from "./solid-bridge.ts";
-import {
-  LitContent,
-  mountLitContent,
-  solidContent,
-  SolidContentPresentation,
-} from "./solid-content.tsx";
+import { LitContent, mountLitContent, solidContent } from "./solid-content.tsx";
 
 describe("Lit and Solid content boundaries", () => {
   it("settles parent refs after mounting nested Solid content through Lit", () => {

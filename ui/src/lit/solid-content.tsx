@@ -19,8 +19,6 @@ import {
 } from "solid-js";
 import { ContentPresentation as SolidContentPresentation } from "../lib/solid/presentation.ts";
 
-export { ContentPresentation as SolidContentPresentation } from "../lib/solid/presentation.ts";
-
 export type { TemplateResult as LegacyTemplateResult } from "lit";
 export type { DirectiveResult as LegacyDirectiveResult } from "lit/directive.js";
 
