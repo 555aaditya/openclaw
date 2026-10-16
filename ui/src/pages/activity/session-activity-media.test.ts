@@ -84,7 +84,10 @@ function mountMedia(
     session?: GatewaySessionRow;
   } = {},
 ) {
-  const harness = createGatewayHarness(createTestGatewayClient(request));
+  const client = createTestGatewayClient(request);
+  // The harness's connected snapshot and the physical client must agree.
+  vi.spyOn(client, "connected", "get").mockReturnValue(true);
+  const harness = createGatewayHarness(client);
   const context = createContext(harness.gateway, createSessions("main", []));
   const [props, setProps] = createStore<ActivitySessionMediaProps>(
     { context, sessionKey, agentId, session, revision: 0 },
