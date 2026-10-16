@@ -26,6 +26,45 @@ describe("GatewayBrowserClient chat delivery", () => {
     vi.unstubAllGlobals();
   });
 
+  it.each(["sessions.changed", "session.message"])(
+    "expands %s field references before notifying any consumer",
+    (event) => {
+      const onEvent = vi.fn();
+      const listener = vi.fn();
+      const client = new GatewayBrowserClient({ url: DEFAULT_GATEWAY_URL, onEvent });
+      const session = { key: "agent:main:chat", owner: null, status: "running" };
+      try {
+        client.addEventListener(listener);
+        client.start();
+        getLatestWebSocket().emitMessage({
+          type: "event",
+          event,
+          payload: {
+            sessionKey: session.key,
+            session,
+            sessionFields: ["owner", "status"],
+            status: "done",
+            ancestorSessions: [],
+          },
+        });
+        expect(listener).toHaveBeenCalledExactlyOnceWith({
+          type: "event",
+          event,
+          payload: {
+            sessionKey: session.key,
+            session,
+            owner: null,
+            status: "done",
+            ancestorSessions: [],
+          },
+        });
+        expect(onEvent.mock.lastCall?.[0]).toBe(listener.mock.lastCall?.[0]);
+      } finally {
+        client.stop();
+      }
+    },
+  );
+
   it("reconstructs chat once before delivering to existing and newly attached listeners", () => {
     const onEvent = vi.fn();
     const firstPane = vi.fn();

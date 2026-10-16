@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
-import { GATEWAY_CLIENT_IDS } from "../../packages/gateway-protocol/src/client-info.js";
+import {
+  GATEWAY_CLIENT_CAPS,
+  GATEWAY_CLIENT_IDS,
+  hasGatewayClientCap,
+} from "../../packages/gateway-protocol/src/client-info.js";
+import { shareSessionEventFields } from "../../packages/gateway-protocol/src/session-event-fields.js";
 import { parseAgentSessionKey } from "../routing/session-key.js";
 import { readGatewayAccessRevision } from "./gateway-access-revision.js";
 import type { PrepareSessionEventProjection } from "./server-broadcast-types.js";
@@ -93,6 +98,7 @@ export function prepareSessionEventProjection(
         ancestors: ReturnType<typeof prepareSessionAncestor>[] | undefined;
         hiddenAncestors: string[];
         payloads: Map<string | undefined, Record<string, unknown>>;
+        sharedPayloads: Map<Record<string, unknown>, Record<string, unknown>>;
       }
     >();
     let revision = projection.state.revision;
@@ -138,7 +144,13 @@ export function prepareSessionEventProjection(
               return presented ? [prepareSessionAncestor(presented)] : [];
             })
           : undefined;
-        audience = { row, ancestors: ancestorRows, hiddenAncestors, payloads: new Map() };
+        audience = {
+          row,
+          ancestors: ancestorRows,
+          hiddenAncestors,
+          payloads: new Map(),
+          sharedPayloads: new Map(),
+        };
         audiences.set(audienceKey, audience);
       }
       const { row } = audience;
@@ -176,6 +188,14 @@ export function prepareSessionEventProjection(
           projected.childSessions = row.childSessions;
         }
         audience.payloads.set(deliveryKey, projected);
+      }
+      if (hasGatewayClientCap(client.connect.caps, GATEWAY_CLIENT_CAPS.SESSION_EVENT_FIELDS)) {
+        let shared = audience.sharedPayloads.get(projected);
+        if (!shared) {
+          shared = shareSessionEventFields(projected);
+          audience.sharedPayloads.set(projected, shared);
+        }
+        projected = shared;
       }
       return {
         payload: projected,

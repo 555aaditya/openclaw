@@ -216,6 +216,7 @@ export async function buildBrowserGatewayConnectPlan({
           "tool-events",
           "chat-only-assistant-text",
           "session-scoped-events",
+          "session-event-fields",
           "inline-widgets",
           "model-selection-policy",
           "model-wait-status",

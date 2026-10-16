@@ -5,6 +5,7 @@ import {
 } from "@openclaw/gateway-client/browser";
 import { asNullableRecord } from "@openclaw/normalization-core/record-coerce";
 import { parseAgentSessionKeyParts } from "@openclaw/session-url-contract";
+import { expandSessionEventFields } from "../../../packages/gateway-protocol/src/session-event-fields.js";
 
 type RequestClient = {
   request<T>(method: string, params?: unknown, options?: GatewayProtocolRequestOptions): Promise<T>;
@@ -55,11 +56,21 @@ export class GatewayChatEvents {
   }
 
   private project(event: EventFrame): EventFrame | null {
-    if (event.event !== "chat") {
+    if (
+      event.event !== "chat" &&
+      event.event !== "sessions.changed" &&
+      event.event !== "session.message"
+    ) {
       return event;
     }
     if (this.projectedEvents.has(event)) {
       return this.projectedEvents.get(event) ?? null;
+    }
+    if (event.event !== "chat") {
+      const payload = expandSessionEventFields(event.payload);
+      const projected = payload === event.payload ? event : { ...event, payload };
+      this.projectedEvents.set(event, projected);
+      return projected;
     }
     const result = this.stream.project(event);
     const projected = result.missingBaseline ? null : result.event;

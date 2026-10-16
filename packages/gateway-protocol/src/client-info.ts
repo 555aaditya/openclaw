@@ -82,6 +82,7 @@ export const GATEWAY_CLIENT_CAPS = {
   MODEL_WAIT_STATUS: "model-wait-status",
   RUN_TOOL_BINDINGS: "run-tool-bindings",
   SESSION_SCOPED_EVENTS: "session-scoped-events",
+  SESSION_EVENT_FIELDS: "session-event-fields",
   PLUGIN_APPROVALS: "plugin-approvals",
   TASK_SUGGESTIONS: "task-suggestions",
   TERMINAL_OFFSET_SEQ: "terminal-offset-seq",
