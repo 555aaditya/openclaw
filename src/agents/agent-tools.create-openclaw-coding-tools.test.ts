@@ -465,6 +465,27 @@ describe("createOpenClawCodingTools", () => {
     expect(tools[0]).toMatchObject({ name: "openclaw", description: "trusted ring-zero tool" });
   });
 
+  it("applies the required ceiling after ring-zero and additive plugin grants", async () => {
+    const config: OpenClawConfig = { tools: { gatewayPolicy: { allow: ["fixture_allowed"] } } };
+    vi.mocked(createOpenClawTools).mockReturnValueOnce([
+      stubTool("fixture_allowed"),
+      stubTool("fixture_plugin"),
+    ]);
+    const conversationCapabilityProfile = await prepareConversationCapabilityProfile({
+      config,
+      runtimePluginToolGrant: { pluginId: "fixture", toolNames: ["fixture_plugin"] },
+    });
+    const tools = runWithAgentRingZeroTools([stubTool("openclaw")], () =>
+      createOpenClawCodingTools({
+        config,
+        conversationCapabilityProfile,
+        senderIsOwner: true,
+        toolConstructionPlan: { ...pluginOnlyPlan, includeOpenClawTools: true },
+      }),
+    );
+    expect(tools.map((tool) => tool.name)).toEqual(["fixture_allowed"]);
+  });
+
   it("lets direct callers inherit overlapping globs into subagent spawns", () => {
     const createOpenClawToolsMock = vi.mocked(createOpenClawTools);
     createOpenClawToolsMock.mockClear();

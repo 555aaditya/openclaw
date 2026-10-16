@@ -23,6 +23,7 @@ import {
   wrapToolWithBeforeToolCallHook,
 } from "./agent-tools.before-tool-call.js";
 import { ensureAuthProfileStoreWithoutExternalProfiles } from "./auth-profiles/store-runtime.js";
+import { applyGatewayToolPolicy } from "./gateway-tool-policy.js";
 import {
   resolveOpenClawPluginToolsForOptions,
   resolveOpenClawPluginToolsForOptionsAsync,
@@ -703,7 +704,10 @@ function* createOpenClawToolsSteps(
     options?.recordToolPrepStage?.("openclaw-tools:plugin-tools");
   }
 
-  allTools = finalizeAgentToolAvailability(filterToolsByClientCaps(allTools, options?.clientCaps));
+  allTools = applyGatewayToolPolicy(
+    finalizeAgentToolAvailability(filterToolsByClientCaps(allTools, options?.clientCaps)),
+    resolvedConfig,
+  );
   options?.recordToolPrepStage?.("openclaw-tools:client-capabilities");
   for (const tool of allTools) {
     bindAssembledAgentToolActionDescriptor(tool);
