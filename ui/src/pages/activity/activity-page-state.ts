@@ -320,11 +320,7 @@ export function createActivityPageState(context: ApplicationContext) {
             ])
           : receiptPageCursors(result.decisionDisplays, decisionCursor ?? undefined);
         if (merged) {
-          // Refresh the first page without rewinding the reader's accumulated evidence window.
-          result =
-            pageKind === "refresh"
-              ? { ...merged, nextDecisionCursor: previousState.result.nextDecisionCursor }
-              : merged;
+          result = merged;
         }
       } else if (
         previousState?.result.identity.state === "ambiguous" &&

@@ -545,6 +545,7 @@ describe("ActivityPage gateway lifecycle", () => {
     expect(receipts()).toHaveLength(2);
     refresh.resolve({
       ...first,
+      nextDecisionCursor: "fresh-cursor",
       decisionDisplays: [
         {
           ...first.decisionDisplays[0]!,
@@ -560,7 +561,7 @@ describe("ActivityPage gateway lifecycle", () => {
     loadMore().click();
     expect(current().request).toHaveBeenLastCalledWith(
       "audit.run.inspect",
-      expect.objectContaining({ decisionCursor: "older-cursor" }),
+      expect.objectContaining({ decisionCursor: "fresh-cursor" }),
       expect.anything(),
     );
     await waitForSolid(() => expect(loadMore().disabled).toBe(false));
@@ -572,6 +573,64 @@ describe("ActivityPage gateway lifecycle", () => {
     flush();
     expect(receipts()).toHaveLength(0);
     replacement.resolve(first);
+  });
+
+  it("makes new receipt pages reachable after reconnecting an exhausted run", async () => {
+    const { gateway: source, current } = activityGateway();
+    const hello = {
+      ...activityHello(),
+      features: { methods: ["audit.run.inspect"], events: [] },
+    };
+    current().opts.onHello?.(hello);
+    const first = { ...presentResult("growing-run"), nextDecisionCursor: null };
+    let inspection: AuditRunInspectResult = first;
+    current().request.mockImplementation(async (method, params) =>
+      method === "audit.run.inspect" ? inspection : activityResponse(method, params),
+    );
+    const page = createActivityPage(activityContext(source), {
+      pathname: "/activity",
+      search: "?view=run&run=growing-run",
+      hash: "",
+    });
+    const receipts = () => page.container.querySelectorAll(".run-inspector__receipt-list li");
+    const loadMore = () =>
+      page.container.querySelector<HTMLButtonElement>(".run-inspector__pagination button");
+    await waitForSolid(() => expect(receipts()).toHaveLength(1));
+    expect(loadMore()).toBeNull();
+
+    current().opts.onClose?.({ code: 1006, reason: "reconnecting", willRetry: true });
+    flush();
+    expect(receipts()).toHaveLength(1);
+    inspection = {
+      ...first,
+      decisionDisplays: [{ ...first.decisionDisplays[0]!, selectorId: "new-first-page" }],
+      nextDecisionCursor: "fresh-cursor",
+    };
+    current().opts.onHello?.(hello);
+    await waitForSolid(() => expect(receipts()).toHaveLength(2));
+    expect(loadMore()?.textContent?.trim()).toBe("Load more receipts");
+    expect(loadMore()?.disabled).toBe(false);
+
+    inspection = {
+      ...first,
+      decisionDisplays: [
+        ...first.decisionDisplays,
+        { ...first.decisionDisplays[0]!, selectorId: "next-page" },
+      ],
+    };
+    loadMore()!.click();
+    expect(current().request).toHaveBeenLastCalledWith(
+      "audit.run.inspect",
+      {
+        runId: "growing-run",
+        executionLimit: 50,
+        decisionLimit: 50,
+        decisionCursor: "fresh-cursor",
+      },
+      expect.anything(),
+    );
+    await waitForSolid(() => expect(receipts()).toHaveLength(3));
+    expect(loadMore()).toBeNull();
   });
 
   it.each(["connected", "offline"] as const)(
