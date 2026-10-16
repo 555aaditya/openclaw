@@ -188,7 +188,7 @@ export type SubagentRunReadIndex<T extends SubagentRunReadRecord = SubagentRunRe
   ): number;
   hasDescendantRunAwaitingSettle(
     rootSessionKey: string,
-    excludeRunId?: string,
+    excludeRunIds?: string | ReadonlySet<string>,
     settledBefore?: number,
   ): boolean;
   listDescendantRunsForRequester(rootSessionKey: string): T[];
@@ -315,17 +315,16 @@ export function buildSubagentRunReadIndexFromRuns<T extends SubagentRunReadRecor
     const countPendingDescendantRunsInternal = (
       rootSessionKey: string,
       options?: {
-        excludeRunId?: string;
+        excludeRunIds?: ReadonlySet<string>;
         settledBefore?: number;
         excludeSuspendedDelivery?: boolean;
         treatSuspendedDeliveryAsSettled?: boolean;
         stopAtFirst?: boolean;
       },
     ): number => {
-      const excludedRunId = options?.excludeRunId?.trim();
       let count = 0;
       for (const entry of getDescendantRuns(rootSessionKey)) {
-        if (entry.runId === excludedRunId) {
+        if (options?.excludeRunIds?.has(entry.runId)) {
           continue;
         }
         // Earlier delivery bookkeeping cannot block a later completion wave.
@@ -378,11 +377,12 @@ export function buildSubagentRunReadIndexFromRuns<T extends SubagentRunReadRecor
 
     const hasDescendantRunAwaitingSettle = (
       rootSessionKey: string,
-      excludeRunId?: string,
+      excludeRunIds?: string | ReadonlySet<string>,
       settledBefore?: number,
     ): boolean =>
       countPendingDescendantRunsInternal(rootSessionKey, {
-        excludeRunId,
+        excludeRunIds:
+          typeof excludeRunIds === "string" ? new Set([excludeRunIds.trim()]) : excludeRunIds,
         settledBefore,
         treatSuspendedDeliveryAsSettled: true,
         stopAtFirst: true,
@@ -651,7 +651,7 @@ export function countPendingDescendantRunsFromRuns(
 export function hasDescendantRunAwaitingSettleFromRuns(
   runs: Map<string, SubagentRunRecord>,
   rootSessionKey: string,
-  excludeRunId?: string,
+  excludeRunIds?: string | ReadonlySet<string>,
   requesterAgentId?: string,
   requesterStorePath?: string | null,
   settledBefore?: number,
@@ -665,7 +665,7 @@ export function hasDescendantRunAwaitingSettleFromRuns(
       requesterStorePath,
       rootRunIds,
     ),
-  }).hasDescendantRunAwaitingSettle(rootSessionKey, excludeRunId, settledBefore);
+  }).hasDescendantRunAwaitingSettle(rootSessionKey, excludeRunIds, settledBefore);
 }
 
 export function listDescendantRunsForRequesterFromRuns(

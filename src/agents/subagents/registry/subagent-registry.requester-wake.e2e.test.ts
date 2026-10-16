@@ -972,6 +972,24 @@ describe("requester settle wake product flow", () => {
     flushOwnedWork,
     waitForDeliveredCleanup,
     getRequesterWakeCalls,
+    getAgentCalls,
+    activateRegistry: async () => {
+      await registry.initSubagentRegistry();
+      await registry.activateSubagentRegistry(createGatewayContext);
+    },
+    emitStopped: (runId, childSessionKey) =>
+      lifecycleHandler?.({
+        stream: "lifecycle",
+        runId,
+        seq: 1,
+        ts: Date.now(),
+        sessionKey: childSessionKey,
+        data: { phase: "end", endedAt: Date.now(), aborted: true, stopReason: "aborted" },
+      }),
+    forgetChildSession: (childSessionKey) => {
+      delete sessionStore[childSessionKey];
+      chatHistoryBySessionKey.delete(childSessionKey);
+    },
     useGlobalSessionScope: () => {
       const cfg = loadConfigMock();
       loadConfigMock.mockReturnValue({ ...cfg, session: { ...cfg.session, scope: "global" } });

@@ -7,7 +7,28 @@ import { listSubagentRunsForRequester } from "../registry/subagent-registry-read
 import { withSubagentRunReadSnapshot } from "../registry/subagent-registry-state.js";
 import type { SubagentRunRecord } from "../registry/subagent-registry.types.js";
 import { isSameSubagentRunOwner } from "../registry/subagent-run-generation.js";
+import { hasSubagentRunEnded } from "../registry/subagent-run-liveness.js";
 import { collectSubagentSessionReadKeys } from "../registry/subagent-session-read-scope.js";
+
+/**
+ * A member its yielded cohort retired (stopped, killed, or deleted) is reported by that
+ * cohort's continuation. Its own cleanup waits for the cohort to release it, so it must not
+ * hold the cohort as an unsettled descendant.
+ */
+function isRetiredCohortMember(
+  entry: SubagentRunRecord,
+  rootRunIds: ReadonlySet<string> | undefined,
+  rearmGeneration: number | undefined,
+): boolean {
+  const wake = entry.requesterSettleWake;
+  return (
+    rootRunIds?.has(entry.runId) === true &&
+    entry.suppressCompletionDelivery === true &&
+    hasSubagentRunEnded(entry) &&
+    wake?.requesterYieldBatch === true &&
+    wake.rearmGeneration === rearmGeneration
+  );
+}
 
 export function createRequesterDescendantReader(params: {
   requesterSessionKey: string;
@@ -59,11 +80,17 @@ export function createRequesterDescendantReader(params: {
           return undefined;
         }
         const snapshot = new Map(runs);
+        const settledRunIds = new Set([params.settledEntry.runId]);
+        for (const entry of snapshot.values()) {
+          if (isRetiredCohortMember(entry, params.rootRunIds, rearmGeneration)) {
+            settledRunIds.add(entry.runId);
+          }
+        }
         return {
           unsettled: hasDescendantRunAwaitingSettleFromRuns(
             snapshot,
             params.requesterSessionKey,
-            params.settledEntry.runId,
+            settledRunIds,
             params.requesterAgentId,
             params.requesterStorePath,
             params.settledBefore,
