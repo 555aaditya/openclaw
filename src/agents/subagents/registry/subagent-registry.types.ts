@@ -174,7 +174,7 @@ type SubagentKillIntent = {
 };
 
 export type SubagentRunRecord = Omit<SubagentRunReadRecord, "execution" | "collectorCompletion"> & {
-  /** Admission evidence only; restart continuation revalidates the live operator grant. */
+  /** Child or adopted parent admission evidence; restart revalidates the live operator grant. */
   operatorRecoverySource?: RestartRecoveryOperatorSource;
   /** Child identity stays fixed when recovery redirects transcript writes. */
   childSessionIdentity?: Pick<SessionEntry, "sessionId" | "lifecycleRevision">;

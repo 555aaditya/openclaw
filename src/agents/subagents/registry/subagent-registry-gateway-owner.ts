@@ -1,4 +1,5 @@
 import { setImmediate as yieldToEventLoop } from "node:timers/promises";
+import { isDeepStrictEqual } from "node:util";
 import { WorkerTaskError } from "@openclaw/worker-runtime";
 import { readSessionEntryReadOnlyInWorker } from "../../../config/sessions/session-entry-read-runtime.js";
 import type { GatewayContextResolver } from "../../../gateway/server-methods/types.js";
@@ -37,10 +38,11 @@ export function getUnrestorableSubagentCompletionSourceReason(
 }
 
 async function restoreSubagentCompletionSource(
-  entry: SubagentRunRecord,
+  snapshot: SubagentRunRecord,
   resolver: GatewayContextResolver,
   isGatewayCurrent: () => boolean,
 ): Promise<void> {
+  let entry = snapshot;
   const runtimeKey = getSubagentRunRuntimeKey(entry);
   deferredCompletionSources.delete(runtimeKey);
   unrestorableCompletionSources.delete(runtimeKey);
@@ -61,6 +63,7 @@ async function restoreSubagentCompletionSource(
   ) {
     return;
   }
+  let settleLegacy: ((reason: string) => Promise<void>) | undefined;
   let releaseRestored: (() => void) | undefined;
   let continuation:
     | Awaited<
@@ -70,26 +73,9 @@ async function restoreSubagentCompletionSource(
       >
     | undefined;
   try {
-    const source = entry.operatorRecoverySource;
-    if (!source) {
-      unrestorableCompletionSources.set(
-        runtimeKey,
-        "The original operator source was not saved for this requester continuation",
-      );
-    } else if (
-      source.agentId !== entry.requesterAgentId ||
-      source.sessionKey !== entry.requesterSessionKey ||
-      source.sessionId !== entry.completionRequesterSessionId ||
-      source.lifecycleRevision !== entry.completionRequesterLifecycleRevision
-    ) {
-      unrestorableCompletionSources.set(
-        runtimeKey,
-        "The original operator source does not match this requester continuation",
-      );
-    }
     const gateway = resolver();
     const storePath = entry.requesterStorePath;
-    if (!gateway || !source || !storePath || unrestorableCompletionSources.has(runtimeKey)) {
+    if (!gateway || !storePath) {
       throw new Error("Subagent restart recovery lacks its original operator source");
     }
     const lifecycleGeneration = getAgentEventLifecycleGeneration();
@@ -111,6 +97,75 @@ async function restoreSubagentCompletionSource(
       }
     };
     assertCurrent();
+    let source = entry.operatorRecoverySource;
+    const legacy = !source;
+    if (legacy) {
+      const requester = await readSessionEntryReadOnlyInWorker(
+        {
+          agentId: entry.requesterAgentId,
+          sessionKey: entry.requesterSessionKey,
+          storePath,
+        },
+        assertCurrent,
+      );
+      assertCurrent();
+      const sameRequester =
+        requester !== undefined &&
+        Boolean(entry.completionRequesterSessionId) &&
+        requester.sessionId === entry.completionRequesterSessionId &&
+        requester.lifecycleRevision === entry.completionRequesterLifecycleRevision;
+      source = sameRequester ? requester.restartRecoveryOperatorSource : undefined;
+      settleLegacy = async (reason) => {
+        if (entry.execution.status !== "terminal") {
+          // Interruption settlement owns execution; the existing sweep retries its postimage.
+          deferredCompletionSources.add(runtimeKey);
+          return;
+        }
+        if (sameRequester) {
+          const { appendAssistantMessageToSessionTranscript } =
+            await import("../../../config/sessions/transcript.js");
+          const notice = await appendAssistantMessageToSessionTranscript({
+            agentId: entry.requesterAgentId,
+            sessionKey: entry.requesterSessionKey,
+            storePath,
+            expectedSessionId: requester.sessionId,
+            expectedLifecycleRevision: requester.lifecycleRevision ?? null,
+            idempotencyKey: `subagent-legacy-completion:${entry.runId}`,
+            text:
+              "A child's result couldn't be delivered after a restart. " +
+              `Open ${entry.childSessionKey} to read its result, or ask me to continue.`,
+            assertCurrent,
+          });
+          if (!notice.ok && !("code" in notice && notice.code === "session-rebound")) {
+            throw new Error(`Could not record legacy child completion: ${notice.reason}`);
+          }
+        }
+        const { settleLegacySubagentCompletion } =
+          await import("../completion/subagent-completion-admission.store.js");
+        await settleLegacySubagentCompletion({ subagent: entry, reason, context, assertCurrent });
+      };
+      if (!source) {
+        await settleLegacy("The original operator source was not saved for this child completion");
+        return;
+      }
+    }
+    if (
+      !source ||
+      source.agentId !== entry.requesterAgentId ||
+      source.sessionKey !== entry.requesterSessionKey ||
+      source.sessionId !== entry.completionRequesterSessionId ||
+      source.lifecycleRevision !== entry.completionRequesterLifecycleRevision
+    ) {
+      if (settleLegacy) {
+        await settleLegacy("The parent's operator source does not match this child completion");
+        return;
+      }
+      unrestorableCompletionSources.set(
+        runtimeKey,
+        "The original operator source does not match this requester continuation",
+      );
+      throw new Error("Subagent restart recovery lacks its original operator source");
+    }
     const [
       { restoreGatewayOperatorSource },
       { captureOperatorToolGatewayContinuationContext },
@@ -138,7 +193,8 @@ async function restoreSubagentCompletionSource(
         assertCurrent();
         if (
           requester?.sessionId !== source.sessionId ||
-          requester.lifecycleRevision !== source.lifecycleRevision
+          requester.lifecycleRevision !== source.lifecycleRevision ||
+          (legacy && !isDeepStrictEqual(requester.restartRecoveryOperatorSource, source))
         ) {
           throw new Error("Subagent restart recovery requester session changed");
         }
@@ -163,6 +219,21 @@ async function restoreSubagentCompletionSource(
     if (!continuation?.operatorAuthority) {
       throw new Error("Subagent restart recovery could not retain operator authority");
     }
+    if (legacy) {
+      // Pre-capture children adopt their exact parent's admitted evidence only after revalidation.
+      entry = await mutateSubagentRuns(
+        [entry.runId],
+        (rows) => {
+          const current = rows.get(entry.runId);
+          if (!current || current.operatorRecoverySource) {
+            throw new SubagentRegistryMutationRejectedError("Legacy completion source changed");
+          }
+          const adopted = { ...current, operatorRecoverySource: source };
+          return { value: adopted, postimages: new Map([[adopted.runId, adopted]]) };
+        },
+        { context, assertCurrent: continuation.assertCurrent },
+      );
+    }
     subagentRuns.bindCompletionAuthority(entry, continuation, true);
     continuation = undefined;
   } catch (error) {
@@ -177,6 +248,10 @@ async function restoreSubagentCompletionSource(
       return;
     }
     if (error instanceof GatewayOperatorAccessDeniedError) {
+      if (settleLegacy) {
+        await settleLegacy("The parent's operator no longer has access to this child completion");
+        return;
+      }
       unrestorableCompletionSources.set(
         runtimeKey,
         "The original operator no longer has access to this requester continuation",

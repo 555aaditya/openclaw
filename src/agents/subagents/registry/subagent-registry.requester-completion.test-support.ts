@@ -1,29 +1,20 @@
 import { expectDefined } from "@openclaw/normalization-core/expect";
 import { expect, it, vi } from "vitest";
 import * as config from "../../../config/config.js";
-import { upsertSessionEntryCore } from "../../../config/sessions/session-accessor.js";
+import {
+  loadTranscriptEvents,
+  upsertSessionEntryCore,
+} from "../../../config/sessions/session-accessor.js";
 import { captureAgentTurnPrincipal } from "../../../gateway/agent-turn/principal.js";
 import { captureGatewayAuthPolicy } from "../../../gateway/auth-policy.js";
 import * as operatorCapture from "../../../gateway/operator-run-authority.js";
 import * as operatorRecovery from "../../../gateway/operator-run-recovery.js";
 import {
-  resolveGatewayChatCronCreatorAuthorityAdmission,
-  resolveGatewayCronCreatorAuthorityAdmission,
-} from "../../../gateway/server-methods/cron-creator-authority-admission.js";
-import {
   createContext,
   createOperatorClient,
 } from "../../../gateway/server-plugin-in-process-dispatch.test-support.js";
-import { createSyntheticPluginRuntimeClient } from "../../../gateway/server-plugin-runtime-client.js";
 import { createMockGatewayRecoveryRuntime } from "../../../gateway/server-recovery-runtime.test-support.js";
 import { rotateAgentEventLifecycleGeneration } from "../../../infra/agent-events.js";
-import {
-  claimAgentRunDelegatedAuthority,
-  clearAgentRunContext,
-  registerAgentRunContext,
-  releaseAgentRunDelegatedAuthority,
-  validateAgentRunDelegatedAuthority,
-} from "../../../infra/agent-run-registry.js";
 import { WorkerTaskError } from "../../../infra/worker-task-pool.js";
 import { createEmptyPluginRegistry } from "../../../plugins/registry-empty.js";
 import {
@@ -39,21 +30,9 @@ import {
 import { createPluginRecord } from "../../../plugins/status.test-helpers.js";
 import { withOpenClawTestState } from "../../../test-utils/openclaw-test-state.js";
 import { createAdmittedRunOperatorAuthority } from "../../admitted-run-context.js";
-import { createTestAdmittedRunContext } from "../../admitted-run-context.test-support.js";
-import {
-  createCronCreatorAuthorityCapability,
-  runWithCronCreatorAuthorityCapability,
-} from "../../cron-creator-authority-context.js";
-import { withGatewayToolCallerIdentity } from "../../tools/gateway-caller-context.js";
 import * as delivery from "../announce/subagent-announce-delivery.js";
 import { maybeWakeRequesterAfterAllChildrenSettled } from "../announce/subagent-announce.requester-settle-wake.js";
-import { revokeRequesterCronAuthority } from "../requester-cron-authority.js";
 import { subagentRuns } from "./subagent-registry-memory.js";
-import { settleRequesterTurnAfterSessionSpawns } from "./subagent-registry-requester-yield.js";
-import {
-  createRequesterInitialTransferFixture,
-  markRequesterTurnYieldedWithAuthority,
-} from "./subagent-registry-requester-yield.test-support.js";
 import { loadSubagentRegistryFromSqlite } from "./subagent-registry-state.fixture.test-support.js";
 import {
   activateSubagentRegistry,
@@ -63,6 +42,7 @@ import {
   replaceSubagentRunAfterSteerCore,
 } from "./subagent-registry.js";
 import { settleSubagentRegistryPersistenceWork } from "./subagent-registry.persistence.test-support.js";
+import { registerRequesterOriginalCompletionCustodyTests } from "./subagent-registry.requester-original-completion.test-support.js";
 import { resetSubagentRegistryForTests, testing } from "./subagent-registry.test-helpers.js";
 import type { SubagentRunRecord } from "./subagent-registry.types.js";
 import { buildRequesterSettleWakeIdentity } from "./subagent-requester-settle-identity.js";
@@ -84,6 +64,9 @@ export function registerRequesterCompletionCustodyTests({
     "overloaded then retired",
     "unavailable policy then current",
     "revoked after restore",
+    "legacy with parent source",
+    "legacy mixed with parent source",
+    "legacy revoked parent source",
     "missing source",
     "missing parent source",
     "mismatched source",
@@ -93,6 +76,9 @@ export function registerRequesterCompletionCustodyTests({
   ] as const)(
     "revalidates %s for a cold-loaded interrupted child batch without widening the parent",
     async (recovery) => {
+      const legacy = recovery.startsWith("legacy ");
+      const legacyUnrestorable =
+        recovery === "missing source" || recovery === "legacy revoked parent source";
       const overloaded = recovery.startsWith("overloaded");
       const unavailablePolicy = recovery === "unavailable policy then current";
       const deferred = overloaded || unavailablePolicy;
@@ -102,7 +88,11 @@ export function registerRequesterCompletionCustodyTests({
         recovery === "mismatched source" ||
         recovery === "revoked grant";
       const canDispatch =
-        recovery === "current" || recovery === "overloaded then current" || unavailablePolicy;
+        recovery === "current" ||
+        recovery === "overloaded then current" ||
+        recovery === "legacy with parent source" ||
+        recovery === "legacy mixed with parent source" ||
+        unavailablePolicy;
       await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
         const cfg = { session: { store: state.path("sessions.json") } };
         config.setRuntimeConfigSnapshot(cfg);
@@ -210,6 +200,17 @@ export function registerRequesterCompletionCustodyTests({
               sourceRunId: requesterTurnRunId,
               snapshot: { scopes: ["operator.write"], grant: grantRef },
             });
+            if (legacy && runId === runIds[0]) {
+              await upsertSessionEntryCore(
+                { storePath: cfg.session.store, sessionKey: requesterSessionKey, agentId: "main" },
+                {
+                  sessionId,
+                  lifecycleRevision,
+                  updatedAt: 1,
+                  restartRecoveryOperatorSource: admitted?.operatorRecoverySource,
+                },
+              );
+            }
             // Crash after interruption was recorded, before its parent continuation was dispatched.
             await updateRun(runId, (draft) => {
               const text = `${runId} interrupted by Gateway restart`;
@@ -234,7 +235,10 @@ export function registerRequesterCompletionCustodyTests({
                 batchRunIds: runIds,
                 nextAttemptAt: Date.now() + 60_000,
               };
-              if (recovery === "missing source") {
+              if (
+                recovery === "missing source" ||
+                (legacy && (recovery !== "legacy mixed with parent source" || runId === runIds[0]))
+              ) {
                 delete draft.operatorRecoverySource;
               } else if (recovery === "mismatched source") {
                 expectDefined(draft.operatorRecoverySource, "admitted source").sessionId =
@@ -250,7 +254,8 @@ export function registerRequesterCompletionCustodyTests({
           getGatewayContextLifetime(context.resolveGatewayContext).abort();
           await resetSubagentRegistryForTests({ persist: false });
           rotateAgentEventLifecycleGeneration();
-          grantCurrent = recovery !== "revoked grant";
+          grantCurrent =
+            recovery !== "revoked grant" && recovery !== "legacy revoked parent source";
           policyReady = !unavailablePolicy;
           if (recovery === "replaced requester") {
             await upsertSessionEntryCore(
@@ -297,6 +302,40 @@ export function registerRequesterCompletionCustodyTests({
             expect(loadSubagentRegistryFromSqlite()).toEqual(unbound);
           }
           await activateSubagentRegistry(() => replacement);
+          if (legacyUnrestorable) {
+            const settled = loadSubagentRegistryFromSqlite();
+            for (const runId of runIds) {
+              expect(settled.get(runId)?.requesterSettleWake).toBeUndefined();
+              expect(settled.get(runId)?.suppressCompletionDelivery).toBe(true);
+              expect(settled.get(runId)?.delivery?.lastError).toMatch(/operator/);
+              expect(settled.get(runId)?.completion?.resultText).toBe(
+                `${runId} interrupted by Gateway restart`,
+              );
+            }
+            const scope = {
+              agentId: "main",
+              sessionKey: requesterSessionKey,
+              sessionId,
+              storePath: cfg.session.store,
+            };
+            const notices = await loadTranscriptEvents(scope);
+            expect(
+              JSON.stringify(notices).match(/A child's result couldn't be delivered/g),
+            ).toHaveLength(2);
+            expect(JSON.stringify(notices)).toContain("agent:main:subagent:restart-child-a");
+            getGatewayContextLifetime(replacement.resolveGatewayContext).abort();
+            await resetSubagentRegistryForTests({ persist: false });
+            rotateAgentEventLifecycleGeneration();
+            await initSubagentRegistry();
+            const nextGateway = createContext();
+            nextGateway.getRuntimeConfig = () => cfg;
+            nextGateway.resolveGatewayContext = () => nextGateway;
+            await activateSubagentRegistry(() => nextGateway);
+            expect(loadSubagentRegistryFromSqlite()).toEqual(settled);
+            expect(await loadTranscriptEvents(scope)).toEqual(notices);
+            expect(deliver).not.toHaveBeenCalled();
+            return;
+          }
           if (terminalRecovery) {
             await expect(prepareRecovery()).resolves.toEqual({
               status: "unrestorable",
@@ -479,224 +518,5 @@ export function registerRequesterCompletionCustodyTests({
     },
   );
 
-  it.each(["current", "revoked"] as const)(
-    "keeps %s original completion custody after a same-human chat admission revokes automation",
-    async (authority) => {
-      await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
-        const cfg = { session: { store: state.path("sessions.json") } };
-        vi.mocked(config.getRuntimeConfig).mockReturnValue(cfg);
-        const requesterSessionKey = "agent:main:main";
-        const sessionId = "yielded-requester";
-        const requesterTurnRunId = "original-requester";
-        const runId = "yielded-child";
-        await upsertSessionEntryCore(
-          { storePath: cfg.session.store, sessionKey: requesterSessionKey, agentId: "main" },
-          { sessionId, updatedAt: 1 },
-        );
-        const context = createContext();
-        context.getRuntimeConfig = () => cfg;
-        context.resolveGatewayContext = () => context;
-        const client = createOperatorClient({
-          profileName: "original-requester",
-          scopes: ["operator.admin"],
-        });
-        const revoked = new AbortController();
-        const source = expectDefined(
-          await operatorCapture.captureGatewayOperatorRunAuthority({
-            client,
-            context,
-            sourceAuthority: {
-              signal: revoked.signal,
-              assertCurrent: () => revoked.signal.throwIfAborted(),
-            },
-          }),
-          "original requester source",
-        );
-        client.internal = { operatorRunAuthority: source.authority };
-        const { operationalRunInstance } = createTestAdmittedRunContext(requesterTurnRunId);
-        const delegated = claimAgentRunDelegatedAuthority(operationalRunInstance);
-        registerAgentRunContext(requesterTurnRunId, {
-          agentId: "main",
-          sessionKey: requesterSessionKey,
-          sessionId,
-        });
-        const capability = expectDefined(
-          createCronCreatorAuthorityCapability(
-            requesterTurnRunId,
-            { kind: "unknown" },
-            { source: "control-ui-admin" },
-          ),
-          "original automation management capability",
-        );
-        const transfer = createRequesterInitialTransferFixture(subagentRuns);
-        const requester = { requesterSessionKey, requesterAgentId: "main", requesterTurnRunId };
-        const deliver = vi.spyOn(delivery, "deliverSubagentAnnouncement");
-        try {
-          await withPluginRuntimeGatewayRequestScope(
-            {
-              client,
-              context,
-              resolveGatewayContext: () => context,
-              isWebchatConnect: () => false,
-            },
-            () =>
-              runWithCronCreatorAuthorityCapability(capability, () =>
-                withGatewayToolCallerIdentity(
-                  {
-                    agentId: "main",
-                    sessionKey: requesterSessionKey,
-                    operationalRunInstance,
-                    approvalAuthority: delegated,
-                    operatorAuthority: source.authority,
-                    receiptAuthority: () => validateAgentRunDelegatedAuthority(delegated),
-                  },
-                  async () => {
-                    await registerSubagentRun(
-                      registration(runId, { ...requester, gatewayContextResolver: () => context }),
-                    );
-                    expect(
-                      await markRequesterTurnYieldedWithAuthority({
-                        ...requester,
-                        runs: subagentRuns,
-                        transfer,
-                      }),
-                    ).toBe(1);
-                    expect(
-                      await settleRequesterTurnAfterSessionSpawns({
-                        ...requester,
-                        requesterYielded: true,
-                        acceptedSessionSpawns: [
-                          {
-                            runId,
-                            childSessionKey: subagentRuns.get(runId)!.childSessionKey,
-                            expectsCompletionMessage: true,
-                          },
-                        ],
-                        runs: subagentRuns,
-                        transfer,
-                        schedule: () => {},
-                      }),
-                    ).toBe(true);
-                  },
-                ),
-              ),
-          );
-          releaseAgentRunDelegatedAuthority(delegated);
-          clearAgentRunContext(requesterTurnRunId);
-          source.release();
-          expect(capability.active).toBe(false);
-          expect(source.authority.assertCurrent).not.toThrow();
-
-          // A fresh connection for the same human may manage automations; the old batch may not.
-          const freshClient = createOperatorClient({
-            profileId: source.authority.profileId,
-            scopes: ["operator.admin", "operator.approvals"],
-          });
-          freshClient.internal = { controlUiAdmin: true };
-          expect(
-            resolveGatewayChatCronCreatorAuthorityAdmission({
-              runId: "same-human-next-message",
-              resolvedSessionKey: requesterSessionKey,
-              client: freshClient,
-              hasExplicitOrigin: false,
-              hasRestoredCronContinuation: false,
-              isIncognito: false,
-              isReconnectResume: false,
-              isSystemGenerated: false,
-              turnKind: "main",
-              isDirectExternalUser: true,
-            }),
-          ).toMatchObject({ managementEntitlement: { source: "control-ui-admin" } });
-          await updateRun(runId, (draft) => {
-            draft.execution = {
-              status: "terminal",
-              endedAt: Date.now(),
-              outcome: { status: "ok" },
-            };
-            draft.completion = {
-              required: true,
-              resultText: "Original child result",
-              terminalReply: { disposition: "visible", text: "Original child result" },
-            };
-            draft.delivery = { status: "delivered" };
-          });
-          if (authority === "revoked") {
-            revoked.abort(new Error("original operator source revoked"));
-          }
-          deliver.mockImplementation(async (params) => {
-            const retained =
-              getPluginRuntimeGatewayRequestScope()?.client?.internal?.operatorRunAuthority;
-            expect(retained?.source).toBe(source.authority.source);
-            expect(retained?.scopes).toEqual(["operator.admin"]);
-            expect(params.triggerMessage).toContain("Original child result");
-            expect(
-              resolveGatewayCronCreatorAuthorityAdmission({
-                runId: params.directIdempotencyKey!,
-                resolvedSessionKey: requesterSessionKey,
-                sessionId,
-                client: createSyntheticPluginRuntimeClient(),
-                request: {
-                  message: params.triggerMessage,
-                  idempotencyKey: params.directIdempotencyKey!,
-                },
-                inputProvenance: {
-                  kind: "inter_session",
-                  sourceSessionKey: subagentRuns.get(runId)!.childSessionKey,
-                  sourceTool: "subagent_settle",
-                },
-                hasRestoredCronContinuation: false,
-                isOneShotModelRun: false,
-                isRestartRecoveryResumeRun: false,
-              }),
-            ).toBeUndefined();
-            return { delivered: true, path: "direct" };
-          });
-          const completeBatch = vi.fn();
-          const unrelatedClient = createOperatorClient({
-            profileName: "unrelated-ambient-operator",
-            scopes: ["operator.admin", "operator.pairing"],
-          });
-          // Exercise the real settle dispatcher, including its canonical registry authority wrapper.
-          const delivered = await withPluginRuntimeGatewayRequestScope(
-            { client: unrelatedClient, context, isWebchatConnect: () => false },
-            () =>
-              maybeWakeRequesterAfterAllChildrenSettled({
-                requesterSessionKey,
-                settledEntry: subagentRuns.get(runId)!,
-                isSourceCurrent: () => true,
-                transitionBatch: async (_batch, wake, onPublished) => {
-                  await updateRun(runId, (draft) => {
-                    draft.requesterSettleWake = wake;
-                  });
-                  onPublished([subagentRuns.get(runId)!]);
-                },
-                completeBatch,
-              }),
-          );
-          expect(delivered).toBe(authority === "current");
-          if (authority === "current") {
-            expect(deliver).toHaveBeenCalledOnce();
-            expect(completeBatch).toHaveBeenCalledWith(
-              expect.any(Array),
-              expect.any(Number),
-              { delivered: true, path: "direct" },
-              expect.any(Function),
-            );
-          } else {
-            expect(deliver).not.toHaveBeenCalled();
-            expect(subagentRuns.get(runId)?.requesterSettleWake?.lastError).toBe(
-              "Subagent completion authority is no longer active",
-            );
-          }
-        } finally {
-          deliver.mockRestore();
-          releaseAgentRunDelegatedAuthority(delegated);
-          clearAgentRunContext(requesterTurnRunId);
-          revokeRequesterCronAuthority(requesterSessionKey);
-          source.release();
-          await resetSubagentRegistryForTests({ persist: false });
-        }
-      });
-    },
-  );
+  registerRequesterOriginalCompletionCustodyTests({ registration, updateRun });
 }

@@ -449,6 +449,21 @@ export async function blockSubagentCompletionDelivery(
   return result.applied === true;
 }
 
+/** Legacy completion failure retires only this child, not its recoverable siblings. */
+export async function settleLegacySubagentCompletion(
+  params: { subagent: SubagentRunRecord; reason: string } & CompletionMutationOptions,
+): Promise<void> {
+  await mutateCompletion(
+    [params.subagent],
+    (rows) => ({
+      kind: "legacyUnrestorable",
+      expected: currentCompletionOwner(rows, params.subagent),
+      reason: params.reason,
+    }),
+    params,
+  );
+}
+
 export async function reconcileRetiredSubagentCancellation(
   expected: SubagentRunRecord,
   now: number,

@@ -95,16 +95,20 @@ Operator-admitted children retain bounded source evidence with their run record.
 Before continuing the requester after restart, the Gateway revalidates the current
 operator profile, role, authentication policy, device identity, and access grant,
 preserving the original scope restrictions. The saved evidence contains no credentials
-and cannot authorize execution by itself. Missing, invalid, or revoked evidence leaves
-the interrupted result available for inspection; recovery never substitutes system
-authority. Start a new authorized requester turn to continue that work.
+and cannot authorize execution by itself. Children created before source capture
+can use their exact parent session's retained admission evidence, subject to the
+same current-access checks. If neither source can be restored, recovery settles
+the legacy child once and records a notice in the unchanged parent session with
+the child session to open. The child's result remains available for inspection;
+recovery never substitutes system authority or repeatedly retries that completion.
 
 Visible and private requester-settle completions retain their processing outcome
 across restart. A replay of the same frozen child batch acknowledges an already
 completed requester turn without executing or delivering it again. Unfinished
 main-session turns continue through normal restart recovery with the original
-operator restrictions. If the original authority is unavailable, the task stays
-owed instead of running with broader permissions.
+operator restrictions. Invalid or revoked authority never runs with broader
+permissions. A terminal legacy completion notice lets the user inspect the child
+or start a new authorized turn to continue the task.
 
 An already-admitted completion turn for a yielded nested requester is different
 from an orphaned child launch. Its frozen child-result batch retains the exact

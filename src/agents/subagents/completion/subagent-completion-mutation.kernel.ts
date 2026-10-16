@@ -572,6 +572,24 @@ export function mutateSubagentCompletionInDatabase(
       );
       return prepared ? commitCompletionMutations(database, [prepared]) : noMutation(false);
     }
+    case "legacyUnrestorable": {
+      const current = readSubagentRun(database, mutation.expected.runId);
+      if (
+        !current ||
+        current.operatorRecoverySource ||
+        current.execution.status !== "terminal" ||
+        compareSubagentRunGeneration(current, mutation.expected) !== 0 ||
+        !sameRequesterSettleRunIdentity(current, mutation.expected)
+      ) {
+        throw new Error("Legacy subagent completion owner changed before settlement");
+      }
+      // Settle this member even when the frozen wave contains recoverable siblings.
+      // Keep any earlier delivery receipt and the child's result intact.
+      current.suppressCompletionDelivery = true;
+      current.requesterSettleWake = undefined;
+      ensureDeliveryState(current).lastError = mutation.reason;
+      return commitCompletionMutations(database, [{ subagent: current }]);
+    }
     case "reconcileCancelled": {
       const { expected, now } = mutation;
       const endedAt = retiredCancellationEndedAt(expected, now);

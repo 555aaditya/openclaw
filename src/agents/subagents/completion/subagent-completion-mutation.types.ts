@@ -28,6 +28,7 @@ export type RequesterWakeCommittedWrite = {
 export type SubagentCompletionMutation =
   | { kind: "settle"; queueId: string; expected: SubagentRunRecord; subagent: SubagentRunRecord }
   | { kind: "block"; params: BlockSubagentCompletionRequest; now: number }
+  | { kind: "legacyUnrestorable"; expected: SubagentRunRecord; reason: string }
   | { kind: "reconcileCancelled"; expected: SubagentRunRecord; now: number }
   | {
       kind: "requesterWake";
