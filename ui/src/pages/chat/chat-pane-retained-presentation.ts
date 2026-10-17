@@ -26,7 +26,6 @@ import {
   setChatError,
 } from "./chat-history-state.ts";
 import { loadChatHistory } from "./chat-history.ts";
-import { chatOutboxOwner } from "./chat-outbox-owner.ts";
 import { QUEUED_EDIT_RETENTION_CHANGE_EVENT } from "./chat-page-retained-sessions.ts";
 import { ChatPaneActiveResources } from "./chat-pane-active-resources.ts";
 import { ChatPaneBoard } from "./chat-pane-board.ts";
@@ -518,7 +517,6 @@ export abstract class ChatPaneRetainedPresentation extends ChatPaneBoard {
       this.syncSessionCompanionPresentation(false);
       this.activeSessionResources.sync(null);
       if (this.state) {
-        chatOutboxOwner(this.state).admissions.cancelRequests(this.state);
         cancelChatModelRecovery(this.state);
       }
       if (this.context) {

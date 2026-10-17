@@ -23,7 +23,7 @@ function isRetryableStartupUnavailable(
   if (!details || typeof details !== "object") {
     return true;
   }
-  const detailMethod = (details as { method?: unknown }).method;
+  const detailMethod = "method" in details ? details.method : undefined;
   return typeof detailMethod !== "string" || detailMethod === method;
 }
 

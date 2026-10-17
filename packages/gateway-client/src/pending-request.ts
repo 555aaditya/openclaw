@@ -295,10 +295,14 @@ export class GatewayPendingRequests {
       }
       return;
     }
+    const startupDetails = frame.error?.details;
     const startupRefusal =
       !frame.ok &&
       isRetryableGatewayStartupUnavailableError(frame.error) &&
-      (frame.error?.details as { method?: unknown } | undefined)?.method === pending.method;
+      startupDetails !== null &&
+      typeof startupDetails === "object" &&
+      "method" in startupDetails &&
+      startupDetails.method === pending.method;
     if (startupRefusal && !pending.acceptedNotified) {
       pending.retryStartup?.(frame.error?.retryAfterMs);
       return;
