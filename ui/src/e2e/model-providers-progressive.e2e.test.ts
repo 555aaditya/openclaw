@@ -3,6 +3,7 @@ import path from "node:path";
 import { asNullableRecord } from "@openclaw/normalization-core/record-coerce";
 import { chromium, type Browser } from "playwright";
 import { beforeEach, afterAll, beforeAll, describe, expect, it } from "vitest";
+import { GATEWAY_SERVER_CAPS } from "../../../packages/gateway-protocol/src/server-capabilities.js";
 import type { ModelCatalogResult } from "../api/types.ts";
 import type { ApplicationRouter } from "../app-routes.ts";
 import { createControlUiE2eArtifactDir } from "../test-helpers/control-ui-e2e-artifacts.ts";
@@ -57,6 +58,7 @@ describeControlUiE2e("Control UI progressive Model Providers loading", () => {
     const model = { provider: "fixture", id: "current", name: "Current model", available: true };
     const pendingCatalog = { models: [model], pendingProviders: ["fixture"] };
     const gateway = await installMockGateway(page, {
+      connectCapabilities: [GATEWAY_SERVER_CAPS.MODEL_CATALOG_SNAPSHOT],
       defaultAgentId: "main",
       deferredMethods: ["agents.list"],
       models: [model],
@@ -476,6 +478,7 @@ describeControlUiE2e("Control UI progressive Model Providers loading", () => {
       valid: true,
     });
     const gateway = await installMockGateway(page, {
+      connectCapabilities: [GATEWAY_SERVER_CAPS.MODEL_CATALOG_SNAPSHOT],
       defaultAgentId: "main",
       models: [previousModel],
       methodResponses: {
@@ -624,6 +627,7 @@ describeControlUiE2e("Control UI progressive Model Providers loading", () => {
       const older = { ...prepared, id: "older", name: "Older model" };
       const added = { ...prepared, id: "added", name: "New model" };
       const gateway = await installMockGateway(page, {
+        connectCapabilities: [GATEWAY_SERVER_CAPS.MODEL_CATALOG_SNAPSHOT],
         defaultAgentId: "main",
         models: [older],
         heldMethods: ["models.list", "models.authStatus", "usage.status", "sessions.usage"],

@@ -204,7 +204,10 @@ export async function buildBrowserGatewayConnectPlan({
       device,
       // Tests bind these compact wire literals to the canonical capability registry.
       ...resolveModelCatalogConnect({
-        modelCatalog: opts.modelCatalog,
+        // Reading the target reserves its publication in the application store.
+        get modelCatalog() {
+          return opts.modelCatalog;
+        },
         serverCapabilities,
         caps: [
           "agent-kind",
