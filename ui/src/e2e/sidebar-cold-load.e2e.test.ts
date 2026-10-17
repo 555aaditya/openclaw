@@ -348,7 +348,7 @@ suite.define(() => {
             await sidebar
               .locator(`.sidebar-pages [data-session-key="${sessions[9]!.key}"]`)
               .waitFor();
-          } else {
+          } else if (baselineMode) {
             await sidebar.locator(`[data-session-key="${sessions[9]!.key}"]`).waitFor();
           }
           if (!baselineMode) {
@@ -381,7 +381,7 @@ suite.define(() => {
             view === "pages" ? 12 : 1,
           );
           expect(settled.sessions).toEqual(
-            view === "pages" ? [] : sessions.slice(0, 10).map((row) => row.key),
+            baselineMode && view !== "pages" ? sessions.slice(0, 10).map((row) => row.key) : [],
           );
           expect(settled.rail).toEqual(railPins);
           expect(settled.view).toBe(view);

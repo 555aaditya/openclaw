@@ -23,7 +23,7 @@ suite.define(() => {
     { mode: "chip", theme: "dark", touch: false },
     { mode: "roster", theme: "dark", touch: true },
   ] as const)(
-    "reveals new children without losing counts or manual collapse in $mode ($theme, touch=$touch)",
+    "reveals new children without losing counts or manual collapse after selecting from $mode ($theme, touch=$touch)",
     async ({ mode, theme, touch }) => {
       await suite.withPage(
         { colorScheme: theme, hasTouch: touch, viewport: { width: 1280, height: 800 } },
@@ -65,6 +65,12 @@ suite.define(() => {
           });
           await page.goto(controlUiSessionUrl(suite.server.baseUrl, activeKey));
           const sidebar = page.locator("openclaw-app-sidebar");
+          if (mode === "roster") {
+            await sidebar.locator('[data-agent-group="main"]').waitFor();
+            expect(await sidebar.locator("[data-child-session-toggle]").count()).toBe(0);
+            await sidebar.locator(".sidebar-workspace-header__main").click();
+            await sidebar.locator('.sidebar-agent-menu [data-value="agent:main"]').click();
+          }
           const row = sidebar.locator('[data-session-key="' + parentKey + '"]');
           const toggle = row.locator("[data-child-session-toggle]");
           await toggle.waitFor();
@@ -93,13 +99,7 @@ suite.define(() => {
           const toggleBox = await toggle.boundingBox();
           const titleBox = await row.locator(".sidebar-recent-session__title-row").boundingBox();
           expect(toggleBox!.x).toBeGreaterThanOrEqual(titleBox!.x + titleBox!.width);
-          if (mode === "roster") {
-            expect(
-              await row.getByRole("img", { name: "Child sessions: 2", exact: true }).isVisible(),
-            ).toBe(true);
-          } else {
-            expect(await toggle.textContent()).toContain("2");
-          }
+          expect(await toggle.textContent()).toContain("2");
           await toggle.click();
           await expect.poll(() => toggle.getAttribute("aria-expanded")).toBe("false");
           const third = sessionRow(

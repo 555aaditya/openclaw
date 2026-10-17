@@ -335,7 +335,15 @@ suite.define(() => {
       const researchSettings = researchSwitch.getByRole("button", { name: "Research settings" });
       await pressAndExpectFocus(page, "Tab", researchSettings);
       await page.keyboard.press("Enter");
-      await expectPath(page, "/settings/agents/research");
+      await waitForControlUiRoute(page, {
+        routeId: "agents",
+        pathname: "/settings/agents/research",
+      });
+      expect(await page.evaluate(() => window.openclawControlUi?.snapshot().sessionKey)).toBe(
+        "agent:main:main",
+      );
+      await page.locator(".settings-sidebar__back").click();
+      await waitForControlUiRoute(page, { routeId: "chat" });
       await sidebar.locator(".sidebar-agent-card__main").click();
       await expectAttribute(mainSwitch, "aria-current", "true");
       await researchSwitch.focus();

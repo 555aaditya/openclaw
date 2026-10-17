@@ -392,12 +392,18 @@ suite.define(() => {
         await waitForControlUiRoute(page, { pathname, routeId: route });
         const settingsPage = page.locator(".settings-page").last();
         await settingsPage.waitFor({ state: "attached" });
+        const shellOwnsInset = route === "sessions" || route === "worktrees";
+        if (shellOwnsInset) {
+          await expect
+            .poll(() => readShellInsets(route), { message: `${route} mobile hub shell alignment` })
+            .toEqual({ contentPaddingInline: 12, topbarPaddingInline: 12 });
+        }
         expect(
           await settingsPage.evaluate((element) =>
             Math.round(Number.parseFloat(getComputedStyle(element).paddingLeft)),
           ),
           `${route} mobile page-owned inset`,
-        ).toBe(12);
+        ).toBe(shellOwnsInset ? 0 : 12);
       }
 
       for (const { route, contentSelector } of mobileGeometryCases) {
