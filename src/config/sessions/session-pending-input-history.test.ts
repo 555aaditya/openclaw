@@ -159,17 +159,14 @@ it("skips cached empty history after staging or switching windows", () =>
 it("reuses the admitted physical owner for repeated pending history reads", () =>
   withHistoryFixture("prepared-pending-history", async ({ database, scope }) => {
     await listSessionPendingInputs(scope);
-    const stat = vi.spyOn(fs, "statSync");
-    const realpath = vi.spyOn(fs.realpathSync, "native");
+    const spies = [vi.spyOn(fs, "statSync"), vi.spyOn(fs.realpathSync, "native")];
     try {
       expect(await listSessionPendingInputs(scope)).toEqual({ items: [], total: 0 });
-      expect(stat.mock.calls.filter(([pathname]) => pathname === database.path)).toHaveLength(0);
-      expect(realpath.mock.calls.filter(([pathname]) => pathname === database.path)).toHaveLength(
-        0,
-      );
+      for (const spy of spies) {
+        expect(spy.mock.calls.filter(([pathname]) => pathname === database.path)).toHaveLength(0);
+      }
     } finally {
-      stat.mockRestore();
-      realpath.mockRestore();
+      spies.forEach((spy) => spy.mockRestore());
     }
   }));
 
@@ -187,18 +184,20 @@ it("bounds pending pages by bytes without truncating inputs or skipping cursors"
         receipts.push(await stageHistoryInput(scope, runId, content, undefined, 100));
       }
       const page = await listSessionPendingInputs(scope);
-      expect(page.items.map((input) => input.id)).toEqual([receipts[1]?.inputId]);
-      expect(page.items[0]?.message.content === content).toBe(true);
-      expect(page.total).toBe(2);
+      expect(page).toMatchObject({
+        items: [{ id: receipts[1]?.inputId, message: { content } }],
+        total: 2,
+      });
       expect(page.nextBefore).toBeDefined();
       expect(await readSessionPendingInputContext(scope)).toEqual({
         items: page.items,
         nextBefore: page.nextBefore,
       });
       const older = await listSessionPendingInputs(scope, { before: page.nextBefore });
-      expect(older.items.map((input) => input.id)).toEqual([receipts[0]?.inputId]);
-      expect(older.items[0]?.message.content === content).toBe(true);
-      expect(older.nextBefore).toBeUndefined();
+      expect(older).toMatchObject({
+        items: [{ id: receipts[0]?.inputId, message: { content } }],
+        nextBefore: undefined,
+      });
     } finally {
       await finishInputs(...receipts);
     }
@@ -248,7 +247,7 @@ it("reads pending history and exact messages without caller-thread data SQL", ()
       await stageSessionPendingInput(scope, {
         runId: "stale",
         message: { ...receipt.message, idempotencyKey: "stale:user" },
-        assertCurrent: () => {},
+        assertCurrent() {},
       }),
       "Expected stale fixture",
     );
@@ -306,29 +305,24 @@ it("keeps recovery queued across a post-snapshot generation change", ({ signal }
     let paused = false;
     const spy = vi
       .spyOn(historyRuntime, "withSessionHistoryWorkerDatabase")
-      .mockImplementation(
-        <T>(
-          options: Parameters<typeof readHistory>[0],
-          operation: (owner: historyRuntime.SessionHistoryWorkerDatabase) => Promise<T>,
-          lane?: Parameters<typeof readHistory>[2],
-        ) =>
-          readHistory(
-            options,
-            (owner) =>
-              operation({
-                ...owner,
-                readPendingInputHistory: async (...args) => {
-                  const snapshot = await owner.readPendingInputHistory(...args);
-                  if (!paused) {
-                    paused = true;
-                    readReady.resolve();
-                    await resume.promise;
-                  }
-                  return snapshot;
-                },
-              }),
-            lane,
-          ),
+      .mockImplementation((options, operation, lane) =>
+        readHistory(
+          options,
+          (owner) =>
+            operation({
+              ...owner,
+              readPendingInputHistory: async (...args) => {
+                const snapshot = await owner.readPendingInputHistory(...args);
+                if (!paused) {
+                  paused = true;
+                  readReady.resolve();
+                  await resume.promise;
+                }
+                return snapshot;
+              },
+            }),
+          lane,
+        ),
       );
     const history = listSessionPendingInputs(scope);
     try {
