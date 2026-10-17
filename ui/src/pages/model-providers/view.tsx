@@ -52,7 +52,7 @@ export type ModelProvidersViewProps = Omit<
   DefaultModelsViewProps,
   "models" | "selection" | "message"
 > &
-  Omit<ProviderProfilesViewProps, "onAddAccount" | "addAccountDisabled"> & {
+  ProviderProfilesViewProps & {
     connected: boolean;
     loading: boolean;
     providerDetailsReady?: boolean;

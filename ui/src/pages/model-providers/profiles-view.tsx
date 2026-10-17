@@ -39,8 +39,6 @@ export type ProviderProfilesViewProps = {
   canMutate: boolean;
   mutationBlockedReason: string | null;
   profileOrders: Record<string, string[]>;
-  onAddAccount: (() => void) | undefined;
-  addAccountDisabled: boolean;
   onProfileOrderChange: (cardId: string, provider: string, profileIds: string[] | null) => void;
   onRequestLogout: (pending: ModelProviderPendingLogout) => void;
 };
@@ -457,53 +455,55 @@ export function ProviderProfiles(props: ProviderProfilesViewProps & { card: Mode
         class="model-providers__profiles"
         aria-label={`${t("modelProviders.profiles.title")}: ${card().displayName}`}
       >
-        <div class="model-providers__profiles-heading">
-          <div class="model-providers__profiles-heading-copy">
-            <Show when={rows().length > 1 || additionalCredentialSource()}>
-              <span>
-                {[
-                  rows().length > 1
-                    ? t("modelProviders.profiles.accounts", { count: String(rows().length) })
-                    : "",
-                  additionalCredentialSource() ?? "",
-                ]
-                  .filter(Boolean)
-                  .join(" · ")}
-              </span>
-            </Show>
-            {reorderOffered() ? <span>{t("modelProviders.profiles.reorderHint")}</span> : undefined}
-            <For each={explanations()}>{(explanation) => <span>{explanation}</span>}</For>
+        <Show
+          when={
+            rows().length > 1 ||
+            additionalCredentialSource() ||
+            reorderOffered() ||
+            explanations().length > 0 ||
+            card().profileOrderStoredProviders.length > 0
+          }
+        >
+          <div class="model-providers__profiles-heading">
+            <div class="model-providers__profiles-heading-copy">
+              <Show when={rows().length > 1 || additionalCredentialSource()}>
+                <span>
+                  {[
+                    rows().length > 1
+                      ? t("modelProviders.profiles.accounts", { count: String(rows().length) })
+                      : "",
+                    additionalCredentialSource() ?? "",
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </span>
+              </Show>
+              {reorderOffered() ? (
+                <span>{t("modelProviders.profiles.reorderHint")}</span>
+              ) : undefined}
+              <For each={explanations()}>{(explanation) => <span>{explanation}</span>}</For>
+            </div>
+            <div class="model-providers__profiles-heading-actions">
+              <For each={card().profileOrderStoredProviders}>
+                {(provider) => (
+                  <button
+                    type="button"
+                    class="btn btn--sm btn--ghost"
+                    disabled={!props.canMutate}
+                    title={
+                      !props.canMutate
+                        ? (props.mutationBlockedReason ?? "")
+                        : t("modelProviders.profiles.resetOrderHint")
+                    }
+                    onClick={() => props.onProfileOrderChange(card().id, provider, null)}
+                  >
+                    {t("modelProviders.profiles.resetOrder")}
+                  </button>
+                )}
+              </For>
+            </div>
           </div>
-          <div class="model-providers__profiles-heading-actions">
-            <For each={card().profileOrderStoredProviders}>
-              {(provider) => (
-                <button
-                  type="button"
-                  class="btn btn--sm btn--ghost"
-                  disabled={!props.canMutate}
-                  title={
-                    !props.canMutate
-                      ? (props.mutationBlockedReason ?? "")
-                      : t("modelProviders.profiles.resetOrderHint")
-                  }
-                  onClick={() => props.onProfileOrderChange(card().id, provider, null)}
-                >
-                  {t("modelProviders.profiles.resetOrder")}
-                </button>
-              )}
-            </For>
-            {props.onAddAccount ? (
-              <button
-                type="button"
-                class="btn btn--sm"
-                disabled={props.addAccountDisabled}
-                onClick={() => props.onAddAccount?.()}
-              >
-                {t("modelProviders.profiles.addAccount")}
-              </button>
-            ) : undefined}
-          </div>
-        </div>
+        </Show>
         <div class="model-providers__profile-list" role="list">
           <For each={rows()} keyed={(row) => row.profile.profileId}>
             {(row) => (

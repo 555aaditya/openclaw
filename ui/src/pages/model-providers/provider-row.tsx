@@ -232,14 +232,18 @@ function ProviderActions(props: ModelProvidersViewProps & { card: ModelProviderC
           {t("modelProviders.remove.action")}
         </button>
       </Show>
-      <Show when={props.canConnect(props.card) && props.card.profiles.length === 0}>
+      <Show when={props.canConnect(props.card)}>
         <button
           class="btn btn--sm"
           data-models-connect-provider={props.card.id}
           disabled={configMutationDisabled(props) || props.loginBusy}
           onClick={() => props.onConnect(props.card)}
         >
-          {t("modelProviders.login.action")}
+          {t(
+            props.card.profiles.length > 0
+              ? "modelProviders.profiles.addAccount"
+              : "modelProviders.login.action",
+          )}
         </button>
       </Show>
       <Show when={isProviderUsable(props.card)}>
@@ -396,12 +400,7 @@ export function ProviderRow(props: ProviderRowProps) {
           </Show>
           <section class="provider-row__accounts" aria-label={t("modelProviders.row.accounts")}>
             {card().profiles.length > 0 && props.canViewProfiles ? (
-              <ProviderProfiles
-                {...props}
-                canMutate={props.canMutate && !props.configBusy}
-                onAddAccount={props.canConnect(card()) ? () => props.onConnect(card()) : undefined}
-                addAccountDisabled={props.loginBusy || configMutationDisabled(props)}
-              />
+              <ProviderProfiles {...props} canMutate={props.canMutate && !props.configBusy} />
             ) : (
               renderCredentialSummary(card(), props.credentialAgentLabel)
             )}

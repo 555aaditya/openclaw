@@ -116,6 +116,11 @@
   border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
 }
 
+/* The accounts section already has its divider. */
+.model-providers__profile:first-child {
+  border-top: 0;
+}
+
 .model-providers__profile-grip,
 .model-providers__profile-logout {
   display: inline-grid;
