@@ -76,7 +76,9 @@ struct MacControlCredentialAccessTests {
             try #require(connection >= 0)
             defer { close(connection) }
             try configureSocketTimeouts(connection, timeoutMs: 3000)
-            let line = try #require(readLineFromSocket(connection, maxBytes: MacControlCredentials.maximumFrameBytes))
+            let line = try #require(try readLineFromSocket(
+                connection,
+                maxBytes: MacControlCredentials.maximumFrameBytes))
             let envelope = try JSONDecoder().decode(MacControlEnvelope.self, from: Data(line.utf8))
             if outcome == "timeout" {
                 // Wait for the client's own deadline and close, rather than sleeping past it.
