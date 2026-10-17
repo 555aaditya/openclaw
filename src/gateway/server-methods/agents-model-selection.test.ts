@@ -3,6 +3,7 @@ import type { preparePublishedModelRuntimeChoice } from "../../agents/model-runt
 import { getRuntimeConfigWriteApplication } from "../../config/runtime-write-application.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { createDirectChatContext } from "../server-chat.agent-events.test-helpers.js";
+import { createTestConfigRevisionProjector } from "../server-reload-handlers.config.test-support.js";
 
 const fixture = vi.hoisted(() => {
   const config: OpenClawConfig = {};
@@ -29,6 +30,11 @@ vi.mock("../../config/config.js", async (importOriginal) => ({
     if (params.writeOptions) {
       getRuntimeConfigWriteApplication(params.writeOptions)?.claim()?.settle("applied");
     }
+    return {
+      nextConfig: draft,
+      persistedSourceConfig: draft,
+      persistedHash: "native-selection-hash",
+    };
   },
 }));
 vi.mock("../../agents/model-runtime-choice.js", () => ({
@@ -42,7 +48,10 @@ async function update(params: Record<string, unknown>) {
     req: { type: "req", id: "native-selection", method: "agents.update" },
     params,
     respond,
-    context: createDirectChatContext({ getRuntimeConfig: () => fixture.config }),
+    context: createDirectChatContext({
+      getRuntimeConfig: () => fixture.config,
+      configRevisionProjector: createTestConfigRevisionProjector(),
+    }),
     client: null,
     isWebchatConnect: () => false,
   });
@@ -71,7 +80,12 @@ describe("agents.update native model selection", () => {
       }
       expect(await update(request)).toHaveBeenCalledWith(
         true,
-        { ok: true, agentId: "main" },
+        {
+          ok: true,
+          agentId: "main",
+          hash: "native-selection-hash",
+          config: fixture.config,
+        },
         undefined,
       );
       expect(
