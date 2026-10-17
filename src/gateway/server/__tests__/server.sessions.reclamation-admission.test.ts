@@ -6,6 +6,7 @@ import {
   deleteSessionEntryLifecycle,
   loadSessionEntry,
 } from "../../../config/sessions/session-accessor.js";
+import * as sqliteReclamation from "../../../config/sessions/session-accessor.sqlite-reclamation-run.js";
 import { resolveSqliteTargetFromSessionStorePath } from "../../../config/sessions/session-sqlite-target.js";
 import { beginSessionWorkAdmission } from "../../../sessions/session-lifecycle-admission.js";
 import { invalidateOpenClawAgentDatabaseValidation } from "../../../state/openclaw-agent-db-validation-cache.js";
@@ -323,18 +324,27 @@ test("sessions.delete rejects revoked authority before repairing the same databa
     stateDatabase.db
       .prepare("SELECT lease_id FROM agent_database_leases WHERE path = ? ORDER BY lease_id")
       .all(database.path);
-  const originalLeases = readLeases();
+  let originalLeases = readLeases();
   expect(originalLeases).toHaveLength(1);
-  // A late commit guard can roll back deletion but cannot undo an earlier
-  // database-open repair. Keep the original cached handle warm throughout.
-  database.db.exec("DROP INDEX idx_agent_cache_expiry");
-  invalidateOpenClawAgentDatabaseValidation(database.path);
   const readRepairIndex = () =>
     database.db
       .prepare("SELECT name FROM sqlite_schema WHERE type = 'index' AND name = ?")
       .get("idx_agent_cache_expiry");
-  expect(readRepairIndex()).toBeUndefined();
-  const validation = holdReclamationValidation(database.path);
+  const reclaim = sqliteReclamation.runSqliteSessionReclamation;
+  const prepareReclamation = vi
+    .spyOn(sqliteReclamation, "runSqliteSessionReclamation")
+    .mockImplementationOnce((params) => {
+      expect(params.plan.kind).toBe("entry");
+      expect(params.plan.databaseOptions.path).toBe(database.path);
+      // Shared physical preparation belongs to the executor, not this caller.
+      // Expire proof only after planning, before the request-owned reclaimer opens.
+      originalLeases = readLeases();
+      database.db.exec("DROP INDEX idx_agent_cache_expiry");
+      invalidateOpenClawAgentDatabaseValidation(database.path);
+      expect(readRepairIndex()).toBeUndefined();
+      return reclaim(params);
+    });
+  const validation = holdReclamationValidation();
   let authorized = true;
   let guardCalls = 0;
   try {
@@ -352,6 +362,7 @@ test("sessions.delete rejects revoked authority before repairing the same databa
       }),
     );
     await validation.entered(deletion, signal);
+    expect(prepareReclamation).toHaveBeenCalledTimes(1);
     expect(readRepairIndex()).toBeUndefined();
     expect(openOpenClawAgentDatabase(databaseOptions)).toBe(database);
     expect(database.db.isOpen).toBe(true);
@@ -367,13 +378,14 @@ test("sessions.delete rejects revoked authority before repairing the same databa
     await expect(loadSeededTranscriptEvents(transcriptScope)).resolves.toEqual(originalTranscript);
     expect(Atomics.load(validation.gate, 2)).toBeGreaterThan(0);
     expect(Atomics.load(validation.gate, 3)).toBeGreaterThan(0);
-    // Refused native opening joins broker termination before returning its authority error.
-    expect(reclamation.exitCodes).toEqual([1]);
+    // Certified refusal releases the unopened lease but retains the healthy carrier.
+    expect(reclamation.exitCodes).toEqual([]);
     expect(readLeases()).toEqual(originalLeases);
     expect(readRepairIndex()).toBeUndefined();
     await closeOpenClawAgentDatabasesAsync();
-    expect(reclamation.exitCodes).toEqual([1]);
+    expect(reclamation.exitCodes).toEqual([0]);
   } finally {
     await validation.close();
+    prepareReclamation.mockRestore();
   }
 });
