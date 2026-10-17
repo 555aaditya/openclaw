@@ -28,7 +28,7 @@ import {
   resolvePreparedRuntimeAuthAttempts,
   resolvePreparedRuntimeModelAuth,
 } from "../runtime-plan/resolve-auth.js";
-import { resolveSandboxContext } from "../sandbox.js";
+import { resolveSandboxContext } from "../sandbox/context.js";
 import { withSandboxRuntimeStatusInWorker } from "../sandbox/runtime-status.js";
 import type { SandboxContext } from "../sandbox/types.js";
 import { classifyCompactionReason } from "./compact-reasons.js";
