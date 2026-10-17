@@ -1,5 +1,6 @@
 import { For, Show, createMemo } from "solid-js";
 import { extractQueryTerms } from "../../../../src/shared/usage-query.js";
+import { Icon } from "../../components/solid/icon.tsx";
 import { Menu } from "../../components/solid/menu.tsx";
 import { ProviderUsagePanel } from "../../components/solid/provider-usage.tsx";
 import {
@@ -160,10 +161,7 @@ export function renderUsage(props: UsageProps) {
         totals ? formatUsageCost(totals.totalCost, 2, totals.usageReport) : empty,
         t("usage.metrics.cost"),
       ],
-      [
-        totals ? sessions.toLocaleString() : empty,
-        t(sessions === 1 ? "usage.metrics.session" : "usage.metrics.sessions"),
-      ],
+      [totals ? sessions.toLocaleString() : empty, t("usage.overview.sessions")],
     ];
   });
   const exportSessionCount = createMemo(
@@ -215,15 +213,24 @@ export function renderUsage(props: UsageProps) {
       end: formatIsoDate(end, props.filters.timeZone),
     };
   };
-  const isPresetSelected = (days: number) => {
-    const range = presetRange(days);
-    return props.filters.startDate === range.start && props.filters.endDate === range.end;
-  };
+
   const applyPreset = (days: number) => {
     const range = presetRange(days);
     props.callbacks.filters.onDatesChange({ startDate: range.start });
     props.callbacks.filters.onDatesChange({ endDate: range.end });
   };
+  const selectedPreset = createMemo(() => {
+    if (props.filters.startDate === "1970-01-01") {
+      return "all";
+    }
+    const match = datePresets.find((preset) => {
+      const range = presetRange(preset.days);
+      return props.filters.startDate === range.start && props.filters.endDate === range.end;
+    });
+    return match ? String(match.days) : "";
+  });
+  const applyPresetKey = (key: string) =>
+    key === "all" ? applyAllRange() : applyPreset(Number(key));
   const applyAllRange = () => {
     props.callbacks.filters.onDatesChange({ startDate: "1970-01-01" });
     props.callbacks.filters.onDatesChange({
@@ -233,49 +240,25 @@ export function renderUsage(props: UsageProps) {
   return (
     <SettingsPage wide>
       <div class="usage-page">
-        <section class="settings-section">
-          <div class="settings-section__header">
-            <h2 class="settings-section__heading">{t("usage.filters.rangeTitle")}</h2>
-            <div class="settings-section__actions">
-              {overview().loadingOverview
-                ? renderUsageLoadingStatus(t("usage.loading.badge"))
-                : undefined}
-              {isEmpty() ? (
-                <>
-                  {" "}
-                  <span class="usage-query-hint">{t("usage.empty.hint")}</span>{" "}
-                </>
-              ) : undefined}
-            </div>
-          </div>
-          <div
-            class={[
-              "settings-group usage-panel usage-header",
-              { pinned: props.display.headerPinned },
-            ]}
-          >
-            <div class="usage-header-row">
+        <section class="usage-header-section">
+          <div class={["usage-header", { pinned: props.display.headerPinned }]}>
+            <div class="usage-toolbar">
               <div class="usage-controls">
-                <div class="usage-presets">
-                  <For each={datePresets}>
-                    {(preset) => (
-                      <button
-                        class={["btn btn--sm", { active: isPresetSelected(preset.days) }]}
-                        aria-pressed={isPresetSelected(preset.days) ? "true" : "false"}
-                        onClick={() => applyPreset(preset.days)}
-                      >
-                        {t(preset.labelKey)}
-                      </button>
-                    )}
-                  </For>
-                  <button
-                    class={["btn btn--sm", { active: props.filters.startDate === "1970-01-01" }]}
-                    aria-pressed={props.filters.startDate === "1970-01-01" ? "true" : "false"}
-                    onClick={() => applyAllRange()}
-                  >
-                    {t("usage.presets.all")}
-                  </button>
-                </div>
+                <SettingsSegmented
+                  mode="buttons"
+                  class="usage-presets"
+                  ariaLabel={t("usage.filters.rangeTitle")}
+                  value={selectedPreset()}
+                  onChange={applyPresetKey}
+                  onReselect={applyPresetKey}
+                  options={[
+                    ...datePresets.map((preset) => ({
+                      value: String(preset.days),
+                      label: t(preset.labelKey),
+                    })),
+                    { value: "all", label: t("usage.presets.all") },
+                  ]}
+                />
                 <div class="usage-date-range">
                   <DateInput
                     value={props.filters.startDate}
@@ -313,7 +296,6 @@ export function renderUsage(props: UsageProps) {
                 />
                 <SettingsSegmented
                   mode="buttons"
-                  variant="accent"
                   value={props.filters.scope}
                   onChange={(scope) => props.callbacks.filters.onScopeChange({ scope })}
                   onReselect={(scope) => props.callbacks.filters.onScopeChange({ scope })}
@@ -332,7 +314,6 @@ export function renderUsage(props: UsageProps) {
                 />
                 <SettingsSegmented
                   mode="buttons"
-                  variant="accent"
                   value={props.display.chartMode === "tokens" ? "tokens" : "cost"}
                   onChange={(chartMode) => props.callbacks.display.onChange({ chartMode })}
                   onReselect={(chartMode) => props.callbacks.display.onChange({ chartMode })}
@@ -342,96 +323,124 @@ export function renderUsage(props: UsageProps) {
                   ]}
                 />
                 <button
-                  class="btn btn--sm primary"
+                  class="btn btn--sm btn--icon"
+                  aria-label={t("common.refresh")}
+                  title={t("common.refresh")}
                   onClick={() => void props.callbacks.filters.onRefresh()}
                   disabled={props.data.loading}
                 >
-                  {t("common.refresh")}
+                  <Icon name="refresh" />
                 </button>
               </div>
             </div>
 
-            {renderFilterChips(props.data.overview?.selectedRows ?? props.data.sessions, props)}
-            <div class="usage-header-row">
-              <div class="usage-header-metrics">
-                {/* Badges render before totals arrive so the row keeps its height. */}
-                <For each={metricBadges()}>
-                  {([value, label]) => (
-                    <span class="usage-metric-badge">
-                      <strong>{value}</strong> {label}
-                    </span>
-                  )}
-                </For>
-                <div class="usage-header-actions">
-                  {/* Always laid out; only shown for lower-bound totals, so it never moves Pin or Export. */}
-                  <openclaw-tooltip
-                    open-on-click
-                    class={["usage-lower-bound", { "usage-lower-bound--off": !lowerBound() }]}
-                    role="note"
-                    aria-hidden={lowerBound() ? undefined : "true"}
-                  >
-                    <button
-                      type="button"
-                      class="usage-lower-bound__chip"
-                      tabindex={lowerBound() ? undefined : -1}
-                    >
-                      {t("usage.lowerBoundShort")}
-                    </button>
-                    <span slot="content">{t("usage.lowerBound")}</span>
-                  </openclaw-tooltip>
-                  <button
-                    class={["btn btn--sm usage-pin-btn", { active: props.display.headerPinned }]}
-                    onClick={() => props.callbacks.filters.onToggleHeaderPinned()}
-                  >
-                    {props.display.headerPinned
-                      ? t("usage.filters.pinned")
-                      : t("usage.filters.pin")}
-                  </button>
-                  <Menu
-                    id="usage-export"
-                    label={t("usage.export.label")}
-                    class="usage-export-menu"
-                    triggerClass="btn btn--sm"
-                    placement="bottom-end"
-                    triggerAttributes={{ "aria-busy": props.data.exporting ? "true" : "false" }}
-                    trigger={
-                      <>{props.data.exporting ? t("common.loading") : t("usage.export.label")} ▾</>
+            {/* Carapace summary strip: fixed cells, so placeholders and loaded totals share one layout. */}
+            <div class="usage-summary-strip">
+              <For each={metricBadges()}>
+                {([value, label]) => (
+                  <div class="usage-metric-badge">
+                    <strong>{value}</strong> <small>{label}</small>
+                  </div>
+                )}
+              </For>
+              <div class="usage-summary-strip__actions">
+                {/* One fixed slot: loading status or the lower-bound chip, never both, never a reflow. */}
+                <span class="usage-summary-strip__status">
+                  <Show
+                    when={!overview().loadingOverview && props.data.cacheRefresh !== "retrying"}
+                    fallback={
+                      <span
+                        role="status"
+                        title={
+                          overview().loadingOverview ? undefined : t("usage.cacheStatus.warning")
+                        }
+                      >
+                        {renderUsageLoadingStatus(
+                          overview().loadingOverview
+                            ? t("usage.loading.badge")
+                            : t("usage.cacheStatus.checking"),
+                        )}
+                      </span>
                     }
-                    items={[
-                      {
-                        id: "sessions-csv",
-                        label: t("usage.export.sessionsCsv"),
-                        disabled: props.data.exporting || exportSessionCount() === 0,
-                      },
-                      {
-                        id: "daily-csv",
-                        label: t("usage.export.dailyCsv"),
-                        disabled: props.data.exporting || props.data.costDaily.length === 0,
-                      },
-                      {
-                        id: "json",
-                        label: t("usage.export.json"),
-                        disabled:
-                          props.data.exporting ||
-                          props.data.loading ||
-                          (exportSessionCount() === 0 && props.data.costDaily.length === 0),
-                      },
-                    ]}
-                    onSelect={(item) => {
-                      switch (item.id) {
-                        case "sessions-csv":
-                        case "daily-csv":
-                          props.callbacks.display.onExportCsv(item.id);
-                          break;
-                        case "json":
-                          props.callbacks.display.onExportJson();
-                          break;
-                      }
-                    }}
-                  />
-                </div>
+                  >
+                    <openclaw-tooltip
+                      open-on-click
+                      class={["usage-lower-bound", { "usage-lower-bound--off": !lowerBound() }]}
+                      role="note"
+                      aria-hidden={lowerBound() ? undefined : "true"}
+                    >
+                      <button
+                        type="button"
+                        class="usage-lower-bound__chip"
+                        tabindex={lowerBound() ? undefined : -1}
+                      >
+                        {t("usage.lowerBoundShort")}
+                      </button>
+                      <span slot="content">{t("usage.lowerBound")}</span>
+                    </openclaw-tooltip>
+                  </Show>
+                </span>
+                <button
+                  class={[
+                    "btn btn--sm btn--icon usage-pin-btn",
+                    { active: props.display.headerPinned },
+                  ]}
+                  aria-label={
+                    props.display.headerPinned ? t("usage.filters.pinned") : t("usage.filters.pin")
+                  }
+                  aria-pressed={props.display.headerPinned ? "true" : "false"}
+                  title={
+                    props.display.headerPinned ? t("usage.filters.pinned") : t("usage.filters.pin")
+                  }
+                  onClick={() => props.callbacks.filters.onToggleHeaderPinned()}
+                >
+                  <Icon name={props.display.headerPinned ? "pinOff" : "pin"} />
+                </button>
+                <Menu
+                  id="usage-export"
+                  label={t("usage.export.label")}
+                  class="usage-export-menu"
+                  triggerClass="btn btn--sm"
+                  placement="bottom-end"
+                  triggerAttributes={{ "aria-busy": props.data.exporting ? "true" : "false" }}
+                  trigger={
+                    <>{props.data.exporting ? t("common.loading") : t("usage.export.label")} ▾</>
+                  }
+                  items={[
+                    {
+                      id: "sessions-csv",
+                      label: t("usage.export.sessionsCsv"),
+                      disabled: props.data.exporting || exportSessionCount() === 0,
+                    },
+                    {
+                      id: "daily-csv",
+                      label: t("usage.export.dailyCsv"),
+                      disabled: props.data.exporting || props.data.costDaily.length === 0,
+                    },
+                    {
+                      id: "json",
+                      label: t("usage.export.json"),
+                      disabled:
+                        props.data.exporting ||
+                        props.data.loading ||
+                        (exportSessionCount() === 0 && props.data.costDaily.length === 0),
+                    },
+                  ]}
+                  onSelect={(item) => {
+                    switch (item.id) {
+                      case "sessions-csv":
+                      case "daily-csv":
+                        props.callbacks.display.onExportCsv(item.id);
+                        break;
+                      case "json":
+                        props.callbacks.display.onExportJson();
+                        break;
+                    }
+                  }}
+                />
               </div>
             </div>
+            {renderFilterChips(props.data.overview?.selectedRows ?? props.data.sessions, props)}
 
             <UsageQuerySection
               filters={props.filters}
@@ -455,20 +464,13 @@ export function renderUsage(props: UsageProps) {
             {props.data.error ? (
               <div class="callout danger usage-callout">{props.data.error}</div>
             ) : undefined}
-            {props.data.cacheRefresh !== "complete" ? (
+            {props.data.cacheRefresh === "failed" ? (
               <div
-                class={[
-                  "callout usage-callout usage-cache-warning",
-                  { warning: props.data.cacheRefresh === "failed" },
-                ]}
+                class="callout warning usage-callout usage-cache-warning"
                 role="status"
                 aria-live="polite"
               >
-                {t(
-                  props.data.cacheRefresh === "failed"
-                    ? "usage.cacheStatus.paused"
-                    : "usage.cacheStatus.warning",
-                )}
+                {t("usage.cacheStatus.paused")}
               </div>
             ) : undefined}
           </div>

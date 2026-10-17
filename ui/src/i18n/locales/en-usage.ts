@@ -72,6 +72,7 @@ const enUsage = {
       json: "JSON",
     },
     cacheStatus: {
+      checking: "Updating",
       warning: "Usage data may be incomplete. Checking for updated totals automatically.",
       paused:
         "Usage data may be incomplete. Automatic checks paused; select Refresh to check again.",
@@ -101,6 +102,7 @@ const enUsage = {
       byType: "By Type",
       byProvider: "By Provider",
       other: "Other",
+      pending: "not loaded yet",
       tokensTitle: "Daily Token Usage",
       costTitle: "Daily Cost",
       compressedScaleHint: "Square-root scale keeps low-usage days visible.",

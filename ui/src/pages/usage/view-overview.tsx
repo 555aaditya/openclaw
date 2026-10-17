@@ -116,6 +116,50 @@ function renderFilterChips(
   );
 }
 
+/** Daily cost per calendar day of a window, zero-filled; null for ranges too long to draw as columns. */
+function windowDailyCosts(costs: Map<string, number>, endDate: string, days: number) {
+  if (days < 2 || days > 92) {
+    return null;
+  }
+  const start = Date.parse(endDate) - (days - 1) * 86_400_000;
+  return Array.from(
+    { length: days },
+    (_, index) => costs.get(new Date(start + index * 86_400_000).toISOString().slice(0, 10)) ?? 0,
+  );
+}
+
+/** Carapace mini columns: quiet bars, the newest period in accent. */
+function CostColumns(props: { values: number[]; label: string }) {
+  const max = () => Math.max(...props.values, 0);
+  return (
+    <svg
+      class="usage-bars"
+      viewBox={`0 0 ${props.values.length * 10} 28`}
+      preserveAspectRatio="none"
+      role="img"
+      aria-label={props.label}
+    >
+      <For each={props.values}>
+        {(value, index) => {
+          const height = () => (max() > 0 && value > 0 ? Math.max(1.5, (value / max()) * 26) : 0);
+          return (
+            <rect
+              class={[
+                "usage-bars__bar",
+                { "usage-bars__bar--current": index() === props.values.length - 1 },
+              ]}
+              x={index() * 10 + 1}
+              y={28 - height()}
+              width={8}
+              height={height()}
+            />
+          );
+        }}
+      </For>
+    </svg>
+  );
+}
+
 function renderCostWindowComparison(
   daily: CostDailyEntry[],
   rangeStartDate: string,
@@ -128,48 +172,48 @@ function renderCostWindowComparison(
   }
 
   const today = formatIsoDate(new Date(), timeZone);
+  const costs = new Map(daily.map((day) => [day.date, day.totalCost]));
 
   return (
-    <section class="cost-window-analysis">
-      <div class="cost-window-header">
-        <div>
-          <div class="card-title usage-section-title">{t("usage.costWindows.title")}</div>
-          <div class="card-sub">
-            {t("usage.costWindows.subtitle", { date: formatFullDate(rangeEndDate) })}
-          </div>
-        </div>
-        <div class="cost-window-range-label">
+    <SettingsSection
+      title={t("usage.costWindows.title")}
+      description={t("usage.costWindows.subtitle", { date: formatFullDate(rangeEndDate) })}
+      actions={
+        <span class="usage-section-meta cost-window-range">
           {formatDayLabel(rangeStartDate)} – {formatDayLabel(rangeEndDate)}
-        </div>
-      </div>
-      <div class="cost-window-grid">
+        </span>
+      }
+    >
+      <div class="usage-summary-strip usage-summary-strip--windows">
         <For each={Array.from(windows.entries())}>
           {([index, summary]) => {
-            const isRange = index === 0;
-            const label = () =>
-              isRange
+            const label =
+              index === 0
                 ? t("usage.costWindows.selectedRange")
                 : summary.days === 1
                   ? summary.endDate === today
                     ? t("usage.presets.today")
                     : formatDayLabel(summary.endDate)
                   : t("usage.costWindows.lastDays", { count: String(summary.days) });
-            const averageDailyCost = summary.totals.totalCost / summary.days;
+            const columns = windowDailyCosts(costs, summary.endDate, summary.days);
             return (
-              <div class={["cost-window-card", { "cost-window-card--range": isRange }]}>
-                <div class="cost-window-card__label">{label()}</div>
-                <div class="cost-window-card__value">
-                  {formatAnalysisCost(summary.totals.totalCost)}
+              <div class={["cost-window", { "cost-window--range": index === 0 }]}>
+                <div class="cost-window__label">{label}</div>
+                <div class="cost-window__value">{formatAnalysisCost(summary.totals.totalCost)}</div>
+                <div class="cost-window__meta">
+                  {formatUsageTokens(summary.totals.totalTokens)}{" "}
+                  {normalizeLowercaseStringOrEmpty(t("usage.metrics.tokens"))}
+                  {summary.days > 1
+                    ? ` · ${formatAnalysisCost(summary.totals.totalCost / summary.days)} ${t("usage.costWindows.perDay")}`
+                    : undefined}
                 </div>
-                <div class="cost-window-card__meta">
-                  {`${formatUsageTokens(summary.totals.totalTokens)} ${t("usage.metrics.tokens")} · ${formatAnalysisCost(averageDailyCost)} ${t("usage.costWindows.perDay")}`}
-                </div>
+                {columns ? <CostColumns values={columns} label={label} /> : undefined}
               </div>
             );
           }}
         </For>
       </div>
-    </section>
+    </SettingsSection>
   );
 }
 

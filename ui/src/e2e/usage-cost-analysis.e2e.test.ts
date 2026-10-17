@@ -512,6 +512,8 @@ suite.define(() => {
           },
         });
 
+        // The chart draws the selected calendar range, so "today" must contain the mocked day.
+        await page.clock.setFixedTime(new Date("2026-05-14T12:00:00.000Z"));
         await page.goto(`${suite.server.baseUrl}usage`);
         const pendingRow = page.locator(".session-bar-row").filter({ hasText: "Pending session" });
         const cachedRow = page.locator(".session-bar-row").filter({ hasText: "Cached session" });
@@ -522,7 +524,8 @@ suite.define(() => {
           .poll(async () => (await gateway.getRequests("sessions.usage")).at(-1)?.params)
           .toMatchObject({ mode: "utc" });
         await expect.poll(() => cachedRow.count(), { timeout: 10_000 }).toBe(1);
-        await page.locator(".daily-bar-wrapper").click();
+        // A refreshing report still draws the whole range; pick the recorded day.
+        await page.locator(".daily-bar-wrapper:not(.daily-bar-wrapper--pending)").last().click();
 
         await expect.poll(() => cachedRow.count()).toBe(1);
         await expect.poll(() => pendingRow.count()).toBe(1);
@@ -890,12 +893,12 @@ suite.define(() => {
           .toBeGreaterThan(requestsBeforeRangeChange);
         await page.getByRole("button", { name: "Cost", exact: true }).click();
 
-        const windowCards = page.locator(".cost-window-card");
+        const windowCards = page.locator(".cost-window");
         await expect.poll(() => windowCards.count()).toBe(4);
         await expect
           .poll(async () => ({
-            labels: await windowCards.locator(".cost-window-card__label").allTextContents(),
-            values: (await windowCards.locator(".cost-window-card__value").allTextContents()).map(
+            labels: await windowCards.locator(".cost-window__label").allTextContents(),
+            values: (await windowCards.locator(".cost-window__value").allTextContents()).map(
               (value) => value.trim(),
             ),
           }))

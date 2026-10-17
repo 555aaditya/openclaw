@@ -559,9 +559,7 @@ describe("renderUsage", () => {
     expect(firstDay?.getAttribute("aria-label")).toContain("990 tokens, $9.90");
     expect(firstDay?.querySelector(".daily-bar--empty")).toBeNull();
     expect(
-      container
-        .querySelector(".cost-window-card--range .cost-window-card__value")
-        ?.textContent?.trim(),
+      container.querySelector(".cost-window--range .cost-window__value")?.textContent?.trim(),
     ).toBe("$10.00");
   });
 

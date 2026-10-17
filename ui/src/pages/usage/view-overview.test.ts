@@ -188,9 +188,9 @@ describe("renderCostWindowComparison", () => {
     );
     flush();
 
-    const range = container.querySelector(".cost-window-card--range");
-    expect(range?.querySelector(".cost-window-card__value")?.textContent?.trim()).toBe("$0.0030");
-    expect(range?.querySelector(".cost-window-card__meta")?.textContent).toContain("$0.0001 / day");
+    const range = container.querySelector(".cost-window--range");
+    expect(range?.querySelector(".cost-window__value")?.textContent?.trim()).toBe("$0.0030");
+    expect(range?.querySelector(".cost-window__meta")?.textContent).toContain("$0.0001 / day");
   });
 });
 

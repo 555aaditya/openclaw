@@ -36,20 +36,32 @@ export const USAGE_TOKEN_CATEGORIES = [
 
 type UsageChartRange = { startDate: string; endDate: string; complete: boolean };
 
-function calendarDaily(daily: CostDailyEntry[], range: UsageChartRange): CostDailyEntry[] {
+/**
+ * Every calendar day of the range, so columns never move as a report fills in. Missing days are
+ * known zero only once the report is complete; before that they are drawn as pending.
+ */
+function calendarDaily(
+  daily: CostDailyEntry[],
+  range: UsageChartRange,
+): { days: CostDailyEntry[]; pending: Set<string> } {
   const start = Date.parse(range.startDate);
   const end = Date.parse(range.endDate);
-  const days = (end - start) / 86_400_000 + 1;
-  // Missing buckets are known zero only after the report is complete. Keep
-  // long historical ranges bounded instead of creating decades of empty bars.
-  if (!range.complete || !Number.isInteger(days) || days < 1 || days > 366) {
-    return daily.toSorted((a, b) => a.date.localeCompare(b.date));
+  const count = (end - start) / 86_400_000 + 1;
+  // Keep long historical ranges bounded instead of creating decades of empty columns.
+  if (!Number.isInteger(count) || count < 1 || count > 366) {
+    return { days: daily.toSorted((a, b) => a.date.localeCompare(b.date)), pending: new Set() };
   }
   const recorded = new Map(daily.map((day) => [day.date, day]));
-  return Array.from({ length: days }, (_, index) => {
+  const pending = new Set<string>();
+  const days = Array.from({ length: count }, (_, index) => {
     const date = new Date(start + index * 86_400_000).toISOString().slice(0, 10);
-    return recorded.get(date) ?? { ...createEmptyCostUsageTotals(), date };
+    const day = recorded.get(date);
+    if (!day && !range.complete) {
+      pending.add(date);
+    }
+    return day ?? { ...createEmptyCostUsageTotals(), date };
   });
+  return { days, pending };
 }
 
 type ChartSeries = { id: string; label: string; color: string; values: number[] };
@@ -94,7 +106,8 @@ export function DailyChartCompact(props: {
   onSelectDay: UsageProps["callbacks"]["filters"]["onSelectDay"];
   range: UsageChartRange;
 }) {
-  const days = createMemo(() => calendarDaily(props.dailyEntries, props.range));
+  const calendar = createMemo(() => calendarDaily(props.dailyEntries, props.range));
+  const days = () => calendar().days;
   const dates = createMemo(() => days().map((day) => day.date));
   const isTokens = () => props.chartMode === "tokens";
   const measure = (value: number) =>
@@ -174,6 +187,9 @@ export function DailyChartCompact(props: {
   };
   const dayLabel = (index: number) => {
     const day = days()[index];
+    if (day && calendar().pending.has(day.date)) {
+      return `${formatFullDate(day.date)}: ${t("usage.daily.pending")}`;
+    }
     const tokens = `${formatUsageTokens(day?.totalTokens ?? 0)} ${t("usage.metrics.tokens").toLowerCase()}`;
     return `${formatFullDate(day?.date ?? "")}: ${tokens}, ${formatAnalysisCost(day?.totalCost ?? 0)}`;
   };
@@ -226,7 +242,11 @@ export function DailyChartCompact(props: {
                     type="button"
                     class={[
                       "daily-bar-wrapper",
-                      { selected: selected().has(date()), "daily-bar-wrapper--dim": dimmed(index) },
+                      {
+                        selected: selected().has(date()),
+                        "daily-bar-wrapper--dim": dimmed(index),
+                        "daily-bar-wrapper--pending": calendar().pending.has(date()),
+                      },
                     ]}
                     aria-pressed={selected().has(date()) ? "true" : "false"}
                     aria-label={dayLabel(index)}

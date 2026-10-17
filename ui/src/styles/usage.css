@@ -109,44 +109,60 @@
   gap: 8px;
 }
 
+/* Header: a quiet toolbar and a summary strip on the page surface, no card. */
 .usage-header {
   position: relative;
-  overflow: visible;
   z-index: 2;
   display: grid;
-  gap: 16px;
+  gap: 12px;
 }
 
 .usage-header.pinned {
   position: sticky;
-  top: 16px;
+  top: 0;
   z-index: 4;
-  box-shadow: var(--shadow-md);
+  padding-block: 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
 }
 
-.usage-header-row {
+.usage-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-}
-
-.usage-header-metrics {
-  display: flex;
-  flex: 1 1 auto;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px 28px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border);
-}
-
-.usage-header-actions {
-  display: flex;
-  align-items: center;
   gap: 8px;
-  margin-left: auto;
+}
+
+/* Carapace summary strip: hairline-divided cells on one bordered surface. */
+.usage-summary-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--border);
+}
+
+.usage-summary-strip > * {
+  background: var(--card);
+}
+
+.usage-summary-strip__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+}
+
+/* Fixed width: loading status and the lower-bound chip swap without moving Pin or Export. */
+.usage-summary-strip__status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 7.5rem;
+  height: 26px;
 }
 
 .usage-view-options {
@@ -192,37 +208,16 @@
 
 .usage-controls {
   display: flex;
-  flex: 1 1 100%;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
 
-.usage-presets,
 .usage-date-range,
 .usage-query-actions {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-}
-
-.usage-presets {
-  flex-wrap: wrap;
-  padding: 3px;
-  border-radius: var(--radius-lg);
-  background: var(--bg-muted);
-}
-
-.usage-presets .btn {
-  border-color: transparent;
-  background: transparent;
-}
-
-.usage-presets .btn.active {
-  background: var(--card);
-  border-color: var(--border);
-  color: var(--text-strong);
-  box-shadow: var(--shadow-sm);
 }
 
 .usage-date-range {
@@ -249,7 +244,8 @@
 
 .usage-date-input,
 .usage-select {
-  padding: 6px 10px;
+  height: 32px;
+  padding: 0 10px;
 }
 
 .usage-date-input:hover,
@@ -285,37 +281,44 @@
 }
 
 .usage-metric-badge {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: flex-start;
-  min-width: 88px;
-  gap: 3px;
-  font-size: var(--control-ui-text-xs);
+  display: flex;
+  flex-direction: column-reverse;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 0;
+  padding: 12px 16px;
+}
+
+.usage-metric-badge small {
   color: var(--muted);
+  font-size: var(--control-ui-text-xs);
 }
 
 .usage-metric-badge strong {
+  overflow: hidden;
   color: var(--text-strong);
-  font-size: clamp(1.4rem, 2.5vw, 1.8rem);
-  font-weight: 650;
+  font-size: 1.375rem;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.035em;
-  line-height: 1.1;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.usage-header .btn--icon {
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
 }
 
 .usage-pin-btn.active {
-  border-color: var(--accent);
-  background: var(--primary);
-  color: var(--primary-foreground);
-  font-weight: 600;
-  box-shadow: 0 1px 3px color-mix(in srgb, var(--accent) 20%, transparent);
+  color: var(--accent);
 }
 
 .usage-query-section {
   display: grid;
-  gap: 10px;
-  padding-top: 14px;
-  border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  gap: 8px;
 }
 
 .usage-query-bar {
@@ -616,7 +619,6 @@
 .usage-summary-grid,
 .session-summary-grid,
 .usage-insights-grid,
-.usage-mosaic-grid,
 .context-breakdown-grid {
   display: grid;
   gap: 10px;
@@ -1016,9 +1018,19 @@
   color: var(--danger);
 }
 
+/* One hairline-divided surface, like the Carapace summary strip. */
 .usage-mosaic {
   display: grid;
-  gap: 12px;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: 1px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--border);
+}
+
+.usage-mosaic > * {
+  padding: 16px;
+  background: var(--card);
 }
 
 .daily-chart-header,
@@ -1051,10 +1063,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.usage-mosaic-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
 .usage-mosaic-section-title {
   display: flex;
   align-items: center;
@@ -1062,82 +1070,99 @@
   gap: 8px;
 }
 
-.usage-daypart-grid {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 6px;
-}
-
-.usage-daypart-cell,
-.usage-hour-cell {
-  border-radius: 3px;
-  border: 1px solid color-mix(in srgb, var(--accent) 14%, var(--border));
-  background: color-mix(in srgb, var(--accent) 6%, transparent);
-}
-
-.usage-daypart-cell {
-  min-height: 64px;
-  padding: 8px;
+.usage-weekdays {
   display: grid;
   gap: 6px;
-  align-content: space-between;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-/* Day names sit on accent fills of any strength, so they use body ink. */
-.usage-daypart-label {
+.usage-weekday {
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr) 4.5rem;
+  align-items: center;
+  gap: 10px;
   font-size: 12px;
-  color: var(--text);
 }
 
-.usage-daypart-value {
-  font-size: 14px;
+.usage-weekday__label {
+  color: var(--muted);
+}
+
+.usage-weekday__track {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--border) 60%, transparent);
+}
+
+.usage-weekday__fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--border-strong);
+}
+
+.usage-weekday__value {
+  color: var(--text);
   font-variant-numeric: tabular-nums;
-  font-weight: 700;
+  text-align: right;
+}
+
+/* Only the peak carries the accent; every other mark stays quiet. */
+.usage-weekday--peak .usage-weekday__fill,
+.usage-hour-cell--peak .usage-hour-cell__bar {
+  background: var(--accent);
+}
+
+.usage-weekday--peak .usage-weekday__value {
   color: var(--text-strong);
+  font-weight: 600;
 }
 
 .usage-hour-grid {
   display: grid;
   grid-template-columns: repeat(24, minmax(0, 1fr));
-  gap: 6px;
+  gap: 3px;
+  height: 96px;
+  border-bottom: 1px solid var(--border);
 }
 
 .usage-hour-cell {
-  min-height: 46px;
+  display: flex;
+  align-items: flex-end;
+  min-width: 0;
   padding: 0;
+  border: none;
+  border-radius: 3px 3px 0 0;
+  background: transparent;
   cursor: var(--cursor-action);
   appearance: none;
-  transition:
-    transform 0.18s var(--ease-out),
-    border-color 0.18s var(--ease-out),
-    box-shadow 0.18s var(--ease-out);
+}
+
+.usage-hour-cell__bar {
+  width: 100%;
+  border-radius: 2px 2px 0 0;
+  background: var(--border-strong);
 }
 
 .usage-hour-cell:hover {
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent);
+  background: var(--bg-hover);
 }
 
 .usage-hour-cell:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--accent) 40%, transparent);
-  outline-offset: 2px;
+  outline-offset: 1px;
 }
 
-.usage-hour-cell.selected {
-  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
+.usage-hour-cell.selected .usage-hour-cell__bar {
+  background: var(--accent);
 }
 
 .usage-hour-labels {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 8px;
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.usage-hour-legend {
-  display: flex;
-  justify-content: space-between;
   gap: 8px;
   font-size: 12px;
   color: var(--muted);
@@ -1171,90 +1196,58 @@
   border-top: 1px solid var(--border);
 }
 
-.cost-window-analysis {
-  position: relative;
-  display: grid;
-  gap: 14px;
-  overflow: hidden;
-  padding: 16px;
-  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border));
-  border-radius: var(--radius-xl);
-  background:
-    radial-gradient(
-      circle at top right,
-      color-mix(in srgb, var(--accent) 10%, transparent) 0%,
-      transparent 42%
-    ),
-    color-mix(in srgb, var(--card) 92%, var(--bg-elevated));
-}
-
-.cost-window-analysis::before {
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 3px;
-  background: linear-gradient(
-    180deg,
-    var(--accent),
-    color-mix(in srgb, var(--info) 55%, transparent)
-  );
-  content: "";
-}
-
-.cost-window-header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: end;
-  justify-content: space-between;
-  gap: 8px 16px;
-}
-
-.cost-window-range-label {
+.usage-section-meta {
   color: var(--muted);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 
-.cost-window-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));
-  gap: 8px;
+.usage-summary-strip--windows {
+  grid-template-columns: repeat(auto-fit, minmax(min(13rem, 100%), 1fr));
 }
 
-.cost-window-card {
+.cost-window {
   display: grid;
-  gap: 5px;
+  align-content: start;
+  gap: 4px;
   min-width: 0;
-  padding: 12px;
-  border: 1px solid color-mix(in srgb, var(--border) 76%, transparent);
-  border-radius: var(--radius-lg);
-  background: color-mix(in srgb, var(--card) 84%, transparent);
+  padding: 14px 16px;
 }
 
-.cost-window-card--range {
-  border-color: color-mix(in srgb, var(--accent) 34%, var(--border));
-  background: color-mix(in srgb, var(--accent) 8%, var(--card));
-}
-
-.cost-window-card__label {
+.cost-window__label {
   color: var(--muted);
-  font-size: 11px;
-  font-weight: 650;
-  letter-spacing: 0.055em;
-  text-transform: uppercase;
+  font-size: var(--control-ui-text-xs);
 }
 
-.cost-window-card__value {
+.cost-window__value {
   color: var(--text-strong);
-  font-size: clamp(1.25rem, 2vw, 1.65rem);
+  font-size: 1.375rem;
   font-variant-numeric: tabular-nums;
-  font-weight: 720;
-  line-height: 1.1;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
 }
 
-.cost-window-card__meta {
+.cost-window__meta {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--control-ui-text-xs);
   font-variant-numeric: tabular-nums;
+}
+
+/* Carapace mini columns: quiet bars; only the newest period carries the accent. */
+.usage-bars {
+  display: block;
+  width: 100%;
+  height: 28px;
+  margin-top: 10px;
+}
+
+.usage-bars__bar {
+  fill: var(--border-strong);
+}
+
+.usage-bars__bar--current {
+  fill: var(--accent);
 }
 
 /* One shrinkable column: a wide child must not widen its card past the grid track. */
@@ -1384,6 +1377,17 @@
 }
 
 /* The readout stays inside the plot so it never covers the header controls. */
+/* A day the report has not reached yet: a dashed baseline instead of a zero. */
+.daily-bar-wrapper--pending::after {
+  position: absolute;
+  inset: auto 15% 0;
+  height: 8px;
+  border: 1px dashed var(--border-strong);
+  border-bottom: 0;
+  border-radius: 2px 2px 0 0;
+  content: "";
+}
+
 .daily-chart-tip {
   position: absolute;
   top: var(--space-1);
@@ -1876,11 +1880,6 @@
   font-size: 12px;
 }
 
-:root[data-theme-mode="light"] .usage-daypart-cell,
-:root[data-theme-mode="light"] .usage-hour-cell {
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 8%, transparent);
-}
-
 :root[data-theme-mode="light"] .session-bar-row,
 :root[data-theme-mode="light"] .usage-insight-card,
 :root[data-theme-mode="light"] .session-timeseries-compact,
@@ -1891,7 +1890,7 @@
 
 @container (max-width: 900px) {
   .usage-grid,
-  .usage-mosaic-grid,
+  .usage-mosaic,
   .session-detail-bottom {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -1910,21 +1909,29 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
-  /* A fixed grid: placeholder and loaded values take the same rows. */
-  .usage-header-metrics {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px 20px;
+  /* Three metrics per row; actions take a full row below with a fixed layout. */
+  .usage-summary-strip {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .usage-header-actions {
+  .usage-summary-strip__actions {
     grid-column: 1 / -1;
-    margin-left: 0;
+    padding: 6px 12px;
   }
 
-  /* Left-aligned here: the reserved chip slot goes last, after the buttons. */
-  .usage-lower-bound__chip {
-    order: 1;
+  .usage-summary-strip__status {
+    justify-content: flex-start;
+    margin-right: auto;
+  }
+}
+
+@container (max-width: 560px) {
+  .usage-metric-badge {
+    padding: 10px;
+  }
+
+  .usage-metric-badge strong {
+    font-size: 1.0625rem;
   }
 }
 
@@ -1938,7 +1945,7 @@
 
 @media (max-width: 900px) {
   .usage-grid,
-  .usage-mosaic-grid,
+  .usage-mosaic,
   .session-detail-bottom {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -1962,22 +1969,9 @@
 
   .usage-date-range,
   .usage-query-actions,
-  .usage-header-metrics,
   .sessions-card-meta,
   .timeseries-controls {
     justify-content: flex-start;
-  }
-
-  .usage-daypart-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-
-  .usage-hour-grid {
-    grid-template-columns: repeat(12, minmax(0, 1fr));
-  }
-
-  .usage-hour-labels {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .session-log-entry {
