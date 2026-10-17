@@ -49,6 +49,7 @@ vi.mock("./update-command-schema.js", () => ({
   preflightUpdateCommandSchemas: async () => ({ preflightNotes: [], preflightFailures: [] }),
   captureUpdateActivationSchemas: async () => ({}),
 }));
+// mock-isolation: database discovery is outside this fixture's native stop-authority contract.
 vi.mock("./update-command-database-context.js", () => ({
   inspectUpdateDatabaseContexts: async (): ReturnType<
     typeof import("./update-command-database-context.js").inspectUpdateDatabaseContexts
