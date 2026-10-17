@@ -90,10 +90,6 @@ function getCatalogListTimeoutMs(rawServer: unknown, requestTimeoutMs: number): 
   return configured ? requestTimeoutMs : BUNDLE_MCP_CATALOG_LIST_TIMEOUT_MS;
 }
 
-function createDisposedError(sessionId: string): Error {
-  return new Error(`bundle-mcp runtime disposed for session ${sessionId}`);
-}
-
 type ServerMcpRuntime = SessionMcpRuntime & {
   readonly pluginOwned: boolean;
   resetStartupBackoff: () => void;
@@ -212,7 +208,7 @@ export function createSessionMcpRuntime(
         execute &&
         (async (...args) => {
           if (!connectFingerprints.has(serverName)) {
-            throw createDisposedError(params.sessionId);
+            throw new Error(`bundle-mcp runtime disposed for session ${params.sessionId}`);
           }
           return await execute(...args);
         })
@@ -407,7 +403,7 @@ function createServerMcpRuntime(
   };
   const failIfDisposed = () => {
     if (retiredCatalog) {
-      throw createDisposedError(params.sessionId);
+      throw new Error(`bundle-mcp runtime disposed for session ${params.sessionId}`);
     }
   };
   const requireConnectedSession = (): BundleMcpSession => {
@@ -990,7 +986,9 @@ function createServerMcpRuntime(
             },
           ],
         };
-        lifecycleAbortController.abort(createDisposedError(params.sessionId));
+        lifecycleAbortController.abort(
+          new Error(`bundle-mcp runtime disposed for session ${params.sessionId}`),
+        );
         catalog = null;
         lastListedCatalog = undefined;
         catalogRetryAfterMs = undefined;

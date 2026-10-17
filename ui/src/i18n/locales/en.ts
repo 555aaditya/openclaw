@@ -4,6 +4,7 @@ import type { TranslationMap } from "../lib/types.ts";
 import * as agentEn from "./en-agents.ts";
 
 export const en: TranslationMap & {
+  pluginsPage: TranslationMap & Record<"installed" | "official" | "install", string>;
   mcpApp: TranslationMap;
   agentTools: TranslationMap;
   githubPublication: TranslationMap & Record<"newAction" | "capacity", string>;
@@ -2125,7 +2126,11 @@ export const en: TranslationMap & {
   sessionsPage: {
     hubTablistLabel: "Session sections",
   },
-  pluginsPage: {},
+  pluginsPage: {
+    installed: "Installed",
+    official: "Official",
+    install: "Install",
+  },
   labsPage: {
     intro:
       "Labs contains experimental capabilities that may change, break, or disappear between releases.",

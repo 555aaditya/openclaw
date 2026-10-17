@@ -57,6 +57,17 @@ function result(stdout = "", code = 0): SpawnResult {
 function inspect(state = "started", id = LEASE_ID): SpawnResult {
   return result(JSON.stringify({ id, state, ready: state === "started" }));
 }
+function runtimeEntry() {
+  return {
+    containerName: LEASE_ID,
+    backendId: "crabbox",
+    sessionKey: "scope",
+    createdAtMs: 1,
+    lastUsedAtMs: 1,
+    image: "daytona/small",
+    workspaceDir: temporaryRoot,
+  };
+}
 function respond(argv: string[]): SpawnResult {
   if (argv[1] === "exec" && argv.includes("--check")) {
     return result(
@@ -200,6 +211,17 @@ describe("Crabbox sandbox provider lifecycle", () => {
     await expect(factory(params())).rejects.toThrow("warmup failed");
   });
 
+  it("does not retire a reservation from failed inspection output", async () => {
+    const { factory } = setup((argv) =>
+      argv[1] === "warmup"
+        ? result("fixture-credential@ssh.example.test", 4)
+        : argv[1] === "inspect"
+          ? { ...inspect("released"), code: 1 }
+          : respond(argv),
+    );
+    await expect(factory(params())).rejects.toThrow("Crabbox sandbox warmup failed: exit 4");
+  });
+
   it("validates runtime authority and unsupported binds before allocation", async () => {
     const { factory, runCommand } = setup();
     await expect(factory(params({ runtimeId: "" }))).rejects.toThrow("fixed lease");
@@ -277,6 +299,60 @@ it("keeps management routed by the stored claim and original workspace", async (
   expect(await manager.describeRuntime({ entry, config: {} })).toMatchObject({
     running: true,
     configLabelMatch: true,
+  });
+});
+
+it.each([
+  ["unavailable provider", () => result("provider unavailable", 1), "provider unavailable"],
+  [
+    "permission failure mentioning the lease",
+    () => result(`lease ${LEASE_ID} not found: permission denied`, 4),
+    "permission denied",
+  ],
+  [
+    "missing foreign lease",
+    () => result("unknown lease cbx_aaaaaaaaaaaa", 4),
+    "unknown lease cbx_aaaaaaaaaaaa",
+  ],
+  [
+    "failed coordinator inspection",
+    () => result(`coordinator GET /v1/leases/${LEASE_ID}: http 500: unavailable`, 4),
+    "http 500",
+  ],
+  ["invalid JSON", () => result("not-json"), "returned invalid JSON"],
+  ["foreign lease", () => inspect("started", "cbx_aaaaaaaaaaaa"), "requested lease"],
+  [
+    "failed process",
+    () => {
+      throw new Error("process unavailable");
+    },
+    "process unavailable",
+  ],
+] as const)("surfaces %s instead of reporting a stopped runtime", async (_label, probe, error) => {
+  const { manager } = setup(probe);
+  await expect(manager.describeRuntime({ entry: runtimeEntry(), config: {} })).rejects.toThrow(
+    error,
+  );
+});
+
+it.each([
+  [
+    "missing exact-ID lease",
+    () => result(`daytona claim ${LEASE_ID} is bound to missing sandbox sandbox-fixture`, 4),
+    false,
+  ],
+  [
+    "coordinator-confirmed exact-ID missing lease",
+    () => result(`coordinator GET /v1/leases/${LEASE_ID}: http 404: not_found`, 4),
+    false,
+  ],
+  ["released lease", () => inspect("released"), true],
+] as const)("reports an observed %s as stopped", async (_label, probe, configLabelMatch) => {
+  const { manager } = setup(probe);
+  await expect(manager.describeRuntime({ entry: runtimeEntry(), config: {} })).resolves.toEqual({
+    running: false,
+    actualConfigLabel: "daytona/small",
+    configLabelMatch,
   });
 });
 

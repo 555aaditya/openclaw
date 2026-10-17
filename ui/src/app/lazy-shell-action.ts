@@ -55,7 +55,9 @@ export function readLazyShellAction(): LazyShellEvent | null {
     if (eventType && keyCount === 2 && Object.hasOwn(parsed, "detail") && isRecord(detail)) {
       return { eventType, detail };
     }
-  } catch {}
+  } catch {
+    // Corrupt or inaccessible replay storage means there is no restorable action.
+  }
   clearLazyShellAction();
   return null;
 }
@@ -68,7 +70,9 @@ export function persistLazyShellAction(event: LazyShellEvent): boolean {
     }
     storage.setItem(STORAGE_KEY, JSON.stringify(event));
     return true;
-  } catch {}
+  } catch {
+    // Persistence is optional; clear the superseded action below and report failure.
+  }
   // A failed replacement must not leave a superseded action to replay on reload.
   clearLazyShellAction();
   return false;
@@ -77,5 +81,7 @@ export function persistLazyShellAction(event: LazyShellEvent): boolean {
 export function clearLazyShellAction(): void {
   try {
     getSafeSessionStorage()?.removeItem(STORAGE_KEY);
-  } catch {}
+  } catch {
+    // Replay cleanup is best effort when session storage is unavailable.
+  }
 }

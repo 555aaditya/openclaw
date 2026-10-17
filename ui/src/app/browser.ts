@@ -2,6 +2,7 @@ import type { RouteLocation, RouterHistory } from "@openclaw/uirouter";
 import { CONTROL_UI_BASE_PATH_ATTRIBUTE } from "../../../src/gateway/control-ui-bootstrap-contract.js";
 import { inferBasePathFromPathname, normalizeBasePath } from "../app-route-paths.ts";
 import { uiDevGatewayResourceBasePath } from "../dev-gateway.ts";
+import { listen } from "../lib/reactive/listener.ts";
 import { isNativeEmbedHost } from "./native-web-chrome.ts";
 
 type WindowWithControlUiBasePath = Window &
@@ -80,14 +81,10 @@ export function createBrowserHistory(): RouterHistory {
     listen: (listener) => {
       listeners.add(listener);
       if (!stopPopState) {
-        const onPopState = () => {
+        stopPopState = listen(window, "popstate", () => {
           const location = readLocation();
-          for (const subscriber of listeners) {
-            subscriber(location);
-          }
-        };
-        window.addEventListener("popstate", onPopState);
-        stopPopState = () => window.removeEventListener("popstate", onPopState);
+          listeners.forEach((subscriber) => subscriber(location));
+        });
       }
       return () => {
         listeners.delete(listener);
