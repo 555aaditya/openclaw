@@ -159,6 +159,140 @@ it.for(["manual", "scheduled"] as const)(
   },
 );
 
+it.for([
+  "ready",
+  "inspection-failed",
+  "ownership-lost",
+  "service-stopped",
+  "gateway-stopped",
+] as const)(
+  "retains cron custody beyond the foreground admission budget: %s",
+  async (outcome, { signal }) => {
+    const { storePath } = await makeStorePath();
+    const job = { ...commandJob("slow-startup"), agentId: "preparing" };
+    await saveCronStore(storePath, { version: 1, jobs: [job] });
+    await withAgentDatabaseStartupAdmission(async (admission) => {
+      const env = { ...process.env };
+      const inspection = createDeferred<OpenClawDatabaseSchemaPreflight>();
+      const refusals = admission.defer({
+        env,
+        inspections: [
+          {
+            target: {
+              agentId: job.agentId,
+              path: openOpenClawAgentDatabase({ agentId: job.agentId, env }).path,
+            },
+            result: inspection.promise,
+          },
+        ],
+        reason: "synthetic slow startup",
+      });
+      recordAgentDatabaseAdmissions(refusals, { env, source: "startup" });
+      const lifetime = admission.adopt();
+      let ownsPreparation = true;
+      admission.activate({
+        isCurrent: () => ownsPreparation,
+        preparationReady: Promise.resolve(),
+        openAgent: async () => {},
+        migrateAgent: async () => {},
+        publishAgent: async () => {},
+      });
+      const observed = createDeferred();
+      const waitForPreparation = admission.waitForAgentPreparation.bind(admission);
+      vi.spyOn(admission, "waitForAgentPreparation").mockImplementation((id, options) => {
+        const waiting = waitForPreparation(id, options);
+        observed.resolve();
+        return waiting;
+      });
+      const runCommandJob = vi.fn(async () => ({ status: "ok" as const }));
+      const { cron, state } = createCronServiceWithStateForTest({
+        scheduler: createTestGatewayScheduler(),
+        nowMs: () => NOW,
+        storePath,
+        cronEnabled: true,
+        defaultAgentId: "main",
+        log: logger,
+        enqueueSystemEvent() {},
+        requestHeartbeat() {},
+        runIsolatedAgentJob: async () => ({ status: "ok" }),
+        runCommandJob,
+      });
+      try {
+        const [request] = await commitCronRunRequests(state, [job], {
+          source: "manual",
+          mode: "force",
+        });
+        if (!request) {
+          throw new Error("Expected the queued cron request");
+        }
+        const receiptStatus = () =>
+          runOpenClawStateWriteTransaction(({ db }) =>
+            db
+              .prepare("SELECT status FROM cron_run_receipts WHERE receipt_id = ?")
+              .get(request.runReceipt.receiptId),
+          );
+        vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+        await drainCronRunQueue(state);
+        await withinTest(observed.promise, signal);
+        // A foreground request expires, while the same startup owner keeps preparing.
+        const foreground = waitForPreparation(job.agentId, { env, forWrite: true });
+        const timedOut = expect(foreground).rejects.toThrow("still preparing");
+        await vi.advanceTimersByTimeAsync(360_001);
+        await timedOut;
+        vi.useRealTimers();
+        expect(receiptStatus()).toEqual({ status: "running" });
+        const queued = (await loadCronStore(storePath)).jobs[0]?.state;
+        expect(queued?.queuedAtMs).toBe(NOW);
+        expect(queued?.runningAtMs).toBeUndefined();
+        expect(runCommandJob).not.toHaveBeenCalled();
+
+        if (outcome === "service-stopped" || outcome === "gateway-stopped") {
+          if (outcome === "service-stopped") {
+            cron.stop();
+          } else {
+            const stopped = lifetime.stop();
+            inspection.resolve({ incompatible: [], indeterminate: [] });
+            await stopped;
+          }
+          await withinTest(waitForCronRunQueue(state), signal);
+          expect(await request.completion).toMatchObject({ ran: false, reason: "stopped" });
+          expect(receiptStatus()).toEqual({ status: "running" });
+          expect((await loadCronStore(storePath)).jobs[0]?.state.queuedAtMs).toBe(NOW);
+          expect(runCommandJob).not.toHaveBeenCalled();
+        } else {
+          if (outcome === "inspection-failed") {
+            inspection.reject(new Error("synthetic terminal inspection failure"));
+          } else {
+            ownsPreparation = outcome !== "ownership-lost";
+            inspection.resolve({ incompatible: [], indeterminate: [] });
+          }
+          if (outcome === "ready") {
+            await withinTest(request.completion, signal);
+          } else {
+            await expect(withinTest(request.completion, signal)).rejects.toThrow(
+              outcome === "inspection-failed"
+                ? "synthetic terminal inspection failure"
+                : "Gateway no longer owns preparation",
+            );
+          }
+          await withinTest(waitForCronRunQueue(state), signal);
+          expect(receiptStatus()).toEqual({ status: outcome === "ready" ? "ok" : "skipped" });
+          expect(runCommandJob).toHaveBeenCalledTimes(outcome === "ready" ? 1 : 0);
+          expect((await loadCronStore(storePath)).jobs[0]?.state.queuedAtMs).toBeUndefined();
+          await drainCronRunQueue(state);
+          expect(runCommandJob).toHaveBeenCalledTimes(outcome === "ready" ? 1 : 0);
+        }
+      } finally {
+        vi.useRealTimers();
+        inspection.resolve({ incompatible: [], indeterminate: [] });
+        cron.stop();
+        await Promise.all([cron.waitForIdle(), lifetime.stop()]);
+        recordAgentDatabaseAdmissions([], { env, source: "startup" });
+      }
+    });
+  },
+);
+
 it.for(["complete", "cancel", "lost-result"] as const)(
   "handles a same-store on-exit predecessor without joining unrelated work: %s",
   async (outcome, { signal }) => {
@@ -297,6 +431,8 @@ it("keeps owned running work out of recovery and queue database polling", async 
       awaitGateBeforeSettlement(entered.promise, completion, "owned run did not start"),
       signal,
     );
+    // Manual admission and queue activation reuse the loaded store and committed postimages.
+    expect(loads).not.toHaveBeenCalled();
     await cron.start();
     const running = await cron.readJob(job.id);
     expect(running).toMatchObject({

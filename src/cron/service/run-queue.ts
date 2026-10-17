@@ -4,7 +4,8 @@ import { hasSqliteWorkerOutcomeUnknown } from "../../infra/sqlite-worker-contrac
 import { createSqliteWorkerWriteAdmission } from "../../infra/sqlite-worker-store.js";
 import { runWithGatewayDetachedWorkContinuation } from "../../process/gateway-work-admission.js";
 import { createDeferredCore } from "../../shared/deferred.js";
-import { waitForAgentDatabaseWriteAdmission } from "../../state/agent-database-preparation-context.js";
+import { assertAgentDatabaseAdmitted } from "../../state/agent-database-admission.js";
+import { waitForAgentDatabasePreparation } from "../../state/agent-database-preparation-context.js";
 import { captureOpenClawStateWorkerContext } from "../../state/openclaw-state-worker-context.js";
 import { runOpenClawStateWorkerOperation } from "../../state/openclaw-state-worker-store.js";
 import { CronEventClaimInvalidatedError } from "../event-source.js";
@@ -66,12 +67,14 @@ export type RequestedCronRun = CronQueuedRun & {
   activation: Promise<void>;
 };
 
-function pumpCronRunQueues(state: CronServiceState): void {
+function pumpCronRunQueues(state: CronServiceState, wake = true): void {
   const queue = launchState(state);
   if (!queue.contexts.size && !queue.running.size) {
     releaseCronRunQueue(state);
   }
-  wakeCronRunQueues(state);
+  if (wake) {
+    wakeCronRunQueues(state);
+  }
 }
 
 function watchCronRunCancellation(state: CronServiceState, pending: CronLaunchContext): void {
@@ -451,13 +454,19 @@ export async function launchCronRunQueueResult(
           runOutsideOperatorToolGatewayAuthority(() => {
             const run = async () => {
               if (preparation) {
-                await waitForAgentDatabaseWriteAdmission(preparation.agentId, {
-                  signal: AbortSignal.any([
-                    state.schedulerScope.signal,
-                    preparation.controller.signal,
-                    ...(launch.options.onExit ? [launch.options.onExit.signal] : []),
-                  ]),
-                });
+                try {
+                  await waitForAgentDatabasePreparation(preparation.agentId, {
+                    signal: AbortSignal.any([
+                      state.schedulerScope.signal,
+                      preparation.controller.signal,
+                    ]),
+                  });
+                } catch (error) {
+                  // Observation only rejects on lifecycle cancellation.
+                  preparation.controller.abort();
+                  throw error;
+                }
+                assertAgentDatabaseAdmitted(preparation.agentId);
                 // A stale readiness snapshot can settle immediately; wake after this drain unlocks.
                 await state.op;
               } else {
@@ -479,12 +488,18 @@ export async function launchCronRunQueueResult(
         ) {
           return;
         }
-        state.deps.log.error(
-          { jobId: entry.job.id, err: String(error) },
-          "cron: queued launch failed",
-        );
-        launch.completion.reject(error);
         try {
+          if (preparation?.controller.signal.aborted) {
+            // Keep durable custody for recovery; terminal inspection failures
+            // instead wake the queue and pass through ordinary eligibility.
+            launch.completion.resolve({ ok: true, ran: false, reason: "stopped" });
+            return;
+          }
+          state.deps.log.error(
+            { jobId: entry.job.id, err: String(error) },
+            "cron: queued launch failed",
+          );
+          launch.completion.reject(error);
           if (!launch.started) {
             await cancelCronRunRequests(
               state,
@@ -508,7 +523,7 @@ export async function launchCronRunQueueResult(
           launch.preparation = undefined;
         }
         launchState(state).running.delete(running);
-        pumpCronRunQueues(state);
+        pumpCronRunQueues(state, !preparation?.controller.signal.aborted);
       });
     launchState(state).running.add(running);
   }
@@ -521,9 +536,12 @@ export async function stopCronRunQueue(state: CronServiceState) {
       state.store?.jobs.find((job) => job.id === receipt.jobId)?.state.runningReceiptId !==
       receipt.receiptId,
   );
+  for (const pending of queued) {
+    pending.preparation?.controller.abort();
+  }
   await cancelCronRunRequests(
     state,
-    queued.map(({ receipt }) => receipt.receiptId),
+    queued.filter((pending) => !pending.preparation).map(({ receipt }) => receipt.receiptId),
     "cron service stopped",
   );
 }
