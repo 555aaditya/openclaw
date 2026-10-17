@@ -95,13 +95,9 @@ describe("agent run session target", () => {
   });
 
   it("keeps detached identity independent of a stored row with the same session id", async () => {
-    const storePath = path.join(tempDir, "detached", "sessions.json");
     const sessionId = "detached-session";
     const config: OpenClawConfig = { session: { store: storePath } };
-    await seedSessionEntry(
-      { agentId: "main", sessionKey: "agent:main:stored", storePath },
-      { sessionId, updatedAt: 1 },
-    );
+    await seed(sessionId, "agent:main:stored");
     const detached = {
       agentId: "main",
       config,
