@@ -1,6 +1,6 @@
 import { routeIdFromPath } from "../app-route-paths.ts";
 import { t } from "../i18n/index.ts";
-import { AgentCreationUncertainError } from "../lib/agents/creation-recovery.ts";
+import { AgentCreationUncertainError } from "../lib/agents/creation-recovery.runtime.ts";
 import { formatUiError } from "../lib/format-error.ts";
 import { canCallGatewayMethod } from "../lib/gateway-methods.ts";
 import { sessionNavigationTarget } from "../lib/sessions/route-navigation.ts";

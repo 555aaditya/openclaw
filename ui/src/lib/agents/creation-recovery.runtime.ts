@@ -4,11 +4,14 @@ import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import type { ConfigSnapshot } from "../../api/types.ts";
 import { t } from "../../i18n/index.ts";
 import { buildAgentMainSessionKey } from "../sessions/session-key.ts";
-import {
-  AgentCreationUncertainError,
-  type AgentCreationAttempt,
-  type AgentCreationResult,
-} from "./creation-recovery.ts";
+import type { AgentCreationAttempt, AgentCreationResult } from "./creation-recovery.ts";
+
+export class AgentCreationUncertainError extends Error {
+  constructor() {
+    super(t("agentChip.creationUncertain"));
+    this.name = "AgentCreationUncertainError";
+  }
+}
 
 /** A missing row only proves failure after the original request has settled on the server. */
 async function reconcileAgentCreation(

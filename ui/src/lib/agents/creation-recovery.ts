@@ -1,6 +1,5 @@
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import type { AgentsCreateResult } from "../../api/types.ts";
-import { t } from "../../i18n/index.ts";
 
 export type AgentCreationResult = Pick<AgentsCreateResult, "agentId" | "name"> & {
   onboarding: NonNullable<AgentsCreateResult["onboarding"]>;
@@ -13,13 +12,6 @@ export type AgentCreationAttempt = {
   rejection?: unknown;
   responseReceived?: boolean;
 };
-
-export class AgentCreationUncertainError extends Error {
-  constructor() {
-    super(t("agentChip.creationUncertain"));
-    this.name = "AgentCreationUncertainError";
-  }
-}
 
 /** Owns attempted identities until a response or saved config proves the write's outcome. */
 export function createAgentCreationRecovery() {
