@@ -77,6 +77,8 @@ export async function prepareAgentOnboarding(
     modelTarget: "primary",
     requireExecutionOwner: false,
     runtime: createSystemAgentGatewayRuntime(),
+    assertSourceCurrent: assertCurrent,
+    signal: options.signal,
   });
   assertCurrent();
   if (!verification.ok) {

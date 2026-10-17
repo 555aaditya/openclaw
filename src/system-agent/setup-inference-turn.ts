@@ -79,6 +79,7 @@ export async function runSetupInferenceTurn(params: {
   prompt?: string;
   deps: ActivateSetupInferenceDeps;
   requireExecutionOwner: boolean;
+  assertSourceCurrent?: () => void;
   signal?: AbortSignal;
   runtime?: RuntimeEnv;
 }): Promise<SetupTurnSuccess | SetupTurnFailure> {
@@ -116,6 +117,7 @@ export async function runSetupInferenceTurn(params: {
     runId,
     route.agentId,
     "system-agent.setup-inference",
+    params.assertSourceCurrent,
   );
   let successfulAuth: AgentExecutionAuthBinding | undefined;
   const shared = {
@@ -564,6 +566,8 @@ export async function verifySetupInferenceConfig(
     agentDir?: string;
     onVerifiedExecution?: (binding: SystemAgentVerifiedInferenceBinding) => void;
     requireExecutionOwner?: boolean;
+    assertSourceCurrent?: () => void;
+    signal?: AbortSignal;
   },
 ): Promise<VerifySetupInferenceResult> {
   const deps: ActivateSetupInferenceDeps = {
@@ -616,6 +620,8 @@ export async function verifySetupInferenceConfig(
     deps,
     requireExecutionOwner,
     runtime: params.runtime,
+    assertSourceCurrent: params.assertSourceCurrent,
+    signal: params.signal,
   });
   if (!turn.ok) {
     return { ...turn, error: await redactSetupInferenceError(turn.error) };
