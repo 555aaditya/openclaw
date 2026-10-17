@@ -194,7 +194,7 @@ describe("AppSidebar session section visibility", () => {
       result: {
         ...result,
         sessions: result.sessions.map((row) =>
-          row === alpha ? { ...row, category: "Empty" } : row,
+          row === alpha ? Object.assign({}, row, { category: "Empty" }) : row,
         ),
       },
       groups: ["Empty", "Alpha"],

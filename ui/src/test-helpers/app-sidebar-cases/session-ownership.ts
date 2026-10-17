@@ -105,7 +105,9 @@ describe("AppSidebar session ownership", () => {
         result: {
           ...result,
           sessions: result.sessions.map((row) =>
-            row === shared ? { ...row, participants: [], participantCount: 5 } : row,
+            row === shared
+              ? Object.assign({}, row, { participants: [], participantCount: 5 })
+              : row,
           ),
         },
         agentId: "main",
@@ -251,11 +253,10 @@ describe("AppSidebar session ownership", () => {
           ...result,
           sessions: result.sessions.map((row, index) =>
             index === 1
-              ? {
-                  ...row,
+              ? Object.assign({}, row, {
                   participants: [{ identity: { type: "profile", id: "profile-bob" } }],
                   participantCount: 1,
-                }
+                })
               : row,
           ),
         },
