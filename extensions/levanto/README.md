@@ -30,3 +30,18 @@ abstentions, partial batch errors, and reported usage without inventing cost.
 
 See the [Levanto Sage guide](https://docs.openclaw.ai/providers/levanto) for
 configuration, operation limits, billing, and result semantics.
+
+## Live adapter test
+
+From a matching source checkout, inject a Levanto-issued `LEVANTO_API_KEY`
+through your secret manager, then run:
+
+```sh
+OPENCLAW_LIVE_TEST=1 node scripts/run-vitest.mjs --config test/vitest/vitest.live.config.ts extensions/levanto/registration.live.test.ts
+```
+
+The test sends one synthetic Boolean/Choice/Score batch with reasoning off and
+consumes the account's allowance. It skips without both the opt-in flag and key.
+It checks the registered V2 adapter and real transport, accepts native abstention,
+and validates reported usage when present. Prepared credentials are fixture input;
+the test does not exercise host credential discovery or change model selection.
