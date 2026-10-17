@@ -1,4 +1,5 @@
 import type { JSX } from "@solidjs/web";
+import { children } from "solid-js";
 import { ShellLayoutBoundary } from "../../app/shell-layout-traits-solid.tsx";
 import "../../styles/hub-tabs.css";
 
@@ -9,21 +10,24 @@ export function CatalogPageHeader(props: {
   actions?: JSX.Element;
   class?: string;
 }) {
+  const subtitle = children(() => props.subtitle);
+  const tabs = children(() => props.tabs);
+  const actions = children(() => props.actions);
   return (
     <ShellLayoutBoundary traits={{ hubHeader: true }}>
       <section
         class={[
           "content-header content-header--stacked content-header--settings content-header--page hub-page-header hub-page-header--stacked catalog-page-header",
           props.class,
-          { "catalog-page-header--tabs": Boolean(props.tabs) },
+          { "catalog-page-header--tabs": Boolean(tabs()) },
         ]}
       >
         <div class="hub-page-header__title">
           <h1 class="page-title">{props.title}</h1>
-          {props.subtitle && <div class="page-subtitle">{props.subtitle}</div>}
+          {subtitle() && <div class="page-subtitle">{subtitle()}</div>}
         </div>
-        {props.tabs && <div class="hub-page-header__tabs">{props.tabs}</div>}
-        {props.actions && <div class="hub-page-header__actions">{props.actions}</div>}
+        {tabs() && <div class="hub-page-header__tabs">{tabs()}</div>}
+        {actions() && <div class="hub-page-header__actions">{actions()}</div>}
       </section>
     </ShellLayoutBoundary>
   );

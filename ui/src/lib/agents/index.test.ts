@@ -760,13 +760,14 @@ describe("agent creation", () => {
     staleRead.resolve({ defaultId: "main", agents: [{ id: "main", name: "Stale name" }] });
     await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(4));
     expect(agents.state.agentsList?.agents[0]).toEqual(pending);
-    currentRead.resolve({
+    const currentRoster = {
       defaultId: "main",
       agents: [
         { id: "main", name: "Renamed" },
         { ...pending, identity: { emoji: "🌱" } },
       ],
-    });
+    };
+    currentRead.resolve(currentRoster);
     expect(await oldRefresh).toBe(agents.state.agentsList);
     expect(agents.state.agentsList?.agents).toEqual([
       { id: "main", name: "Renamed" },
@@ -774,8 +775,12 @@ describe("agent creation", () => {
     ]);
     request.mockRejectedValueOnce(new Error("Temporary read failure"));
     await agents.refreshList();
-    expect(agents.state.agentsList?.agents.map((agent) => agent.id)).toEqual(["main", pending.id]);
+    expect(agents.state.agentsList).toBeNull();
     expect(agents.state.agentsError).toContain("Temporary read failure");
+    request.mockResolvedValueOnce(currentRoster);
+    await expect(agents.ensureList()).resolves.toEqual(currentRoster);
+    expect(agents.state.agentsList?.agents.map((agent) => agent.id)).toEqual(["main", pending.id]);
+    expect(agents.state.agentsError).toBeNull();
     agents.dispose();
   });
 

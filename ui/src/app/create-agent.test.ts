@@ -44,7 +44,9 @@ async function fixture(
       return structuredClone(roster);
     }
     if (method === "agents.create") {
-      const verification = await (options.verification ?? { ok: true });
+      const verification: { ok: boolean; error?: string } = await (options.verification ?? {
+        ok: true,
+      });
       if (!verification.ok) {
         throw new Error(verification.error ?? "Inference unavailable");
       }

@@ -260,6 +260,7 @@ export function createAgentCapability(gateway: AgentGateway) {
       })
       .catch((err: unknown) => {
         if (state.client === client && agentsRequest === request) {
+          state.agentsList = null;
           state.agentsError = resolveAgentReadErrorMessage(err, "agent list");
         }
         return null;

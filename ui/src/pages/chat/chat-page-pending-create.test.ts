@@ -1,8 +1,8 @@
 /* @vitest-environment jsdom */
 import { afterEach, expect, it, vi } from "vitest";
 
-// mock-isolation: the page and pending renderer stay real; ordinary panes expose
-// every presented session without starting their Gateway-owned chat controllers.
+// The page and pending renderer stay real; ordinary panes expose every presented session.
+// mock-isolation: avoid starting Gateway-owned chat controllers for the transcript presentation test.
 vi.mock("./chat-pane.tsx", async () => {
   const { mockChatPagePane } = await import("./chat-page-pane.test-support.ts");
   return { ChatPaneView: mockChatPagePane };
