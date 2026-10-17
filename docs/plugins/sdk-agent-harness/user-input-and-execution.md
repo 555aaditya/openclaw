@@ -188,8 +188,14 @@ New harnesses should implement `AgentHarnessV3`, declare
 `hostCapabilityVersion: 2`, and type prepared attempts as
 `AgentHarnessAttemptParamsV3`, `EmbeddedRunAttemptParamsV3`, and
 `AgentHarnessSideQuestionParamsV3`. These contracts require a version-2
-`hostCapabilities` with `prepareWebSearchToolPolicy`. Packages adopting the
-earlier V2 contracts must declare
+`hostCapabilities` with `prepareWebSearchToolPolicy`. Packages adopting V3 must
+declare `openclaw.compat.pluginApi` with a `>=` floor naming the first host
+release containing V3 and host capability version 2. V3 is currently unreleased:
+the published `2026.10.4` host does not include it, so `>=2026.10.4` is not a
+sufficient floor. Set the concrete supporting release before publishing a V3
+package, and align any `peerDependencies.openclaw` floor with it.
+
+Packages using the earlier V2 contracts must declare
 `openclaw.compat.pluginApi: ">=2026.8.1"` (or a newer floor) so older hosts
 reject them before load. Import the parameter types from the runtime subpath:
 
