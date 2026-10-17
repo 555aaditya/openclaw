@@ -19,6 +19,7 @@ import { createAgentSelectionCapability } from "./agent-selection.ts";
 import { createChatSubmissions } from "./chat-submissions.ts";
 import type { ApplicationContext } from "./context.ts";
 import { createApplicationAgent } from "./create-agent.ts";
+import { loadSettings, patchSettings } from "./settings.ts";
 
 async function fixture(
   options: {
@@ -252,11 +253,52 @@ describe("application agent creation", () => {
     expect(toast.toast).toBeNull();
   });
 
+  it("keeps the created agent first after reconnect and a fresh sidebar", async () => {
+    const { context, roster, publishGateway, settledNavigation } = await fixture();
+    await createApplicationAgent(context);
+    await settledNavigation();
+    const createdId = roster.agents[1]!.id;
+    publishGateway({ phase: "reconnecting" });
+    publishGateway({ phase: "connected", sessionKey: "agent:main:home" });
+    await context.agents.ensureList();
+    expect(context.agents.state.recentlyCreatedAgentId).toBeUndefined();
+    expect(context.agents.state.agentsList?.agents.map(({ id }) => id)).toEqual([
+      "main",
+      createdId,
+    ]);
+
+    const resumed = createContext(
+      context.gateway,
+      createSessionsHarness("main", ["agent:main:home"]).sessions,
+      structuredClone(roster),
+    );
+    const { sidebar } = await mountSidebarContext(resumed);
+    sidebar.connected = true;
+    await sidebar.updateComplete;
+    sidebar.querySelector<HTMLButtonElement>(".sidebar-agent-card__main")!.click();
+    await sidebar.updateComplete;
+    expect(sidebar.querySelector('[data-value^="agent:"]')?.getAttribute("data-value")).toBe(
+      `agent:${createdId}`,
+    );
+    expect(sidebar.querySelector('[data-value="agent:main"]')?.getAttribute("aria-current")).toBe(
+      "true",
+    );
+    expect(sidebar.querySelector('[data-value="scope:all"]')?.textContent).toContain("Show all");
+    expect(resumed.navigation.snapshot.pinnedAgentIds).toEqual([]);
+  });
+
   it("explains failed inference and restores the prior chat without persisting an agent", async () => {
     const { context, request, roster, navigate, replace, toast, settledNavigation } = await fixture(
       {
         verification: Promise.resolve({ ok: false, error: "Provider credentials expired" }),
       },
+    );
+    patchSettings(
+      {
+        gatewayUrl: context.gateway.connection.gatewayUrl,
+        sidebarRecentlyCreatedAgentId: "previous",
+      },
+      { selectGateway: false },
     );
     vi.useFakeTimers();
     await createApplicationAgent(context);
@@ -271,6 +313,9 @@ describe("application agent creation", () => {
     expect(replace).toHaveBeenCalledWith("chat", { pathname: "/chat/main", search: "", hash: "" });
     expect(context.chatSubmissions.creation).toBeUndefined();
     expect(context.agentSelection.state.selectedId).toBe("main");
+    expect(loadSettings(context.gateway.connection.gatewayUrl).sidebarRecentlyCreatedAgentId).toBe(
+      "previous",
+    );
     expect(context.gateway.snapshot.sessionKey).toBe("agent:main:home");
     expect(toast.active).toBe(true);
     expect(toast.querySelector(".app-toast__message")?.textContent).toContain(
@@ -336,6 +381,9 @@ describe("application agent creation", () => {
       expect(context.agentSelection.state).toEqual(selection);
       expect(context.gateway.snapshot.sessionKey).toBe("agent:main:home");
       expect(navigate).not.toHaveBeenCalled();
+      expect(
+        loadSettings(context.gateway.connection.gatewayUrl).sidebarRecentlyCreatedAgentId,
+      ).toBe(roster.agents[1]?.id);
       expect(toast.toast).toBeNull();
     },
   );

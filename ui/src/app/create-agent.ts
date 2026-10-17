@@ -14,6 +14,7 @@ import { patchSettings } from "./settings.ts";
 /** Creation belongs to the application, so closing the selector cannot cancel it. */
 export async function createApplicationAgent(context: ApplicationContext): Promise<void> {
   const client = context.gateway.snapshot.client;
+  const gatewayUrl = context.gateway.connection.gatewayUrl;
   const initialLocation = context.router.getState().location;
   const initialRouteId = routeIdFromPath(initialLocation.pathname, context.basePath);
   let location = initialLocation;
@@ -70,8 +71,16 @@ export async function createApplicationAgent(context: ApplicationContext): Promi
     // A user who navigated away keeps their foreground; the agent and its chat
     // still exist and appear in the normal agent/session roster.
     creation.admitted = true;
-    if (ownsForeground()) {
-      patchSettings({ sidebarAgentsMode: "chip" });
+    const foreground = ownsForeground();
+    patchSettings(
+      {
+        gatewayUrl,
+        sidebarRecentlyCreatedAgentId: agentId,
+        ...(foreground ? { sidebarAgentsMode: "chip" as const } : {}),
+      },
+      { selectGateway: false },
+    );
+    if (foreground) {
       selectApplicationSession({
         selection: context.agentSelection,
         gateway: context.gateway,

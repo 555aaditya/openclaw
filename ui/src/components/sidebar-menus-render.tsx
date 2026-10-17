@@ -11,6 +11,7 @@ import { openExternalUrlSafe } from "../lib/open-external-url.ts";
 import { projectOverlays } from "../lib/reactive/application.ts";
 import { projectAgents } from "../lib/reactive/domain-capabilities.ts";
 import { t } from "../lib/reactive/i18n.ts";
+import { projectTheme } from "../lib/reactive/theme.ts";
 import { categoryClearReturnsToGroups } from "../lib/sessions/grouping.ts";
 import {
   canArchiveSessionRow,
@@ -111,6 +112,10 @@ export function renderSidebarAgentMenuForController(
     const source = host.sessionDataContext?.agents;
     return source && projectAgents(source);
   });
+  const preferences = createMemo(() => {
+    const source = host.sessionDataContext?.theme;
+    return source && projectTheme(source).preferences;
+  });
   const chipAgent = createMemo(() => host.activeChipAgent()),
     activeId = () => chipAgent().activeId,
     agent = () => chipAgent().agent,
@@ -155,7 +160,9 @@ export function renderSidebarAgentMenuForController(
         },
         creationPhase: agentState()?.read().agentCreationPhase,
         pendingAgent: agentState()?.read().pendingAgent,
-        recentlyCreatedAgentId: agentState()?.read().recentlyCreatedAgentId,
+        recentlyCreatedAgentId:
+          agentState()?.read().recentlyCreatedAgentId ??
+          preferences()?.read().sidebarRecentlyCreatedAgentId,
         onCreateAgent: async () => {
           const context = host.sessionDataContext;
           if (context) {
