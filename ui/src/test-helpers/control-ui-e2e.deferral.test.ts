@@ -125,3 +125,20 @@ it("separates canonical roster capture and deferrals from child session queries"
   expect(rosterRequests.map((request) => request.id)).toEqual(["roster-held", "roster-next"]);
   expect(gateway.deferNext("sessions.list", rosterMatch)).toBe(rosterRequests.length);
 });
+
+it("leaves terminal-event delivery to a deferred abort fixture", async ({ gatewayPage }) => {
+  gatewayPage.execute(createControlUiMockGatewayInitScript({ deferredMethods: ["chat.abort"] }));
+  // SAFETY: The serialized mock installs its documented controls in this private realm.
+  const gateway = Object.getOwnPropertyDescriptor(
+    gatewayPage.window,
+    "openclawControlUiE2eGateway",
+  )!.value as ControlUiMockGateway;
+  const socket = gatewayPage.connect();
+  await flush();
+  socket.send("abort", "chat.abort", { sessionKey: "agent:main:main", runId: "held-run" });
+  gateway.resolveDeferred("chat.abort", { aborted: true, runIds: ["held-run"] });
+
+  expect(socket.frames.filter((frame) => frame.event !== "connect.challenge")).toEqual([
+    { type: "res", id: "abort", ok: true, payload: { aborted: true, runIds: ["held-run"] } },
+  ]);
+});

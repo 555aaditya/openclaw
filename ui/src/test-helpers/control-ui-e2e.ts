@@ -4,7 +4,13 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { HelloOk, MessageReactionSummary } from "@openclaw/gateway-protocol";
+import type {
+  HelloOk,
+  MessageReactionSummary,
+  ModelCatalogScope,
+  ModelCatalogTarget,
+  SessionsResolveResult,
+} from "@openclaw/gateway-protocol";
 import { normalizeAgentId } from "@openclaw/normalization-core/agent-id";
 import { buildControlUiSessionPath } from "@openclaw/session-url-contract";
 import type { Locator, Page } from "playwright";
@@ -1043,10 +1049,16 @@ function installControlUiMockGateway(
     type?: unknown;
   };
   type DeferredResponse = {
-    id: string;
     method: string;
     params?: unknown;
-    socket: MockWebSocket;
+    respond: (payload: unknown) => void;
+  };
+  type MockResponse = {
+    type: "res";
+    id: string;
+    ok: boolean;
+    payload?: unknown;
+    error?: unknown;
   };
   type MockTerminalSession = {
     sessionId: string;
@@ -2422,40 +2434,49 @@ function installControlUiMockGateway(
       if (!id || !method) {
         return;
       }
-      requests.push({ id, method, params: frame.params });
-      if (deferredRequests.shouldDefer(method, frame.params)) {
-        deferredRequests.responses.push({ id, method, params: frame.params, socket: this });
-        return;
-      }
+      this.request(id, method, frame.params);
+    }
+
+    private request(
+      id: string,
+      method: string,
+      params: unknown,
+      deliver: (frame: MockResponse) => void = (response) => this.deliver(response),
+    ): void {
+      requests.push({ id, method, params });
+      const deferred = deferredRequests.shouldDefer(method, params);
       const respond = (response: unknown) => {
-        const payload = commitFixtureResponse(method, frame.params, response);
+        const payload = commitFixtureResponse(method, params, response);
         const mockError =
           isRecord(payload) && isRecord(payload["__mockError"]) ? payload["__mockError"] : null;
         if (!mockError) {
-          this.sessionMessageSubscriptions.recordRequest(method, frame.params, payload);
+          this.sessionMessageSubscriptions.recordRequest(method, params, payload);
         }
-        this.deliver(
+        deliver(
           mockError
             ? { id, ok: false, error: mockError, type: "res" }
             : { id, ok: true, payload, type: "res" },
         );
         if (!mockError) {
-          emitTerminalOutput(this, method, frame.params, payload);
+          emitTerminalOutput(this, method, params, payload);
         }
         if (!mockError && method === "connect" && this.readyState === MockWebSocket.OPEN) {
           this.tickTimer = window.setInterval(() => {
             this.deliver({ event: "tick", payload: {}, seq: ++seq, type: "event" });
           }, 30_000);
+          this.publishModelCatalog(params);
         }
         if (
           !mockError &&
+          // Deferred abort fixtures control terminal-event delivery separately from the ACK.
+          !deferred &&
           method === "chat.abort" &&
-          isRecord(frame.params) &&
-          typeof frame.params.sessionKey === "string" &&
+          isRecord(params) &&
+          typeof params.sessionKey === "string" &&
           isRecord(payload) &&
           payload.aborted === true
         ) {
-          const sessionKey = frame.params.sessionKey;
+          const sessionKey = params.sessionKey;
           const runIds = Array.isArray(payload.runIds) ? payload.runIds : [];
           for (const runId of runIds) {
             emitGatewayEvent(this, "chat", { runId, sessionKey, state: "aborted" });
@@ -2470,20 +2491,73 @@ function installControlUiMockGateway(
           });
         }
       };
+      if (deferred) {
+        deferredRequests.responses.push({ method, params, respond });
+        return;
+      }
       window.setTimeout(() => {
         const handler = requestHandlers.get(method);
         if (handler) {
           // Delayed fixtures retain this request and socket, even when another
           // request for the same method finishes first.
           handler({
-            params: frame.params,
+            params,
             respond,
             emit: (event, payload) => emitGatewayEvent(this, event, payload),
           });
         } else {
-          respond(buildResponse(method, frame.params));
+          respond(buildResponse(method, params));
         }
       }, 0);
+    }
+
+    private publishModelCatalog(params: unknown): void {
+      if (
+        !isRecord(params) ||
+        !isRecord(params.client) ||
+        params.client.id !== "openclaw-control-ui" ||
+        !Array.isArray(params.caps) ||
+        !params.caps.includes("model-catalog-snapshot") ||
+        !isRecord(params.modelCatalog)
+      ) {
+        return;
+      }
+      // SAFETY: The client serializes the negotiated model-catalog target in its connect frame.
+      const target = params.modelCatalog as ModelCatalogTarget;
+      const publish = (scope: ModelCatalogScope) => {
+        // Connect discovery uses the same fixtures, holds, and handlers as explicit reads.
+        this.request(
+          "catalog:control-ui-e2e",
+          "models.list",
+          { ...scope, view: "configured" },
+          (frame) => {
+            if (frame.ok) {
+              emitGatewayEvent(this, "models.snapshot", { target, scope, catalog: frame.payload });
+            } else {
+              this.deliver(frame);
+            }
+          },
+        );
+      };
+      if ("shortId" in target) {
+        this.request("catalog-session:control-ui-e2e", "sessions.resolve", target, (frame) => {
+          if (!frame.ok) {
+            this.deliver(frame);
+          } else {
+            // SAFETY: The sessions.resolve fixture owns the canonical identity reply.
+            const resolved = frame.payload as SessionsResolveResult;
+            if (resolved.ok) {
+              publish({ agentId: resolved.agentId, sessionKey: resolved.key });
+            }
+          }
+        });
+      } else {
+        publish(
+          typeof target.sessionKey === "string"
+            ? { ...target }
+            : { agentId: target.agentId ?? scenario.defaultAgentId },
+        );
+      }
     }
 
     suspend(): void {
@@ -2527,47 +2601,25 @@ function installControlUiMockGateway(
       ),
     rejectDeferred(method, error, options) {
       for (const response of deferredRequests.take(method, options)) {
-        response.socket.deliver({
-          error: {
+        response.respond({
+          __mockError: {
             code: error?.code ?? "INVALID_REQUEST",
             message: error?.message ?? "mock Gateway rejected request",
             ...(error?.details ? { details: error.details } : {}),
             ...(error?.retryable ? { retryable: true } : {}),
           },
-          id: response.id,
-          ok: false,
-          type: "res",
         });
       }
     },
     requests,
     resolveDeferred(method, payload, options) {
       for (const response of deferredRequests.take(method, options)) {
-        const resolvedPayload = commitFixtureResponse(
-          response.method,
-          response.params,
+        response.respond(
           responseFixtures.applyAgentModel(
             response.method,
             payload ?? buildResponse(response.method, response.params),
           ),
         );
-        const mockError = isRecord(resolvedPayload) ? resolvedPayload["__mockError"] : undefined;
-        if (!mockError) {
-          response.socket.sessionMessageSubscriptions.recordRequest(
-            response.method,
-            response.params,
-            resolvedPayload,
-          );
-        }
-        response.socket.deliver({
-          id: response.id,
-          ok: !mockError,
-          ...(mockError ? { error: mockError } : { payload: resolvedPayload }),
-          type: "res",
-        });
-        if (!mockError) {
-          emitTerminalOutput(response.socket, response.method, response.params, resolvedPayload);
-        }
       }
     },
     suspendLatest() {
