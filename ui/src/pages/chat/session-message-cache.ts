@@ -30,8 +30,22 @@ const transcriptMetadata = new WeakMap<GatewaySessionRow, ChatTranscriptMetadata
 /** Persisted receipts travel with snapshot copies, but never gate the cached paint. */
 export class StoredChatHistoryState {
   current?: ChatHistoryState;
-  private readonly painted = new Promise<void>((resolve) => {
-    scheduleControlUiAfterPaint({}, resolve);
+  private readonly paintOpportunity = new Promise<boolean>((resolve) => {
+    const finish = (painted: boolean) => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      resolve(painted);
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        finish(false);
+      }
+    };
+    if (document.visibilityState === "hidden") {
+      resolve(false);
+      return;
+    }
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    scheduleControlUiAfterPaint({}, () => finish(true));
   });
   private pending?: Promise<void>;
 
@@ -42,8 +56,12 @@ export class StoredChatHistoryState {
   }
 
   load(): Promise<void> {
-    return (this.pending ??= this.painted
-      .then(async () => {
+    return (this.pending ??= this.paintOpportunity
+      .then(async (painted) => {
+        // Hidden documents suspend animation frames; request full metadata instead.
+        if (!painted) {
+          return;
+        }
         const { isChatHistoryState } =
           await import("../../lib/protocol-validators.generated/history-state.js");
         this.current = isChatHistoryState(this.value) ? this.value : undefined;

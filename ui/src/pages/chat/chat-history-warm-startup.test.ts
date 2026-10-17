@@ -513,9 +513,15 @@ describe("first chat startup snapshot ordering", () => {
     },
   );
 
-  it.each(["valid", "invalid", "retired"] as const)(
-    "defers stored receipt admission until after cached paint and retains request ownership (%s)",
+  it.each(["valid", "invalid", "retired", "hidden", "hidden-during-restore"] as const)(
+    "preserves paint, visibility, and request ownership during stored receipt admission (%s)",
     async (mode) => {
+      const hidden = mode === "hidden" || mode === "hidden-during-restore";
+      const visibility = vi.spyOn(document, "visibilityState", "get");
+      visibility.mockReturnValue(mode === "hidden" ? "hidden" : "visible");
+      if (hidden) {
+        vi.spyOn(globalThis, "requestAnimationFrame").mockReturnValue(1);
+      }
       const stateRevision = {
         pendingInputs: "pending-1",
         sessionInfo: "info-1",
@@ -554,6 +560,11 @@ describe("first chat startup snapshot ordering", () => {
         }),
       );
       const h = mountPane(true, sessionKey, false, new SessionSnapshotStore());
+      await vi.advanceTimersByTimeAsync(0);
+      if (mode === "hidden-during-restore") {
+        visibility.mockReturnValue("hidden");
+        document.dispatchEvent(new Event("visibilitychange"));
+      }
       await vi.advanceTimersByTimeAsync(0);
       expect(h.state.chatMessages).toEqual(stored.messages);
       h.connect();

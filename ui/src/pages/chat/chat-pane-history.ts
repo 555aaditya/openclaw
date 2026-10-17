@@ -72,6 +72,7 @@ import {
   cacheChatSessionSnapshot,
   readChatSessionSnapshot,
   resolveChatSnapshotKey,
+  StoredChatHistoryState,
 } from "./session-message-cache.ts";
 import { maybeResetToolStream } from "./stream-reconciliation.ts";
 
@@ -106,7 +107,17 @@ export abstract class ChatPaneHistory extends ChatPaneReplyNavigation {
       sessionKey,
       connected: this.context.gateway.snapshot.phase === "connected",
       promise: reading
-        .then((storedSnapshot) => {
+        .then(async (storedSnapshot) => {
+          if (
+            storedSnapshot?.historyState instanceof StoredChatHistoryState &&
+            document.visibilityState !== "hidden"
+          ) {
+            // Replacing the receipt import must not fold transcript rendering into
+            // the sidebar's IndexedDB completion task.
+            await new Promise<void>((resolve) => {
+              setTimeout(resolve, 0);
+            });
+          }
           if (
             requests.initialSnapshotHydration !== hydration ||
             requests.acceptedHistory ||

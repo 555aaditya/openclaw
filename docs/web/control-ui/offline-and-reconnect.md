@@ -77,6 +77,7 @@ session and account before confirming any retained data.
 The cached conversation can paint before those receipts are validated. Receipt
 validation runs after a paint opportunity when the live chat request needs them;
 invalid receipts fetch complete metadata without discarding the cached conversation.
+Background tabs can request complete metadata without waiting for a visible paint.
 
 Agent pickers and the agent directory wait for a live roster;
 stored agent lists cannot establish the current role’s discovery permissions. Short
