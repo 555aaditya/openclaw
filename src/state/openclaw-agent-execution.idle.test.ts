@@ -4,7 +4,11 @@ import path from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import { clearRuntimeConfigSnapshot } from "../config/runtime-snapshot.js";
-import { SQLITE_IDLE_HANDLE_TTL_MS } from "../infra/sqlite-handle-lifecycle.js";
+import * as databaseProcessRole from "../infra/database-engine/admission-scope.js";
+import {
+  SQLITE_IDLE_HANDLE_TTL_MS,
+  SQLITE_CLI_AGENT_IDLE_HANDLE_TTL_MS,
+} from "../infra/sqlite-handle-lifecycle.js";
 import { readDatabasePathIdentitySync } from "../infra/sqlite-worker-identity.js";
 import {
   markGatewayRestartDraining,
@@ -121,6 +125,15 @@ it("expires each executor independently and refreshes only the borrowed one", as
   expect(terminal).not.toHaveBeenCalled();
   await use("first");
   expect(opened).toHaveLength(3);
+});
+
+it("retires a CLI one-shot's warm executor after the CLI window", async () => {
+  vi.spyOn(databaseProcessRole, "getDatabaseProcessRole").mockReturnValue("cli-oneshot");
+  await use("one-shot");
+  await vi.advanceTimersByTimeAsync(SQLITE_CLI_AGENT_IDLE_HANDLE_TTL_MS - 1);
+  expect(closedAgents()).toEqual([]);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(closedAgents()).toEqual(["one-shot"]);
 });
 
 it("closes all warm executors on restart drain", async () => {
