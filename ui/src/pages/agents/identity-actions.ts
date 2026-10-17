@@ -129,6 +129,7 @@ export async function saveIdentityDraft(params: {
         return updateAgentIdentity(client, { agentId, name, emoji, avatar });
       },
       {
+        configWriteAck: (value) => value,
         canDispatch: params.canDispatch,
         dispatchError: "Access changed before the agent identity update started.",
       },

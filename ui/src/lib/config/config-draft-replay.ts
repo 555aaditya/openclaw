@@ -26,8 +26,14 @@ export function replayConfigDraftEdits(
       const nextPath = [...path, key];
       if (!Object.hasOwn(after, key)) {
         removePathValue(draft, nextPath);
-      } else if (isRecord(before[key]) && isRecord(after[key]) && isRecord(canonical[key])) {
-        replay(before[key], after[key], canonical[key], nextPath);
+      } else if (
+        (!Object.hasOwn(before, key) || isRecord(before[key])) &&
+        isRecord(after[key]) &&
+        isRecord(canonical[key])
+      ) {
+        // Independent writes can create the same parent with different fields.
+        // Preserve those fields while replaying additions to an absent parent.
+        replay(isRecord(before[key]) ? before[key] : {}, after[key], canonical[key], nextPath);
       } else if (stableStringify(before[key]) !== stableStringify(after[key])) {
         setPathValue(draft, nextPath, after[key]);
       }

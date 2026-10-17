@@ -84,7 +84,22 @@ export function registerAgentIdentityUpdateTests(harness: IdentityUpdateHarness)
             await promise;
             expect(respond).toHaveBeenCalledWith(
               true,
-              { ok: true, agentId: "test-agent" },
+              {
+                ok: true,
+                agentId: "test-agent",
+                hash: "opaque:persisted-hash",
+                config: {
+                  agents: {
+                    entries: {
+                      "test-agent": {
+                        workspace,
+                        name: "Updated Name",
+                        identity: { name: "Updated Name" },
+                      },
+                    },
+                  },
+                },
+              },
               undefined,
             );
             expect(writeFile).toHaveBeenCalledWith({

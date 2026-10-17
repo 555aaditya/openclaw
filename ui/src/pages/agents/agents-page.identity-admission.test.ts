@@ -2,7 +2,7 @@
 
 import { expect, it, vi } from "vitest";
 import { createDeferred } from "../../../../test/helpers/promise.js";
-import type { GatewayBrowserClient } from "../../api/gateway.ts";
+import { GatewayBrowserClient } from "../../api/gateway.ts";
 import { createRuntimeConfigCapability } from "../../lib/config/runtime-config-capability.ts";
 import { gatewayHelloForMethods } from "../../test-helpers/gateway-methods.ts";
 import { waitForFast } from "../../test-helpers/wait-for.ts";
@@ -37,7 +37,7 @@ function admissionFixture() {
       return result;
     }
     if (method === "agents.update") {
-      return {};
+      return { config, hash };
     }
     throw new Error(`Unexpected method ${method}`);
   });
@@ -62,6 +62,78 @@ async function queueIdentityBehindConfig(fixture: ReturnType<typeof admissionFix
   expect(fixture.request).not.toHaveBeenCalledWith("agents.update", expect.anything());
   return page;
 }
+
+it("saves model edits made during identity autosave against the identity commit", async () => {
+  vi.useFakeTimers();
+  const identityWrite = createDeferred();
+  let config: Record<string, unknown> = { agents: { defaults: { model: "fixture/anchor" } } };
+  let hash = "before-identity";
+  const request = vi.fn(async (method: string, params?: unknown) => {
+    if (method === "config.get") {
+      return { config, sourceConfig: config, hash, valid: true, issues: [] };
+    }
+    if (method === "agents.update") {
+      await identityWrite.promise;
+      config = {
+        agents: {
+          defaults: { model: "fixture/anchor" },
+          entries: { main: { identity: { name: "Saved identity" } } },
+        },
+      };
+      hash = "after-identity";
+      return { ok: true, agentId: "main", config, hash };
+    }
+    if (method === "config.set") {
+      // SAFETY: The real config owner constructs this method's wire parameters.
+      const submitted = params as { raw: string; baseHash: string };
+      if (submitted.baseHash !== hash) {
+        throw new Error("config changed since last load; re-run config.get and retry");
+      }
+      config = JSON.parse(submitted.raw);
+      hash = "after-model";
+      return { config, hash };
+    }
+    throw new Error(`Unexpected method ${method}`);
+  });
+  const client = new GatewayBrowserClient({ url: "ws://fixture.example.test" });
+  vi.spyOn(client, "request").mockImplementation(request);
+  const currentGateway = gateway(snapshot(client));
+  const runtimeConfig = createRuntimeConfigCapability(currentGateway);
+  const agents = agentsCapability(async () => ({ agentId: "main", workspace: "main", files: [] }));
+  try {
+    await runtimeConfig.ensureLoaded();
+    const page = createAgentsPage({ ...pageContext(currentGateway, agents), runtimeConfig });
+    page.read().overview.onIdentityFieldChange("name", "Saved identity");
+    page.read().overview.onIdentitySave();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(request).toHaveBeenCalledWith("agents.update", {
+      agentId: "main",
+      name: "Saved identity",
+    });
+
+    page.read().overview.onModelChange("main", "fixture/selected");
+    page.read().overview.onModelFallbacksChange("main", ["fixture/anchor"]);
+    identityWrite.resolve();
+    await vi.runAllTimersAsync();
+    expect(config).toEqual({
+      agents: {
+        defaults: { model: "fixture/anchor" },
+        entries: {
+          main: {
+            identity: { name: "Saved identity" },
+            model: { primary: "fixture/selected", fallbacks: ["fixture/anchor"] },
+          },
+        },
+      },
+    });
+    expect(runtimeConfig.state.configFormDirty).toBe(false);
+    expect(hash).toBe("after-model");
+  } finally {
+    runtimeConfig.dispose();
+    client.stop();
+    vi.useRealTimers();
+  }
+});
 
 it("restores and saves a main-agent draft after route teardown on the original Gateway", async () => {
   const fixture = admissionFixture();

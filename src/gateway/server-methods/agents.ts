@@ -21,6 +21,8 @@ import {
   AgentDeletionTargetsPendingError,
   assertAgentDeletionTargetsUnchanged,
 } from "../../config/agent-workspace-roster-transition.js";
+import { redactConfigObject } from "../../config/redact-snapshot.js";
+import { loadGatewayRuntimeConfigSchema } from "../../config/runtime-schema.js";
 import {
   attachRuntimeConfigWriteApplication,
   createRuntimeConfigWriteApplication,
@@ -210,6 +212,7 @@ export const agentsHandlers: GatewayRequestHandlers = {
     }
     const nextConfig = configured ? applyAgentConfig(cfg, agentConfigUpdate) : cfg;
     const application = createAgentConfigApplication(respond);
+    let committed: Awaited<ReturnType<typeof updateAgentConfigEntry>>;
 
     try {
       let ensuredWorkspace: Awaited<ReturnType<typeof ensureAgentWorkspace>> | undefined;
@@ -275,7 +278,7 @@ export const agentsHandlers: GatewayRequestHandlers = {
         assertWorkspaceAccessCurrent();
       }
 
-      await updateAgentConfigEntry(
+      committed = await updateAgentConfigEntry(
         { ...agentConfigUpdate, assertCurrent: assertUploadAllowed },
         application.attach({}),
       );
@@ -299,7 +302,23 @@ export const agentsHandlers: GatewayRequestHandlers = {
     }
 
     if (await application.confirm()) {
-      respond(true, { ok: true, agentId }, undefined);
+      // A caller can edit other settings while this write applies. Return this
+      // commit's source and revision so those edits keep the correct CAS base.
+      respond(
+        true,
+        {
+          ok: true,
+          agentId,
+          ...(committed.persistedHash
+            ? { hash: context.configRevisionProjector.projectRawHash(committed.persistedHash) }
+            : {}),
+          config: redactConfigObject(
+            committed.persistedSourceConfig ?? committed.nextConfig,
+            loadGatewayRuntimeConfigSchema(cfg).uiHints,
+          ),
+        },
+        undefined,
+      );
     }
   },
   "agents.delete": async ({ params, respond, context }) => {

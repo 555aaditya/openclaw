@@ -13,7 +13,6 @@ import {
   registerAgentDeleteDrainRecoveryTests,
   registerAgentDeleteRollbackTests,
 } from "./agents-delete-recovery.test-support.js";
-import { registerAgentIdentityUpdateTests } from "./agents-identity-update.test-support.js";
 import {
   cleanupPath,
   createEnoentError,
@@ -32,6 +31,7 @@ import {
   mockCallArg,
   type MockAgentEntry,
 } from "./agents-mutate.test-support.js";
+import { registerAgentUpdateTests } from "./agents-update.test-support.js";
 function makeRootMetadata(size = 0) {
   return {
     containment: "best-effort" as const,
@@ -186,7 +186,11 @@ vi.mock("../../config/config.js", async (importOriginal) => {
       if (params.writeOptions) {
         getRuntimeConfigWriteApplication(params.writeOptions)?.claim()?.settle("applied");
       }
-      return { nextConfig: draft, result: mocks.omitConfigMutationResult ? undefined : result };
+      return {
+        nextConfig: draft,
+        persistedHash: "persisted-hash",
+        result: mocks.omitConfigMutationResult ? undefined : result,
+      };
     },
     transformConfigFileWithRetry: async (params: {
       writeOptions?: object;
@@ -551,6 +555,7 @@ beforeEach(() => {
 function createContext() {
   return {
     getRuntimeConfig: () => mocks.loadConfigReturn,
+    configRevisionProjector: { projectRawHash: (hash: string) => `opaque:${hash}` },
     chatAbortControllers: new Map(),
     chatQueuedTurns: new Map(),
     dedupe: new Map(),
@@ -590,6 +595,7 @@ function createHarness() {
     resume: () => resumeAgentDeletions(createContext() as never),
     expectTrashedWithinParent,
     expectNotTrashed,
+    expectNotFoundResponseAndNoWrite,
   };
 }
 
@@ -759,58 +765,7 @@ describe("agents.create", () => {
 });
 
 describe("agents.update", () => {
-  beforeEach(() => {
-    mocks.loadConfigReturn = agentConfig({
-      "test-agent": {
-        workspace: "/workspace/test-agent",
-        identity: { name: "Current Agent", theme: "steady", emoji: "🐢" },
-      },
-    });
-  });
-
-  it("rejects updating a nonexistent agent", async () => {
-    mocks.findAgentEntryIndex.mockReturnValue(-1);
-
-    const respond = await call("agents.update", { agentId: "nonexistent" });
-
-    expectNotFoundResponseAndNoWrite(respond);
-  });
-
-  it("returns not found when a concurrent delete wins the update race", async () => {
-    let findCallCount = 0;
-    mocks.findAgentEntryIndex.mockImplementation(() => {
-      findCallCount += 1;
-      return findCallCount >= 2 ? -1 : 0;
-    });
-
-    const respond = await call("agents.update", { agentId: "test-agent", model: "gpt-5.5" });
-
-    expectNotFoundResponseAndNoWrite(respond);
-  });
-
-  it("clears an existing model override", async () => {
-    mocks.loadConfigReturn = agentConfig(
-      {
-        "test-agent": {
-          workspace: "/workspace/test-agent",
-          model: "anthropic/claude-sonnet-4-6",
-        },
-      },
-      { model: { primary: "openai/gpt-5.6-luna" } },
-    );
-
-    const respond = await call("agents.update", { agentId: "test-agent", model: null });
-
-    expectRespondOk(respond, { ok: true, agentId: "test-agent" });
-    expectRecordFields(mockCallArg(mocks.applyAgentConfig, 0, 1), { model: null });
-    const persisted = expectRecordFields(mockCallArg(mocks.writeConfigFile), {});
-    const agents = expectRecordFields(persisted.agents, {});
-    const entries = expectRecordFields(agents.entries, {});
-    const agent = expectRecordFields(entries["test-agent"], {});
-    expect(agent).not.toHaveProperty("model");
-  });
-
-  registerAgentIdentityUpdateTests(createHarness());
+  registerAgentUpdateTests(createHarness());
 });
 
 describe("agents.delete", () => {

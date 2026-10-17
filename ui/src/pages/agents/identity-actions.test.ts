@@ -188,7 +188,7 @@ describe("agent identity actions", () => {
         order.push(method);
         config = { ...config, identityName: (params as { name: string }).name };
         hash = "hash-3";
-        return {};
+        return { config, hash };
       }
       throw new Error(`Unexpected method ${method}`);
     });

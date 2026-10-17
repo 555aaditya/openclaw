@@ -8,6 +8,7 @@ import type {
   AgentsListResult,
   ToolsCatalogResult,
 } from "../../api/types.ts";
+import type { ConfigWriteAck } from "../config/config-draft-model.ts";
 import { formatUiError } from "../format-error.ts";
 import type { GatewayConnectionSnapshot } from "../gateway-connection-lifecycle.ts";
 import {
@@ -161,8 +162,8 @@ type AgentIdentityUpdate = {
 export async function updateAgentIdentity(
   client: GatewayBrowserClient,
   update: AgentIdentityUpdate,
-): Promise<void> {
-  await client.request("agents.update", {
+): Promise<ConfigWriteAck> {
+  return await client.request<ConfigWriteAck>("agents.update", {
     agentId: update.agentId,
     ...(update.name ? { name: update.name } : {}),
     ...(update.emoji ? { emoji: update.emoji } : {}),

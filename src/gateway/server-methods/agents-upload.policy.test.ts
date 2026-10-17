@@ -18,6 +18,7 @@ import {
   type OpenClawTestState,
 } from "../../test-utils/openclaw-test-state.js";
 import { createDirectChatContext } from "../server-chat.agent-events.test-helpers.js";
+import { createTestConfigRevisionProjector } from "../server-reload-handlers.config.test-support.js";
 import { agentsHandlers } from "./agents.js";
 import type { GatewayClient } from "./client-types.js";
 
@@ -35,6 +36,7 @@ let identityPath: string;
 let serial = 0;
 let releaseConfigWriteListener: () => void;
 const context = createDirectChatContext({
+  configRevisionProjector: createTestConfigRevisionProjector(),
   getRuntimeConfig: () => config,
   getCommittedRuntimeConfig: () => config,
 });
@@ -195,7 +197,21 @@ it.each([
     if (accepted) {
       expect(respond).toHaveBeenCalledExactlyOnceWith(
         true,
-        method === "agents.update" ? updated : expect.anything(),
+        method === "agents.update"
+          ? {
+              ...updated,
+              hash: expect.any(String),
+              config: {
+                gateway: { uploads: { enabled: true } },
+                meta: expect.any(Object),
+                agents: {
+                  entries: {
+                    existing: { workspace, identity: { name: "Existing", avatar: inlineAvatar } },
+                  },
+                },
+              },
+            }
+          : expect.anything(),
         undefined,
       );
       expect(await readConfig()).toContain(inlineAvatar);
@@ -236,7 +252,23 @@ it("allows text-only edits to an existing inline avatar while uploads are disabl
   configureIdentity(inlineAvatar);
   disableUploads();
   await state.writeConfig(config);
-  expectSuccess(await call("agents.update", { name: "Text Only" }), updated);
+  expectSuccess(await call("agents.update", { name: "Text Only" }), {
+    ...updated,
+    hash: expect.any(String),
+    config: {
+      gateway: { uploads: { enabled: false } },
+      meta: expect.any(Object),
+      agents: {
+        entries: {
+          existing: {
+            workspace,
+            name: "Text Only",
+            identity: { name: "Text Only", avatar: inlineAvatar },
+          },
+        },
+      },
+    },
+  });
   expect(await readIdentity()).toContain("- Name: Text Only");
   await expectPersistedAvatar();
 });
