@@ -12,11 +12,6 @@ import {
 } from "../../../test/helpers/sqlite-statement-execution-counter.js";
 import { MAX_PAYLOAD_BYTES } from "../../gateway/payload-limits.js";
 import { rotateAgentEventLifecycleGeneration } from "../../infra/agent-events.js";
-import type {
-  SqliteWorkerOperations,
-  SqliteWorkerStore,
-} from "../../infra/sqlite-worker-contract.js";
-import * as workerStore from "../../infra/sqlite-worker-store.js";
 import { readOpenClawAgentDatabaseIdentity } from "../../state/openclaw-agent-db-identity.js";
 import { openOpenClawAgentDatabase } from "../../state/openclaw-agent-db.js";
 import { requireNativeSqliteDatabase } from "../../test-utils/native-sqlite.js";
@@ -31,6 +26,7 @@ import { writeSessionEntry } from "./session-accessor.sqlite-entry-store.js";
 import { createDurableSessionActorFactory } from "./session-actor-durable.js";
 import { readSessionPendingInputContext } from "./session-pending-input-history.js";
 import { readPendingInputHistoryInDatabase } from "./session-pending-input-history.kernel.js";
+import { interceptPendingInputWorker } from "./session-pending-input.test-support.js";
 import * as historyRuntime from "./session-transcript-worker-runtime.js";
 
 function withHistoryFixture(
@@ -57,22 +53,53 @@ function withHistoryFixture(
   });
 }
 
-function stageHistoryInput(
+async function stageHistoryInput(
   scope: Parameters<typeof stageSessionPendingInput>[0],
   runId: string,
   content: string,
   assertCurrent = () => {},
   timestamp = 1,
 ) {
-  return stageSessionPendingInput(scope, {
-    runId,
-    message: { role: "user", content, timestamp, idempotencyKey: `${runId}:user` },
-    assertCurrent,
-  });
+  return expectDefined(
+    await stageSessionPendingInput(scope, {
+      runId,
+      message: { role: "user", content, timestamp, idempotencyKey: `${runId}:user` },
+      assertCurrent,
+    }),
+    "Expected accepted input",
+  );
 }
 
-it("skips covered empty history and reads a newly staged input after its owner commits", async () => {
-  await withHistoryFixture(
+async function finishInputs(...receipts: (SessionPendingInputReceipt | undefined)[]) {
+  for (const receipt of receipts) {
+    receipt?.finish("interrupted");
+  }
+  await Promise.all(receipts.map((receipt) => receipt?.settled?.()));
+}
+
+function readOnce(
+  database: Parameters<typeof readPendingInputHistoryInDatabase>[0],
+  query: Parameters<typeof readPendingInputHistoryInDatabase>[1],
+) {
+  const counter = trackSqliteStatementExecutions(
+    requireNativeSqliteDatabase(database.db),
+    ["read"],
+    (sql) =>
+      query.includeTotal === false || /\bfrom\s+"?session_pending_inputs\b/i.test(sql)
+        ? "read"
+        : null,
+  );
+  try {
+    const page = readPendingInputHistoryInDatabase(database, query);
+    expect(counter.counts.read).toBe(1);
+    return page;
+  } finally {
+    counter.restore();
+  }
+}
+
+it("skips cached empty history after staging or switching windows", () =>
+  withHistoryFixture(
     "resident-pending-history",
     async ({ database, scope }) => {
       const identity = readOpenClawAgentDatabaseIdentity(database);
@@ -108,10 +135,9 @@ it("skips covered empty history and reads a newly staged input after its owner c
           "after-empty-read",
           "Retain this newly accepted input",
         );
-        expect(receipt).toBeDefined();
         expect(await listSessionPendingInputs(scope)).toMatchObject({
           total: 1,
-          items: [{ id: receipt?.inputId, state: "queued" }],
+          items: [{ id: receipt.inputId, state: "queued" }],
         });
 
         // A new empty current window cannot hide retained input from the old window.
@@ -119,21 +145,19 @@ it("skips covered empty history and reads a newly staged input after its owner c
         await actor.read(authority);
         expect(await listSessionPendingInputs(scope)).toMatchObject({
           total: 1,
-          items: [{ id: receipt?.inputId, state: "interrupted" }],
+          items: [{ id: receipt.inputId, state: "interrupted" }],
         });
       } finally {
         history.mockRestore();
-        receipt?.finish("interrupted");
-        await receipt?.settled?.();
+        await finishInputs(receipt);
         await actor.release();
       }
     },
     true,
-  );
-});
+  ));
 
-it("reuses the admitted physical owner for repeated pending history reads", async () => {
-  await withHistoryFixture("prepared-pending-history", async ({ database, scope }) => {
+it("reuses the admitted physical owner for repeated pending history reads", () =>
+  withHistoryFixture("prepared-pending-history", async ({ database, scope }) => {
     await listSessionPendingInputs(scope);
     const stat = vi.spyOn(fs, "statSync");
     const realpath = vi.spyOn(fs.realpathSync, "native");
@@ -147,37 +171,20 @@ it("reuses the admitted physical owner for repeated pending history reads", asyn
       stat.mockRestore();
       realpath.mockRestore();
     }
-  });
-});
+  }));
 
-it("serves empty pending history from its counted snapshot in one data read", async () => {
-  await withHistoryFixture("empty-pending-history", async ({ database, scope }) => {
-    const counter = trackSqliteStatementExecutions(
-      requireNativeSqliteDatabase(database.db),
-      ["pending"],
-      (query) => (/\bfrom\s+"?session_pending_inputs\b/i.test(query) ? "pending" : null),
-    );
-    try {
-      expect(readPendingInputHistoryInDatabase(database, scope)).toEqual({ rows: [], total: 0 });
-      expect(counter.counts.pending).toBe(1);
-    } finally {
-      counter.restore();
-    }
-  });
-});
+it("serves empty pending history from its counted snapshot in one data read", () =>
+  withHistoryFixture("empty-pending-history", async ({ database, scope }) => {
+    expect(readOnce(database, scope)).toEqual({ rows: [], total: 0 });
+  }));
 
-it("bounds materialized pending pages by bytes without truncating input or skipping its cursor", async () => {
-  await withHistoryFixture("pending-history-bytes", async ({ scope }) => {
+it("bounds pending pages by bytes without truncating inputs or skipping cursors", () =>
+  withHistoryFixture("pending-history-bytes", async ({ scope }) => {
     const content = "x".repeat(Math.floor(MAX_PAYLOAD_BYTES / 2));
     const receipts: SessionPendingInputReceipt[] = [];
     try {
       for (const runId of ["large-first", "large-second"]) {
-        receipts.push(
-          expectDefined(
-            await stageHistoryInput(scope, runId, content, undefined, 100),
-            "Expected accepted input custody",
-          ),
-        );
+        receipts.push(await stageHistoryInput(scope, runId, content, undefined, 100));
       }
       const page = await listSessionPendingInputs(scope);
       expect(page.items.map((input) => input.id)).toEqual([receipts[1]?.inputId]);
@@ -193,39 +200,21 @@ it("bounds materialized pending pages by bytes without truncating input or skipp
       expect(older.items[0]?.message.content === content).toBe(true);
       expect(older.nextBefore).toBeUndefined();
     } finally {
-      for (const receipt of receipts) {
-        receipt.finish("interrupted");
-      }
-      await Promise.all(receipts.map(async (receipt) => receipt.settled?.()));
+      await finishInputs(...receipts);
     }
-  });
-});
+  }));
 
-it("reads count-free context in one statement and includes later committed inputs", async () => {
-  await withHistoryFixture("pending-context", async ({ database, scope }) => {
+it("reads count-free context in one statement, including later commits", () =>
+  withHistoryFixture("pending-context", async ({ database, scope }) => {
     const read = () => {
-      const counter = trackSqliteStatementExecutions(
-        requireNativeSqliteDatabase(database.db),
-        ["read"],
-        () => "read",
-      );
-      try {
-        const page = readPendingInputHistoryInDatabase(database, { ...scope, includeTotal: false });
-        expect(counter.counts.read).toBe(1);
-        expect(page.total).toBeUndefined();
-        return page;
-      } finally {
-        counter.restore();
-      }
+      const page = readOnce(database, { ...scope, includeTotal: false });
+      expect(page.total).toBeUndefined();
+      return page;
     };
     expect(read().rows).toEqual([]);
-    const receipt = expectDefined(
-      await stageHistoryInput(scope, "later-input", "Retained after the empty read"),
-      "Expected accepted input custody",
-    );
+    const receipt = await stageHistoryInput(scope, "later-input", "Retained after the empty read");
     try {
-      receipt.finish("interrupted");
-      await receipt.settled?.();
+      await finishInputs(receipt);
       expect(read().rows).toMatchObject([{ input_id: receipt.inputId, state: "interrupted" }]);
       expect(await readSessionPendingInputContext(scope)).toMatchObject({
         items: [
@@ -237,14 +226,12 @@ it("reads count-free context in one statement and includes later committed input
         ],
       });
     } finally {
-      receipt.finish("interrupted");
-      await receipt.settled?.();
+      await finishInputs(receipt);
     }
-  });
-});
+  }));
 
-it("reads pending history and exact messages without caller-thread data SQL", async () => {
-  await withHistoryFixture("pending-history", async ({ database, scope }) => {
+it("reads pending history and exact messages without caller-thread data SQL", () =>
+  withHistoryFixture("pending-history", async ({ database, scope }) => {
     let aborted = false;
     const receipt = await stageHistoryInput(
       scope,
@@ -257,20 +244,15 @@ it("reads pending history and exact messages without caller-thread data SQL", as
       },
       100,
     );
-    expect(receipt).toBeDefined();
-    if (!receipt) {
-      throw new Error("Expected accepted input");
-    }
-    const stale = await stageSessionPendingInput(scope, {
-      runId: "stale",
-      message: { ...receipt.message, idempotencyKey: "stale:user" },
-      assertCurrent: () => {},
-    });
-    if (!stale) {
-      throw new Error("Expected stale fixture");
-    }
-    stale.finish("interrupted");
-    await stale.settled?.();
+    const stale = expectDefined(
+      await stageSessionPendingInput(scope, {
+        runId: "stale",
+        message: { ...receipt.message, idempotencyKey: "stale:user" },
+        assertCurrent: () => {},
+      }),
+      "Expected stale fixture",
+    );
+    await finishInputs(stale);
     // A persisted pre-restart row has no process-local custody.
     database.db
       .prepare("UPDATE session_pending_inputs SET state = 'queued' WHERE input_id = ?")
@@ -298,13 +280,10 @@ it("reads pending history and exact messages without caller-thread data SQL", as
     expect(await readSessionPendingInput(scope, receipt.inputId)).toMatchObject({
       state: "cancelled",
     });
-  });
-});
+  }));
 
-it("keeps a recovered owner queued when its generation changes after the history snapshot", async ({
-  signal,
-}) => {
-  await withHistoryFixture("history-recovery", async ({ scope }) => {
+it("keeps recovery queued across a post-snapshot generation change", ({ signal }) =>
+  withHistoryFixture("history-recovery", async ({ scope }) => {
     const input = {
       runId: "recover-during-history",
       requestFingerprint: "history-recovery",
@@ -357,8 +336,7 @@ it("keeps a recovered owner queued when its generation changes after the history
         awaitGateBeforeSettlement(readReady.promise, history, "History skipped its reader"),
         signal,
       );
-      original.finish("interrupted");
-      await original.settled?.();
+      await finishInputs(original);
       rotateAgentEventLifecycleGeneration();
       recovered = expectDefined(
         await stageSessionPendingInput(scope, input),
@@ -376,54 +354,28 @@ it("keeps a recovered owner queued when its generation changes after the history
       resume.resolve();
       await Promise.allSettled([history]);
       spy.mockRestore();
-      original.finish("interrupted");
-      recovered?.finish("interrupted");
-      await Promise.all([original.settled?.(), recovered?.settled?.()]);
+      await finishInputs(original, recovered);
     }
-  });
-});
+  }));
 
-it("publishes an acknowledged interruption after the ordinary worker reply is lost", async () => {
-  await withHistoryFixture("lost-history-reply", async ({ database, scope }) => {
+it("publishes an acknowledged interruption after losing the worker reply", () =>
+  withHistoryFixture("lost-history-reply", async ({ database, scope }) => {
     const receipt = await stageHistoryInput(scope, "lost", "Synthetic lost reply");
-    if (!receipt) {
-      throw new Error("Expected retained input");
-    }
-    receipt.finish("interrupted");
-    await receipt.settled?.();
+    await finishInputs(receipt);
     database.db
       .prepare("UPDATE session_pending_inputs SET state = 'queued' WHERE input_id = ?")
       .run(receipt.inputId);
-    const original = workerStore.runSqliteWorkerStoreOperation;
     let executions = 0;
-    const spy = vi
-      .spyOn(workerStore, "runSqliteWorkerStoreOperation")
-      .mockImplementation(
-        <Operations extends SqliteWorkerOperations, T>(
-          store: SqliteWorkerStore<Operations>,
-          operation: (scope: Pick<SqliteWorkerStore<Operations>, "execute">) => T | Promise<T>,
-          stateContext?: Parameters<typeof original>[2],
-          assertOperationCurrent?: Parameters<typeof original>[3],
-          createAdmission?: Parameters<typeof original>[4],
-        ) =>
-          original(
-            store,
-            (worker) =>
-              operation({
-                execute: async (command, options) => {
-                  const value = await worker.execute(command, options);
-                  if (command.type === "session.pendingInputs.interruptHistory") {
-                    executions++;
-                    throw new Error("Synthetic result delivery failure");
-                  }
-                  return value;
-                },
-              }),
-            stateContext,
-            assertOperationCurrent,
-            createAdmission,
-          ),
-      );
+    const spy = interceptPendingInputWorker((worker) => ({
+      execute: async (command, options) => {
+        const value = await worker.execute(command, options);
+        if (command.type === "session.pendingInputs.interruptHistory") {
+          executions++;
+          throw new Error("Synthetic result delivery failure");
+        }
+        return value;
+      },
+    }));
     try {
       expect(await readSessionPendingInput(scope, receipt.inputId)).toMatchObject({
         state: "interrupted",
@@ -437,5 +389,4 @@ it("publishes an acknowledged interruption after the ordinary worker reply is lo
     } finally {
       spy.mockRestore();
     }
-  });
-});
+  }));
