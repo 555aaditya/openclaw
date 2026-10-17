@@ -212,6 +212,7 @@ describe("tsdown config", () => {
       requireStandaloneRuntimeGraph("worker/file-tool-read.worker"),
       requireStandaloneRuntimeGraph("worker/gateway-state-owner-heartbeat.worker"),
       requireStandaloneRuntimeGraph("worker/image-processor.worker"),
+      requireStandaloneRuntimeGraph("worker/session-transcript.worker"),
       requireStandaloneRuntimeGraph("worker/sqlite-store.worker"),
       requireStandaloneRuntimeGraph("worker/sqlite-source-revision.worker"),
       requireStandaloneRuntimeGraph("worker/openclaw-state-read.worker"),
