@@ -69,6 +69,7 @@ it.each([50, 101])("loads a %i-child roster and reconciles renamed rows", async 
   expect(list).toHaveBeenCalledWith({
     spawnedBy: parentKey,
     limit: 100,
+    pageSize: 100,
     includeGlobal: false,
     includeUnknown: false,
     configuredAgentsOnly: true,

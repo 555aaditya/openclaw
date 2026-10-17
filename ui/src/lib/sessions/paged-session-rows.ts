@@ -11,7 +11,6 @@ export async function fetchPagedSessionRows(params: {
     | (Pick<SessionsListResult, "totalCount" | "hasMore" | "nextOffset"> & { count: number })
     | undefined;
   isCurrent?: () => boolean;
-  mapPageRows?: (rows: GatewaySessionRow[]) => GatewaySessionRow[];
   missingResultError: string;
   stalledPaginationError?: string;
   incompletePaginationError?: string;
@@ -50,8 +49,7 @@ export async function fetchPagedSessionRows(params: {
       if (totalCount !== undefined) {
         expectedTotal = Math.max(expectedTotal ?? 0, totalCount);
       }
-      const rows = params.mapPageRows?.(result.sessions) ?? result.sessions;
-      for (const row of rows) {
+      for (const row of result.sessions) {
         rowsByKey.set(row.key, row);
       }
       receivedCount = pagination?.count ?? rowsByKey.size;

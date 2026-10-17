@@ -1,16 +1,13 @@
 import { asNullableRecord } from "@openclaw/normalization-core/record-coerce";
 import { GatewayRequestError } from "../../api/gateway.ts";
 import type { GatewaySessionRow, SessionsListResult } from "../../api/types.ts";
-import { childSessionListQuery } from "./child-session-data.ts";
+import { childSessionListQuery, fetchChildSessionRows } from "./child-session-data.ts";
 import type { SessionCapability, SessionListSnapshot, SessionRowObservation } from "./index.ts";
-import { fetchPagedSessionRows } from "./paged-session-rows.ts";
 import {
   normalizeAgentId,
   areUiSessionKeysEquivalent,
   parseAgentSessionKey,
 } from "./session-key.ts";
-
-const SWARM_SESSION_PAGE_SIZE = 10_000;
 
 function readSwarmEnabled(value: unknown): boolean | undefined {
   if (typeof value === "boolean") {
@@ -52,30 +49,11 @@ export function mergeSwarmSessionRows(
   return [...merged.values()];
 }
 
-export async function hydrateSwarmSessionRows(params: {
-  sessions: Pick<SessionCapability, "list" | "inheritRow">;
-  parentKey: string;
-  isCurrent: () => boolean;
-  initialResult?: SessionsListResult;
-}): Promise<GatewaySessionRow[] | null> {
-  return fetchPagedSessionRows({
-    list: (offset) =>
-      params.sessions.list({
-        ...childSessionListQuery(params.parentKey, SWARM_SESSION_PAGE_SIZE),
-        offset,
-      }),
-    initialResult: params.initialResult,
-    isCurrent: params.isCurrent,
-    missingResultError: "child session list returned no result",
-    mapPageRows: (rows) => {
-      const runtimeSampledAt = Date.now();
-      return rows.map((row) => params.sessions.inheritRow({ ...row, runtimeSampledAt }, row));
-    },
-  });
-}
-
 type SwarmHydrationParams = {
-  sessions: Pick<SessionCapability, "list" | "inheritRow" | "observeRow" | "observeList">;
+  sessions: Pick<
+    SessionCapability,
+    "refreshList" | "listSnapshot" | "inheritRow" | "observeRow" | "observeList"
+  >;
   agentId?: string;
   readParent: (refresh?: boolean) => Promise<GatewaySessionRow | null>;
   parentKey: string;
@@ -113,6 +91,7 @@ export class SwarmRosterHydrator {
   private parentSummary = "";
   private children: ReturnType<SessionCapability["observeList"]> | null = null;
   private childResult: SessionsListResult | null = null;
+  private childRequest: Promise<unknown> | null = null;
   private childRows: GatewaySessionRow[] = [];
   private childrenLoading = false;
   private childReadVersion = 0;
@@ -181,7 +160,7 @@ export class SwarmRosterHydrator {
       },
     );
     this.children = params.sessions.observeList(
-      childSessionListQuery(params.parentKey, SWARM_SESSION_PAGE_SIZE),
+      childSessionListQuery(params.parentKey),
       (snapshot) => {
         if (isCurrent()) {
           this.applyChildren(snapshot);
@@ -370,6 +349,37 @@ export class SwarmRosterHydrator {
       return;
     }
     this.childResult = result;
+    const pagination = snapshot.pagination;
+    const incomplete =
+      (pagination?.hasMore ?? result.hasMore) ||
+      (pagination?.count ?? result.sessions.length) <
+        (pagination?.totalCount ?? result.totalCount ?? 0);
+    if (incomplete) {
+      if (this.childRequest) {
+        return;
+      }
+      const generation = this.generation;
+      const isCurrent = () => generation === this.generation;
+      const request = fetchChildSessionRows({
+        sessions: params.sessions,
+        parentKey: params.parentKey,
+        initialResult: result,
+        isCurrent,
+      })
+        .catch(() => {
+          if (isCurrent()) {
+            this.retry("children");
+          }
+        })
+        .finally(() => {
+          if (this.childRequest === request) {
+            this.childRequest = null;
+          }
+        });
+      this.childRequest = request;
+      return;
+    }
+    const rows = result.sessions;
     const previousChildren = new Map(this.childRows.map((row) => [row.key, row]));
     const described = new Map(
       this.parentRow?.swarm?.groups.flatMap((group) =>
@@ -378,11 +388,11 @@ export class SwarmRosterHydrator {
         ),
       ),
     );
-    const changedMembers = result.sessions.filter((row) => {
+    const changedMembers = rows.filter((row) => {
       const previous = previousChildren.get(row.key);
       return previous?.swarmGroupId !== row.swarmGroupId || previous?.status !== row.status;
     });
-    const currentKeys = new Set(result.sessions.map((row) => row.key));
+    const currentKeys = new Set(rows.map((row) => row.key));
     const removedMember = [...described.keys()].some(
       (key) => previousChildren.has(key) && !currentKeys.has(key),
     );
@@ -399,37 +409,21 @@ export class SwarmRosterHydrator {
       // Child membership can change without invalidating the parent's descriptor revision.
       void this.readParent(true);
     }
-    const generation = this.generation;
-    const childReadVersion = this.childReadVersion;
-    const isCurrent = () => generation === this.generation && this.childResult === result;
-    void hydrateSwarmSessionRows({
-      sessions: params.sessions,
-      parentKey: params.parentKey,
-      initialResult: result,
-      isCurrent,
-    })
-      .then((rows) => {
-        if (!rows || !isCurrent()) {
-          return;
-        }
-        const parent = this.parentRow;
-        this.childRows = rows;
-        this.rows = parent ? mergeSwarmSessionRows(this.childRows, [parent]) : [];
-        this.childrenRead = true;
-        this.hydrated = true;
-        this.pendingChildRead = childReadVersion < this.requiredChildReadVersion;
-        if (!this.pendingChildRead) {
-          this.recovered("children");
-        }
-        // A child launched during this read is still missing from it.
-        this.refreshNewChildren();
-        params.onRows(this.rows);
-      })
-      .catch(() => {
-        if (isCurrent()) {
-          this.retry("children");
-        }
-      });
+    const parent = this.parentRow;
+    const runtimeSampledAt = Date.now();
+    this.childRows = rows.map((row) =>
+      params.sessions.inheritRow({ ...row, runtimeSampledAt }, row),
+    );
+    this.rows = parent ? mergeSwarmSessionRows(this.childRows, [parent]) : [];
+    this.childrenRead = true;
+    this.hydrated = true;
+    this.pendingChildRead = this.childReadVersion < this.requiredChildReadVersion;
+    if (!this.pendingChildRead) {
+      this.recovered("children");
+    }
+    // A child launched during this read is still missing from it.
+    this.refreshNewChildren();
+    params.onRows(this.rows);
   }
 
   private reset(key: string): void {
@@ -444,6 +438,7 @@ export class SwarmRosterHydrator {
     this.parentSummary = "";
     this.children = null;
     this.childResult = null;
+    this.childRequest = null;
     this.childRows = [];
     this.childrenLoading = false;
     this.childReadVersion = 0;

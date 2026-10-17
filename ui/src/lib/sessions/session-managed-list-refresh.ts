@@ -171,10 +171,13 @@ export function createSessionManagedListRefresh(
         publishManagedList(entry, { ...entry.snapshot, loading: true, error: null }, isCurrent);
         try {
           const generation = entry.readGeneration;
+          // One-shot traversals also page without a mounted view to keep alive.
+          const requiresView = entry.listeners.size > 0;
           const readIsCurrent = () =>
             isCurrent() &&
             (!requestParams.pageSize ||
-              (generation === entry.readGeneration && isPageActive() && entry.listeners.size > 0));
+              (generation === entry.readGeneration &&
+                (!requiresView || (isPageActive() && entry.listeners.size > 0))));
           const response = await requestSessionListParams(
             scope.client,
             requestParams,

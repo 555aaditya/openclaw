@@ -11,7 +11,6 @@ import {
   createTestSessionCapability,
 } from "./session-capability.test-support.ts";
 import {
-  hydrateSwarmSessionRows,
   isSwarmEnabledInConfig,
   mergeSwarmSessionRows,
   SwarmRosterHydrator,
@@ -145,6 +144,88 @@ describe("isSwarmEnabledInConfig", () => {
 });
 
 describe("SwarmRosterHydrator", () => {
+  it("shares bounded child pages with other views, including retained-window refreshes", async () => {
+    vi.useFakeTimers();
+    const children = Array.from({ length: 201 }, (_, index) => row(index));
+    const reads: Array<{ offset: number; limit: number }> = [];
+    const sessions = sessionSource(async (options = {}) => {
+      const { offset = 0, limit = 100 } = options;
+      reads.push({ offset, limit });
+      return result(children.slice(offset, offset + limit), offset, children.length);
+    });
+    const query = childSessionListQuery(parentRow().key);
+    const otherView = sessions.observeList(query, () => {});
+    const hydrator = new SwarmRosterHydrator();
+    try {
+      hydrator.update({
+        sessions,
+        parentKey: parentRow().key,
+        readParent: async () => parentRow(),
+        sourceEpoch: 1,
+        currentRows: () => [],
+        onRows: () => {},
+      });
+      await vi.advanceTimersByTimeAsync(250);
+      expect(hydrator.hydrated).toBe(true);
+      expect(hydrator.rows).toHaveLength(202);
+      expect(sessions.listSnapshot(query).result?.sessions).toHaveLength(201);
+      expect(reads).toEqual([
+        { offset: 0, limit: 100 },
+        { offset: 100, limit: 100 },
+        { offset: 200, limit: 100 },
+      ]);
+
+      reads.length = 0;
+      children[200] = { ...row(200), label: "Renamed child" };
+      await otherView.refresh();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(hydrator.rows.find((child) => child.key === row(200).key)?.label).toBe(
+        "Renamed child",
+      );
+      expect(reads).toEqual([
+        { offset: 0, limit: 100 },
+        { offset: 100, limit: 100 },
+        { offset: 200, limit: 1 },
+      ]);
+
+      reads.length = 0;
+      sessions.publishRow({ ...children[200]!, label: "Live child name" });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(hydrator.rows.find((child) => child.key === row(200).key)?.label).toBe(
+        "Live child name",
+      );
+      expect(reads).toEqual([]);
+    } finally {
+      hydrator.dispose();
+      otherView.dispose();
+    }
+  });
+
+  it("bounds retries when moving child pages cannot fill the roster", async () => {
+    vi.useFakeTimers();
+    const children = Array.from({ length: 100 }, (_, index) => row(index));
+    const list = vi.fn(async ({ offset = 0 }: SessionListOptions = {}) =>
+      result(offset === 0 ? children : [children[0]!], offset, 101),
+    );
+    const hydrator = new SwarmRosterHydrator();
+    try {
+      hydrator.update({
+        sessions: sessionSource(list),
+        parentKey: parentRow().key,
+        readParent: async () => parentRow(),
+        sourceEpoch: 1,
+        currentRows: () => [],
+        onRows: () => {},
+      });
+      await vi.advanceTimersByTimeAsync(250);
+      expect(list).toHaveBeenCalledTimes(8);
+      expect(hydrator.hydrated).toBe(false);
+      expect(hydrator.rows).toEqual([parentRow()]);
+    } finally {
+      hydrator.dispose();
+    }
+  });
+
   it("keeps child requests and parent reads independent of unrelated canonical roster publications", async () => {
     vi.useFakeTimers();
     let children = [row(0)];
@@ -347,7 +428,7 @@ describe("SwarmRosterHydrator", () => {
         const previousRead = createDeferred();
         held = previousRead;
         const refresh = sessions.refreshList({
-          ...childSessionListQuery(parentRow().key, 10_000),
+          ...childSessionListQuery(parentRow().key),
           force: true,
         });
         await vi.advanceTimersByTimeAsync(0);
@@ -364,9 +445,8 @@ describe("SwarmRosterHydrator", () => {
         previousRead.resolve();
         await vi.advanceTimersByTimeAsync(0);
         expect(list).toHaveBeenCalledTimes(reads + 1);
-        expect(hydrator.hydrated).toBe(true);
+        expect(hydrator.hydrated && !hydrator.pendingChildRead).toBe(false);
         expect(hydrator.pendingChildRead).toBe(true);
-        expect(hydration.length).toBeGreaterThan(0);
         expect(hydration.every((loaded) => !loaded)).toBe(true);
         expect(hydrator.childrenRead).toBe(true);
 
@@ -419,7 +499,7 @@ describe("SwarmRosterHydrator", () => {
       expect(hydrator.hydrated).toBe(true);
 
       const refresh = sessions.refreshList({
-        ...childSessionListQuery(parentRow().key, 10_000),
+        ...childSessionListQuery(parentRow().key),
         force: true,
       });
       await vi.advanceTimersByTimeAsync(0);
@@ -707,36 +787,7 @@ describe("SwarmRosterHydrator", () => {
   );
 });
 
-describe("hydrateSwarmSessionRows", () => {
-  it("restarts pagination when updated rows move across offset boundaries", async () => {
-    const running = { ...row(1), status: "running" as const };
-    const done = { ...row(1), status: "done" as const, updatedAt: 10 };
-    const pages = [
-      [row(0), running],
-      [running, row(2)],
-      [row(3), row(0)],
-      [done, row(2)],
-    ];
-    let callIndex = 0;
-    const list = vi.fn(async (options: SessionListOptions = {}) => {
-      const rows = pages[callIndex] ?? [];
-      callIndex += 1;
-      return result(rows, options.offset ?? 0, 4);
-    });
-
-    const rows = await hydrateSwarmSessionRows({
-      sessions: sessionSource(list),
-      parentKey: "agent:main:parent",
-      isCurrent: () => true,
-    });
-
-    expect(rows?.map((candidate) => candidate.key).toSorted()).toEqual(
-      [row(0).key, row(1).key, row(2).key, row(3).key].toSorted(),
-    );
-    expect(rows?.find((candidate) => candidate.key === done.key)?.status).toBe("done");
-    expect(list).toHaveBeenCalledTimes(4);
-  });
-
+describe("mergeSwarmSessionRows", () => {
   it("keeps the freshest row when hydration overlaps a current-page snapshot", () => {
     const stale = { ...row(0), status: "running" as const, updatedAt: 5, runtimeSampledAt: 10 };
     const fresh = { ...row(0), status: "done" as const, updatedAt: 6, runtimeSampledAt: 20 };

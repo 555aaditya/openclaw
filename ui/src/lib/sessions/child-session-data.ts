@@ -7,10 +7,11 @@ import type { SessionListSnapshot } from "./session-capability.ts";
 // Custom larger groups keep paging through the bounded retry loop below.
 const CHILD_SESSION_LIST_PAGE_SIZE = 100;
 
-export function childSessionListQuery(parentKey: string, pageSize = CHILD_SESSION_LIST_PAGE_SIZE) {
+export function childSessionListQuery(parentKey: string) {
   return {
     spawnedBy: parentKey,
-    limit: pageSize,
+    limit: CHILD_SESSION_LIST_PAGE_SIZE,
+    pageSize: CHILD_SESSION_LIST_PAGE_SIZE,
     includeGlobal: false,
     includeUnknown: false,
     configuredAgentsOnly: true,

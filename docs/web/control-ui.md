@@ -195,7 +195,8 @@ a fallback wait indicator instead of named child activity, its clock measures
 the current idle interval from the parent’s latest recorded run end, independently
 of loaded handoff history. Active children alone do not invent a wait for a
 parent that has never run.
-The panel loads all child pages automatically and groups running and finished
+The panel and swarm progress share child-session pages of up to 100 rows,
+including refreshes. They load all pages automatically and group running and finished
 work, keeping children waiting on their own
 descendants under **Running**. It shows elapsed time and available tool activity,
 and opens each child's existing view-only transcript beside the parent. Running
