@@ -3,7 +3,10 @@ import path from "node:path";
 import { expectDefined } from "@openclaw/normalization-core";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { WORKSPACE_BOOTSTRAP_FILENAMES } from "../../agents/workspace.js";
-import { getRuntimeConfigWriteApplication } from "../../config/runtime-write-application.js";
+import {
+  getRuntimeConfigWriteApplication,
+  type RuntimeConfigWriteApplicationStatus,
+} from "../../config/runtime-write-application.js";
 import { memorySessionActorOwners } from "../../config/sessions/session-actor-memory-owner.js";
 import { FsSafeError, root, type ReadResult } from "../../infra/fs-safe.js";
 import { resumeAgentDeletions } from "../server-agent-deletion-recovery.js";
@@ -69,6 +72,7 @@ const mocks = vi.hoisted(() => ({
     removedBindings: 0,
   })),
   writeConfigFile: vi.fn(async (_nextConfig?: unknown, _writeOptions?: unknown) => {}),
+  configApplicationStatus: vi.fn<() => RuntimeConfigWriteApplicationStatus>(() => "applied"),
   omitConfigMutationResult: false,
   ensureAgentWorkspace: vi.fn(
     async (params?: { dir?: string }): Promise<{ dir: string; identityPathCreated: boolean }> => ({
@@ -185,8 +189,9 @@ vi.mock("../../config/config.js", async (importOriginal) => {
       });
       await mocks.writeConfigFile(draft, params.writeOptions);
       mocks.loadConfigReturn = draft;
-      if (params.writeOptions) {
-        getRuntimeConfigWriteApplication(params.writeOptions)?.claim()?.settle("applied");
+      const applicationStatus = mocks.configApplicationStatus();
+      if (params.writeOptions && applicationStatus !== "unclaimed") {
+        getRuntimeConfigWriteApplication(params.writeOptions)?.claim()?.settle(applicationStatus);
       }
       return { nextConfig: draft, result: mocks.omitConfigMutationResult ? undefined : result };
     },
@@ -204,8 +209,9 @@ vi.mock("../../config/config.js", async (importOriginal) => {
       });
       await mocks.writeConfigFile(transformed.nextConfig);
       mocks.loadConfigReturn = transformed.nextConfig;
-      if (params.writeOptions) {
-        getRuntimeConfigWriteApplication(params.writeOptions)?.claim()?.settle("applied");
+      const applicationStatus = mocks.configApplicationStatus();
+      if (params.writeOptions && applicationStatus !== "unclaimed") {
+        getRuntimeConfigWriteApplication(params.writeOptions)?.claim()?.settle(applicationStatus);
       }
       return {
         path: "/tmp/openclaw/config.json",
@@ -477,6 +483,7 @@ afterEach(() => {
 beforeEach(() => {
   vi.mocked(root).mockReset();
   mocks.writeConfigFile.mockReset().mockResolvedValue(undefined);
+  mocks.configApplicationStatus.mockReset().mockReturnValue("applied");
   mocks.omitConfigMutationResult = false;
   mocks.sharedAuthStoreOwnership = { location: "legacy-main" };
   mocks.migrateLegacyMainSessionKeys.mockReset().mockResolvedValue({
@@ -701,6 +708,48 @@ describe("agents.create", () => {
   });
 
   const create = (params: Record<string, unknown>) => call("agents.create", params);
+  it.each(["failed", "restart-pending", "unclaimed"] as const)(
+    "retains the committed agent when onboarding config application is %s",
+    async (status) => {
+      mocks.loadConfigReturn.session = { mainKey: "home" };
+      mocks.configApplicationStatus.mockReturnValue(status);
+      mocks.prepareAgentOnboarding.mockResolvedValueOnce({
+        expectedConfigHash: "test-hash",
+        assertCurrent: vi.fn(),
+      });
+
+      const respond = await create({
+        agentId: "bot-stable",
+        name: "New agent",
+        onboarding: true,
+      });
+
+      expectRespondOk(respond, {
+        ok: true,
+        agentId: "bot-stable",
+        name: "New agent",
+        workspace: "/resolved/workspace/bot-stable",
+        agentDir: "/agents/test-agent",
+        onboarding: {
+          status: "error",
+          sessionKey: "agent:bot-stable:home",
+          error: expect.stringContaining(`not confirmed (${status})`),
+        },
+      });
+      expect(respond).toHaveBeenCalledOnce();
+      expect(mocks.writeConfigFile).toHaveBeenCalledOnce();
+      expect(mocks.loadConfigReturn).toMatchObject({
+        agents: { entries: { "bot-stable": { name: "New agent" } } },
+      });
+      expect(mocks.completeAgentOnboarding).not.toHaveBeenCalled();
+    },
+  );
+  it("retains the existing unconfirmed-application error for creation without onboarding", async () => {
+    mocks.configApplicationStatus.mockReturnValue("failed");
+    expectRespondErrorContaining(await create({ name: "Test Agent" }), "not confirmed (failed)");
+    expect(mocks.writeConfigFile).toHaveBeenCalledOnce();
+    expect(mocks.completeAgentOnboarding).not.toHaveBeenCalled();
+  });
   it.each(["completed", "error"] as const)(
     "returns the created agent even when onboarding is $status",
     async (status) => {

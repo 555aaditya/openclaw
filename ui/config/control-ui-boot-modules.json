@@ -782,6 +782,7 @@
   "ui/src/i18n/locales/en-skill-library.ts",
   "ui/src/i18n/locales/en-skills-browser.ts",
   "ui/src/i18n/locales/en.ts",
+  "ui/src/lib/agents/creation-recovery.ts",
   "ui/src/lib/agents/display.ts",
   "ui/src/lib/agents/identity.ts",
   "ui/src/lib/agents/index.ts",

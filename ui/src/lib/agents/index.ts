@@ -3,7 +3,6 @@ import { normalizeUniqueTrimmedStringList } from "@openclaw/normalization-core/s
 import { registerListener } from "../../../../src/shared/listeners.js";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import type {
-  AgentsCreateResult,
   AgentsFilesGetResult,
   AgentsFilesListResult,
   AgentsListResult,
@@ -17,6 +16,7 @@ import {
   formatMissingOperatorReadScopeMessage,
   isMissingOperatorReadScopeError,
 } from "../gateway-errors.ts";
+import { createAgentCreationRecovery, type AgentCreationResult } from "./creation-recovery.ts";
 import type { AgentsPanel } from "./panels.ts";
 import {
   buildToolsEffectiveRequestKey,
@@ -70,10 +70,6 @@ type AgentCapabilityState = {
   agentCreationPhase?: "creating";
   pendingAgent?: GatewayAgentRow;
   recentlyCreatedAgentId?: string;
-};
-
-type AgentCreationResult = AgentsCreateResult & {
-  onboarding: NonNullable<AgentsCreateResult["onboarding"]>;
 };
 
 export type AgentCapability = ReturnType<typeof createAgentCapability>;
@@ -197,7 +193,8 @@ export function createAgentCapability(gateway: AgentGateway) {
   const listeners = new Set<(state: AgentCapabilityState) => void>();
   let disposed = false;
   let agentsRequest: Promise<AgentsListResult | null> | null = null;
-  let creatingAgentId: string | null = null;
+  let creationFlight: object | null = null;
+  const creations = createAgentCreationRecovery();
 
   const retireAgentsRequest = () => {
     agentsRequest = null;
@@ -336,7 +333,7 @@ export function createAgentCapability(gateway: AgentGateway) {
     state.client = snapshot.client;
     state.connected = connected;
     if (connectionChanged && (clientChanged || !connected)) {
-      creatingAgentId = null;
+      creationFlight = null;
       state.agentCreationPhase = undefined;
       state.pendingAgent = undefined;
       state.recentlyCreatedAgentId = undefined;
@@ -368,12 +365,14 @@ export function createAgentCapability(gateway: AgentGateway) {
       if (!client || !state.connected || disposed || state.agentCreationPhase) {
         return null;
       }
-      const agentId = `bot-${crypto.randomUUID()}`;
-      creatingAgentId = agentId;
+      const attempt = creations.prepare(client, name);
+      const { agentId } = attempt;
+      const flight = {};
+      creationFlight = flight;
       const isCurrent = () =>
-        !disposed && state.client === client && state.connected && creatingAgentId === agentId;
+        !disposed && state.client === client && state.connected && creationFlight === flight;
       state.agentCreationPhase = "creating";
-      state.pendingAgent = { id: agentId, name };
+      state.pendingAgent = { id: agentId, name: attempt.name };
       publish();
       try {
         // The UI can open a display-only chat immediately. Persistence still waits
@@ -388,12 +387,8 @@ export function createAgentCapability(gateway: AgentGateway) {
         }
         // The creation owner verifies inference with the opening message before
         // persistence, then returns the saved conversation in the same receipt.
-        const created = await client.request<AgentCreationResult>("agents.create", {
-          agentId,
-          name,
-          onboarding: true,
-        });
-        if (!isCurrent()) {
+        const created = await attempt.execute(isCurrent);
+        if (!created || !isCurrent()) {
           return null;
         }
         // Publish the authoritative create receipt immediately. Config events own
@@ -411,8 +406,8 @@ export function createAgentCapability(gateway: AgentGateway) {
         state.agentsError = null;
         return created;
       } finally {
-        if (creatingAgentId === agentId) {
-          creatingAgentId = null;
+        if (creationFlight === flight) {
+          creationFlight = null;
           state.agentCreationPhase = undefined;
           state.pendingAgent = undefined;
           publish();
@@ -470,6 +465,7 @@ export function createAgentCapability(gateway: AgentGateway) {
       listeners.clear();
       fileRequests.clear();
       files.clear();
+      creations.dispose();
       retireAgentsRequest();
     },
   };

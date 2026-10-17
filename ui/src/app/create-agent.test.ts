@@ -5,17 +5,19 @@ import { createDeferred } from "../../../test/helpers/promise.js";
 import type { GatewayBrowserClient } from "../api/gateway.ts";
 import type { AgentsListResult } from "../api/types.ts";
 import { locationForRoute, routePageSpec, type RouteId } from "../app-route-paths.ts";
+import { agentCreationRejection } from "../lib/agents/creation.test-support.ts";
 import { createAgentCapability } from "../lib/agents/index.ts";
 import { SESSION_FACE_PREFERENCE_PARAM } from "../lib/sessions/route-navigation.ts";
-import "../lib/toast-host.ts";
-import "../pages/chat/pending-session-create.tsx";
-import "../test-helpers/app-sidebar-suite.ts";
 import {
   createContext,
   createGatewayHarness,
   createSessionsHarness,
   mountSidebarContext,
 } from "../test-helpers/app-sidebar.ts";
+import "../lib/toast-host.ts";
+import "../pages/chat/pending-session-create.tsx";
+import "../test-helpers/app-sidebar-suite.ts";
+import { gatewayHelloForMethods } from "../test-helpers/gateway-methods.ts";
 import { createAgentSelectionCapability } from "./agent-selection.ts";
 import { createChatSubmissions } from "./chat-submissions.ts";
 import type { ApplicationContext } from "./context.ts";
@@ -43,12 +45,23 @@ async function fixture(
     if (method === "agents.list") {
       return structuredClone(roster);
     }
+    if (method === "config.get") {
+      return {
+        exists: true,
+        valid: true,
+        sourceConfig: {
+          agents: {
+            entries: Object.fromEntries(roster.agents.map(({ id, name }) => [id, { name }])),
+          },
+        },
+      };
+    }
     if (method === "agents.create") {
       const verification: { ok: boolean; error?: string } = await (options.verification ?? {
         ok: true,
       });
       if (!verification.ok) {
-        throw new Error(verification.error ?? "Inference unavailable");
+        throw agentCreationRejection(verification.error ?? "Inference unavailable");
       }
       await options.creation;
       if (
@@ -159,6 +172,27 @@ async function fixture(
 }
 
 describe("application agent creation", () => {
+  it.each(["read-only", "unadvertised", "unpaired"] as const)(
+    "refuses %s creation before opening a provisional chat",
+    async (access) => {
+      const { context, request, navigate, toast, publishGateway } = await fixture();
+      publishGateway({
+        hello:
+          access === "unpaired"
+            ? null
+            : gatewayHelloForMethods(
+                access === "unadvertised" ? [] : ["agents.create"],
+                access === "read-only" ? ["operator.read"] : ["operator.admin"],
+              ),
+      });
+      await createApplicationAgent(context);
+      expect(navigate).not.toHaveBeenCalled();
+      expect(request.mock.calls.map(([method]) => method)).toEqual(["agents.list"]);
+      expect(context.chatSubmissions.creation).toBeUndefined();
+      await vi.waitFor(() => expect(toast.toast?.message).toContain("Pair this browser"));
+    },
+  );
+
   it("opens the new chat before waiting for inference verification", async () => {
     const verification = createDeferred<{ ok: boolean; error?: string }>();
     const { context, request, roster, navigate } = await fixture({
@@ -332,7 +366,11 @@ describe("application agent creation", () => {
     await vi.advanceTimersByTimeAsync(1_000);
     await toast.updateComplete;
     expect(roster.agents).toEqual([{ id: "main", name: "Molty" }]);
-    expect(request.mock.calls.map(([method]) => method)).toEqual(["agents.list", "agents.create"]);
+    expect(request.mock.calls.map(([method]) => method)).toEqual([
+      "agents.list",
+      "agents.create",
+      "config.get",
+    ]);
     expect(navigate).toHaveBeenCalledOnce();
     expect(replace).toHaveBeenCalledWith("chat", { pathname: "/chat/main", search: "", hash: "" });
     expect(context.chatSubmissions.creation).toBeUndefined();

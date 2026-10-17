@@ -1,5 +1,5 @@
 import type { JSX } from "@solidjs/web";
-import { createMemo } from "solid-js";
+import { createMemo, createUniqueId, Show } from "solid-js";
 import type { NavigationRouteId } from "../app-navigation.ts";
 import { pathForAgentPanel } from "../app-route-paths.ts";
 import type { ApplicationNavigationOptions } from "../app/context.ts";
@@ -49,7 +49,7 @@ type SidebarAgentMenuParams = Omit<
   tabFocusTarget?: (backward: boolean) => HTMLElement | undefined;
   basePath: string;
   rosterMode: boolean;
-  connected: boolean;
+  creationDisabledReason: string | null;
   onShowAllAgents: () => void;
   onPointerEnter: () => void;
   onPointerLeave: () => void;
@@ -108,6 +108,7 @@ export function selectSidebarHelpLink(value: string): boolean {
 
 export function renderSidebarAgentMenu(params: SidebarAgentMenuParams): JSX.Element {
   const position = params.position;
+  const creationReasonId = createUniqueId();
   const menuLabel = createMemo(() =>
     t(params.rosterMode ? "agentChip.workspaceMenuLabel" : "agentChip.menuLabel"),
   );
@@ -125,8 +126,14 @@ export function renderSidebarAgentMenu(params: SidebarAgentMenuParams): JSX.Elem
     {
       id: "command:new-agent",
       label: t("agentChip.createAgent"),
-      class: "sidebar-customize-menu__item sidebar-agent-menu__create",
-      disabled: !params.connected || Boolean(params.creationPhase),
+      class: [
+        "sidebar-customize-menu__item sidebar-agent-menu__create",
+        { "session-menu__item--described": Boolean(params.creationDisabledReason) },
+      ],
+      disabled: Boolean(params.creationDisabledReason || params.creationPhase),
+      attributes: {
+        "aria-describedby": params.creationDisabledReason ? creationReasonId : undefined,
+      },
       closeOnSelect: false,
       content: (
         <span class="sidebar-agent-menu__agent-row">
@@ -140,6 +147,13 @@ export function renderSidebarAgentMenu(params: SidebarAgentMenuParams): JSX.Elem
             >
               {t(params.creationPhase ? "agentChip.creatingAgent" : "agentChip.createAgent")}
             </span>
+            <Show when={params.creationDisabledReason}>
+              {(reason) => (
+                <span id={creationReasonId} class="session-menu__description">
+                  {reason()}
+                </span>
+              )}
+            </Show>
           </span>
         </span>
       ),

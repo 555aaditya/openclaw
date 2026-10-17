@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createDeferred as deferred } from "../../../../test/helpers/promise.js";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import type { ApplicationGatewayPhase } from "../../app/gateway.ts";
+import { agentCreationRejection } from "./creation.test-support.ts";
 import {
   createAgentCapability,
   loadToolsCatalog,
@@ -32,8 +33,8 @@ function createGatewayHarness(client: GatewayBrowserClient) {
         return () => listeners.delete(listener);
       },
     },
-    publish(connected: boolean) {
-      snapshot = { client, phase: connected ? "connected" : "reconnecting" };
+    publish(connected: boolean, nextClient = client) {
+      snapshot = { client: nextClient, phase: connected ? "connected" : "reconnecting" };
       for (const listener of listeners) {
         listener(snapshot);
       }
@@ -672,13 +673,14 @@ describe("agent creation", () => {
     const request = vi
       .fn<TestRequest>()
       .mockResolvedValueOnce(roster)
-      .mockRejectedValueOnce(new Error("Provider rejected credentials"));
+      .mockRejectedValueOnce(agentCreationRejection("Provider rejected credentials"))
+      .mockResolvedValueOnce({ exists: true, valid: true, sourceConfig: {} });
     const agents = createAgentCapability(
       createGatewayHarness({ request } as unknown as GatewayBrowserClient).gateway,
     );
     await agents.ensureList();
     await expect(agents.create("New agent")).rejects.toThrow("Provider rejected credentials");
-    expect(request).toHaveBeenLastCalledWith("agents.create", {
+    expect(request).toHaveBeenCalledWith("agents.create", {
       agentId: expect.stringMatching(/^bot-/),
       name: "New agent",
       onboarding: true,
@@ -789,7 +791,8 @@ describe("agent creation", () => {
     const request = vi
       .fn<TestRequest>()
       .mockResolvedValueOnce(roster)
-      .mockRejectedValueOnce(new Error("Workspace could not be created"));
+      .mockRejectedValueOnce(agentCreationRejection("Workspace could not be created"))
+      .mockResolvedValueOnce({ exists: true, valid: true, sourceConfig: {} });
     const agents = createAgentCapability(
       createGatewayHarness({ request } as unknown as GatewayBrowserClient).gateway,
     );
@@ -801,15 +804,14 @@ describe("agent creation", () => {
     agents.dispose();
   });
 
-  it("retires a disconnected creation receipt and permits a fresh attempt", async () => {
+  it("recovers a disconnected creation receipt without dispatching another attempt", async () => {
     const creation = deferred<unknown>();
     const roster = { defaultId: "main", agents: [{ id: "main", name: "Molty" }] };
     const request = vi
       .fn<TestRequest>()
       .mockResolvedValueOnce(roster)
       .mockReturnValueOnce(creation.promise)
-      .mockResolvedValueOnce(roster)
-      .mockRejectedValueOnce(new Error("Still offline"));
+      .mockResolvedValueOnce(roster);
     const harness = createGatewayHarness({ request } as unknown as GatewayBrowserClient);
     const agents = createAgentCapability(harness.gateway);
     await agents.ensureList();
@@ -825,12 +827,11 @@ describe("agent creation", () => {
     expect(agents.state.agentCreationPhase).toBeUndefined();
     expect(agents.state.agentsList).toBeNull();
     harness.publish(true);
-    await expect(agents.create("New agent")).rejects.toThrow("Still offline");
+    await expect(agents.create("New agent")).resolves.toMatchObject({ agentId: pending.id });
     expect(request.mock.calls.map(([method]) => method)).toEqual([
       "agents.list",
       "agents.create",
       "agents.list",
-      "agents.create",
     ]);
     agents.dispose();
   });

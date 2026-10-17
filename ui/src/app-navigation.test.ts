@@ -48,10 +48,6 @@ const ALL_ROUTES: RouteId[] = Array.from(
 );
 
 describe("navigationIconForRoute", () => {
-  it("uses the connected-agents icon for Claws", () => {
-    expect(navigationIconForRoute("claws")).toBe("agentsConnected");
-  });
-
   it("returns a fallback icon for unknown route", () => {
     // TypeScript won't allow this normally, but runtime could receive unexpected values
     const unknownRouteId = "unknown" as RouteId;

@@ -26,6 +26,7 @@ import {
   attachRuntimeConfigWriteApplication,
   createRuntimeConfigWriteApplication,
 } from "../../config/runtime-write-application.js";
+import { resolveAgentMainSessionKey } from "../../config/sessions/main-session.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import { captureGatewayRootWorkAdmissionContinuationScope } from "../../process/gateway-work-admission.js";
 import { normalizeAgentIdStrict } from "../../routing/session-key.js";
@@ -74,19 +75,17 @@ function createAgentConfigApplication(respond: RespondFn) {
   return {
     attach: <T extends object>(options: T) =>
       attachRuntimeConfigWriteApplication(options, application),
-    confirm: async () => {
+    confirm: async (onUnconfirmed?: (message: string) => void) => {
       const outcome = application.claimed ? await application.result : "unclaimed";
       if (outcome === "applied") {
         return true;
       }
-      respond(
-        false,
-        undefined,
-        errorShape(
-          ErrorCodes.UNAVAILABLE,
-          `Agent configuration was saved but its application to the active Gateway was not confirmed (${outcome}); run config.get, then apply the saved config or restart the Gateway.`,
-        ),
-      );
+      const message = `Agent configuration was saved but its application to the active Gateway was not confirmed (${outcome}); run config.get, then apply the saved config or restart the Gateway.`;
+      if (onUnconfirmed) {
+        onUnconfirmed(message);
+      } else {
+        respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, message));
+      }
       return false;
     },
   };
@@ -170,12 +169,31 @@ export const agentsHandlers: GatewayRequestHandlers = {
         context.logGateway.warn(message),
       );
       diagnostics?.mark("applyConfig");
-      if (!(await application.confirm())) {
+      let applicationError: string | undefined;
+      const applied = await application.confirm(
+        preparation
+          ? (message) => {
+              applicationError = message;
+            }
+          : undefined,
+      );
+      if (!applied && !preparation) {
         return;
       }
-      diagnostics?.mark("createChat");
+      if (applied) {
+        diagnostics?.mark("createChat");
+      }
       const onboarding = preparation
-        ? await completeAgentOnboarding(options, result.agentId)
+        ? applicationError
+          ? {
+              status: "error" as const,
+              sessionKey: resolveAgentMainSessionKey({
+                cfg: context.getRuntimeConfig(),
+                agentId: result.agentId,
+              }),
+              error: applicationError,
+            }
+          : await completeAgentOnboarding(options, result.agentId)
         : undefined;
       diagnostics?.mark("response");
       respond(

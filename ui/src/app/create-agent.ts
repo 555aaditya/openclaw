@@ -1,6 +1,8 @@
 import { routeIdFromPath } from "../app-route-paths.ts";
 import { t } from "../i18n/index.ts";
+import { AgentCreationUncertainError } from "../lib/agents/creation-recovery.ts";
 import { formatUiError } from "../lib/format-error.ts";
+import { canCallGatewayMethod } from "../lib/gateway-methods.ts";
 import { sessionNavigationTarget } from "../lib/sessions/route-navigation.ts";
 import {
   buildAgentMainSessionKey,
@@ -13,6 +15,10 @@ import { patchSettings } from "./settings.ts";
 
 /** Creation belongs to the application, so closing the selector cannot cancel it. */
 export async function createApplicationAgent(context: ApplicationContext): Promise<void> {
+  if (!canCallGatewayMethod(context.gateway.snapshot, "agents.create", "operator.admin")) {
+    showToast({ message: t("agentChip.creationUnavailable"), durationMs: 12_000 });
+    return;
+  }
   const client = context.gateway.snapshot.client;
   const gatewayUrl = context.gateway.connection.gatewayUrl;
   const initialLocation = context.router.getState().location;
@@ -99,9 +105,12 @@ export async function createApplicationAgent(context: ApplicationContext): Promi
       restoreUncreatedChat();
     }
     showToast({
-      message: t(created ? "agentChip.chatStartFailed" : "agentChip.creationFailed", {
-        error: formatUiError(error),
-      }),
+      message:
+        error instanceof AgentCreationUncertainError
+          ? error.message
+          : t(created ? "agentChip.chatStartFailed" : "agentChip.creationFailed", {
+              error: formatUiError(error),
+            }),
       durationMs: 12_000,
     });
   } finally {

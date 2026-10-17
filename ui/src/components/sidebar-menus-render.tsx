@@ -5,10 +5,10 @@ import { gatewayPresentationScope } from "../app/gateway-presentation-scope.ts";
 import { isMobileNavLayout } from "../app/mobile-nav-layout.ts";
 import { patchSettings } from "../app/settings.ts";
 import { openEditor } from "../lib/editor-links.ts";
-import { isGatewayMethodAdvertised } from "../lib/gateway-methods.ts";
+import { canCallGatewayMethod, isGatewayMethodAdvertised } from "../lib/gateway-methods.ts";
 import type { IdentityAvatars } from "../lib/identity-avatar-loader.ts";
 import { openExternalUrlSafe } from "../lib/open-external-url.ts";
-import { projectOverlays } from "../lib/reactive/application.ts";
+import { projectGateway, projectOverlays } from "../lib/reactive/application.ts";
 import { projectAgents } from "../lib/reactive/domain-capabilities.ts";
 import { t } from "../lib/reactive/i18n.ts";
 import { projectTheme } from "../lib/reactive/theme.ts";
@@ -112,6 +112,10 @@ export function renderSidebarAgentMenuForController(
     const source = host.sessionDataContext?.agents;
     return source && projectAgents(source);
   });
+  const gateway = createMemo(() => {
+    const source = host.sessionDataContext?.gateway;
+    return source && projectGateway(source);
+  });
   const preferences = createMemo(() => {
     const source = host.sessionDataContext?.theme;
     return source && projectTheme(source).preferences;
@@ -146,7 +150,13 @@ export function renderSidebarAgentMenuForController(
               ?.focus();
           });
         },
-        connected: host.connected,
+        creationDisabledReason: canCallGatewayMethod(
+          gateway()?.read().snapshot,
+          "agents.create",
+          "operator.admin",
+        )
+          ? null
+          : t("agentChip.creationUnavailable"),
         resolveAvatarUrl: (url) => avatars().resolve(url),
         avatarErrorHandler: (url) => avatars().imageErrorHandler(url),
         openMode: controller.agentMenuInteractionState === "open-hover" ? "hover" : "click",
