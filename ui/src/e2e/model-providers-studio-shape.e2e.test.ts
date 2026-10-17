@@ -64,9 +64,10 @@ suite.define(() => {
         });
         await page.goto(`${suite.server.baseUrl}settings/model-providers`);
         const overview = page.locator(".usage-overview");
-        const providerRow = (name: string) =>
-          overview.locator(".usage-overview__providers li", { hasText: name });
-        await providerRow("xAI").waitFor();
+        // Each provider's local cost lives on its Provider access row.
+        const providerCost = (id: string) =>
+          page.locator(`li.provider-row[data-provider-id="${id}"] .provider-row__usage strong`);
+        await providerCost("xai").waitFor();
 
         // Interrupted turns and unpriced traffic make the cost a lower bound, never "$0.00".
         const cost = overview.locator(".oc-summary-metric", { hasText: "Estimated cost" });
@@ -77,15 +78,9 @@ suite.define(() => {
             .locator(".oc-summary-metric", { hasText: "Unpriced messages" })
             .getAttribute("data-tone"),
         ).toBe("warning");
-        expect(await providerRow("OpenAI").locator(".usage-overview__value").textContent()).toBe(
-          "≥ $5,696.57",
-        );
-        expect(await providerRow("Anthropic").locator(".usage-overview__value").textContent()).toBe(
-          "Unpriced",
-        );
-        expect(await providerRow("xAI").locator(".usage-overview__value").textContent()).toBe(
-          "$62.57",
-        );
+        expect(await providerCost("openai").textContent()).toBe("≥ $5,696.57");
+        expect(await providerCost("anthropic").textContent()).toBe("Unpriced");
+        expect(await providerCost("xai").textContent()).toBe("$62.57");
         expect(
           await overview.locator(".usage-overview__models tbody th").first().textContent(),
         ).toBe("gpt-6-astra");

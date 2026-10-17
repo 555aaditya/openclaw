@@ -378,9 +378,9 @@ describeControlUiE2e("Control UI Models mocked Gateway E2E", () => {
       await expect
         .poll(async () => claudeCard.locator(".model-providers__profile").textContent())
         .toContain("Expired");
-      const usageRow = (name: string) =>
-        page.locator(".usage-overview__providers li", { hasText: name });
-      await expect.poll(async () => usageRow("Claude").textContent()).toContain("$4.20");
+      await expect
+        .poll(() => claudeCard.locator(".provider-row__usage strong").textContent())
+        .toContain("$4.20");
       // The open row trades its summary chips for the full window tiles.
       expect(await claudeCard.locator(".provider-usage__chip").count()).toBe(0);
       const fiveHour = claudeCard.locator(".provider-usage__window", { hasText: "5h" });
