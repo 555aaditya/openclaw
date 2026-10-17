@@ -533,6 +533,7 @@ function* createOpenClawToolsSteps(
       ? createGitHubPublishTool({
           publicationAvailable: options.githubPublicationAvailable,
           actionsAvailable: githubActionsAvailable,
+          sandbox: options.sandbox,
         })
       : null,
     transcriptsTool,
