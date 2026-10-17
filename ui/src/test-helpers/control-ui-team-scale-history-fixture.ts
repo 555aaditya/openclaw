@@ -5,6 +5,7 @@ export function createTeamScaleHistoryFixture(options: {
   inlineWidgets: number;
   now: number;
   largeSnapshot?: boolean;
+  toolHeavy?: boolean;
   attachments?: ReturnType<typeof createTeamScaleDuplicateReadFixture>["attachments"];
 }) {
   const messageIds = Array.from(
@@ -12,6 +13,51 @@ export function createTeamScaleHistoryFixture(options: {
     (_, index) => `team-message-${index + 1}`,
   );
   const messagesPerWidget = Math.ceil(options.messageCount / options.inlineWidgets);
+  if (options.toolHeavy) {
+    const historyMessages = messageIds.map((id, index) => {
+      const tailStart = options.messageCount - 130;
+      const turnStart = index < tailStart ? Math.floor(index / 69) * 69 : tailStart;
+      const completedTurn = index < tailStart && index === turnStart + 68;
+      const toolCallId = `synthetic-tool-${index - ((index - turnStart) % 2 ? 0 : 1)}`;
+      const role =
+        index === turnStart
+          ? "user"
+          : completedTurn || (index - turnStart) % 2
+            ? "assistant"
+            : "toolResult";
+      return {
+        role,
+        __openclaw: { id, seq: index + 1 },
+        timestamp: options.now - (options.messageCount - index) * 1_000,
+        ...(role === "toolResult" ? { toolCallId, toolName: "read" } : {}),
+        ...(role === "assistant" && !completedTurn ? { stopReason: "toolUse" } : {}),
+        content:
+          role === "assistant" && !completedTurn
+            ? [
+                {
+                  type: "toolCall",
+                  id: toolCallId,
+                  name: "read",
+                  arguments: { path: "synthetic.txt" },
+                },
+              ]
+            : [
+                {
+                  type: "text",
+                  text:
+                    index === turnStart
+                      ? `Check synthetic work package ${turnStart}.`
+                      : completedTurn
+                        ? `Synthetic work package ${turnStart} is verified. All checks passed.`
+                        : "Synthetic tool output: the workspace check completed successfully. ".repeat(
+                            87,
+                          ),
+                },
+              ],
+      };
+    });
+    return { messageIds, historyMessages };
+  }
   const historyMessages = messageIds.map((id, index) => ({
     role:
       options.largeSnapshot && index % 4 === 2 ? "toolResult" : index % 2 ? "assistant" : "user",

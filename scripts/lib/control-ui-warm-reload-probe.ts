@@ -4,6 +4,17 @@ export function warmReloadProbe() {
   const mutations: Array<{ at: number; count: number; region: string }> = [];
   const shifts: Array<{ at: number; value: number }> = [];
   const states: Array<{ at: number; state: string }> = [];
+  const rowCounts: Array<{ at: number; rows: number }> = [];
+  const transcriptSizes: Array<{ at: number; height: number }> = [];
+  const historyRequests: Array<{
+    id: string;
+    method: string;
+    params: unknown;
+    requestedAt: number;
+    responseAt: number;
+    bytes: number;
+    messages: number;
+  }> = [];
   const reads: Array<{ at: number; store: string; hit: boolean }> = [];
   const transactions: Array<{
     at: number;
@@ -84,27 +95,43 @@ export function warmReloadProbe() {
   window.WebSocket = new Proxy(Original, {
     construct(target, args) {
       const socket: WebSocket = Reflect.construct(target, args);
-      const pending = new Map<string, string>();
+      const pending = new Map<string, { method: string; params: unknown; at: number }>();
       const send = socket.send.bind(socket);
       socket.send = (data) => {
         if (typeof data === "string") {
           const frame = JSON.parse(data);
           if (frame.type === "req") {
-            pending.set(frame.id, frame.method);
+            pending.set(frame.id, {
+              method: frame.method,
+              params: frame.params,
+              at: performance.now(),
+            });
           }
         }
         send(data);
       };
       socket.addEventListener("message", (event) => {
         const frame = JSON.parse(event.data);
-        const method = pending.get(frame.id);
-        if (method) {
+        const request = pending.get(frame.id);
+        if (request) {
           pending.delete(frame.id);
+          const { method } = request;
           if (method === "connect") {
             mark("hello");
           }
           if (method === "chat.startup") {
             mark("catchupResponse");
+          }
+          if (method === "chat.startup" || method === "chat.history") {
+            historyRequests.push({
+              id: frame.id,
+              method,
+              params: request.params,
+              requestedAt: request.at,
+              responseAt: performance.now(),
+              bytes: new TextEncoder().encode(event.data).byteLength,
+              messages: frame.payload?.messages?.length ?? 0,
+            });
           }
         }
       });
@@ -146,6 +173,12 @@ export function warmReloadProbe() {
     attributes: true,
     characterData: true,
   });
+  let observedInner: Element | null = null;
+  const resizeObserver = new ResizeObserver((entries) => {
+    for (const entry of entries) {
+      transcriptSizes.push({ at: performance.now(), height: entry.contentRect.height });
+    }
+  });
   const sample = () => {
     if (stopped) {
       return;
@@ -154,6 +187,13 @@ export function warmReloadProbe() {
     const thread = pane?.querySelector(".chat-thread");
     const inner = thread?.querySelector(".chat-thread-inner");
     const currentRows = [...(thread?.querySelectorAll(".chat-virtual-row") ?? [])];
+    if (inner !== observedInner) {
+      resizeObserver.disconnect();
+      observedInner = inner ?? null;
+      if (observedInner) {
+        resizeObserver.observe(observedInner);
+      }
+    }
     for (const row of currentRows) {
       rows.add(row);
     }
@@ -161,6 +201,9 @@ export function warmReloadProbe() {
       currentRows.length && inner && getComputedStyle(inner).visibility !== "hidden",
     );
     if (visible) {
+      if (rowCounts.at(-1)?.rows !== currentRows.length) {
+        rowCounts.push({ at: performance.now(), rows: currentRows.length });
+      }
       mark("firstTranscript");
       if (!milestones.catchupResponse && milestones.cacheRead) {
         mark("firstCachedTranscript");
@@ -196,6 +239,7 @@ export function warmReloadProbe() {
     read() {
       stopped = true;
       observer.disconnect();
+      resizeObserver.disconnect();
       const perf = Reflect.get(window, "__perf");
       return {
         milestones,
@@ -207,6 +251,15 @@ export function warmReloadProbe() {
         lastMutationBurst: mutations.findLast((batch) => batch.count >= 10)?.at ?? null,
         mutations,
         states,
+        rowCounts,
+        transcriptSizes,
+        historyRequests,
+        bootHistory: {
+          requests: historyRequests.filter((request) => request.method === "chat.history").length,
+          bytes: historyRequests
+            .filter((request) => request.method === "chat.history")
+            .reduce((sum, request) => sum + request.bytes, 0),
+        },
         rows: {
           mounted: rows.size,
           removed: removedRows,

@@ -50,13 +50,53 @@ hello, live catch-up, enabled input, layout shifts, mutation batches, and retain
 row elements. Visibility and enabled-input milestones are DOM observations;
 FCP is the browser's paint metric. Diagnostic runs also save filmstrip frames.
 Use `--untraced` for timing comparisons without boot tracing or CPU sampling,
-then collect separate traced runs for the storyboard and attribution.
+then collect separate traced runs for the storyboard and attribution. Traced runs include
+CPU samples in both `run-N.cpuprofile` and the Chrome trace for source-mapped
+`cpuprof2.py` attribution; supply the synthetic renderer PID explicitly.
 
 `--large-snapshot` expands the transcript to 1,100 synthetic messages (about 3 MB),
 including tool results and replay metadata. Combine it with `--warm-reload` to
 measure a large native IndexedDB restore. `snapshotSave` reports the persisted
 row count and UTF-8 bytes, synchronous serialization time, and total flush time
 for a save through the live cache owner before each reload.
+
+`--history-window normal` opts the normal 240-message chat into bounded history
+responses. `--history-window tool-heavy` uses 820 synthetic source messages,
+ending in 130 messages of one assistant activity turn; its newest 80 messages
+render as one display row. These modes honor each request's `limit`, `offset`,
+`maxBytes`, `maxChars`, and `toolResultMaxChars`, using the production Gateway
+display sanitizer and response-page byte budget. They exclude `--large-snapshot`,
+`--live-events`, and `--streaming-reply`; all existing fixture modes are unchanged.
+The source is synthetic and does not reproduce private message contents or their
+role distribution. Source selection is in memory, and the Playwright binding
+adds a Node round trip: this measures client history behavior, not Gateway disk
+selection or projection CPU.
+
+Use `--warm-reload` to flush the live snapshot owner before every measured reload,
+or `--cold-reload` to delete only the selected synthetic transcript through that
+owner before reloading. The flags are mutually exclusive. Both preserve sidebar
+and other browser caches. History-window runs always include the reload probe;
+`warmReload.rowCounts` records visible DOM row-count changes,
+`warmReload.transcriptSizes` records ResizeObserver heights without forced layout,
+and `warmReload.historyRequests` records request parameters, response times, message
+counts, and UTF-8 WebSocket response-frame bytes. `warmReload.bootHistory` totals
+the `chat.history` count and bytes before the settled capture. Existing milestones,
+CLS, LoAF, CPU-profile, and trace output remain available.
+
+For example, reuse a matching production bundle and run either cache state:
+
+```sh
+node --import tsx scripts/bench-control-ui-cold-load.ts \
+  --history-window tool-heavy --warm-reload --probe-dir /path/to/probes \
+  --bundle-dir /path/to/bundle --runs 7 --output /path/to/output
+node --import tsx scripts/bench-control-ui-cold-load.ts \
+  --history-window normal --cold-reload --probe-dir /path/to/probes \
+  --bundle-dir /path/to/bundle --runs 7 --output /path/to/output
+```
+
+Keep the same flags for baseline and candidate; alternate matching invocations
+on the same quiet host. Omit `--untraced` for a separate CPU-attribution capture;
+use it for timing comparisons without CPU/trace instrumentation.
 
 The dashboard fixture includes reaction pickers, widget actions, context usage,
 and viewers. Use `--warm-reload` to measure its cached restore. Transaction labels
