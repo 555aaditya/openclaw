@@ -190,6 +190,29 @@ async function createFixture(stateDir: string, agentDir: string) {
     stop,
     setCreator,
     status: () => cron.status(),
+    setWorkerInference(required: boolean, inference: "worker" | "gateway") {
+      // Dedicated workers keep the model route on the Gateway, but own its credentials.
+      cfg.models = {
+        providers: {
+          openai: {
+            api: "openai-responses",
+            baseUrl: "https://api.openai.com/v1",
+            agentRuntime: { id: "openclaw" },
+            models: [],
+          },
+        },
+      };
+      cfg.cloudWorkers = {
+        ...(required ? { requiredProfile: "dedicated-native" } : {}),
+        profiles: {
+          "dedicated-native": {
+            provider: "device",
+            settings: { device: "synthetic-worker", inference },
+          },
+        },
+      };
+      setRuntimeConfigSnapshot(cfg);
+    },
     replaceAccountBeforeMutation(method: "add" | "update") {
       const replace = () =>
         persistAuthProfileBatch({
@@ -372,6 +395,67 @@ function createParams() {
 }
 
 describe("cron handler inference binding persistence", () => {
+  it.each(["absent", "ambient"] as const)(
+    "keeps required worker inference unbound with %s Gateway credentials",
+    async (credentials) => {
+      await withFixture(async (fixture) => {
+        if (credentials === "absent") {
+          await fixture.useUnstoredCredential("openai");
+        }
+        fixture.setWorkerInference(true, "worker");
+        await fixture.invoke("cron.add", createParams());
+        const job = await fixture.reload();
+        expect(job.enabled).toBe(false);
+        expect(job.inferenceBinding).toBeUndefined();
+      });
+    },
+  );
+
+  it.each([
+    { name: "optional worker", required: false, inference: "worker" },
+    { name: "required Gateway inference", required: true, inference: "gateway" },
+  ] as const)("retains host credential validation for $name", async ({ required, inference }) => {
+    await withFixture(async (fixture) => {
+      await fixture.useUnstoredCredential("openai");
+      fixture.setWorkerInference(required, inference);
+      const error = await fixture.invoke("cron.add", createParams(), null, {
+        expectedSuccess: false,
+      });
+      expect(error).toMatchObject({
+        message: expect.stringContaining("No route-compatible authentication source"),
+      });
+      expect(await fixture.status()).toMatchObject({ jobs: 0 });
+    });
+  });
+
+  it.each(["model", "creator"] as const)(
+    "validates a selected %s account even with required worker inference",
+    async (selection) => {
+      await withFixture(async (fixture) => {
+        await fixture.useUnstoredCredential("openai");
+        fixture.setWorkerInference(true, "worker");
+        if (selection === "creator") {
+          await fixture.setCreator(platformId);
+        }
+        const params = createParams();
+        const error = await fixture.invoke(
+          "cron.add",
+          {
+            ...params,
+            payload: {
+              ...params.payload,
+              ...(selection === "model" ? { model: "openai/gpt-4.1@" + platformId } : {}),
+            },
+          },
+          selection === "creator" ? createCronCallerClient("main", undefined, sessionKey) : null,
+          { expectedSuccess: false },
+        );
+        expect(error).toMatchObject({ message: expect.stringContaining(platformId) });
+        expect(await fixture.status()).toMatchObject({ jobs: 0 });
+      });
+    },
+  );
+
   it.each(["environment", "configuration"] as const)(
     "creates an unbound job on a %s key, the same rule its runs follow",
     async (source) => {

@@ -12,6 +12,7 @@ import { prepareAgentRuntimeAuth } from "../agents/runtime-plan/prepare-auth.js"
 import { resolveSimpleCompletionSelectionForAgent } from "../agents/simple-completion-selection.js";
 import type { SessionEntry } from "../config/sessions/types.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { workerInferencePlacement } from "../gateway/worker-environments/inference-placement.js";
 import type { CronInferenceBinding } from "./inference-binding.js";
 
 /** Capture only a selected, current credential owner; never infer a legacy job's history. */
@@ -44,6 +45,22 @@ export async function captureCronInferenceBinding(params: {
     params.sessionEntry?.providerOverride ?? params.sessionEntry?.modelProvider;
   const creatorSession =
     creatorProvider && creatorProvider !== model.provider ? undefined : params.sessionEntry;
+  const configuredProfileId = model.profileId ?? creatorSession?.authProfileOverride;
+  const requiredProfileId = cfg.cloudWorkers?.requiredProfile;
+  const requiredProfile = requiredProfileId
+    ? cfg.cloudWorkers?.profiles?.[requiredProfileId]
+    : undefined;
+  if (
+    !configuredProfileId &&
+    requiredProfile &&
+    workerInferencePlacement({
+      providerId: requiredProfile.provider,
+      profileSnapshot: requiredProfile,
+    }) === "worker"
+  ) {
+    // Required worker inference owns its credentials; do not capture an ambient host account.
+    return undefined;
+  }
   const { agentDir } = model;
   let selection = await resolveSessionAuthSelection({
     cfg,
@@ -51,7 +68,7 @@ export async function captureCronInferenceBinding(params: {
     agentDir,
     provider: model.provider,
     modelId: model.modelId,
-    configuredProfileId: model.profileId ?? creatorSession?.authProfileOverride,
+    configuredProfileId,
     sessionEntry: model.profileId ? undefined : creatorSession,
     isNewSession: false,
   });
