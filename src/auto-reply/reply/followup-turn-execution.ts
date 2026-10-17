@@ -10,6 +10,7 @@ import { sessionPersonalProfileId } from "../../config/sessions/session-entry-pr
 import { logVerbose } from "../../globals.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import { withCurrentUserTurnInput } from "../../sessions/user-turn-transcript-runtime-context.js";
+import { getCommandOwnerAuthority } from "../command-owner-authority.js";
 import { isFastModeAutoProgressPayload } from "../reply-payload.js";
 import type { TemplateContext } from "../templating.js";
 import type { VerboseLevel } from "../thinking.js";
@@ -447,7 +448,10 @@ export async function executeFollowupTurn(params: {
           spawnedBy: run.spawnedBy,
           suppressNextUserMessagePersistence: run.suppressNextUserMessagePersistence,
         })
-          ? turn.queued.createChannelCronAuthority?.(turn.runId)
+          ? turn.queued.createChannelCronAuthority?.(
+              turn.runId,
+              getCommandOwnerAuthority(run)?.isCurrent,
+            )
           : undefined;
       progressOpts.cronCreatorAuthorityCapability = capability;
       const runWithInput = () => withCurrentUserTurnInput(recorder, execute);

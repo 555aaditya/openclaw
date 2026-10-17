@@ -1,5 +1,7 @@
-import { vi } from "vitest";
+import { expect, vi } from "vitest";
 import type { AdmittedFollowupTurn } from "./followup-turn-admission.js";
+import type { InternalGetReplyOptions } from "./get-reply.types.js";
+import type { FollowupRun } from "./queue/types.js";
 import { createMockReplyOperation } from "./test-helpers.js";
 
 const followupTurnTestState = vi.hoisted(() => ({
@@ -94,6 +96,58 @@ export function createFollowupTurnTestTurn(
     preflightCompactionApplied: false,
     ...overrides,
   };
+}
+
+export async function executeQueuedFollowupTurnForTest(
+  queued: FollowupRun,
+  params: { runId: string; opts?: InternalGetReplyOptions; admit: boolean },
+) {
+  let turn = createFollowupTurnTestTurn({
+    runId: params.runId,
+    queued,
+    config: queued.run.config,
+  });
+  const defaults = {
+    typing: createFollowupTurnTestTypingController(),
+    typingMode: "never" as const,
+    defaultModel: "claude",
+    opts: params.opts,
+  };
+  if (params.admit) {
+    const [{ admitFollowupTurn }, replyAdmission, configuredOwners] = await Promise.all([
+      import("./followup-turn-admission.js"),
+      import("./reply-turn-admission.js"),
+      import("../../state/user-channel-identity-operations.js"),
+    ]);
+    const operation = turn.operation;
+    operation.updateSessionId(queued.run.sessionId);
+    const lease = vi
+      .spyOn(replyAdmission, "admitReplyTurn")
+      .mockImplementationOnce(async ({ captureRunSelection }) => {
+        captureRunSelection?.();
+        return { status: "owned", operation };
+      });
+    const durableOwner = vi
+      .spyOn(configuredOwners, "prepareConfiguredCommandOwnerAuthority")
+      .mockResolvedValue(undefined);
+    try {
+      const admission = await admitFollowupTurn({ queued, defaults });
+      expect(admission.kind).toBe("admitted");
+      if (admission.kind !== "admitted") {
+        throw new Error("Expected queued owner admission");
+      }
+      turn = admission.turn;
+    } finally {
+      lease.mockRestore();
+      durableOwner.mockRestore();
+    }
+  }
+  return executeFollowupTurn({
+    turn,
+    defaults,
+    onToolResult: async () => {},
+    onCompactionNoticePayload: async () => {},
+  });
 }
 
 export function resetFollowupTurnTestState() {
