@@ -35,6 +35,7 @@ import type { SessionMessageSubscriberRegistry } from "./server-chat-state.js";
 import { MAX_BUFFERED_BYTES, WEBSOCKET_OPEN_READY_STATE } from "./server-constants.js";
 import type { GatewayClientRegistry } from "./server/client-registry.js";
 import { closeGatewayTransportWithGrace } from "./server/connection-transport-close.js";
+import { prepareGatewayBroadcastCompression } from "./server/ws-compression.js";
 import type { GatewayWsClient } from "./server/ws-types.js";
 import { invalidateSharedReadResponses } from "./shared-read-responses.js";
 import { logWs, summarizeAgentEventForWsLog } from "./ws-log.js";
@@ -642,6 +643,7 @@ export function createGatewayBroadcaster(params: {
         const cached = sequenceFrames.get(nextSeq);
         if (cached === undefined) {
           frame = frameWithSequence(base, nextSeq, payloadFragment, recipientProfileId);
+          prepareGatewayBroadcastCompression(frame);
           sequenceFrames.set(nextSeq, frame);
         } else {
           frame = cached;

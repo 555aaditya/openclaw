@@ -111,6 +111,14 @@ function sharedZlib(open: () => NativeZlibStream) {
 
 const inflateShared = sharedZlib(() => createInflateRaw());
 const deflateShared = new Map<number, ReturnType<typeof sharedZlib>>();
+const broadcastFrames = new WeakMap<Buffer, { windows: Map<number, Buffer>; bytes: number }>();
+
+/** The broadcaster owns these immutable frames through queued sends; ordinary buffers remain mutable. */
+export function prepareGatewayBroadcastCompression(frame: string | Buffer): void {
+  if (Buffer.isBuffer(frame) && frame.length >= GATEWAY_PER_MESSAGE_DEFLATE.threshold) {
+    broadcastFrames.set(frame, { windows: new Map(), bytes: 0 });
+  }
+}
 
 function isPerMessageDeflateCodec(value: unknown): value is PerMessageDeflateCodec {
   return (
@@ -211,9 +219,25 @@ export function installGatewayDeflateCodec(socket: WebSocket): boolean {
       return;
     }
     const input = typeof data === "string" ? Buffer.from(data) : data;
-    const output = deflate(input, kMaxLength) ?? deflateRawSync(input, deflateOptions);
-    // Z_SYNC_FLUSH ends with the empty block that permessage-deflate strips.
-    process.nextTick(callback, null, output.subarray(0, -TRAILER.length));
+    const broadcast = broadcastFrames.get(input);
+    let output = broadcast?.windows.get(windowBits);
+    if (!output) {
+      // Z_SYNC_FLUSH ends with the empty block that permessage-deflate strips.
+      output = (deflate(input, kMaxLength) ?? deflateRawSync(input, deflateOptions)).subarray(
+        0,
+        -TRAILER.length,
+      );
+      if (broadcast && broadcast.bytes + output.length <= input.length) {
+        // Retain exact backing bytes, not zlib's output chunk or a pooled slab.
+        // All negotiated variants together cost at most one original frame.
+        const retained = Buffer.allocUnsafeSlow(output.length);
+        output.copy(retained);
+        broadcast.windows.set(windowBits, retained);
+        broadcast.bytes += retained.buffer.byteLength;
+        output = retained;
+      }
+    }
+    process.nextTick(callback, null, output);
   };
   return true;
 }
