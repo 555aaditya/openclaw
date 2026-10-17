@@ -249,7 +249,7 @@ async function publishFixture(
 }
 
 describe("chat metadata ownership", () => {
-  it.each([
+  it.for([
     { includeModels: false, first: "response" },
     { includeModels: true, first: "placement" },
   ] as const)(
