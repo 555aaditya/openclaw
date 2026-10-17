@@ -476,6 +476,7 @@ const rootEntries = [
   "src/worker/worker-deploy-file-tool-planning.ts!",
   "src/worker/worker-deploy-file-tool-read.ts!",
   "src/worker/worker-deploy-image-processor.ts!",
+  "src/worker/worker-deploy-session-transcript.ts!",
   "src/worker/worker-deploy-sqlite-source-revision.ts!",
   "src/worker/worker-deploy-sqlite-store.ts!",
   "src/worker/worker-deploy-state-read.ts!",

@@ -5,6 +5,7 @@ import {
   WORKER_BUNDLE_FILE_TOOL_READ_PATH,
   WORKER_BUNDLE_GITHUB_EXEC_LAUNCHER_PATH,
   WORKER_BUNDLE_IMAGE_PROCESSOR_PATH,
+  WORKER_BUNDLE_SESSION_TRANSCRIPT_PATH,
   WORKER_BUNDLE_SQLITE_SOURCE_REVISION_PATH,
   WORKER_BUNDLE_SQLITE_STORE_PATH,
 } from "../shared/worker-bundle-hash.js";
@@ -18,6 +19,7 @@ for (const [name, file] of [
   ["gatewayStateOwnerHeartbeat", "gateway-state-owner-heartbeat.worker.mjs"],
   ["githubExec", WORKER_BUNDLE_GITHUB_EXEC_LAUNCHER_PATH],
   ["imageProcessor", WORKER_BUNDLE_IMAGE_PROCESSOR_PATH],
+  ["sessionTranscript", WORKER_BUNDLE_SESSION_TRANSCRIPT_PATH],
   ["serviceChildRelay", "service-child-relay.mjs"],
   ["sqliteSourceRevision", WORKER_BUNDLE_SQLITE_SOURCE_REVISION_PATH],
   ["sqliteStore", WORKER_BUNDLE_SQLITE_STORE_PATH],

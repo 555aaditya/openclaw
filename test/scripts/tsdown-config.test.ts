@@ -70,6 +70,11 @@ const workerBuildTargets = [
   ],
   ["sqlite-store", "worker/sqlite-store.worker", "src/worker/worker-deploy-sqlite-store.ts"],
   [
+    "session-transcript",
+    "worker/session-transcript.worker",
+    "src/worker/worker-deploy-session-transcript.ts",
+  ],
+  [
     "sqlite-source-revision",
     "worker/sqlite-source-revision.worker",
     "src/worker/worker-deploy-sqlite-source-revision.ts",
