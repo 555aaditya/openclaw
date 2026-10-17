@@ -1,6 +1,6 @@
 import type { JSX as SolidJSX } from "@solidjs/web";
-import { createMemo } from "solid-js";
 import type { RouteId } from "../app-routes.ts";
+import type { ShellOwnedElements } from "./app-shell-lazy-view.tsx";
 import type { ApplicationContext } from "./context.ts";
 import { resolveControlUiAuthToken } from "./control-ui-auth.ts";
 import {
@@ -10,24 +10,24 @@ import {
 } from "./panel-availability.ts";
 
 type ShellDocksProps = {
+  elements: Pick<ShellOwnedElements, "browserPanel" | "desktopPanel">;
   context: ApplicationContext;
   revision: number;
   navDrawerOpen: boolean;
   suppressed: boolean;
-  selectedAgentId: string;
   activeRoute: RouteId;
 };
 
 export function ShellDocks(props: ShellDocksProps): SolidJSX.Element {
-  const snapshot = createMemo(() => ({
-    revision: props.revision,
-    value: props.context.gateway.snapshot,
-  }));
-  const gateway = () => snapshot().value;
+  const gateway = () => {
+    void props.revision;
+    return props.context.gateway.snapshot;
+  };
   const client = () => (gateway().phase === "connected" ? gateway().client : null);
   return (
     <>
       <openclaw-browser-panel
+        ref={(element) => (props.elements.browserPanel = element)}
         inert={props.navDrawerOpen}
         data-chat-autotype-exempt=""
         prop:client={client()}
@@ -42,6 +42,7 @@ export function ShellDocks(props: ShellDocksProps): SolidJSX.Element {
         })}
       />
       <openclaw-desktop-panel
+        ref={(element) => (props.elements.desktopPanel = element)}
         inert={props.navDrawerOpen}
         data-chat-autotype-exempt=""
         prop:client={client()}

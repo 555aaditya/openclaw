@@ -17,10 +17,19 @@ import { setUserProfileRole } from "../../state/user-profile-writes.worker.js";
 import { handlePluginCommand } from "./commands-plugin.js";
 import { buildCommandTestParams } from "./commands.test-harness.js";
 
+const bootstrapCommand = "/bootstrap-fixture";
+const credentialReply = "credential mutation accepted";
+const tokenCount = (stateDir: string) =>
+  Object.keys(loadDeviceBootstrapTokenRecords(stateDir)).length;
+const commandPhase = (
+  entered: { promise: Promise<void> },
+  pending: ReturnType<typeof handlePluginCommand>,
+) => Promise.race([entered.promise.then(() => "entered"), pending.then(() => "finished")]);
+
 it.each(["issue", "clear"] as const)(
   "keeps the admitted plugin owner through %s bootstrap persistence",
-  async (operation) => {
-    await withAdminIngress(async ({ cfg, admins, context, state }) => {
+  (operation) =>
+    withAdminIngress(async ({ cfg, admins, context, state }) => {
       const registry = createEmptyPluginRegistry();
       const admin = admins[0]!;
       let entered = createDeferredCore();
@@ -53,7 +62,7 @@ it.each(["issue", "clear"] as const)(
           // The credential owner must revalidate after its lock/state awaits.
           revoke?.();
           await pending;
-          return { text: "credential mutation accepted" };
+          return { text: credentialReply };
         },
       });
       registerPluginCommandInRegistry(registry, "bootstrap-fixture", {
@@ -71,9 +80,9 @@ it.each(["issue", "clear"] as const)(
           if (operation === "clear") {
             await issueDeviceBootstrapToken({ baseDir: state.stateDir });
           }
-          const before = loadDeviceBootstrapTokenRecords(state.stateDir);
+          const before = tokenCount(state.stateDir);
           const params = buildCommandTestParams(
-            "/bootstrap-fixture",
+            bootstrapCommand,
             cfg,
             await context(admin.identity.senderId),
             { workspaceDir: state.workspaceDir },
@@ -93,22 +102,17 @@ it.each(["issue", "clear"] as const)(
                 };
           const pending = handlePluginCommand(params, true);
           try {
-            expect(
-              await Promise.race([
-                entered.promise.then(() => "entered"),
-                pending.then(() => "finished"),
-              ]),
-            ).toBe("entered");
+            expect(await commandPhase(entered, pending)).toBe("entered");
             // Replacing the snapshot cannot replace its already-captured capability.
             params.command.assertOwnerCurrent = () => {};
             resume.resolve();
             const outcome = await pending;
-            const after = loadDeviceBootstrapTokenRecords(state.stateDir);
+            const after = tokenCount(state.stateDir);
             if (change === "none") {
-              expect(outcome?.reply?.text).toBe("credential mutation accepted");
-              expect(Object.keys(after).length).toBe(operation === "issue" ? 1 : 0);
+              expect(outcome?.reply?.text).toBe(credentialReply);
+              expect(after).toBe(operation === "issue" ? 1 : 0);
             } else {
-              expect(Object.keys(after).length).toBe(Object.keys(before).length);
+              expect(after).toBe(before);
               expect(outcome?.reply?.text).toContain("Command failed");
             }
             expect(retainedAssertion).toBeTypeOf("function");
@@ -125,6 +129,5 @@ it.each(["issue", "clear"] as const)(
           }
         }
       });
-    });
-  },
+    }),
 );

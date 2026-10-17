@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, onTestFinished, vi } from "vitest";
 import type { SessionEntry } from "../config/sessions/types.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { CronStoredJob } from "../cron/types.js";
@@ -74,6 +74,12 @@ vi.mock("../logger.js", async (importOriginal) => ({
 
 const source = { jobId: "event-job", sourceIdentity: "generation-one", serverName: "calendar" };
 const signal = new AbortController().signal;
+const calendarServer = (url = "https://calendar.example/mcp") => ({
+  transport: "streamable-http" as const,
+  url,
+});
+const leaseReply = () => ({ refreshBefore: new Date(Date.now() + 60_000).toISOString() });
+const retired = { code: "MCP_AUTHORIZATION_RETIRED" };
 const secret = "whsec_" + Buffer.alloc(32, 7).toString("base64");
 const subscription = {
   name: "calendar.changed",
@@ -84,12 +90,7 @@ const subscription = {
 };
 const cleanups: Array<() => void> = [];
 function fixture(pluginId = "mcp-events") {
-  let cfg: OpenClawConfig = {
-    mcp: {
-      servers: { calendar: { transport: "streamable-http", url: "https://calendar.example/mcp" } },
-    },
-  };
-  let job: CronStoredJob | undefined = {
+  const job: CronStoredJob = {
     id: source.jobId,
     name: "Calendar",
     enabled: true,
@@ -119,13 +120,21 @@ function fixture(pluginId = "mcp-events") {
     payload: { kind: "agentTurn", message: "Summarize the change", toolsAllow: [] },
     state: { sourceIdentity: source.sourceIdentity },
   };
+  const state: { cfg: OpenClawConfig; job: CronStoredJob; removed: boolean } = {
+    cfg: { mcp: { servers: { calendar: calendarServer() } } },
+    job,
+    removed: false,
+  };
   const lease = createPluginRuntimeCapabilityLease("test service");
   cleanups.push(lease.revoke);
-  const cron = { ...createServiceCronHost(), getJob: () => job };
+  const cron = {
+    ...createServiceCronHost(),
+    getJob: () => (state.removed ? undefined : state.job),
+  };
   const runtime = makeContextParams();
   onTestFinished(() => runtime.runtime.scheduler.stop());
   const context = createGatewayRequestContext(runtime);
-  context.getRuntimeConfig = () => cfg;
+  context.getRuntimeConfig = () => state.cfg;
   context.getGatewayMethodRegistry = undefined;
   const capability = createPluginServiceMcpEvents({
     pluginId,
@@ -134,259 +143,211 @@ function fixture(pluginId = "mcp-events") {
     getCron: () => cron,
     resolveGatewayContext: () => context,
   });
-  return {
-    capability,
-    lease,
-    get job() {
-      return job!;
-    },
-    get cfg() {
-      return cfg;
-    },
-    replaceConfig(next: OpenClawConfig) {
-      cfg = next;
-    },
-    remove() {
-      job = undefined;
-    },
-  };
+  return Object.assign(state, { capability, lease });
 }
+async function prepare() {
+  const prepared = await f.capability.prepareSource(source);
+  return Object.assign(prepared, {
+    list: () => prepared.request("events/list", {}, signal),
+    subscribe: (overrides: Partial<typeof subscription> = {}) =>
+      prepared.request("events/subscribe", { ...subscription, ...overrides }, signal),
+  });
+}
+let f: ReturnType<typeof fixture>;
 beforeEach(() => {
+  f = fixture();
   mocks.entry = { sessionId: "creator-session", updatedAt: 1 };
   mocks.deny = [];
   mocks.group.mockReset();
   mocks.request.mockReset();
   mocks.request.mockImplementation(async (input) => {
     input.assertCurrent();
-    return input.method === "events/subscribe"
-      ? {
-          id: "remote",
-          refreshBefore: new Date(Date.now() + 60_000).toISOString(),
-          cursor: null,
-          truncated: false,
-        }
-      : {};
+    return input.method === "events/subscribe" ? leaseReply() : {};
   });
 });
 afterEach(() => {
   cleanups.splice(0).forEach((close) => close());
 });
 
-describe("native MCP Events source authority", () => {
-  it("serves external event plugins only for their own authored source namespace", async () => {
-    const f = fixture("external-events");
-    const prepared = await f.capability.prepareSource(source);
-    prepared.assertCurrent();
-    prepared.dispose();
-    if (f.job.schedule.kind !== "event") {
-      throw new Error("Missing event fixture");
-    }
-    f.job.schedule.source = "other-plugin";
-    await expect(f.capability.prepareSource(source)).rejects.toThrow("source is no longer current");
-  });
-  it.each(["oauth"])(
-    "never falls back to shared credentials for a requester %s server",
-    async (mode) => {
-      const f = fixture();
-      delete f.job.toolsAllowProvenance;
-      if (mode === "oauth") {
-        f.cfg.mcp!.servers!.calendar = {
-          transport: "streamable-http",
-          url: "https://calendar.example/mcp",
-          auth: "oauth",
-          oauth: { identity: "per-requester" },
-        };
-      }
-      await expect(f.capability.prepareSource(source)).rejects.toThrow(
-        "original authenticated requester",
-      );
-      expect(mocks.request).not.toHaveBeenCalled();
-    },
+it("serves external event plugins only for their own authored source namespace", async () => {
+  f = fixture("external-events");
+  const prepared = await prepare();
+  prepared.assertCurrent();
+  prepared.dispose();
+  if (f.job.schedule.kind !== "event") {
+    throw new Error("Missing event fixture");
+  }
+  f.job.schedule.source = "other-plugin";
+  await expect(f.capability.prepareSource(source)).rejects.toThrow("source is no longer current");
+});
+it("never falls back to shared credentials for a requester OAuth server", async () => {
+  delete f.job.toolsAllowProvenance;
+  f.cfg.mcp!.servers!.calendar = {
+    ...calendarServer(),
+    auth: "oauth",
+    oauth: { identity: "per-requester" },
+  };
+  await expect(f.capability.prepareSource(source)).rejects.toThrow(
+    "original authenticated requester",
   );
-  it.each([
+  expect(mocks.request).not.toHaveBeenCalled();
+});
+it.each([
+  [
     "disabled",
+    (): void => {
+      f.cfg.mcp!.servers!.calendar!.enabled = false;
+    },
+  ],
+  [
     "session-server",
-    "session-namespace",
-    "tool-namespace",
-    "no-owner",
-    "account-disabled",
-  ])("rejects revoked %s authority before transport", async (kind) => {
-    const f = fixture();
-    if (kind === "disabled") {
-      const server = f.cfg.mcp?.servers?.calendar;
-      if (!server) {
-        throw new Error("Missing fixture MCP server");
-      }
-      server.enabled = false;
-    }
-    if (kind === "session-server") {
+    (): void => {
       mocks.entry!.toolOverrides = { mcpServers: { calendar: false } };
-    }
-    if (kind === "session-namespace") {
+    },
+  ],
+  [
+    "session-namespace",
+    (): void => {
       mocks.entry!.toolOverrides = { mcpToolsDeny: { calendar: ["*"] } };
-    }
-    if (kind === "tool-namespace") {
+    },
+  ],
+  [
+    "tool-namespace",
+    (): void => {
       mocks.deny = ["calendar__*"];
-    }
-    if (kind === "account-disabled") {
-      f.cfg.channels = { discord: { enabled: false } };
-    }
-    if (kind === "no-owner") {
+    },
+  ],
+  [
+    "no-owner",
+    (): void => {
       delete f.job.scheduledToolPolicy;
-    }
-    await expect(f.capability.prepareSource(source)).rejects.toThrow();
-    expect(mocks.request).not.toHaveBeenCalled();
+    },
+  ],
+  [
+    "account-disabled",
+    (): void => {
+      f.cfg.channels = { discord: { enabled: false } };
+    },
+  ],
+] as const)("rejects revoked %s authority before transport", async (_kind, revoke) => {
+  revoke();
+  await expect(f.capability.prepareSource(source)).rejects.toThrow();
+  expect(mocks.request).not.toHaveBeenCalled();
+});
+it("retains source authority for callback/commit guards and disposes superseded handles", async () => {
+  const prepared = await prepare();
+  expect(prepared).toMatchObject({
+    principalId: expect.stringMatching(/^[a-f0-9]{64}$/),
+    accountId: expect.stringMatching(/^[a-f0-9]{64}$/),
   });
-  it("retains source authority for callback/commit guards and disposes superseded handles", async () => {
-    const f = fixture();
-    const prepared = await f.capability.prepareSource(source);
-    expect(prepared.principalId).toMatch(/^[a-f0-9]{64}$/);
-    expect(prepared.accountId).toMatch(/^[a-f0-9]{64}$/);
-    expect(() => prepared.assertCurrent()).not.toThrow();
-    sessionChanges.emit({ agentId: "main", sessionKey: f.job.owner!.sessionKey! });
-    expect(() => prepared.assertCurrent()).toThrow("creator session changed");
+  expect(() => prepared.assertCurrent()).not.toThrow();
+  sessionChanges.emit({ agentId: "main", sessionKey: f.job.owner!.sessionKey! });
+  expect(() => prepared.assertCurrent()).toThrow("creator session changed");
+  prepared.dispose();
+  await expect(prepared.list()).rejects.toThrow("disposed");
+});
+it("checks disposed prepared source at the last HTTP boundary, not just admission", async () => {
+  const prepared = await prepare();
+  mocks.request.mockImplementationOnce(async (input) => {
     prepared.dispose();
-    await expect(prepared.request("events/list", {}, new AbortController().signal)).rejects.toThrow(
-      "disposed",
-    );
+    input.assertCurrent();
+    return {};
   });
-  it("checks disposed prepared source at the last HTTP boundary, not just admission", async () => {
-    const f = fixture();
-    const prepared = await f.capability.prepareSource(source);
-    mocks.request.mockImplementationOnce(async (input) => {
-      prepared.dispose();
-      input.assertCurrent();
-      return {};
-    });
-    await expect(prepared.request("events/list", {}, new AbortController().signal)).rejects.toThrow(
-      "disposed",
-    );
+  await expect(prepared.list()).rejects.toThrow("disposed");
+});
+it("retains exact cleanup across benign refresh, removal, and connector config replacement", async () => {
+  const prepared = await prepare();
+  await prepared.subscribe();
+  expect(isSecretValueRegisteredForRedaction(secret)).toBe(true);
+  expect(isSecretValueRegisteredForRedaction(secret.slice(6))).toBe(true);
+  const principalId = prepared.principalId;
+  f.cfg = { ...f.cfg, logging: { level: "debug" } };
+  sessionChanges.emit({ agentId: "main", sessionKey: f.job.owner!.sessionKey! });
+  await prepared.revalidate();
+  expect(prepared.principalId).toBe(principalId);
+  prepared.assertCurrent();
+  await expect(
+    prepared.subscribe({
+      delivery: { ...subscription.delivery, url: "https://callback.example/events/other" },
+    }),
+  ).rejects.toThrow("another webhook");
+  // Object order is not subscription identity.
+  await prepared.subscribe({ arguments: { nested: { a: 1, b: 2 }, calendar: "work" } });
+  f.cfg = {
+    mcp: { servers: { calendar: calendarServer("https://other.example/mcp") } },
+  };
+  await expect(prepared.revalidate()).rejects.toMatchObject(retired);
+  const replacement = await f.capability.prepareSource(source);
+  expect(replacement.principalId).not.toBe(principalId);
+  expect(replacement.accountId).toBe(prepared.accountId);
+  replacement.dispose();
+  f.removed = true;
+  await expect(prepared.list()).rejects.toThrow();
+  await prepared.unsubscribe(signal);
+  expect(mocks.request.mock.lastCall?.[0]).toMatchObject({
+    method: "events/unsubscribe",
+    server: { url: "https://calendar.example/mcp" },
+    params: {
+      name: subscription.name,
+      delivery: { mode: "webhook", url: subscription.delivery.url },
+    },
   });
-  it("retains exact cleanup across benign refresh, removal, and connector config replacement", async () => {
-    const f = fixture();
-    const prepared = await f.capability.prepareSource(source);
-    await prepared.request("events/subscribe", subscription, signal);
-    expect(isSecretValueRegisteredForRedaction(secret)).toBe(true);
-    expect(isSecretValueRegisteredForRedaction(secret.slice(6))).toBe(true);
-    const principalId = prepared.principalId;
-    f.replaceConfig({ ...f.cfg, logging: { level: "debug" } });
-    sessionChanges.emit({ agentId: "main", sessionKey: f.job.owner!.sessionKey! });
+  expect(mocks.request.mock.lastCall?.[0].params?.delivery).not.toHaveProperty("secret");
+  await expect(prepared.unsubscribe(signal)).rejects.toThrow("no captured");
+});
+it("preserves cleanup on unknown subscribe outcome and rejects post-revocation success", async () => {
+  const prepared = await prepare();
+  mocks.request.mockImplementationOnce(async () => {
+    f.job.enabled = false;
+    return leaseReply();
+  });
+  await expect(prepared.subscribe()).rejects.toThrow("authority or configuration changed");
+  await prepared.unsubscribe(signal);
+});
+it("fails closed for orphan cleanup and retained service revocation", async () => {
+  const prepared = await prepare();
+  await expect(prepared.unsubscribe(signal)).rejects.toThrow("finite remote lease");
+  const retained = await prepare();
+  f.lease.revoke();
+  await expect(retained.list()).rejects.toThrow();
+  await expect(f.capability.prepareSource(source)).rejects.toThrow("no longer active");
+});
+it.each([0, Infinity, 3_600_001])("rejects unbounded or invalid TTL %s", async (ttlMs) => {
+  const prepared = await prepare();
+  await expect(prepared.subscribe({ ttlMs })).rejects.toThrow("finite TTL");
+  expect(mocks.request).not.toHaveBeenCalled();
+});
+it("revalidates callbacks during subscribe and settles its late outcome before cleanup", async () => {
+  const prepared = await prepare();
+  const entered = createDeferredCore();
+  const reply = createDeferredCore();
+  mocks.request.mockImplementationOnce(async () => {
     await prepared.revalidate();
-    expect(prepared.principalId).toBe(principalId);
-    prepared.assertCurrent();
-    await expect(
-      prepared.request(
-        "events/subscribe",
-        {
-          ...subscription,
-          delivery: { ...subscription.delivery, url: "https://callback.example/events/other" },
-        },
-        signal,
-      ),
-    ).rejects.toThrow("another webhook");
-    // Object order is not subscription identity.
-    await prepared.request(
-      "events/subscribe",
-      {
-        ...subscription,
-        arguments: { nested: { a: 1, b: 2 }, calendar: "work" },
-      },
-      signal,
-    );
-    f.replaceConfig({
-      mcp: {
-        servers: {
-          calendar: {
-            transport: "streamable-http",
-            url: "https://other.example/mcp",
-          },
-        },
-      },
-    });
-    await expect(prepared.revalidate()).rejects.toMatchObject({
-      code: "MCP_AUTHORIZATION_RETIRED",
-    });
-    const replacement = await f.capability.prepareSource(source);
-    expect(replacement.principalId).not.toBe(principalId);
-    expect(replacement.accountId).toBe(prepared.accountId);
-    replacement.dispose();
-    f.remove();
-    await expect(prepared.request("events/list", {}, signal)).rejects.toThrow();
-    await prepared.unsubscribe(signal);
-    expect(mocks.request.mock.lastCall?.[0]).toMatchObject({
-      method: "events/unsubscribe",
-      server: { url: "https://calendar.example/mcp" },
-      params: {
-        name: subscription.name,
-        delivery: { mode: "webhook", url: subscription.delivery.url },
-      },
-    });
-    expect(mocks.request.mock.lastCall?.[0].params?.delivery).not.toHaveProperty("secret");
-    await expect(prepared.unsubscribe(signal)).rejects.toThrow("no captured");
+    entered.resolve();
+    await reply.promise;
+    return leaseReply();
   });
-  it("preserves cleanup on unknown subscribe outcome and rejects post-revocation success", async () => {
-    const f = fixture();
-    const prepared = await f.capability.prepareSource(source);
-    mocks.request.mockImplementationOnce(async () => {
-      f.job.enabled = false;
-      return { id: "remote", refreshBefore: new Date(Date.now() + 60_000).toISOString() };
-    });
-    await expect(prepared.request("events/subscribe", subscription, signal)).rejects.toThrow(
-      "authority or configuration changed",
-    );
-    await prepared.unsubscribe(signal);
-  });
-  it("fails closed for orphan cleanup and retained service revocation", async () => {
-    const f = fixture();
-    const prepared = await f.capability.prepareSource(source);
+  const subscribing = prepared.subscribe();
+  const rejected = expect(subscribing).rejects.toThrow();
+  await entered.promise;
+  const cleanup = prepared.unsubscribe(signal);
+  expect(mocks.request).toHaveBeenCalledTimes(1);
+  await expect(prepared.subscribe()).rejects.toThrow();
+  reply.resolve();
+  await rejected;
+  await cleanup;
+  expect(mocks.request.mock.lastCall?.[0].method).toBe("events/unsubscribe");
+});
+it("expires exact cleanup without recreating it from a restored prepared source", async () => {
+  const prepared = await prepare();
+  await prepared.subscribe();
+  const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 400_000);
+  try {
     await expect(prepared.unsubscribe(signal)).rejects.toThrow("finite remote lease");
-    const retained = await f.capability.prepareSource(source);
-    f.lease.revoke();
-    await expect(retained.request("events/list", {}, signal)).rejects.toThrow();
-    await expect(f.capability.prepareSource(source)).rejects.toThrow("no longer active");
-  });
-  it.each([0, Infinity, 3_600_001])("rejects unbounded or invalid TTL %s", async (ttlMs) => {
-    const f = fixture();
-    const prepared = await f.capability.prepareSource(source);
-    await expect(
-      prepared.request("events/subscribe", { ...subscription, ttlMs }, signal),
-    ).rejects.toThrow("finite TTL");
-    expect(mocks.request).not.toHaveBeenCalled();
-  });
-  it("revalidates callbacks during subscribe and settles its late outcome before cleanup", async () => {
-    const f = fixture();
-    const prepared = await f.capability.prepareSource(source);
-    const entered = createDeferredCore();
-    const reply = createDeferredCore();
-    mocks.request.mockImplementationOnce(async () => {
-      await prepared.revalidate();
-      entered.resolve();
-      await reply.promise;
-      return { refreshBefore: new Date(Date.now() + 60_000).toISOString() };
-    });
-    const subscribing = prepared.request("events/subscribe", subscription, signal);
-    const rejected = expect(subscribing).rejects.toThrow();
-    await entered.promise;
-    const cleanup = prepared.unsubscribe(signal);
+    const restored = await f.capability.prepareSource(source);
+    await expect(restored.unsubscribe(signal)).rejects.toThrow("finite remote lease");
     expect(mocks.request).toHaveBeenCalledTimes(1);
-    await expect(prepared.request("events/subscribe", subscription, signal)).rejects.toThrow();
-    reply.resolve();
-    await rejected;
-    await cleanup;
-    expect(mocks.request.mock.lastCall?.[0].method).toBe("events/unsubscribe");
-  });
-  it("expires exact cleanup without recreating it from a restored prepared source", async () => {
-    const f = fixture();
-    const prepared = await f.capability.prepareSource(source);
-    await prepared.request("events/subscribe", subscription, signal);
-    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 400_000);
-    try {
-      await expect(prepared.unsubscribe(signal)).rejects.toThrow("finite remote lease");
-      const restored = await f.capability.prepareSource(source);
-      await expect(restored.unsubscribe(signal)).rejects.toThrow("finite remote lease");
-      expect(mocks.request).toHaveBeenCalledTimes(1);
-    } finally {
-      clock.mockRestore();
-    }
-  });
+  } finally {
+    clock.mockRestore();
+  }
 });
