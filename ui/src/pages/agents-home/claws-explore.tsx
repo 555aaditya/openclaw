@@ -2,7 +2,7 @@ import { createStore, For, onCleanup, Show } from "solid-js";
 import { CatalogPageHeader } from "../../components/solid/catalog-page-header.tsx";
 import { Icon } from "../../components/solid/icon.tsx";
 import { SettingsPage } from "../../components/solid/settings-ui.tsx";
-import { registerAgentsHomeEnglish } from "../../i18n/locales/en-agents-home.ts";
+import { registerClawsEnglish } from "../../i18n/locales/en-claws.ts";
 import { formatUiError } from "../../lib/format-error.ts";
 import { canCallGatewayMethod } from "../../lib/gateway-methods.ts";
 import { useApplication } from "../../lib/reactive/context.ts";
@@ -11,7 +11,7 @@ import { registerEnglishCatalog, t } from "../../lib/reactive/i18n.ts";
 import { searchOfficialClaws, type ClawCatalogEntry } from "./claws-catalog-client.ts";
 import "../../styles/agents-home.css";
 
-registerEnglishCatalog(registerAgentsHomeEnglish);
+registerEnglishCatalog(registerClawsEnglish);
 
 export function ClawsExplore(props: { onSelect?: (entry: ClawCatalogEntry) => void }) {
   const context = useApplication();
