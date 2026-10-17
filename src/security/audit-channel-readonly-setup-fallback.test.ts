@@ -111,7 +111,6 @@ describe("security audit channel read-only setup fallback", () => {
       sourceConfig: cfg,
       includeFilesystem: false,
       includeChannelSecurity: true,
-      loadPluginSecurityCollectors: false,
     });
 
     const readOnlyPluginCalls = listReadOnlyChannelPluginsForConfigMock.mock

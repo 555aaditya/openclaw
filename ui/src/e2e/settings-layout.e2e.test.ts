@@ -123,7 +123,7 @@ const standaloneHeaderCases = [
   { route: "usage", subtitle: "API usage and costs." },
   {
     route: "memory-import",
-    subtitle: "Bring Codex and Claude Code memory into an agent workspace.",
+    subtitle: "Choose an agent and review memories from its earlier sessions.",
   },
 ] as const satisfies ReadonlyArray<{ route: RouteId; subtitle: string }>;
 

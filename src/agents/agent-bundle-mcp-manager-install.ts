@@ -16,13 +16,6 @@ import type {
   SessionMcpRuntime,
 } from "./agent-bundle-mcp-types.js";
 import { allowMcpAppModelContext, revokeMcpAppModelContext } from "./mcp-app-model-context.js";
-import {
-  MCP_CONNECTION_REVALIDATE_MS,
-  hashMcpResolvedConnections,
-  resolveRequesterScopedMcpConnections,
-  type McpServerConnectionResolved,
-} from "./mcp-connection-resolver.js";
-
 type RuntimeEntryParams = Omit<Parameters<CreateSessionMcpRuntime>[0], "configFingerprint"> & {
   configReloadAtAdmission?: SessionMcpConfigPublication;
   runtimeKey: string;
@@ -31,7 +24,6 @@ type RuntimeEntryParams = Omit<Parameters<CreateSessionMcpRuntime>[0], "configFi
 type RequesterRuntimeParams = RuntimeEntryParams & {
   oauthRequesterNameSet: ReadonlySet<string>;
   mcpServers: Record<string, BundleMcpServerConfig>;
-  resolverRequesterServerNames: readonly string[];
   safeServerNamesByServer: ReadonlyMap<string, string>;
   fullScopedFingerprint: string;
   requesterSenderId: string;
@@ -97,17 +89,12 @@ export function createSessionMcpRuntimeManagerInstall(
     const hasServers = Object.keys(config.loaded.mcpServers).length > 0;
     const { runtimeKey, configReloadAtAdmission, ...runtimeParams } = params;
     const existing = store.runtimesBySessionId.get(runtimeKey);
-    const connectionMatches =
-      !params.connectionOverrides ||
-      store.connectionMetaByRuntimeKey.get(runtimeKey)?.connectionHash ===
-        hashMcpResolvedConnections(params.connectionOverrides);
-    if (existing && connectionMatches && matchesRuntime(existing, params, nextFingerprint)) {
+    if (existing && matchesRuntime(existing, params, nextFingerprint)) {
       reconcileReusableRetirement(params, existing);
       existing.markUsed();
       return existing;
     }
     const slot = lifecycle.reserveRuntimeSlot(existing, hasServers);
-    store.connectionMetaByRuntimeKey.delete(runtimeKey);
     let runtime: SessionMcpRuntime | undefined;
     let previousCleanup: Promise<void> | undefined;
     try {
@@ -164,27 +151,6 @@ export function createSessionMcpRuntimeManagerInstall(
     }
   };
 
-  /** Install or reuse one requester runtime. Must run under its runtime-key lock. */
-  const installRequesterRuntime = async (
-    params: RuntimeEntryParams & {
-      connectionOverrides: Map<string, McpServerConnectionResolved>;
-    },
-  ): Promise<SessionMcpRuntime> => {
-    const connectionHash = hashMcpResolvedConnections(params.connectionOverrides);
-    const runtime = await getOrCreateRuntimeEntry(params);
-    if (store.runtimesBySessionId.get(params.runtimeKey) === runtime) {
-      store.connectionMetaByRuntimeKey.set(params.runtimeKey, {
-        connectionHash,
-        resolvedAt: store.scheduler.now(),
-      });
-    }
-    return runtime;
-  };
-
-  /**
-   * Full requester section for one runtimeKey: reuse / resolve / install / revoke.
-   * Always invoked under runExclusiveOnRuntimeKey.
-   */
   const resolveAndInstallRequesterRuntime = async (
     params: RequesterRuntimeParams,
   ): Promise<SessionMcpRuntime | undefined> => {
@@ -196,43 +162,24 @@ export function createSessionMcpRuntimeManagerInstall(
       cfg: params.cfg,
       configFingerprint: params.fullScopedFingerprint,
     });
-    const expectedLiveNameSet = new Set([
-      ...(requesterConnect?.authorizedServerNames ?? []),
-      ...params.resolverRequesterServerNames,
-    ]);
+    const expectedLiveNameSet = new Set(requesterConnect?.authorizedServerNames ?? []);
     const { fingerprint: expectedLiveFingerprint } = loadSessionMcpConfig({
       ...params,
       logDiagnostics: false,
       includeServerNames: expectedLiveNameSet,
-      redactConnectionServerNames: new Set(params.resolverRequesterServerNames),
     });
     const scopedFingerprint = requesterRuntimeFingerprint(
       expectedLiveFingerprint,
       requesterConnect,
     );
     const existing = store.runtimesBySessionId.get(params.runtimeKey);
-    const meta = store.connectionMetaByRuntimeKey.get(params.runtimeKey);
-    // Full-set + within revalidation window: skip resolver I/O.
-    // Revocation/rotation takes effect within MCP_CONNECTION_REVALIDATE_MS even for
-    // continuously active requesters (markUsed does not extend this clock alone).
-    const withinRevalidateWindow =
-      meta !== undefined && store.scheduler.now() - meta.resolvedAt < MCP_CONNECTION_REVALIDATE_MS;
-    if (withinRevalidateWindow && existing && matchesRuntime(existing, params, scopedFingerprint)) {
+    if (existing && matchesRuntime(existing, params, scopedFingerprint)) {
       reconcileReusableRetirement(params, existing);
       existing.markUsed();
       return existing;
     }
 
-    const connectionOverrides = await resolveRequesterScopedMcpConnections({
-      serverNames: params.resolverRequesterServerNames,
-      requesterSenderId: params.requesterSenderId,
-      agentAccountId: params.agentAccountId,
-      messageChannel: params.messageChannel,
-    });
-    const activeNameSet = new Set([
-      ...(requesterConnect?.authorizedServerNames ?? []),
-      ...connectionOverrides.keys(),
-    ]);
+    const activeNameSet = new Set(requesterConnect?.authorizedServerNames ?? []);
     if (activeNameSet.size === 0 && !requesterConnect) {
       // Empty re-resolution revokes cached scoped credentials.
       // Leases do not block: this is an authorization boundary.
@@ -241,7 +188,7 @@ export function createSessionMcpRuntimeManagerInstall(
       }
       return undefined;
     }
-    return await installRequesterRuntime({
+    return await getOrCreateRuntimeEntry({
       runtimeKey: params.runtimeKey,
       configReloadAtAdmission: params.configReloadAtAdmission,
       sessionId: params.sessionId,
@@ -254,8 +201,6 @@ export function createSessionMcpRuntimeManagerInstall(
       safeServerNamesByServer: params.safeServerNamesByServer,
       includeServerNames: activeNameSet,
       requesterConnect,
-      connectionOverrides,
-      redactConnectionServerNames: new Set(params.resolverRequesterServerNames),
       requesterScope: params.requesterScope,
       toolOverrides: params.toolOverrides,
       toolDenylist: params.toolDenylist,

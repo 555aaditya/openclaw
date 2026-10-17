@@ -229,7 +229,6 @@ function setupDeps(params: {
   activate?: GuidedOnboardingDeps["activate"];
   runSystemAgentChat?: GuidedOnboardingDeps["runSystemAgentChat"];
   persistRiskAcknowledgement?: GuidedOnboardingDeps["persistRiskAcknowledgement"];
-  runSetupMemoryImportStep?: GuidedOnboardingDeps["runSetupMemoryImportStep"];
   runMemorySetupFlow?: GuidedOnboardingDeps["runMemorySetupFlow"];
   runAppRecommendations?: GuidedOnboardingDeps["runAppRecommendations"];
   runBrowserHandoff?: GuidedOnboardingDeps["runBrowserHandoff"];
@@ -239,9 +238,6 @@ function setupDeps(params: {
   const runSystemAgentChat = vi.fn<NonNullable<GuidedOnboardingDeps["runSystemAgentChat"]>>(
     params.runSystemAgentChat ?? (async () => {}),
   );
-  const runSetupMemoryImportStep = vi.fn<
-    NonNullable<GuidedOnboardingDeps["runSetupMemoryImportStep"]>
-  >(params.runSetupMemoryImportStep ?? (async () => ({ status: "skipped", providers: [] })));
   return {
     createPrompter: () => params.prompter,
     persistAccessMode: vi.fn(async () => undefined),
@@ -272,7 +268,6 @@ function setupDeps(params: {
         localOnboarding.persisted.config = config;
         return config.wizard?.securityAcknowledgedAt;
       }),
-    runSetupMemoryImportStep,
     runMemorySetupFlow:
       params.runMemorySetupFlow ?? vi.fn(async (config: OpenClawConfig) => config),
     runAppRecommendations:

@@ -35,7 +35,7 @@ const contract = defineFeatureContract({
 });
 
 describe("typed feature plugins", () => {
-  it("shares typed handlers without losing action, tool, or command invocation context", async () => {
+  it("shares typed handlers without losing tool and command invocation context", async () => {
     const contexts: FeatureInvocationContext[] = [];
     const entry = defineFeaturePlugin({
       contract,
@@ -71,16 +71,6 @@ describe("typed feature plugins", () => {
       command = value;
     };
     entry.register(captured.api);
-    const action = expectDefined(captured.sessionActions[0], "registered feature action");
-    const actionContext = {
-      pluginId: contract.pluginId,
-      actionId: "inspect",
-      payload: { value: "action" },
-      client: { connId: "browser", scopes: ["operator.read"] },
-    };
-    expect(await action.handler(actionContext)).toEqual({ ok: true, result: { value: "action" } });
-    expect(action.requiredScopes).toEqual(["operator.read"]);
-
     const toolContext = { sessionKey: "agent:fixture:task", agentId: "fixture", sandboxed: true };
     const tool = expectDefined(factory, "registered feature tool factory")(toolContext);
     if (!tool || Array.isArray(tool)) {
@@ -101,7 +91,6 @@ describe("typed feature plugins", () => {
       await expectDefined(command, "registered feature command").handler(commandContext),
     ).toEqual({ text: "command" });
     expect(contexts).toEqual([
-      { source: "session-action", action: actionContext, api: captured.api },
       {
         source: "tool",
         tool: toolContext,
@@ -112,7 +101,7 @@ describe("typed feature plugins", () => {
       },
       { source: "command", command: commandContext, api: captured.api },
     ]);
-    expect(contexts[1]?.source === "tool" && contexts[1].tool).toBe(toolContext);
+    expect(contexts[0]?.source === "tool" && contexts[0].tool).toBe(toolContext);
   });
 
   it("rejects invalid inputs before execution and invalid outputs before returning success", async () => {
@@ -126,23 +115,20 @@ describe("typed feature plugins", () => {
       }),
     });
     const captured = createCapturedPluginRegistration({ id: contract.pluginId });
+    let factory: OpenClawPluginToolFactory | undefined;
+    captured.api.registerTool = (tool) => {
+      if (typeof tool === "function") {
+        factory = tool;
+      }
+    };
     entry.register(captured.api);
-    const action = expectDefined(captured.sessionActions[0], "registered feature action");
-    expect(
-      await action.handler({
-        pluginId: contract.pluginId,
-        actionId: "inspect",
-        payload: { value: 4 },
-      }),
-    ).toMatchObject({ ok: false, code: "INVALID_INPUT" });
+    const tool = expectDefined(factory, "feature tool factory")({});
+    if (!tool || Array.isArray(tool)) {
+      throw new Error("Expected one feature tool");
+    }
+    await expect(tool.execute("invalid-input", { value: 4 })).rejects.toThrow("input");
     expect(execute).not.toHaveBeenCalled();
-    expect(
-      await action.handler({
-        pluginId: contract.pluginId,
-        actionId: "inspect",
-        payload: { value: "valid" },
-      }),
-    ).toMatchObject({ ok: false, code: "INVALID_OUTPUT" });
+    await expect(tool.execute("invalid-output", { value: "valid" })).rejects.toThrow("output");
     expect(execute).toHaveBeenCalledTimes(1);
   });
 
@@ -194,6 +180,7 @@ describe("typed feature plugins", () => {
             description: "Publish a fixture value.",
             input: valueSchema,
             output: valueSchema,
+            tool: { name: `${pluginId}_${operation}`.replaceAll("-", "_") },
           },
         },
         events: { [event]: valueSchema },
@@ -217,17 +204,18 @@ describe("typed feature plugins", () => {
         register: entry.register,
       });
     }
-    const actions = fixtures.map(({ pluginId, operation }) => {
-      const { action } = expectDefined(
-        registry.registry.sessionActions.find(
-          (entry) => entry.pluginId === pluginId && entry.action.id === operation,
-        ),
-        `registered ${pluginId} action`,
+    const actions = fixtures.map(({ pluginId }) => {
+      const registration = expectDefined(
+        registry.registry.tools.find((entry) => entry.pluginId === pluginId),
+        `registered ${pluginId} tool`,
       );
+      const tool = registration.factory({});
+      if (!tool || Array.isArray(tool)) {
+        throw new Error("Expected one feature tool");
+      }
       return {
         pluginId,
-        invoke: () =>
-          action.handler({ pluginId, actionId: operation, payload: { value: pluginId } }),
+        invoke: async () => (await tool.execute("event-call", { value: pluginId })).details,
       };
     });
     for (const { invoke } of actions) {
@@ -242,7 +230,7 @@ describe("typed feature plugins", () => {
     });
     try {
       for (const { pluginId, invoke } of actions) {
-        await expect(invoke()).resolves.toEqual({ ok: true, result: { value: pluginId } });
+        await expect(invoke()).resolves.toEqual({ value: pluginId });
       }
       expect(registry.registry.diagnostics).toEqual([]);
       expect(broadcastPluginEvent.mock.calls).toEqual(

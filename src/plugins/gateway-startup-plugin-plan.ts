@@ -36,9 +36,6 @@ import type { PluginManifestRegistry } from "./manifest-registry.js";
 import { normalizePluginPolicyId } from "./plugin-policy-id.js";
 import { createPluginRegistryIdNormalizer } from "./plugin-registry-contributions.js";
 import type { PluginRegistrySnapshot } from "./plugin-registry-snapshot.js";
-import { collectConfiguredStorageProviderIds } from "./storage-provider-manifest.js";
-import { collectConfiguredWorkerProviderIds } from "./worker-provider-config.js";
-import { normalizeWorkerProviderIds } from "./worker-provider-id.js";
 
 export function resolveChannelPluginIdsFromRegistry(params: {
   manifestRegistry: PluginManifestRegistry;
@@ -56,7 +53,6 @@ export function resolveGatewayStartupPluginPlanFromRegistry(params: {
   index: PluginRegistrySnapshot;
   manifestRegistry: PluginManifestRegistry;
   normalizePluginId?: NormalizePluginId;
-  workerProviderIds?: readonly string[];
   discovery?: PluginDiscoveryResult;
   platform?: NodeJS.Platform;
   ambientEnvTriggers?: AmbientEnvTriggerPolicy;
@@ -119,13 +115,6 @@ export function resolveGatewayStartupPluginPlanFromRegistry(params: {
       collectConfiguredMemoryEmbeddingProviderIds(activationSourceConfig),
     configuredDecisionProviderIds: new Set(
       getConfiguredDecisionProviderIds(activationSourceConfig),
-    ),
-    configuredWorkerProviderIds: new Set([
-      ...collectConfiguredWorkerProviderIds(activationSourceConfig),
-      ...normalizeWorkerProviderIds(params.workerProviderIds ?? []),
-    ]),
-    configuredStorageProviderIds: new Set(
-      collectConfiguredStorageProviderIds(activationSourceConfig),
     ),
     platform: params.platform,
   };

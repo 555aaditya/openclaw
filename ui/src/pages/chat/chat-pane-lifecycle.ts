@@ -7,7 +7,6 @@ import {
   type TaskSuggestionEvent,
 } from "../../../../packages/gateway-protocol/src/index.js";
 import { chatInputOwnerForContext } from "../../app/chat-input-owner.ts";
-import { availableLinkReaders } from "../../app/link-reader-routing.ts";
 import { isDesktopPanelAvailable } from "../../app/panel-availability.ts";
 import {
   disposeQuestionPromptState,
@@ -89,7 +88,6 @@ export abstract class ChatPaneLifecycle extends ChatPaneSessionObservation {
           ? {
               renderRoot: this.element,
               state,
-              linkReaders: availableLinkReaders(this.context.gateway.snapshot),
               pluginPanels: this.context.plugins.registrations("panels").map((entry) => entry.key),
               updateComplete: this.updateComplete,
             }

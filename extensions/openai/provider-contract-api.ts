@@ -13,16 +13,6 @@ const OPENAI_ACCOUNT_WIZARD_GROUP = {
   groupLabel: "OpenAI",
   groupHint: "Codex login, Sign in with ChatGPT (Beta), or API key",
 } as const;
-const CODEX_CHATGPT_IMPORT = {
-  migrationProviderId: "codex",
-  itemId: "auth:openai",
-  credentialKind: "oauth",
-} as const;
-const CODEX_API_KEY_IMPORT = {
-  migrationProviderId: "codex",
-  itemId: "auth:openai:api-key",
-  credentialKind: "api_key",
-} as const;
 
 const matchesTokenSharingAccount: NonNullable<
   ProviderPlugin["auth"][number]["matchesPersonalAccount"]
@@ -94,7 +84,6 @@ export function createOpenAIProvider(): ProviderPlugin {
           label: "Codex login (browser)",
           hint: "Sign in to Codex locally with your ChatGPT account",
           matchesPersonalAccount,
-          credentialImport: CODEX_CHATGPT_IMPORT,
           wizard: {
             choiceId: "openai",
             assistantPriority: -10,
@@ -106,7 +95,6 @@ export function createOpenAIProvider(): ProviderPlugin {
           label: "Codex login (device code)",
           hint: "Use a browser code when OpenClaw runs on a remote VM",
           matchesPersonalAccount,
-          credentialImport: CODEX_CHATGPT_IMPORT,
           wizard: {
             choiceId: "openai-device-code",
             assistantPriority: -40,
@@ -129,7 +117,6 @@ export function createOpenAIProvider(): ProviderPlugin {
           kind: "api_key",
           label: "OpenAI API Key",
           hint: "Use your OpenAI API key directly",
-          credentialImport: CODEX_API_KEY_IMPORT,
           wizard: {
             choiceId: "openai-api-key",
             assistantPriority: 5,

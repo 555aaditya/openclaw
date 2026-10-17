@@ -49,7 +49,6 @@ export type GuidedOnboardingDeps = GuidedOnboardingHandoffDeps & {
    */
   handoffMode?: "hatch" | "chat";
   applySetup?: typeof import("../system-agent/setup-apply.js").applySystemAgentSetup;
-  runSetupMemoryImportStep?: typeof import("../wizard/setup.memory-import.js").runSetupMemoryImportStep;
   runMemorySetupFlow?: typeof import("../flows/memory-setup.js").runMemorySetupFlow;
   runAppRecommendations?: typeof import("../wizard/setup.app-recommendations.js").setupAppRecommendations;
   /** Browser-first local hatch handoff. Tests inject this to avoid real browser/Gateway work. */
@@ -422,17 +421,7 @@ async function runGuidedOnboardingFlow(
   let persistedConfig = persistedSnapshot.valid
     ? (persistedSnapshot.sourceConfig ?? persistedSnapshot.config)
     : acknowledgedConfig;
-  const importMemories = async () => {
-    const runMemoryImport =
-      deps.runSetupMemoryImportStep ??
-      (await import("../wizard/setup.memory-import.js")).runSetupMemoryImportStep;
-    await runMemoryImport({
-      config: persistedConfig,
-      prompter,
-      runtime,
-      ...(handoffAgentId ? { agentId: handoffAgentId } : {}),
-    });
-  };
+
   if (!custodianMode) {
     if (skippedInference) {
       await prompter.note(
@@ -440,9 +429,6 @@ async function runGuidedOnboardingFlow(
         t("wizard.guided.nextStepsTitle"),
       );
       return null;
-    }
-    if (wantsDiscovery) {
-      await importMemories();
     }
     return {
       workspace: conversationWorkspace,
@@ -643,7 +629,6 @@ async function runGuidedOnboardingFlow(
   if (wantsDiscovery && !quickstart && !setupOnly) {
     // Import destinations come from the final persisted agent workspace. Importing
     // before setup apply strands memories when first run specifies --workspace.
-    await importMemories();
     const runAppRecommendations =
       deps.runAppRecommendations ??
       (await import("../wizard/setup.app-recommendations.js")).setupAppRecommendations;

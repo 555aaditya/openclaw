@@ -55,7 +55,6 @@ suite.define(() => {
           assistantName: "Atlas",
           sessions,
           presenceUsers: [{ id: "alex", name: "Alex", self: true }],
-          controlUiTabs: [{ id: "daily", label: "Reports", pluginId: "reports", icon: "plug" }],
           featureMethods: [...defaultControlUiFeatureMethods, "users.prefs.get", "users.prefs.set"],
           methodResponses: {
             "config.get": {

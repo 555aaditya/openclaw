@@ -59,8 +59,6 @@ export function makeRegistry(
     modelSupport?: { modelPrefixes?: string[]; modelPatterns?: string[] };
     contracts?: {
       speechProviders?: string[];
-      workerProviders?: string[];
-      storageProviders?: string[];
       decisionProviders?: string[];
       webSearchProviders?: string[];
       webFetchProviders?: string[];

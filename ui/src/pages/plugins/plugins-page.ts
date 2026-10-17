@@ -296,7 +296,7 @@ export function createPluginsPage(options: {
 
   function handleGatewaySnapshot(change: GatewayPageChange) {
     const snapshot = change.snapshot;
-    const generation = snapshot.pluginCapabilities?.generation;
+    const generation = snapshot.pluginGeneration ?? undefined;
     const pluginsChanged = generation !== undefined && generation !== pluginGeneration;
     pluginGeneration = generation;
     if (!change.initial && pluginsChanged) {

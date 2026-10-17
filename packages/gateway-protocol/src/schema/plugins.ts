@@ -9,10 +9,6 @@ import {
   ClawHubPluginMcpServerSchema,
 } from "./clawhub-listing.js";
 import { closedObject } from "./closed-object.js";
-import {
-  ControlUiLinkReaderMetadataSchema,
-  ControlUiLinkReaderDescriptorSchema,
-} from "./control-ui-link-reader.js";
 import { PluginSdkDeprecationNoticeSchema } from "./plugin-compatibility.js";
 import { PluginCredentialDescriptorSchema } from "./plugin-credentials.js";
 import {
@@ -50,11 +46,6 @@ export {
   PluginOperatorGrantsSchema,
 } from "./plugin-inspection.js";
 
-export {
-  ControlUiLinkReaderMetadataSchema,
-  ControlUiLinkReaderDescriptorSchema,
-} from "./control-ui-link-reader.js";
-
 /**
  * Plugin control-surface protocol schemas.
  *
@@ -64,62 +55,10 @@ export {
 /** Arbitrary plugin-owned JSON payload carried opaquely through the gateway. */
 export const PluginJsonValueSchema = Type.Unknown();
 
-export const PluginControlUiDescriptorSchema = closedObject({
-  id: NonEmptyString,
-  pluginId: NonEmptyString,
-  pluginName: Type.Optional(NonEmptyString),
-  surface: stringLiteralUnion([
-    "session",
-    "tool",
-    "run",
-    "settings",
-    "tab",
-    "widget",
-    "link-reader",
-  ]),
-  linkReader: Type.Optional(ControlUiLinkReaderMetadataSchema),
-  label: NonEmptyString,
-  description: Type.Optional(Type.String()),
-  icon: Type.Optional(Type.String()),
-  path: Type.Optional(Type.String()),
-  placement: Type.Optional(Type.String()),
-  group: Type.Optional(stringLiteralUnion(["control", "agent"])),
-  order: Type.Optional(Type.Number()),
-  schema: Type.Optional(PluginJsonValueSchema),
-  requiredScopes: Type.Optional(Type.Array(NonEmptyString)),
-});
-
-export const PluginsUiDescriptorsParamsSchema = closedObject({});
-
-export const ControlUiPluginTabSchema = closedObject({
-  pluginId: NonEmptyString,
-  id: NonEmptyString,
-  label: NonEmptyString,
-  description: Type.Optional(Type.String()),
-  icon: Type.Optional(Type.String()),
-  path: Type.Optional(Type.String()),
-  placement: Type.Optional(Type.String()),
-  slug: Type.Optional(Type.String({ pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$", maxLength: 64 })),
-  requiresGatewayAuth: Type.Optional(Type.Boolean()),
-  group: Type.Optional(stringLiteralUnion(["control", "agent"])),
-  order: Type.Optional(Type.Number()),
-});
-
 export const ControlUiPluginWidgetKindSchema = closedObject({
   pluginId: NonEmptyString,
   kind: NonEmptyString,
   label: NonEmptyString,
-});
-
-export const PluginsUiDescriptorsResultSchema = closedObject({
-  ok: Type.Literal(true),
-  descriptors: Type.Array(PluginControlUiDescriptorSchema),
-  generation: Type.Optional(Type.Integer({ minimum: 0 })),
-  methods: Type.Optional(Type.Array(NonEmptyString)),
-  controlUiTabs: Type.Optional(Type.Array(ControlUiPluginTabSchema)),
-  controlUiWidgetKinds: Type.Optional(Type.Array(ControlUiPluginWidgetKindSchema)),
-  controlUiLinkReaders: Type.Optional(Type.Array(ControlUiLinkReaderDescriptorSchema)),
-  pluginSurfaceUrls: Type.Optional(Type.Record(NonEmptyString, NonEmptyString)),
 });
 
 export const PluginUiCapabilitySchema = Type.Enum(PLUGIN_UI_CAPABILITIES, { type: "string" });
@@ -179,34 +118,6 @@ export const PluginsControlUiStatusResultSchema = closedObject({
   ),
 });
 
-export const PluginsSessionActionParamsSchema = closedObject({
-  pluginId: NonEmptyString,
-  actionId: NonEmptyString,
-  sessionKey: Type.Optional(NonEmptyString),
-  agentId: Type.Optional(NonEmptyString),
-  payload: Type.Optional(PluginJsonValueSchema),
-});
-
-export const PluginsSessionActionSuccessResultSchema = closedObject({
-  ok: Type.Literal(true),
-  result: Type.Optional(PluginJsonValueSchema),
-  continueAgent: Type.Optional(Type.Boolean()),
-  reply: Type.Optional(PluginJsonValueSchema),
-});
-
-/** Failed plugin action result with plugin-owned detail payload. */
-export const PluginsSessionActionFailureResultSchema = closedObject({
-  ok: Type.Literal(false),
-  error: Type.String(),
-  code: Type.Optional(Type.String()),
-  details: Type.Optional(PluginJsonValueSchema),
-});
-
-export const PluginsSessionActionResultSchema = Type.Union([
-  PluginsSessionActionSuccessResultSchema,
-  PluginsSessionActionFailureResultSchema,
-]);
-
 export const PluginCatalogClawHubInstallSchema = closedObject({
   source: Type.Literal("clawhub"),
   packageName: NonEmptyString,
@@ -218,7 +129,7 @@ export const PluginCatalogOfficialInstallSchema = closedObject({
 });
 
 // Branches stay named schemas: the Swift generator only emits discriminated
-// unions whose branches resolve to registered types (see PluginsSessionActionResult).
+// unions whose branches resolve to registered types.
 export const PluginCatalogInstallActionSchema = Type.Union([
   PluginCatalogClawHubInstallSchema,
   PluginCatalogOfficialInstallSchema,
@@ -733,7 +644,6 @@ export const PluginsSetEnabledParamsSchema = closedObject({
 export const PluginsSetEnabledResultSchema = closedObject(PluginsInstallResultSchema.properties);
 
 export type PluginCatalogEntry = Static<typeof PluginCatalogEntrySchema>;
-export type ControlUiPluginTab = Static<typeof ControlUiPluginTabSchema>;
 export type ControlUiPluginWidgetKind = Static<typeof ControlUiPluginWidgetKindSchema>;
 export type PluginRuntimeStatus = Static<typeof PluginRuntimeStatusSchema>;
 export type PluginsListParams = Static<typeof PluginsListParamsSchema>;
@@ -773,16 +683,8 @@ export type PluginsUninstallParams = Static<typeof PluginsUninstallParamsSchema>
 export type PluginsUninstallResult = Static<typeof PluginsUninstallResultSchema>;
 export type PluginsSetEnabledParams = Static<typeof PluginsSetEnabledParamsSchema>;
 export type PluginsSetEnabledResult = Static<typeof PluginsSetEnabledResultSchema>;
-
-// Wire types derive directly from local schema consts so public d.ts graphs never
-// pull in the ProtocolSchemas registry.
-export type PluginControlUiDescriptor = Static<typeof PluginControlUiDescriptorSchema>;
-export type PluginsUiDescriptorsParams = Static<typeof PluginsUiDescriptorsParamsSchema>;
-export type PluginsUiDescriptorsResult = Static<typeof PluginsUiDescriptorsResultSchema>;
 export type PluginControlUiModule = Static<typeof PluginControlUiModuleSchema>;
 export type PluginControlUiDiagnostic = Static<typeof PluginControlUiDiagnosticSchema>;
 export type PluginsControlUiCatalog = Static<typeof PluginsControlUiCatalogSchema>;
 export type PluginsControlUiReloadParams = Static<typeof PluginsControlUiReloadParamsSchema>;
 export type PluginControlUiActivation = Static<typeof PluginsControlUiReportParamsSchema>;
-export type PluginsSessionActionParams = Static<typeof PluginsSessionActionParamsSchema>;
-export type PluginsSessionActionResult = Static<typeof PluginsSessionActionResultSchema>;

@@ -38,14 +38,10 @@ export function projectCodexHostTranscriptBytePreflightConfig(
   active: boolean,
 ): OpenClawConfig | undefined {
   const compaction = config?.agents?.defaults?.compaction;
-  if (
-    !active ||
-    !compaction ||
-    (!Object.hasOwn(compaction, "model") && !Object.hasOwn(compaction, "provider"))
-  ) {
+  if (!active || !compaction || !Object.hasOwn(compaction, "model")) {
     return config;
   }
-  const { model: _model, provider: _provider, ...projectedCompaction } = compaction;
+  const { model: _model, ...projectedCompaction } = compaction;
   return {
     ...config,
     agents: {

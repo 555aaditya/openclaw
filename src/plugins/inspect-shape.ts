@@ -50,9 +50,6 @@ function buildPluginCapabilityEntries(
     { kind: "web-content-extractors" as const, ids: plugin.contracts?.webContentExtractors ?? [] },
     { kind: "web-fetch" as const, ids: plugin.webFetchProviderIds },
     { kind: "web-search" as const, ids: plugin.webSearchProviderIds },
-    { kind: "migration-provider" as const, ids: plugin.migrationProviderIds },
-    { kind: "worker-provider" as const, ids: plugin.contracts?.workerProviders ?? [] },
-    { kind: "storage-provider" as const, ids: plugin.contracts?.storageProviders ?? [] },
     {
       kind: "session-catalog" as const,
       ids: report.sessionCatalogs
@@ -68,7 +65,6 @@ function buildPluginCapabilityEntries(
           : [],
     },
     { kind: "channel" as const, ids: plugin.channelIds },
-    { kind: "gateway-discovery" as const, ids: plugin.gatewayDiscoveryServiceIds },
   ].filter((entry) => entry.ids.length > 0);
 }
 

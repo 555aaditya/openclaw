@@ -269,17 +269,6 @@ module.exports = {
         connection.disposals++;
       },
     });
-    if (api.registrationMode === "full") {
-      api.registerWidgetPresenter({
-        target: "node_panel",
-        description: "Synthetic inventory presenter",
-        async availability() {
-          database.prepare("SELECT 42 AS value").get();
-          return { ok: true, value: { available: true } };
-        },
-        async present() { throw new Error("Inventory must not present widgets"); },
-      });
-    }
     api.registerProvider({
       id: ${JSON.stringify(provider)}, label: "Cold inventory provider", auth: [],
       isCacheTtlEligible() { return database.prepare("SELECT 42 AS value").get().value === 42; },
@@ -481,8 +470,6 @@ it.each(["last-lease", "process-close"] as const)(
       try {
         const effective = expectDefined(lease.snapshot.pluginRegistry, "copied owned registry");
         expect(effective).not.toBe(donor);
-        expect(effective.widgetPresenters[0]).toBe(donor.widgetPresenters[0]);
-        expect(effective.widgetPresenters).toHaveLength(1);
         expect(effective.providers[0]!.provider).not.toBe(donor.providers[0]!.provider);
         expect(fixture.connections.map(({ mode }) => mode)).toEqual(["full", "discovery"]);
         const current = capturePluginLifecycleAuthority(effective, undefined, {
@@ -519,7 +506,7 @@ it.each(["last-lease", "process-close"] as const)(
 
 it("retains SDK resources, but not copied-view authority", async () => {
   await withColdFixture(async (fixture) => {
-    const donor = await loadDonor(fixture);
+    await loadDonor(fixture);
     const host = new LegacyPluginSdkResourceHost();
     const lease = await acquireReadOnlyPreparedModelRuntime(fixture.runtimeInput);
     const resolve = () =>
@@ -535,8 +522,6 @@ it("retains SDK resources, but not copied-view authority", async () => {
       );
     try {
       const effective = expectDefined(lease.snapshot.pluginRegistry, "SDK copied registry");
-      expect(effective.widgetPresenters[0]).toBe(donor.widgetPresenters[0]);
-      expect(effective.widgetPresenters).toHaveLength(1);
       const current = capturePluginLifecycleAuthority(effective, undefined, {
         scopedRuntime: true,
       });

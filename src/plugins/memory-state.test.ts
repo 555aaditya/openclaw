@@ -7,12 +7,10 @@ import {
   getMemoryCapabilityRegistration,
   getMemoryProviderRuntime,
   getMemoryRuntime,
-  listMemoryPromptPreparations,
   listActiveMemoryPublicArtifacts,
   prepareMemoryPromptSection,
   registerMemoryCapability,
   registerMemoryCorpusSupplement,
-  registerMemoryPromptPreparation,
   registerMemoryPromptSupplement,
   registerTestMemoryPromptBuilder,
   resolveMemoryFlushPlan,
@@ -91,13 +89,11 @@ describe("memory plugin state", () => {
         get: async () => null,
       });
       registerMemoryPromptSupplement("spoofed-plugin", () => ["supplement"]);
-      registerMemoryPromptPreparation("spoofed-plugin", async () => ["prepared"]);
     });
 
     expect(building.memoryCapabilities[0]?.pluginId).toBe("actual-plugin");
     expect(building.memoryCorpusSupplements[0]?.pluginId).toBe("actual-plugin");
     expect(building.memoryPromptSupplements[0]?.pluginId).toBe("actual-plugin");
-    expect(building.memoryPromptPreparations[0]?.pluginId).toBe("actual-plugin");
   });
 
   it("lists active public memory artifacts in deterministic order", async () => {
@@ -280,8 +276,8 @@ describe("memory plugin state", () => {
 
   it("prepares immutable prompt lines once per run before synchronous assembly", async () => {
     let compiledLines = ["compiled before"];
-    const prepare = vi.fn(async () => [...compiledLines]);
-    registerMemoryPromptPreparation("memory-wiki", prepare);
+    const prepare = vi.fn(() => [...compiledLines]);
+    registerMemoryPromptSupplement("memory-wiki", prepare);
     const params = {
       availableTools: new Set(["wiki_search", "memory_search"]),
       agentId: "main",
@@ -316,7 +312,7 @@ describe("memory plugin state", () => {
     ["added tool", { availableTools: new Set(["wiki_search", "memory_search"]) }],
     ["replaced tool", { availableTools: new Set(["memory_search"]) }],
   ])("rejects prepared state after a change to the %s", async (_name, changed) => {
-    registerMemoryPromptPreparation("memory-wiki", async () => ["private wiki state"]);
+    registerMemoryPromptSupplement("memory-wiki", () => ["private wiki state"]);
     const prepared = await prepareMemoryPromptSection({
       availableTools: new Set(["wiki_search"]),
       agentId: "first",
@@ -336,8 +332,8 @@ describe("memory plugin state", () => {
     ).toThrow("prepared memory prompt section does not match the current run");
   });
 
-  it("removes prompt preparations from future runs without mutating an in-flight snapshot", async () => {
-    registerMemoryPromptPreparation("memory-wiki", async () => ["prepared wiki"]);
+  it("removes prompt supplements from future runs without mutating an in-flight snapshot", async () => {
+    registerMemoryPromptSupplement("memory-wiki", () => ["prepared wiki"]);
     const params = { availableTools: new Set<string>() };
     const prepared = await prepareMemoryPromptSection(params);
 
@@ -346,17 +342,14 @@ describe("memory plugin state", () => {
     const afterRemoval = await prepareMemoryPromptSection(params);
     expect(buildMemoryPromptSection(params, prepared)).toEqual(["prepared wiki"]);
     expect(buildMemoryPromptSection(params, afterRemoval)).toEqual([]);
-    expect(listMemoryPromptPreparations()).toEqual([]);
   });
 
   it("does not adopt memory sidecars across conflicting plugin owners", () => {
     const supplement = { search: async () => [], get: async () => null };
-    const prepare = async () => ["runtime wiki digest"];
     const builder = () => ["runtime wiki guidance"];
     const root = createEmptyPluginRegistry();
     root.plugins.push(createPluginRecord({ id: "memory-wiki", source: "/root/wiki.js" }));
     root.memoryCorpusSupplements.push({ pluginId: "memory-wiki", supplement });
-    root.memoryPromptPreparations.push({ pluginId: "memory-wiki", prepare });
     root.memoryPromptSupplements.push({ pluginId: "memory-wiki", builder });
     const scoped = createEmptyPluginRegistry();
     scoped.plugins.push(createPluginRecord({ id: "memory-wiki", source: "/shadow/wiki.js" }));
@@ -367,7 +360,6 @@ describe("memory plugin state", () => {
       }),
     ).toBe(scoped);
     expect(scoped.memoryCorpusSupplements).toEqual([]);
-    expect(scoped.memoryPromptPreparations).toEqual([]);
     expect(scoped.memoryPromptSupplements).toEqual([]);
   });
 });

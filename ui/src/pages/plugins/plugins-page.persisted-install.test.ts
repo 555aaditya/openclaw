@@ -213,15 +213,7 @@ describe("plugin runtime mutations", () => {
     const publish = () =>
       harness.emit(client, true, {
         hello: harness.gateway.snapshot.hello,
-        pluginCapabilities: {
-          ok: true,
-          generation: 7,
-          descriptors: [],
-          methods: ["plugins.setEnabled"],
-          controlUiTabs: [],
-          controlUiWidgetKinds: [],
-          pluginSurfaceUrls: {},
-        },
+        pluginGeneration: 7,
       });
     try {
       await runtimeConfig.ensureLoaded();

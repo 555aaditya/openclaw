@@ -3,7 +3,6 @@ import { createMemo } from "solid-js";
 import type { RouteId } from "../app-routes.ts";
 import type { ApplicationContext } from "./context.ts";
 import { resolveControlUiAuthToken } from "./control-ui-auth.ts";
-import { availableLinkReaders } from "./link-reader-routing.ts";
 import {
   isBrowserPanelAvailable,
   isBrowserPanelSurfaceAvailable,
@@ -49,15 +48,6 @@ export function ShellDocks(props: ShellDocksProps): SolidJSX.Element {
         prop:available={isDesktopPanelAvailable(gateway())}
         prop:suppressed={props.suppressed || props.activeRoute === "systems"}
         prop:basePath={props.context.basePath}
-      />
-      <openclaw-link-reader-panel
-        inert={props.navDrawerOpen}
-        data-chat-autotype-exempt=""
-        prop:client={client()}
-        prop:available={gateway().phase === "connected"}
-        prop:readers={availableLinkReaders(gateway())}
-        prop:agentId={props.selectedAgentId}
-        prop:suppressed={props.suppressed}
       />
     </>
   );

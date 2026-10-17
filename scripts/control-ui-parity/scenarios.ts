@@ -17,9 +17,6 @@ import {
   parityBaseScenario,
   parityWorkboardScenario,
   parityPluginPath,
-  parityHovercardScenario,
-  parityTabOverflowScenario,
-  parityReaderDocuments,
   standaloneApprovalScenario,
   standaloneQuestionScenario,
   settingsControlsScenario,
@@ -582,39 +579,7 @@ export const scenes: Scene[] = [
       await page.locator('[data-chat-permission-option="guarded"]').waitFor();
     },
   },
-  {
-    ...chat,
-    id: "rich-hovercard",
-    label: "Rich link hovercard",
-    scenario: parityHovercardScenario,
-    prepare: async (page) => {
-      await page.locator(".chat-text a.markdown-github-link").first().focus();
-      await page.locator(".link-reader-hovercard__title").waitFor();
-    },
-  },
-  {
-    ...chat,
-    id: "tabs-overflow",
-    label: "Reader tabs: overflowing long labels and selected tab",
-    scenario: parityTabOverflowScenario,
-    prepare: async (page) => {
-      const viewport = page.viewportSize()!;
-      // Arrange the retained tab set with the conversation visible, then capture the
-      // real responsive presentation at the requested width.
-      await page.setViewportSize({ width: 1440, height: 960 });
-      for (const document of parityReaderDocuments) {
-        await page.locator(`.chat-text a[href="${document.url}"]`).click();
-        await page
-          .locator("openclaw-link-reader-panel")
-          .getByRole("heading", { name: document.title, exact: true })
-          .waitFor();
-      }
-      await expect
-        .poll(() => page.locator('[data-region-header="side"] .tabstrip-tab').count())
-        .toBe(parityReaderDocuments.length);
-      await page.setViewportSize(viewport);
-    },
-  },
+
   {
     ...routeScene("infrastructure"),
     id: "settings-controls",

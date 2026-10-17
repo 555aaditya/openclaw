@@ -95,11 +95,8 @@ describe("plugin registration diagnostics", () => {
       throw new Error("invalid registration must not instantiate its factory");
     });
     alphaApi.registerReload({});
-    betaApi.registerTextTransforms({});
     // @ts-expect-error JavaScript plugins may omit the required supplement builder.
     alphaApi.registerMemoryPromptSupplement(undefined);
-    // @ts-expect-error JavaScript plugins may omit the required hosted-media resolver.
-    betaApi.registerHostedMediaResolver(undefined);
     // @ts-expect-error Unknown JavaScript hook names must produce a diagnostic.
     alphaApi.on("unknown-hook", () => {});
     betaApi.registerRuntimeLifecycle({ id: "" });
@@ -108,14 +105,7 @@ describe("plugin registration diagnostics", () => {
       ["error", "alpha", alphaSource, "service registration missing id"],
       ["error", "beta", betaSource, "context engine registration missing id"],
       ["warn", "alpha", alphaSource, "reload registration missing prefixes"],
-      [
-        "warn",
-        "beta",
-        betaSource,
-        "text transform registration has no input or output replacements",
-      ],
       ["error", "alpha", alphaSource, "memory prompt supplement registration missing builder"],
-      ["error", "beta", betaSource, "hosted media resolver registration missing resolver"],
       ["warn", "alpha", alphaSource, 'unknown typed hook "unknown-hook" ignored'],
       ["error", "beta", betaSource, "runtime lifecycle registration missing id"],
     ].map(([level, pluginId, source, message]) => ({ level, pluginId, source, message }));
@@ -123,9 +113,7 @@ describe("plugin registration diagnostics", () => {
     expect(registry.services).toEqual([]);
     expect(registry.contextEngines.size).toBe(0);
     expect(registry.reloads).toEqual([]);
-    expect(registry.textTransforms).toEqual([]);
     expect(registry.memoryPromptSupplements).toEqual([]);
-    expect(registry.hostedMediaResolvers).toEqual([]);
     expect(registry.typedHooks).toEqual([]);
     expect(registry.runtimeLifecycles).toEqual([]);
 
@@ -355,19 +343,15 @@ describe("plugin service registration identity", () => {
         throw new Error("private accessor failure");
       },
       start() {},
-      advertise() {},
     };
     expect(() => api.registerService(service)).not.toThrow();
-    expect(() => api.registerGatewayDiscoveryService(service)).not.toThrow();
     expect(builder.registry.services).toEqual([]);
-    expect(builder.registry.gatewayDiscoveryServices).toEqual([]);
     expect(builder.registry.diagnostics.map(({ message }) => message)).toEqual([
       "service registration id cannot be normalized",
-      "gateway discovery service registration id cannot be normalized",
     ]);
   });
 
-  it("snapshots each namespace independently without writing plugin accessors", () => {
+  it("snapshots service IDs without writing plugin accessors", () => {
     const { builder, createRecord } = createRegistrationFixture();
     const record = createRecord("shared-owner");
     const api = builder.createApi(record, { config: {} });
@@ -380,25 +364,17 @@ describe("plugin service registration identity", () => {
         throw new Error("must not write plugin-owned IDs");
       }
       start() {}
-      advertise() {}
     }
     const service = new Service();
     api.registerService(service);
-    api.registerGatewayDiscoveryService(service);
     rawId = "changed-after-registration";
     api.registerService({ id: "shared-service", start() {} });
-    api.registerGatewayDiscoveryService({ id: "shared-service", advertise() {} });
     expect(builder.registry.services).toHaveLength(1);
-    expect(builder.registry.gatewayDiscoveryServices).toHaveLength(1);
-    for (const entry of [
-      ...builder.registry.services,
-      ...builder.registry.gatewayDiscoveryServices,
-    ]) {
+    for (const entry of builder.registry.services) {
       expect(entry.id).toBe("shared-service");
       expect(entry.service).toBe(service);
     }
     expect(record.services).toEqual(["shared-service"]);
-    expect(record.gatewayDiscoveryServiceIds).toEqual(["shared-service"]);
     expect(builder.registry.diagnostics).toEqual([]);
   });
 

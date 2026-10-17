@@ -554,13 +554,7 @@ describe("native UI page navigation", () => {
         basePath: "/console",
         gateway: {
           snapshot: {
-            hello: {
-              controlUiTabs: native
-                ? [{ pluginId: "review", id: "board", placement: "route:workboard" }]
-                : kind === "slug"
-                  ? [{ pluginId: "review", id: "board", slug: "reports" }]
-                  : [],
-            },
+            hello: {},
           },
         },
         navigate,

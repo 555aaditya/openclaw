@@ -3,7 +3,6 @@ import type { OpenClawPluginApi } from "openclaw/plugin-sdk/plugin-entry";
 import { jsonResult } from "openclaw/plugin-sdk/tool-results";
 import { QA_SESSION_OBSERVER_HEADER } from "./providers/shared/session-observer-registry.js";
 import { createQaLabWebSearchProvider } from "./qa-web-search-provider.js";
-import { createStaticSshWorkerProvider } from "./static-ssh-worker-provider.js";
 
 const EMPTY_TOOL_PARAMETERS = {
   type: "object",
@@ -72,7 +71,7 @@ export const qaLabGatewayDefinition = {
       },
       { name: "qa_restart_unsafe_probe" },
     );
-    api.registerWorkerProvider(createStaticSshWorkerProvider());
+
     api.registerWebSearchProvider(createQaLabWebSearchProvider());
   },
 };

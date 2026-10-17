@@ -24,8 +24,6 @@ export type BundledPluginContractSnapshot = {
   cliBackendIds: string[];
   providerIds: string[];
   providerEnvVars: Record<string, string[]>;
-  workerProviderIds: string[];
-  storageProviderIds: string[];
   embeddingProviderIds: string[];
   speechProviderIds: string[];
   realtimeTranscriptionProviderIds: string[];
@@ -39,7 +37,6 @@ export type BundledPluginContractSnapshot = {
   webContentExtractorIds: string[];
   webFetchProviderIds: string[];
   webSearchProviderIds: string[];
-  migrationProviderIds: string[];
   toolNames: string[];
 };
 
@@ -133,8 +130,6 @@ function buildBundledPluginContractSnapshot(
     cliBackendIds: ids(manifest.cliBackends),
     providerIds: ids(manifest.providers),
     providerEnvVars: normalizeSetupProviderEnvVars(manifest.setup),
-    workerProviderIds: ids(contracts?.workerProviders),
-    storageProviderIds: ids(contracts?.storageProviders),
     embeddingProviderIds: ids(contracts?.embeddingProviders),
     speechProviderIds: ids(contracts?.speechProviders),
     realtimeTranscriptionProviderIds: ids(contracts?.realtimeTranscriptionProviders),
@@ -148,7 +143,6 @@ function buildBundledPluginContractSnapshot(
     webContentExtractorIds: ids(contracts?.webContentExtractors),
     webFetchProviderIds: ids(contracts?.webFetchProviders),
     webSearchProviderIds: ids(contracts?.webSearchProviders),
-    migrationProviderIds: ids(contracts?.migrationProviders),
     toolNames: ids(contracts?.tools),
   };
 }

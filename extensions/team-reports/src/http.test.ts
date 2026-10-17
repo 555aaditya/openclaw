@@ -531,7 +531,6 @@ describe("Team Reports HTTP responses", () => {
     expect(page.body).toContain('href="/control/chat/writer/dashboard/demo"');
     expect(page.body).toContain("Fix &lt;navigation&gt;");
     expect(page.body).toContain("Alice &amp; Bob");
-    expect(page.body).toContain('data-work-session-key="agent:writer:dashboard:demo"');
     expect(page.body).toContain('href="/reports/sessions/?offset=80"');
     expect(page.body).toContain('href="/reports/sessions/?offset=0"');
     const home = await fetchPath("/reports/");
@@ -583,7 +582,6 @@ describe("per-member session links through HTTP", () => {
     expect(response.status).toBe(200);
     expect(response.body).toContain("Current work / owned sessions");
     expect(response.body).toContain('href="/control/chat/writer/dashboard/alice-work"');
-    expect(response.body).toContain('data-work-session-key="agent:writer:dashboard:alice-work"');
     expect(response.body).toContain("not activity from this report period");
     expect(response.body).toContain("?person=alice");
     expect(workSessions).toHaveBeenCalledExactlyOnceWith(0, 3, "alice-profile");

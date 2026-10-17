@@ -126,9 +126,9 @@ describe("plugin capability summaries", () => {
   it("includes every manifest contract family in the reviewed capability surface", () => {
     const contracts = {
       codeModeExecutors: ["quickjs"],
-      embeddedExtensionFactories: ["embedded"],
+
       agentToolResultMiddleware: ["middleware"],
-      trustedToolPolicies: ["trusted-policy"],
+
       externalAuthProviders: ["external-auth"],
       embeddingProviders: ["embedding"],
       speechProviders: ["speech"],
@@ -143,12 +143,10 @@ describe("plugin capability summaries", () => {
       webContentExtractors: ["web-content"],
       webFetchProviders: ["web-fetch"],
       webSearchProviders: ["web-search"],
-      workerProviders: ["worker"],
-      workerProfileSuggestions: ["worker"],
-      storageProviders: ["storage"],
+
       decisionProviders: ["decision"],
       usageProviders: ["usage"],
-      migrationProviders: ["migration"],
+
       gatewayMethodDispatch: ["gateway-method"],
       tools: ["tool"],
     } satisfies Required<PluginManifestContracts>;

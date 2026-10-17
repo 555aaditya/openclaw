@@ -13,10 +13,9 @@ each hook result. Part of the [Plugin SDK overview](/plugins/sdk-overview).
 
 ## Events and lifecycle
 
-| Method                                       | What it does                  |
-| -------------------------------------------- | ----------------------------- |
-| `api.on(hookName, handler, opts?)`           | Typed lifecycle hook          |
-| `api.onConversationBindingResolved(handler)` | Conversation binding callback |
+| Method                             | What it does         |
+| ---------------------------------- | -------------------- |
+| `api.on(hookName, handler, opts?)` | Typed lifecycle hook |
 
 See [Plugin hooks](/plugins/hooks) for examples, common hook names, and guard
 semantics.

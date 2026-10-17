@@ -104,7 +104,6 @@ beforeEach(() => {
         cfg: input.cfg,
         agentDir: "/agent",
         requesterScope: input.principal.requester,
-        requesterResolver: false,
       },
       revalidate: async () => input.assertCurrent(),
       requesterScope: input.principal.requester,

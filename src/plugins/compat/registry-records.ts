@@ -13,6 +13,7 @@ import { MEMORY_SESSION_COMPAT_RECORDS } from "./memory-session-records.js";
 import { MENTION_INBOX_COMPAT_RECORD } from "./mention-inbox-record.js";
 import { MODEL_ACCOUNT_CONNECT_COMPAT_RECORD } from "./model-account-connect-record.js";
 import { NATIVE_EXEC_APPROVAL_COMPAT_RECORD } from "./native-exec-approval-record.js";
+import { PLUGIN_CAPABILITY_RETIREMENT_RECORD } from "./plugin-capability-retirement-record.js";
 import { PLUGIN_SDK_PRIVATE_RUNTIME_EXPORT_COMPAT_RECORD } from "./plugin-sdk-private-runtime-export-record.js";
 import { PLUGIN_SDK_REMOVED_EXPORT_RECORDS } from "./plugin-sdk-removed-export-records.js";
 import {
@@ -40,6 +41,7 @@ function defineCompatRecords<const Code extends string>(
 }
 
 export const PLUGIN_COMPAT_RECORDS = defineCompatRecords([
+  PLUGIN_CAPABILITY_RETIREMENT_RECORD,
   ...PLUGIN_SDK_REMOVED_EXPORT_RECORDS,
   ...AGENT_HARNESS_COMPAT_RECORDS,
   AUTH_ASYNC_COMPAT_RECORD,

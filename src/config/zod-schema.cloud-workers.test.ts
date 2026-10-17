@@ -2,10 +2,25 @@ import { describe, expect, it } from "vitest";
 import { OpenClawSchema } from "./zod-schema.js";
 
 function cloudProfile(profile: Record<string, unknown>) {
-  return { cloudWorkers: { profiles: { development: { provider: "qa-lab", ...profile } } } };
+  return { cloudWorkers: { profiles: { development: { provider: "device", ...profile } } } };
 }
 
 describe("OpenClawSchema cloudWorkers config", () => {
+  it.each(["static-ssh", "crabbox", "external-worker"])(
+    "rejects retired worker provider %s",
+    (provider) => {
+      const result = OpenClawSchema.safeParse(cloudProfile({ provider }));
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues).toContainEqual(
+          expect.objectContaining({
+            path: ["cloudWorkers", "profiles", "development", "provider"],
+            message: "Only the built-in device worker provider is supported",
+          }),
+        );
+      }
+    },
+  );
   it.each([{ "github.com/acme/app": " " }, { "github.com/acme": "development" }])(
     "rejects invalid per-project profile mappings %#",
     (projectProfiles) => {
@@ -13,7 +28,7 @@ describe("OpenClawSchema cloudWorkers config", () => {
     },
   );
 
-  it("accepts provider-owned settings with SecretRefs and defaults to bundled installation", () => {
+  it("accepts device settings with SecretRefs and defaults to bundled installation", () => {
     const settings = {
       host: "worker.example.test",
       port: 22,
@@ -21,18 +36,18 @@ describe("OpenClawSchema cloudWorkers config", () => {
       keyRef: { source: "file", provider: "default", id: "/cloud-workers/development/privateKey" },
     };
     expect(
-      OpenClawSchema.parse(cloudProfile({ provider: "static-ssh", settings })).cloudWorkers,
+      OpenClawSchema.parse(cloudProfile({ provider: "device", settings })).cloudWorkers,
     ).toStrictEqual({
-      profiles: { development: { provider: "static-ssh", install: "bundle", settings } },
+      profiles: { development: { provider: "device", install: "bundle", settings } },
     });
   });
 
-  it("accepts provider-owned secret maps without admitting plaintext", () => {
+  it("accepts nested secret maps without admitting plaintext", () => {
     const setupSecrets = {
       registry_token: { source: "store", provider: "default", id: "NPM_TOKEN" },
     };
     expect(
-      OpenClawSchema.safeParse(cloudProfile({ provider: "crabbox", settings: { setupSecrets } }))
+      OpenClawSchema.safeParse(cloudProfile({ provider: "device", settings: { setupSecrets } }))
         .success,
     ).toBe(true);
     expect(OpenClawSchema.safeParse(cloudProfile({ settings: { setupSecrets: {} } })).success).toBe(

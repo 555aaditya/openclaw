@@ -47,7 +47,6 @@ import {
   setupBundledTelegramPlugin,
   expectTelegramLoaded,
   loadRegistryFromSinglePlugin,
-  loadRegistryFromAllowedPlugins,
   expectDiagnosticContaining,
   expectNoDiagnosticContaining,
   createStartupTraceRecorder,
@@ -259,116 +258,6 @@ describe("loadOpenClawPlugins", () => {
     expect(registerFailMetrics.registerMs).toEqual(expect.any(Number));
     expect(registerFailMetrics.registerFailedCount).toBe(1);
     expect(registerFailMetrics.loadAndRegisterMs).toEqual(expect.any(Number));
-  });
-
-  it("rolls back worker providers when plugin register fails", () => {
-    useNoBundledPlugins();
-    const plugin = writePlugin({
-      id: "worker-provider-register-fail",
-      filename: "worker-provider-register-fail.cjs",
-      registration: `api.registerWorkerProvider({
-        id: "failed-worker",
-        resolveAllocation: async () => ({ leaseId: "unused", sharedHost: false }),
-        provision: async () => { throw new Error("not called"); },
-        inspect: async () => ({ status: "unknown" }),
-        destroy: async () => {}
-      });
-      throw new Error("register boom");`,
-    });
-    updatePluginManifest(plugin, {
-      contracts: { workerProviders: ["failed-worker"] },
-    });
-
-    const registry = loadRegistryFromSinglePlugin({
-      plugin,
-      pluginConfig: {
-        allow: ["worker-provider-register-fail"],
-      },
-    });
-
-    expect(registry.workerProviders.size).toBe(0);
-    const loaded = registry.plugins.find((entry) => entry.id === "worker-provider-register-fail");
-    expect(loaded?.status).toBe("error");
-    expect(loaded?.error).toContain("register boom");
-  });
-
-  it("loads declared installed trusted policies through plugin manifests", () => {
-    useNoBundledPlugins();
-    const plugin = writePlugin({
-      id: "trusted-policy-success",
-      filename: "trusted-policy-success.cjs",
-      registration: `api.registerTrustedToolPolicy({
-        id: "declared-policy",
-        description: "Declared installed policy",
-        evaluate: () => ({ allow: true })
-      });`,
-    });
-    updatePluginManifest(plugin, {
-      contracts: { trustedToolPolicies: ["declared-policy"] },
-    });
-
-    const registry = loadRegistryFromSinglePlugin({
-      plugin,
-      pluginConfig: {
-        allow: ["trusted-policy-success"],
-      },
-    });
-
-    expect(registry.trustedToolPolicies.map((entry) => [entry.pluginId, entry.policy.id])).toEqual([
-      ["trusted-policy-success", "declared-policy"],
-    ]);
-    expect(registry.diagnostics).not.toContainEqual(
-      expect.objectContaining({
-        pluginId: "trusted-policy-success",
-        message: "plugin must declare contracts.trustedToolPolicies for: declared-policy",
-      }),
-    );
-  });
-
-  it("keeps earlier trusted policies when a later plugin register fails", () => {
-    useNoBundledPlugins();
-    const stablePlugin = writePlugin({
-      id: "stable-trusted-policy",
-      filename: "stable-trusted-policy.cjs",
-      registration: `api.registerTrustedToolPolicy({
-        id: "stable-policy",
-        description: "Stable policy must survive later failures",
-        evaluate: () => ({ allow: true })
-      });`,
-    });
-    updatePluginManifest(stablePlugin, {
-      contracts: { trustedToolPolicies: ["stable-policy"] },
-    });
-    const failingPlugin = writePlugin({
-      id: "later-trusted-policy-register-fail",
-      filename: "later-trusted-policy-register-fail.cjs",
-      registration: `api.registerTrustedToolPolicy({
-        id: "failed-policy",
-        description: "Must be removed after register failure",
-        evaluate: () => ({ block: true, blockReason: "stale failed policy" })
-      });
-      throw new Error("register boom");`,
-    });
-    updatePluginManifest(failingPlugin, {
-      contracts: { trustedToolPolicies: ["failed-policy"] },
-    });
-
-    const registry = loadRegistryFromAllowedPlugins([stablePlugin, failingPlugin]);
-
-    expect(registry.trustedToolPolicies.map((entry) => [entry.pluginId, entry.policy.id])).toEqual([
-      ["stable-trusted-policy", "stable-policy"],
-    ]);
-    const failed = registry.plugins.find(
-      (entry) => entry.id === "later-trusted-policy-register-fail",
-    );
-    expect(failed?.status).toBe("error");
-    expect(failed?.error).toContain("register boom");
-    expectDiagnosticContaining({
-      registry,
-      level: "error",
-      pluginId: "later-trusted-policy-register-fail",
-      message: "plugin failed during register: Error: register boom",
-    });
   });
 
   it("can load scoped plugins from a supplied manifest registry without rereading manifests", () => {
@@ -611,33 +500,6 @@ describe("loadOpenClawPlugins", () => {
       record?.status,
       JSON.stringify({ error: record?.error, diagnostics: registry.diagnostics }, null, 2),
     ).toBe("loaded");
-  });
-
-  it("registers standalone text transforms", () => {
-    useNoBundledPlugins();
-    const plugin = writePlugin({
-      id: "text-shim",
-      filename: "text-shim.cjs",
-      registration: `api.registerTextTransforms({
-        input: [{ from: /red basket/g, to: "blue basket" }],
-        output: [{ from: /blue basket/g, to: "red basket" }],
-      });`,
-    });
-
-    const registry = loadRegistryFromSinglePlugin({
-      plugin,
-      pluginConfig: { allow: ["text-shim"] },
-    });
-
-    expect(registry.textTransforms).toHaveLength(1);
-    const transformRegistration = registry.textTransforms[0];
-    expect(transformRegistration?.pluginId).toBe("text-shim");
-    expect(transformRegistration?.transforms.input).toEqual([
-      { from: /red basket/g, to: "blue basket" },
-    ]);
-    expect(transformRegistration?.transforms.output).toEqual([
-      { from: /blue basket/g, to: "red basket" },
-    ]);
   });
 
   it("loads multiple manifestless standalone files from one configured directory", () => {

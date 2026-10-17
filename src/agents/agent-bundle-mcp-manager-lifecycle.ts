@@ -46,7 +46,6 @@ type SessionMcpRuntimeManagerStore = {
   deferredRetirementSessionIds: Set<string>;
   // Reset/delete retirement survives late creation or reuse by the stopping run.
   requiredRetirementSessionIds: Set<string>;
-  connectionMetaByRuntimeKey: Map<string, { connectionHash: string; resolvedAt: number }>;
   advertisedScopedCatalogBySessionId: Map<string, AdvertisedScopedCatalogEntry>;
   runtimeWorkChains: Map<string, Promise<unknown>>;
   disposalInFlight?: Promise<void>;
@@ -108,7 +107,6 @@ export function createSessionMcpRuntimeManagerLifecycle(
     deferredRetirementSessionIds: new Set<string>(),
     requiredRetirementSessionIds: new Set<string>(),
     // Manager-side only: connection hash + resolve time. Never stores raw url/headers.
-    connectionMetaByRuntimeKey: new Map(),
     /**
      * Session-stable advertised catalogs for requester-scoped servers.
      * Keyed by sessionId → serverName. Specs must not vary per sender or shared
@@ -166,7 +164,6 @@ export function createSessionMcpRuntimeManagerLifecycle(
         Object.keys(runtime.requesterConnect?.catalog.servers ?? {}).length === 0
       ) {
         store.runtimesBySessionId.delete(runtimeKey);
-        store.connectionMetaByRuntimeKey.delete(runtimeKey);
         store.runtimeSlots.delete(runtime);
         if (runtimeKeysForSessionId(runtime.sessionId).length === 0) {
           forgetSessionKeysForSessionId(runtime.sessionId);
@@ -314,7 +311,6 @@ export function createSessionMcpRuntimeManagerLifecycle(
         continue;
       }
       store.runtimesBySessionId.delete(runtimeKey);
-      store.connectionMetaByRuntimeKey.delete(runtimeKey);
       expired.push({ runtimeKey, runtime });
     }
     const touchedSessionIds = new Set(expired.map(({ runtime }) => runtime.sessionId));
@@ -379,7 +375,6 @@ export function createSessionMcpRuntimeManagerLifecycle(
   const disposeRuntimeKeyNow = async (runtimeKey: string): Promise<void> => {
     const runtime = store.runtimesBySessionId.get(runtimeKey);
     store.runtimesBySessionId.delete(runtimeKey);
-    store.connectionMetaByRuntimeKey.delete(runtimeKey);
     if (runtime) {
       await disposeRuntime(runtime);
     }

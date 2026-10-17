@@ -47,7 +47,6 @@ it("keeps auto-enabled bundled root-owned memory sidecars in a direct agent regi
     api.registerProvider({ id: ${JSON.stringify(pluginId)}, label: "Memory fixture", auth: [] });
     if (api.registrationMode !== "full") return;
     api.registerMemoryPromptSupplement(() => ["runtime wiki guidance"]);
-    api.registerMemoryPromptPreparation(async () => ["runtime wiki digest"]);
     api.registerMemoryCorpusSupplement({
       search: async () => [],
       get: async () => null,
@@ -92,10 +91,7 @@ it("keeps auto-enabled bundled root-owned memory sidecars in a direct agent regi
       expect(listMemoryCorpusSupplements()[0]?.supplement).toBe(rootSupplement);
       const promptParams = { availableTools: new Set(["memory_search"]) };
       const prepared = await prepareMemoryPromptSection(promptParams);
-      expect(buildMemoryPromptSection(promptParams, prepared)).toEqual([
-        "runtime wiki guidance",
-        "runtime wiki digest",
-      ]);
+      expect(buildMemoryPromptSection(promptParams, prepared)).toEqual(["runtime wiki guidance"]);
     },
   });
   await withAgentPluginRegistry({

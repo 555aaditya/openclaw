@@ -9,7 +9,6 @@ import {
   storageLocationError,
   type StorageProbeResult,
 } from "../storage/locations.js";
-import { acquireStorageProvider } from "../storage/provider.js";
 
 type StorageCommandOptions = { json?: boolean };
 
@@ -17,23 +16,10 @@ export async function storageListCommand(runtime: RuntimeEnv, opts: StorageComma
   const config = await captureRuntimeConfigAsyncReader()();
   const locations = [];
   for (const location of listStorageLocations(config)) {
-    let displayTarget = location.displayTarget;
+    const displayTarget = location.displayTarget;
     let probe: StorageProbeResult;
     try {
-      const acquired = await acquireStorageProvider({ providerId: location.provider, config });
-      try {
-        const settings = config.storage?.locations?.[location.name]?.settings;
-        if (settings) {
-          displayTarget = acquired.provider.describeTarget?.(settings);
-        }
-        probe = await probeStorageLocation({
-          name: location.name,
-          config,
-          registry: acquired.registry,
-        });
-      } finally {
-        await acquired.release();
-      }
+      probe = await probeStorageLocation({ name: location.name, config });
     } catch (error) {
       const { state, message } = storageLocationError(error);
       probe = { state, message };

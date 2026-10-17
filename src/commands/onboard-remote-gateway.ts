@@ -343,7 +343,6 @@ export async function runRemoteGatewayInferenceOnboarding(
     // Setup applies on the remote gateway through its chat; the local
     // custodian flow (question zero, local setup apply, local hatch) is wrong here.
     handoffMode: "chat",
-    runSetupMemoryImportStep: async () => ({ status: "skipped", providers: [] }),
     runSystemAgentChat: async () => {
       const { createClackPrompter } = await import("../wizard/clack-prompter.js");
       const prompter = createClackPrompter();

@@ -44,7 +44,6 @@ describe("runGuidedOnboarding quick start", () => {
       expect.objectContaining({ installDaemon: false, firstAgent: { name: "main" } }),
       { beforePersistentApply: expect.any(Function) },
     );
-    expect(deps.runSetupMemoryImportStep).not.toHaveBeenCalled();
     expect(deps.runAppRecommendations).not.toHaveBeenCalled();
     expect(deps.runBrowserHandoff).not.toHaveBeenCalled();
     expect(deps.launchHatchTui).not.toHaveBeenCalled();
@@ -142,7 +141,6 @@ describe("runGuidedOnboarding quick start", () => {
     expect(vi.mocked(deps.applySetup).mock.calls[0]?.[0]).not.toEqual(
       expect.objectContaining({ installDaemon: false }),
     );
-    expect(deps.runSetupMemoryImportStep).toHaveBeenCalledOnce();
     expect(deps.runAppRecommendations).toHaveBeenCalledOnce();
     expect(deps.runForegroundGateway).not.toHaveBeenCalled();
   });

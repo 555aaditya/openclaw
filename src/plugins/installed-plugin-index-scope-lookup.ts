@@ -23,8 +23,6 @@ const PROVIDER_CONTRIBUTION_CONTRACTS = [
   "musicGenerationProviders",
   "webFetchProviders",
   "webSearchProviders",
-  "workerProviders",
-  "storageProviders",
   "usageProviders",
 ] as const;
 

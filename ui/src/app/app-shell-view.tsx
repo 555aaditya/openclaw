@@ -43,7 +43,6 @@ declare module "@solidjs/web" {
       "openclaw-app-topbar": ShellElementAttributes;
       "openclaw-assistant-panel": ShellElementAttributes;
       "openclaw-exec-approval": ShellElementAttributes;
-      "openclaw-onboarding-memory-import": ShellElementAttributes;
     }
   }
 }
@@ -70,10 +69,6 @@ function ApplicationShell(props: { host: ShellViewHost }): SolidJSX.Element {
     !view().nativeWebChrome && document.documentElement.classList.contains("openclaw-native-macos");
   // Lazy registrations and the native sidebar consume committed shell presentation.
   createEffect(view, (state) => {
-    props.host.lazyCustomElements.requestWhileActive(
-      props.host.onboardingMemoryImportElement,
-      state.memoryImportActive,
-    );
     if (state.nativeWebChrome && !state.onboarding) {
       props.host.lazyCustomElements.preload(MACOS_TITLEBAR_ELEMENT, { reportError: true });
     }
@@ -431,15 +426,6 @@ function ApplicationShell(props: { host: ShellViewHost }): SolidJSX.Element {
             },
           }}
         />
-        <Show
-          when={
-            view().memoryImportActive &&
-            (props.host.shellRevision(),
-            isOptionalElementDefined(props.host.onboardingMemoryImportElement))
-          }
-        >
-          <openclaw-onboarding-memory-import prop:active={true} prop:context={view().context} />
-        </Show>
         <openclaw-toast-host />
       </div>
     </div>

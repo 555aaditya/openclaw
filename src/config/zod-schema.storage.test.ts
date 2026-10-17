@@ -18,12 +18,27 @@ function location(overrides: Record<string, unknown> = {}, name = "archive") {
 }
 
 describe("OpenClawSchema storage config", () => {
+  it.each(["cloudflare-r2", "external-storage"])(
+    "rejects retired storage provider %s",
+    (provider) => {
+      const result = OpenClawSchema.safeParse(location({ provider }));
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues).toContainEqual(
+          expect.objectContaining({
+            path: ["storage", "locations", "archive", "provider"],
+            message: "Only the built-in filesystem storage provider is supported",
+          }),
+        );
+      }
+    },
+  );
   it.each([{ passphrase }, "none"])(
     "preserves encryption and nested SecretRefs: %j",
     (encryption) => {
       const config = location({
         encryption,
-        provider: "example-provider",
+        provider: "filesystem",
         settings: {
           accountId: "example-account",
           bucket: "example-bucket",

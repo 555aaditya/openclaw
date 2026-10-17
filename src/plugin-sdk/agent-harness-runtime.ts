@@ -49,13 +49,6 @@ import type { ImageContent } from "../llm/types.js";
 import type { PromptImageOrderEntry } from "../media/prompt-image-order.js";
 import { warnPluginSdkDeprecation } from "../plugins/sdk-deprecation.js";
 
-export type {
-  AgentExecutorBinding,
-  AgentExecutorContext,
-  AgentExecutorController,
-} from "../plugins/agent-executor-controller.types.js";
-export { resolveAgentExecutorController } from "../plugins/agent-executor-controller.js";
-
 export { projectAgentActivityItem } from "../agents/agent-activity-presentation.js";
 export { projectAgentToolActivity } from "../infra/agent-activity-events.js";
 export { prepareAgentRunTerminalReply } from "../agents/agent-run-terminal-reply.js";
@@ -237,13 +230,6 @@ export type {
   AgentToolResultMiddlewareRuntime,
   OpenClawAgentToolResult,
 } from "../plugins/agent-tool-result-middleware-types.js";
-export type {
-  CodexAppServerExtensionContext,
-  CodexAppServerExtensionFactory,
-  CodexAppServerExtensionRuntime,
-  CodexAppServerToolResultEvent,
-  CodexAppServerToolResultHandlerResult,
-} from "../plugins/codex-app-server-extension-types.js";
 export type {
   NativeHookRelayEvent,
   NativeHookRelayProcessResponse,
@@ -600,7 +586,6 @@ export {
   runAgentHarnessAfterCompactionHook,
   runAgentHarnessBeforeCompactionHook,
 } from "../agents/harness/prompt-compaction-hook-helpers.js";
-export { createCodexAppServerToolResultExtensionRunner } from "../agents/harness/codex-app-server-extensions.js";
 export { createAgentToolResultMiddlewareRunner } from "../agents/harness/tool-result-middleware.js";
 export {
   assertContextEngineHostSupport,

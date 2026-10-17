@@ -153,31 +153,6 @@ export function createPluginRegistrars(state: PluginRegistryState) {
     }
   };
 
-  const registerCompactionProvider = (
-    record: PluginRecord,
-    provider: Parameters<OpenClawPluginApi["registerCompactionProvider"]>[0],
-  ) => {
-    const id = normalizeOptionalString(provider?.id);
-    if (!id) {
-      reportRegistrationError(record, "compaction provider registration missing id");
-      return;
-    }
-    if (typeof provider?.summarize !== "function") {
-      reportRegistrationError(record, `compaction provider "${id}" registration missing summarize`);
-      return;
-    }
-    const existing = registry.compactionProviders.find((entry) => entry.provider.id === id);
-    if (existing) {
-      const ownerDetail = existing.ownerPluginId ? ` (owner: ${existing.ownerPluginId})` : "";
-      reportRegistrationError(
-        record,
-        `compaction provider already registered: ${id}${ownerDetail}`,
-      );
-      return;
-    }
-    registry.compactionProviders.push({ provider, ownerPluginId: record.id });
-  };
-
   const registerMemoryCapability = (
     record: PluginRecord,
     capability: Parameters<OpenClawPluginApi["registerMemoryCapability"]>[0],
@@ -241,23 +216,6 @@ export function createPluginRegistrars(state: PluginRegistryState) {
     registry.memoryPromptSupplements.push({ pluginId: record.id, builder });
   };
 
-  const registerMemoryPromptPreparation = (
-    record: PluginRecord,
-    prepare: Parameters<OpenClawPluginApi["registerMemoryPromptPreparation"]>[0],
-  ) => {
-    if (typeof prepare !== "function") {
-      reportRegistrationError(
-        record,
-        "memory prompt preparation registration missing prepare function",
-      );
-      return;
-    }
-    registry.memoryPromptPreparations = registry.memoryPromptPreparations.filter(
-      (entry) => entry.pluginId !== record.id,
-    );
-    registry.memoryPromptPreparations.push({ pluginId: record.id, prepare });
-  };
-
   const registerMemoryCorpusSupplement = (
     record: PluginRecord,
     supplement: Parameters<OpenClawPluginApi["registerMemoryCorpusSupplement"]>[0],
@@ -272,7 +230,6 @@ export function createPluginRegistrars(state: PluginRegistryState) {
     registerDecisionProvider,
     registerInteractiveHandler,
     registerContextEngine,
-    registerCompactionProvider,
     ...createToolHookRegistrars(state),
     ...createNetworkRegistrars(state),
     ...providers,
@@ -280,7 +237,6 @@ export function createPluginRegistrars(state: PluginRegistryState) {
     ...createHostRegistrars(state),
     registerMemoryCapability,
     registerMemoryPromptSupplement,
-    registerMemoryPromptPreparation,
     registerMemoryCorpusSupplement,
     registerModelCatalogProvider: state.registerModelCatalogProvider,
   };

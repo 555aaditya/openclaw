@@ -366,34 +366,6 @@ OpenClaw does not create compaction checkpoint records or snapshot copies.
 Existing historical transcript references remain protected by normal session
 cleanup; removing checkpoint controls does not delete stored conversation history.
 
-## Pluggable compaction providers
-
-Plugins can register a custom compaction provider via `registerCompactionProvider()` on the plugin API. When a provider is registered and configured, OpenClaw delegates summarization to it instead of the built-in LLM pipeline.
-
-To use a registered provider, set its id in your config:
-
-```json
-{
-  "agents": {
-    "defaults": {
-      "compaction": {
-        "provider": "my-provider"
-      }
-    }
-  }
-}
-```
-
-Setting a `provider` automatically forces `mode: "safeguard"`. Providers receive the same compaction instructions and identifier-preservation policy as the built-in path, and OpenClaw still preserves recent-turn and split-turn suffix context after provider output.
-
-The built-in quality audit and its corrective retries apply only to built-in
-summarization. Configured provider output keeps the provider's existing
-validation semantics.
-
-<Note>
-If the provider fails or returns an empty result, OpenClaw falls back through the built-in safeguard summarizer and its configured quality checks. Provider-local timeouts do not bypass those checks; cancellation of the compaction request is still respected.
-</Note>
-
 ## Compaction vs pruning
 
 |                  | Compaction                    | Pruning                          |

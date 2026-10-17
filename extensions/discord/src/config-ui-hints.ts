@@ -323,17 +323,4 @@ export const discordChannelConfigUiHints = {
     label: "Discord Application ID",
     help: "Optional Discord application/client ID. Set this when hosted environments cannot reach Discord's application lookup endpoint during startup.",
   },
-  activities: {
-    label: "Discord Activities",
-    help: "Enable the Discord Activity presenter for the core show_widget tool on this account. Activity routes and the launch handler remain disabled when this block is absent.",
-  },
-  "activities.clientSecret": {
-    label: "Discord Activities Client Secret",
-    help: "OAuth2 client secret for the Discord application. DISCORD_CLIENT_SECRET is used when this field is unset.",
-    sensitive: true,
-  },
-  "activities.applicationId": {
-    label: "Discord Activities Application ID",
-    help: "Optional Activity application ID. Defaults to the bot application ID learned at gateway startup.",
-  },
 } satisfies Record<string, ChannelConfigUiHint>;

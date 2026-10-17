@@ -17,7 +17,7 @@ const factsByCatalog = new WeakMap<
 
 type SessionRowPolicyRegistry = Pick<
   PluginRegistry,
-  "providers" | "agentHarnesses" | "cliBackends" | "sessionExtensions"
+  "providers" | "agentHarnesses" | "cliBackends"
 >;
 
 function captureSessionRowPolicy(params: {
@@ -58,7 +58,6 @@ function captureSessionRowPolicy(params: {
       ...pluginRegistry.providers,
       ...pluginRegistry.agentHarnesses,
       ...pluginRegistry.cliBackends,
-      ...pluginRegistry.sessionExtensions,
     ].map((registration) => registration.pluginId),
   );
   return {
@@ -107,16 +106,6 @@ function captureSessionRowPolicy(params: {
       id: backend.id,
       modelProvider: backend.modelProvider,
     })),
-    sessionExtensions: pluginRegistry.sessionExtensions.map(
-      ({ pluginId, source, rootDir, extension }) => ({
-        pluginId,
-        source,
-        rootDir,
-        code: codePolicy(pluginId, extension),
-        namespace: extension.namespace,
-        project: Boolean(extension.project),
-      }),
-    ),
     providerOwners: metadata.owners.providers,
     normalization: metadata.owners.modelIdNormalizationPolicies,
     pluginPolicy,

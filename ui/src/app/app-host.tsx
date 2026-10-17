@@ -66,8 +66,6 @@ import {
   DESKTOP_PANEL_ELEMENT,
   EXEC_APPROVAL_ELEMENT,
   createLazyCustomElementRequests,
-  LINK_READER_PANEL_ELEMENT,
-  type OptionalCustomElement,
   TERMINAL_PANEL_ELEMENT,
 } from "./lazy-custom-element.ts";
 import { createLazyRenderer } from "./lazy-renderer.ts";
@@ -96,14 +94,8 @@ export class ShellOwner
   readonly commandPaletteElement = COMMAND_PALETTE_ELEMENT;
   readonly terminalPanelElement = TERMINAL_PANEL_ELEMENT;
   readonly browserPanelElement = BROWSER_PANEL_ELEMENT;
-  readonly linkReaderPanelElement = LINK_READER_PANEL_ELEMENT;
   readonly desktopPanelElement = DESKTOP_PANEL_ELEMENT;
   readonly execApprovalElement = EXEC_APPROVAL_ELEMENT;
-  readonly onboardingMemoryImportElement = {
-    tagName: "openclaw-onboarding-memory-import",
-    label: t("onboarding.memoryImport.title"),
-    loadModule: () => import("../components/onboarding-memory-import.ts"),
-  } satisfies OptionalCustomElement;
   readonly lazyCustomElements = createLazyCustomElementRequests(
     this,
     () => this.shellChrome.cancelPendingLazyAction(),

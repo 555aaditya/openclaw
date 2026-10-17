@@ -179,7 +179,7 @@ export function startNativeLinkRouting(options: NativeLinkRoutingOptions = {}): 
     // Explicit external intent bypasses native panels and the Gateway browser preference.
     if (
       webLink &&
-      (webLink.anchor.hasAttribute("data-link-reader-external") || options.shouldOpenExternally?.())
+      (webLink.anchor.hasAttribute("data-open-external") || options.shouldOpenExternally?.())
     ) {
       if (
         postMessage &&

@@ -785,7 +785,6 @@ fs.writeFileSync("assets/generated.txt", "generated asset");
         "extensions/codex",
         "extensions/diagnostics-otel",
         "extensions/msteams",
-        "extensions/visitor-access",
       ]),
     );
     expect(

@@ -106,7 +106,7 @@ Fresh local interactive onboarding offers **Quick start** and **Custom setup**
 after a one-line pointer to the [security guide](/gateway/security). Quick start
 records the security acknowledgment; Custom setup shows the full security note
 and asks for confirmation. By default, Quick start uses the agent name `main` and
-full access, leaves telemetry consent unset, and skips memory import and app
+full access, leaves telemetry consent unset, and skips app
 recommendations. Custom setup keeps the telemetry choice, agent name, access mode,
 and optional setup prompts. Both lanes require an explicit provider choice before
 a live completion or any provider installation, model selection, or credential write.
@@ -214,16 +214,9 @@ menu is built from the current installation:
 - With a configured default model, **Keep existing model config** appears first
   and is selected by default, followed by **QuickStart (recommended)** and
   **Manual setup**.
-- When a migration provider is available, **Import from another agent** appears
-  after the setup choices. Selecting it opens provider-specific entries such as
-  **Import from Claude**, **Import from Codex**, and **Import from Hermes**.
-  Detected sources appear first with their paths; other available providers ask
-  for a source path. Use Back from the provider list to return to **Setup mode**
-  before an import begins.
 
 Pass `--flow quickstart` or `--flow manual` (alias `advanced`) to select a
-classic setup flow and skip that prompt. Import flags select the import flow
-directly instead of showing a menu that could discard the requested import.
+classic setup flow and skip that prompt.
 
 <Tabs>
   <Tab title="QuickStart (defaults)">
@@ -313,16 +306,11 @@ workspace. The command validates TTY availability and rejectable CLI options
 before moving state to Trash; non-interactive setup also requires
 `--accept-risk` first. Interactive classic setup performs reset before showing
 its risk acknowledgement, and declining that prompt does not undo the reset.
-Migration import options (`--flow import`, `--import-from`, `--import-source`,
-and `--import-secrets`) cannot be combined with `--reset`; run the import
-without `--reset`.
 Without `--reset`, an invalid config or legacy keys make onboarding ask you to
 run `openclaw doctor` first.
 </Note>
 
-`--flow import` runs a detected migration flow (for example Hermes) in the
-classic wizard instead of fresh setup; see [Migrate](/cli/migrate) and the migration guides under
-[Install](/install/migrating-hermes). `openclaw onboard --modern` is a
+`openclaw onboard --modern` is a
 compatibility alias for [OpenClaw](/cli/openclaw). It uses the same
 inference gate as `openclaw setup`: verified inference starts the
 assistant, while an interactive failure returns to guided inference setup.

@@ -1,5 +1,4 @@
 import { expectDefined } from "@openclaw/normalization-core";
-import { createRequireRecord } from "openclaw/plugin-sdk/test-fixtures";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setEmbeddedMode } from "../infra/embedded-mode.js";
 import {
@@ -55,37 +54,6 @@ function embeddedBroker() {
   const broker = new EmbeddedPluginApprovalBroker();
   setEmbeddedPluginApprovalBroker(broker);
   return broker;
-}
-
-function trustedPolicy(result: PluginHookBeforeToolCallResult) {
-  const registry = createEmptyPluginRegistry();
-  registry.trustedToolPolicies = [
-    {
-      pluginId: "trusted-policy",
-      source: "test",
-      policy: { id: "test-policy", description: "Test policy", evaluate: () => result },
-    },
-  ];
-  setActivePluginRegistry(registry);
-}
-
-const requireRecord = createRequireRecord("record", "expected-label");
-
-function requireApprovalRequestCall(label: string): {
-  timeoutParams: Record<string, unknown>;
-  request: Record<string, unknown>;
-  options: Record<string, unknown>;
-} {
-  const call = mockCallGatewayTool.mock.calls[0];
-  if (!call) {
-    throw new Error(`expected ${label}`);
-  }
-  expect(call[0]).toBe("plugin.approval.request");
-  return {
-    timeoutParams: requireRecord(call[1], `${label} timeout params`),
-    request: requireRecord(call[2], `${label} request`),
-    options: requireRecord(call[3], `${label} options`),
-  };
 }
 
 describe("runBeforeToolCallHook — embedded mode approvals", () => {
@@ -256,94 +224,6 @@ describe("runBeforeToolCallHook — embedded mode approvals", () => {
     });
     expect(onResolution).toHaveBeenCalledWith(PluginApprovalResolutions.TIMEOUT);
     expect(mockCallGatewayTool).not.toHaveBeenCalled();
-  });
-
-  it("routes trusted policy approval through the same approval gate as before_tool_call hooks", async () => {
-    setEmbeddedMode(true);
-    trustedPolicy(
-      approvalResult({
-        pluginId: "trusted-policy",
-        title: "Policy approval",
-        description: "Policy requested approval",
-      }),
-    );
-    (hookRunner.hasHooks as ReturnType<typeof vi.fn>).mockReturnValue(false);
-    mockCallGatewayTool.mockResolvedValueOnce({
-      id: "approval-policy",
-      decision: PluginApprovalResolutions.ALLOW_ONCE,
-    });
-
-    const result = await runBeforeToolCallHook({
-      toolName: "bash",
-      params: { command: "deploy" },
-      toolCallId: "call-policy",
-      ctx: { agentId: "main", sessionKey: "main" },
-    });
-
-    expect(result).toEqual({
-      blocked: false,
-      params: { command: "deploy" },
-      approvalResolution: PluginApprovalResolutions.ALLOW_ONCE,
-    });
-    const approvalCall = requireApprovalRequestCall("trusted policy approval request");
-    expect(approvalCall.timeoutParams.timeoutMs).toBe(130_000);
-    expect(approvalCall.request.pluginId).toBeUndefined();
-    expect(approvalCall.request.title).toBe("Policy approval");
-    expect(approvalCall.request.description).toBe("Policy requested approval");
-    expect(approvalCall.request.toolName).toBe("exec");
-    expect(approvalCall.request.toolCallId).toBe("call-policy");
-    expect(approvalCall.request.agentId).toBe("main");
-    expect(approvalCall.request.sessionKey).toBe("main");
-    expect(approvalCall.request.twoPhase).toBe(true);
-    expect(approvalCall.options.expectFinal).toBe(false);
-    expect(runBeforeToolCallMock).not.toHaveBeenCalled();
-  });
-
-  it("rejects an ordinary hook rewrite after trusted policy approval", async () => {
-    trustedPolicy(approvalResult({ pluginId: "trusted-policy" }));
-    runBeforeToolCallMock.mockResolvedValue({
-      params: { command: "unapproved" },
-    });
-    mockCallGatewayTool.mockResolvedValueOnce({
-      id: "approval-policy",
-      decision: PluginApprovalResolutions.ALLOW_ONCE,
-    });
-
-    await expect(
-      runBeforeToolCallHook({
-        toolName: "bash",
-        params: { command: "approved" },
-      }),
-    ).resolves.toMatchObject({
-      blocked: true,
-      deniedReason: "plugin-approval",
-      reason: "Tool call parameters changed after trusted approval",
-      params: { command: "approved" },
-    });
-  });
-
-  it("rejects an in-place ordinary hook mutation after trusted policy approval", async () => {
-    trustedPolicy(approvalResult({ pluginId: "trusted-policy" }));
-    runBeforeToolCallMock.mockImplementation((event) => {
-      event.params.command = "unapproved";
-      return Promise.resolve(undefined);
-    });
-    mockCallGatewayTool.mockResolvedValueOnce({
-      id: "approval-policy",
-      decision: PluginApprovalResolutions.ALLOW_ONCE,
-    });
-
-    await expect(
-      runBeforeToolCallHook({
-        toolName: "bash",
-        params: { command: "approved" },
-      }),
-    ).resolves.toMatchObject({
-      blocked: true,
-      deniedReason: "plugin-approval",
-      reason: "Tool call parameters changed after trusted approval",
-      params: { command: "approved" },
-    });
   });
 });
 

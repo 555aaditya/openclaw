@@ -10,14 +10,11 @@ import {
   validateSessionsSetInvolvementParams,
   validateSessionsPatchManyParams,
   validateSessionsPatchParams,
-  validateSessionsPluginPatchParams,
   validateSessionsResetParams,
 } from "../../../packages/gateway-protocol/src/index.js";
 import { readAcpSessionMetaForEntries } from "../../acp/runtime/session-meta-readonly.js";
 import { updateSessionProfileInvolvementAsync } from "../../config/sessions/session-accessor.js";
 import { assignSessionOwnerInWorker } from "../../config/sessions/session-metadata-write.async.js";
-import { patchPluginSessionExtension } from "../../plugins/host-hook-state.js";
-import { isPluginJsonValue } from "../../plugins/host-hooks.js";
 import { runExclusiveSessionLifecycleMutation } from "../../sessions/session-lifecycle-admission.js";
 import { resolveCurrentUserProfileDisplay } from "../current-user-profile-display.js";
 import { captureGatewayOperatorRunAuthority } from "../operator-run-authority.js";
@@ -36,7 +33,6 @@ import {
   createSessionListEntryFilter,
   SessionMutationAuthorizationChangedError,
 } from "../session-sharing.js";
-import { resolveStoredSessionKeyForAgentStore } from "../session-store-key.js";
 import type { SessionActorProfileIdentity } from "../session-utils-contracts.js";
 import { projectSessionPatchResult } from "../session-utils-model.js";
 import { gatewayClientSessionCreator } from "./gateway-client-identity.js";
@@ -505,101 +501,6 @@ export const sessionMutationHandlers: GatewayRequestHandlers = {
     } finally {
       facts.release();
     }
-  },
-  "sessions.pluginPatch": async ({
-    params,
-    respond,
-    context,
-    client,
-    sessionMutationAuthorization,
-  }) => {
-    if (
-      !assertValidParams(params, validateSessionsPluginPatchParams, "sessions.pluginPatch", respond)
-    ) {
-      return;
-    }
-    const key = requireSessionKey(params.key, respond);
-    if (!key) {
-      return;
-    }
-    const scopes = Array.isArray(client?.connect.scopes) ? client.connect.scopes : [];
-    if (!scopes.includes(ADMIN_SCOPE)) {
-      respond(
-        false,
-        undefined,
-        errorShape(
-          ErrorCodes.INVALID_REQUEST,
-          `sessions.pluginPatch requires gateway scope: ${ADMIN_SCOPE}`,
-        ),
-      );
-      return;
-    }
-    const pluginId = normalizeOptionalString(params.pluginId);
-    const namespace = normalizeOptionalString(params.namespace);
-    if (!pluginId || !namespace) {
-      respond(
-        false,
-        undefined,
-        errorShape(ErrorCodes.INVALID_REQUEST, "pluginId and namespace are required"),
-      );
-      return;
-    }
-    if (params.unset === true && params.value !== undefined) {
-      respond(
-        false,
-        undefined,
-        errorShape(
-          ErrorCodes.INVALID_REQUEST,
-          "sessions.pluginPatch cannot specify both unset and value",
-        ),
-      );
-      return;
-    }
-    if (params.value !== undefined && !isPluginJsonValue(params.value)) {
-      respond(
-        false,
-        undefined,
-        errorShape(
-          ErrorCodes.INVALID_REQUEST,
-          "sessions.pluginPatch value must be JSON-compatible",
-        ),
-      );
-      return;
-    }
-    const requestedAgent = resolveRequestedSessionAgentId(
-      context.getRuntimeConfig(),
-      key,
-      params.agentId,
-    );
-    if (!requestedAgent.ok) {
-      respond(false, undefined, requestedAgent.error);
-      return;
-    }
-    const canonicalKey = resolveStoredSessionKeyForAgentStore({
-      cfg: context.getRuntimeConfig(),
-      agentId: requestedAgent.agentId,
-      sessionKey: key,
-    });
-    const patched = await patchPluginSessionExtension({
-      cfg: context.getRuntimeConfig(),
-      sessionKey: canonicalKey,
-      agentId: requestedAgent.agentId,
-      pluginId,
-      namespace,
-      value: params.value,
-      unset: params.unset === true,
-      assertCurrent: sessionMutationAuthorization?.assertCurrent,
-    });
-    if (!patched.ok) {
-      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, patched.error));
-      return;
-    }
-    respond(true, { ok: true, key: patched.key, value: patched.value }, undefined);
-    emitSessionsChanged(context, {
-      sessionKey: patched.key,
-      agentId: requestedAgent.agentId,
-      reason: "plugin-patch",
-    });
   },
   "sessions.reset": async ({ params, respond, context, client, sessionMutationAuthorization }) => {
     if (!assertValidParams(params, validateSessionsResetParams, "sessions.reset", respond)) {

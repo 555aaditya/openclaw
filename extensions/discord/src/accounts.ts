@@ -42,7 +42,7 @@ export const {
     channelKeys: ["token"],
     envVars: ["DISCORD_BOT_TOKEN"],
   },
-  nestedObjectKeys: ["activities", "agentComponents", "botLoopProtection"],
+  nestedObjectKeys: ["agentComponents", "botLoopProtection"],
 });
 
 export function resolveDiscordAccountConfig(

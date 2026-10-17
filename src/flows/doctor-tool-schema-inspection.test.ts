@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import * as mcpConfig from "../agents/agent-bundle-mcp-runtime-config.js";
-import { createMcpProofPluginRegistry } from "../agents/mcp-connection-resolver.test-fixtures.js";
+import { createMcpProofPluginRegistry } from "../agents/mcp-plugin-registry.test-support.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import * as discovery from "../plugins/discovery.js";
 import * as manifests from "../plugins/manifest-registry.js";
@@ -56,7 +56,6 @@ it.each([
       },
       async (state) => {
         const events = state.path("doctor-tool-events.jsonl");
-        const unexpectedProbe = state.path("requester-server-probed");
         const ids = [
           ...(providerFirst ? [providerPluginId] : []),
           "fleet-tool",
@@ -176,11 +175,10 @@ module.exports = { id, register(api) {
           mcp: {
             servers: {
               requester: {
-                command: process.execPath,
-                args: [
-                  "-e",
-                  `require("node:fs").writeFileSync(${JSON.stringify(unexpectedProbe)}, "probed"); process.exit(1);`,
-                ],
+                transport: "streamable-http",
+                url: "https://mcp.example.test/requester",
+                auth: "oauth",
+                oauth: { identity: "per-requester" },
               },
             },
           },
@@ -190,12 +188,6 @@ module.exports = { id, register(api) {
         );
         expect(check).toBeDefined();
         const caller = createMcpProofPluginRegistry();
-        caller.apiFor("requester-owner").registerMcpServerConnectionResolver({
-          serverName: "requester",
-          resolve: () => {
-            throw new Error("Doctor has no authenticated requester");
-          },
-        });
         const detectorFailure = new Error("fixture detector failed after tool inspection");
         const rejectColdRead = vi.fn(() => {
           throw new Error("cold plugin metadata read after inspection preparation");
@@ -268,7 +260,6 @@ module.exports = { id, register(api) {
           }
         }
         expect(rejectColdRead).not.toHaveBeenCalled();
-        expect(fs.existsSync(unexpectedProbe)).toBe(false);
         const observed = fs
           .readFileSync(events, "utf8")
           .trim()

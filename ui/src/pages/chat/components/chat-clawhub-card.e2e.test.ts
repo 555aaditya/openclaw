@@ -2,7 +2,6 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 import {
   captureScreenshot,
   describeControlUiE2e,
-  enabledWorkboardCapabilities,
   installMockGateway,
   mobileViewport,
   newContext,
@@ -61,7 +60,6 @@ describeControlUiE2e("Chat plugin installation status", () => {
       const connects = (await gateway.getRequests("connect")).length;
       await captureScreenshot(page, "chat-plugin-cards-before.png", "viewport");
       await gateway.setMethodResponse("plugins.catalog.get", details(true));
-      await gateway.setMethodResponse("plugins.uiDescriptors", enabledWorkboardCapabilities());
       await gateway.emitGatewayEvent("plugins.changed", { generation: 1 });
       await expect.poll(() => cards.locator(".chat-clawhub-card__installed").count()).toBe(2);
       expect(await cards.locator(".chat-clawhub-card__install").count()).toBe(0);

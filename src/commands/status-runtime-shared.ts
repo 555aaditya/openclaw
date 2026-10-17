@@ -28,7 +28,6 @@ export async function resolveStatusSecurityAudit(params: {
     ...(params.timeoutMs !== undefined ? { deepTimeoutMs: params.timeoutMs } : {}),
     includeFilesystem: true,
     includeChannelSecurity: true,
-    loadPluginSecurityCollectors: false,
   });
 }
 

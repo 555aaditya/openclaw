@@ -29,7 +29,7 @@ export function sidebarPanelDefinitions(
     dashboardAvailable: () => params.dashboard !== null,
   };
   const definePanel = (
-    slot: Exclude<SidebarSlotId, `plugin:${string}` | "link-reader">,
+    slot: Exclude<SidebarSlotId, `plugin:${string}`>,
     icon: IconName,
     hasContent = true,
     actions?: Pick<SidebarPanelDefinition, "headerAction" | "headerActionView" | "headerLink">,
@@ -98,16 +98,7 @@ export function sidebarPanelDefinitions(
     definePanel("detail", "diff", Boolean(data?.detailContent)),
     definePanel("terminal", "terminal", Boolean(state?.terminalAvailable)),
     definePanel("browser", "globe", Boolean(state?.browserPanelAvailable)),
-    {
-      slot: "link-reader",
-      label: t("linkReader.title"),
-      icon: "link",
-      available: Boolean(params?.linkReaders?.length),
-      content: null,
-      view: data,
-      loading: { variant: "files", label: t("linkReader.loadingPreview") },
-      empty: { description: t("linkReader.urlPlaceholder") },
-    },
+
     definePanel("portal", "globe"),
     definePanel("workspace", "fileText"),
     definePanel("companion", "messageSquarePlus", true, { headerActionView: params }),

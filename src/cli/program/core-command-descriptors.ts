@@ -45,7 +45,6 @@ export const CORE_CLI_COMMAND_DESCRIPTORS: readonly NamedCommandDescriptor[] = [
       machineOutput: ({ argv }) => hasMachineOutputOption(argv, "--json"),
     },
   ),
-  command("migrate", "Import state from another agent system", true),
   command("storage", "List, initialize, and test configured storage locations", true, {
     parentDefaultHelp: true,
     machineOutput: ({ argv }) => hasMachineOutputOption(argv, "--json"),

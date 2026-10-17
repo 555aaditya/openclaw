@@ -465,9 +465,7 @@ it.each(["plugins.changed", "plugins.controlUi.changed"] as const)(
     const client = current();
     let revision: string | null = "one";
     let generation = 0;
-    const widgetKinds = () =>
-      revision ? [{ pluginId: "review", kind: "review:summary", label: revision }] : [];
-    const methods = ["plugins.uiDescriptors", "plugins.controlUi.list", "plugins.controlUi.report"];
+    const methods = ["plugins.controlUi.list", "plugins.controlUi.report"];
     client.request.mockImplementation(async (method) => {
       if (method === "plugins.controlUi.list") {
         return {
@@ -485,17 +483,6 @@ it.each(["plugins.changed", "plugins.controlUi.changed"] as const)(
                 },
               ]
             : [],
-        };
-      }
-      if (method === "plugins.uiDescriptors") {
-        return {
-          ok: true,
-          generation,
-          descriptors: [],
-          methods,
-          controlUiTabs: [],
-          controlUiWidgetKinds: widgetKinds(),
-          pluginSurfaceUrls: {},
         };
       }
       if (method === "plugins.controlUi.report") {
@@ -539,8 +526,9 @@ it.each(["plugins.changed", "plugins.controlUi.changed"] as const)(
         ),
       );
       await vi.waitFor(() => {
-        expect(gateway.snapshot.pluginCapabilities?.generation).toBe(generation);
-        expect(gateway.snapshot.hello?.controlUiWidgetKinds).toEqual(widgetKinds());
+        if (event === "plugins.changed") {
+          expect(gateway.snapshot.pluginGeneration).toBe(generation);
+        }
         expect(runtime.isLoading("review")).toBe(false);
       });
     };
@@ -593,7 +581,7 @@ it.each(["plugins.changed", "plugins.controlUi.changed"] as const)(
       expect(runtime.registrations("replacements")).toEqual([]);
       expect(runtime.selectedReplacement("composer")).toBeUndefined();
       expect(second.signal.aborted).toBe(true);
-      await expect(second.host.request("plugins.uiDescriptors", {})).rejects.toThrow(
+      await expect(second.host.request("plugins.controlUi.list", {})).rejects.toThrow(
         "This plugin UI activation has ended",
       );
 

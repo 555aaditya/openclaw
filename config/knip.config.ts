@@ -80,7 +80,6 @@ const repositoryScriptEntries = [
   "scripts/build-bun-standalone.mjs!",
   // Maintainers invoke the isolated macOS standalone Doctor proof by path.
   "scripts/verify-standalone-doctor.mjs!",
-  "scripts/build-discord-activity-sdk.mts!",
   // Plugin package asset hooks invoke the browser builder by path.
   "scripts/build-plugin-control-ui.mts!",
   // package-mac-app.sh launches the architecture scheduler by path.
@@ -305,7 +304,6 @@ const repositoryScriptEntries = [
   "scripts/sync-labels.ts!",
   "scripts/test-built-bundled-channel-entry-smoke.mts!",
   // CI launches the desktop resize proof through its bootstrap path.
-  "scripts/test-desktop-resize-real.mts!",
   // Native shell UI tests connect to this manually launched loopback Gateway fixture.
   "scripts/test-ios-shell-gateway.mjs!",
   "scripts/test-ios-sidebar-attention-gateway.mjs!",
@@ -613,9 +611,7 @@ const bundledPluginIgnoredRuntimeDependencies = [
   "@a2ui/lit",
   "@azure/identity",
   "@clawdbot/lobster",
-  "@discord/embedded-app-sdk",
   "@discordjs/opus",
-  "@homebridge/ciao",
   "@matrix-org/matrix-sdk-crypto-wasm",
   "@mozilla/readability",
   "@openai/codex",
@@ -633,7 +629,6 @@ const rootBundledPluginRuntimeDependencies = [
   "@anthropic-ai/sdk",
   "@google/genai",
   "@grammyjs/transformer-throttler",
-  "@homebridge/ciao",
   "@mozilla/readability",
   "@silvia-odwyer/photon-node",
   "@trycua/cua-driver",
@@ -768,7 +763,6 @@ const ignoredTestSupportFiles = [
   "**/*.test-utils.ts",
   "test/helpers/live-image-probe.ts",
   // Legacy test-only owners whose filenames predate the test-support convention.
-  "src/plugins/contracts/host-hook-fixture.ts",
   "src/plugins/contracts/tts-contract-suites.ts",
 ] as const;
 

@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { truncateCodePoints } from "@openclaw/normalization-core/code-points";
 import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
-import type { Result } from "@openclaw/normalization-core/result";
 import { Type } from "typebox";
 import type { BoardWidgetPutResult } from "../../packages/gateway-protocol/src/index.js";
 import { WIDGET_HTML_MAX_UTF8_BYTES } from "../../packages/gateway-protocol/src/schema/canvas.js";
@@ -17,24 +16,12 @@ import {
   BOARD_REPORT_WIDGET_KIND,
   parseBoardReport,
 } from "../boards/board-report.js";
-import { formatErrorMessage } from "../infra/errors.js";
 import {
   assertWidgetHtmlSize,
   WIDGET_CDN_ORIGINS,
   WidgetHtmlInputError,
 } from "../plugin-sdk/widget-html.js";
-import {
-  listBoardWidgetContentKinds,
-  resolveBoardWidgetContentKind,
-} from "../plugins/board-widget-content-kinds.js";
 import { describeDashboardCapabilities } from "../plugins/dashboard-capabilities.js";
-import type {
-  WidgetPresentationError,
-  WidgetPresentationSuccess,
-  WidgetPresenter,
-  WidgetPresenterContext,
-  WidgetPresenterDocument,
-} from "../plugins/plugin-registration.types.js";
 import { getActivePluginRegistry } from "../plugins/runtime.js";
 import { getPluginRuntimeGatewayRequestScope } from "../plugins/runtime/gateway-request-scope.js";
 import { createCanvasDocument } from "./documents.js";
@@ -42,32 +29,22 @@ import { findWidgetScriptSyntaxError } from "./widget-script-syntax.js";
 import { buildWidgetDocument } from "./wrap.js";
 
 const SHOW_WIDGET_REQUIRED_CLIENT_CAPS = ["inline-widgets"];
-const REGISTERED_WIDGET_CODE_MAX_CHARS = 262_144;
 const WIDGET_MAX_PER_SCOPE = 32;
 
 function currentPluginRegistry() {
   return getPluginRuntimeGatewayRequestScope()?.pluginRegistry ?? getActivePluginRegistry();
 }
 
-export function hasRegisteredShowWidgetKinds(): boolean {
-  return listBoardWidgetContentKinds(currentPluginRegistry()).length > 0;
-}
-
 function createShowWidgetToolSchema(
   kinds: readonly string[],
-  presenters: readonly Exclude<WidgetPresenter, { target: "current_channel" }>[],
   capabilityGuidance: string,
   pinnedOnly: boolean,
   reportAvailable: boolean,
 ) {
-  const presenterTargets = presenters.map((presenter) => presenter.target);
-  const targets = ["assistant_message", ...presenterTargets] as const;
-  const presenterDescriptions = presenters.map(
-    (presenter) => `${presenter.target}: ${presenter.description}`,
-  );
+  const targets = ["assistant_message"] as const;
   const widgetCode = Type.String({
     description:
-      "Required for HTML/SVG or registered source. For HTML, send a fragment with optional style/script tags, not a full document or file path. Use fluid widths and wrap or stack narrow layouts; reserve horizontal scrolling for exact geometry.",
+      "Required for HTML/SVG. For HTML, send a fragment with optional style/script tags, not a full document or file path. Use fluid widths and wrap or stack narrow layouts; reserve horizontal scrolling for exact geometry.",
   });
   return Type.Object({
     title: Type.String({ description: "Short host title; do not repeat it inside the widget" }),
@@ -113,10 +90,9 @@ function createShowWidgetToolSchema(
           ? {}
           : {
               target: optionalStringEnum(targets, {
-                description: [
-                  "Where to show the widget. assistant_message: inline in chat",
-                  ...presenterDescriptions,
-                ].join("; "),
+                description: ["Where to show the widget. assistant_message: inline in chat"].join(
+                  "; ",
+                ),
               }),
             }),
         frame: optionalStringEnum(["card", "full-bleed", "frameless"] as const, {
@@ -157,80 +133,7 @@ type ShowWidgetToolOptions = {
   inlineClientAvailable?: boolean;
   /** Admitted callers without a rendering client may author only durable dashboard widgets. */
   pinnedOnly?: boolean;
-  presenters?: readonly WidgetPresenter[];
-  presenterContext?: WidgetPresenterContext;
 };
-
-type WidgetPresentationAttempt = Result<WidgetPresentationSuccess, WidgetPresentationError>;
-
-async function presentWidget(params: {
-  presenter?: WidgetPresenter;
-  document: WidgetPresenterDocument;
-  title: string;
-  context: WidgetPresenterContext;
-}): Promise<WidgetPresentationAttempt> {
-  const presenter = params.presenter;
-  if (!presenter) {
-    return {
-      ok: false,
-      error: {
-        code: "no_eligible_node",
-        message: "No widget presenter is registered for this target.",
-      },
-    };
-  }
-  const errorCode = presenter.target === "current_channel" ? "presentation_error" : "node_error";
-  try {
-    const availability = await presenter.availability(params.context);
-    if (!availability.ok) {
-      return availability;
-    }
-    return await presenter.present({
-      document: params.document,
-      title: params.title,
-      context: params.context,
-    });
-  } catch (error) {
-    return {
-      ok: false,
-      error: { code: errorCode, message: formatErrorMessage(error) },
-    };
-  }
-}
-
-export function resolveCurrentChannelWidgetPresenter(
-  presenters: readonly WidgetPresenter[],
-  context: WidgetPresenterContext,
-): Extract<WidgetPresenter, { target: "current_channel" }> | undefined {
-  const matches = presenters.filter(
-    (presenter): presenter is Extract<WidgetPresenter, { target: "current_channel" }> => {
-      if (presenter.target !== "current_channel") {
-        return false;
-      }
-      try {
-        return presenter.match(context);
-      } catch {
-        return false;
-      }
-    },
-  );
-  return matches.length === 1 ? matches[0] : undefined;
-}
-
-function widgetPresentationFailureText(
-  error: WidgetPresentationError,
-  inlineAvailable: boolean,
-): string {
-  const message = /[.!?]$/u.test(error.message) ? error.message : `${error.message}.`;
-  if (!inlineAvailable) {
-    return message;
-  }
-  const nextStep =
-    error.code === "no_eligible_node"
-      ? "Pair a canvas-capable device or open the OpenClaw app, then retry."
-      : "Retry the requested presentation destination when it is available.";
-  return `${message} The widget is available inline here. ${nextStep}`;
-}
 
 function slugWidgetName(title: string): string {
   const slug = title
@@ -278,52 +181,27 @@ export function createShowWidgetTool(options: ShowWidgetToolOptions = {}): AnyAg
   const inlineHostEnabled = options.inlineHostEnabled !== false;
   const inlineAvailable =
     !pinnedOnly && inlineHostEnabled && options.inlineClientAvailable !== false;
-  const registeredKinds = listBoardWidgetContentKinds(currentPluginRegistry());
-  const allKinds = ["html", ...registeredKinds];
-  const presenters = options.presenters ?? [];
-  const presenterContext =
-    options.presenterContext ??
-    (options.agentSessionKey ? { sessionKey: options.agentSessionKey } : {});
-  const currentChannelPresenter = pinnedOnly
-    ? undefined
-    : resolveCurrentChannelWidgetPresenter(presenters, presenterContext);
-  const kinds =
-    currentChannelPresenter && !inlineAvailable
-      ? allKinds.filter((kind) => currentChannelPresenter.capabilities.sourceKinds.includes(kind))
-      : allKinds;
-  const advertisedRegisteredKinds = kinds.filter((kind) => kind !== "html");
+  const kinds = ["html"];
   const reportAvailable = Boolean(options.agentSessionKey?.trim());
   const reportGuidance = reportAvailable
     ? " Prefer the report argument with pin=true for data reports; these render natively on the dashboard without a document frame. Reports are dashboard-only; omit widget_code, kind, capabilities, and presentation.target."
     : "";
-  const explicitPresenters = pinnedOnly
-    ? []
-    : presenters.filter((presenter) => presenter.target !== "current_channel");
-  const presenterPrompt =
-    explicitPresenters.length > 0
-      ? " Use presentation.target to choose a registered device surface."
-      : "";
   const usageGuidance = pinnedOnly
-    ? "This surface is pinned-only: set pin=true to create or update a durable session dashboard widget. Inline and device presentation are unavailable."
-    : currentChannelPresenter
-      ? "Show widgets through the current channel presenter; follow result.presentation for delivery."
-      : inlineAvailable
-        ? "Keep one-off visualizations inline; pin for explicit dashboard requests or multiple non-code visualizations."
-        : "Inline previews are unavailable this turn; set pin=true to save to the session dashboard.";
+    ? "This surface is pinned-only: set pin=true to create or update a durable session dashboard widget."
+    : inlineAvailable
+      ? "Keep one-off visualizations inline; pin for explicit dashboard requests or multiple non-code visualizations."
+      : "Inline previews are unavailable this turn; set pin=true to save to the session dashboard.";
   return {
     label: "Show Widget",
     name: "show_widget",
-    description: `Visual helps? Make widget. Do not wait for ask. ${usageGuidance} Update pinned HTML by name. Use for code architecture, execution traces, performance comparisons, interactive explanations, UI mockups, and dashboards. Text clearer? Skip. Load the visualize skill when available for composition and dashboard authoring. The source kind defaults to html${advertisedRegisteredKinds.length ? ` and registered kinds are ${advertisedRegisteredKinds.join(", ")}` : ""}. Send markup directly in widget_code. Scripts, stylesheets, and fonts may load from ${WIDGET_CDN_ORIGINS.join(", ")}; pin library versions. Use direct HTTPS URLs for audio/video, or data/blob URLs for embedded/generated clips. Default videos to controls playsinline preload="auto" so a first frame can appear before playback; do not autoplay. Images and video posters must be data URLs; media playback does not grant fetch access. Inline widgets cannot fetch APIs. Pinned data access needs declared and granted capabilities.netOrigins or capabilities.tools; inline previews never inherit those grants. Keep filters and controls local; user-clicked openclaw.prompt.send(text) requests an agent follow-up in the Control UI. Data, action, state, and cron host APIs are dashboard-only. openclaw.host.controlUiBaseUrl is the Control UI origin plus base path after dashboard initialization, otherwise null; read it at click time. Dashboard HTML links support HTTP(S) destinations only; open them with target="_blank" and rel="noopener noreferrer". Put local workspace file links in chat Markdown, not widget HTML; file:// links cannot open the Files panel. \`title\` is host metadata. Start directly with content; do not repeat the title or recreate dashboard chrome. Use host theme variables such as --text, --muted, --card, --border, --accent, --font-body, and --font-mono. Inline script syntax errors return line and column; fix and retry. Check library loading and rendered interactions; hosting success alone is not visual proof.${reportGuidance}${presenterPrompt}`,
+    description: `Visual helps? Make widget. Do not wait for ask. ${usageGuidance} Update pinned HTML by name. Use for code architecture, execution traces, performance comparisons, interactive explanations, UI mockups, and dashboards. Text clearer? Skip. Load the visualize skill when available for composition and dashboard authoring. The source kind defaults to html. Send markup directly in widget_code. Scripts, stylesheets, and fonts may load from ${WIDGET_CDN_ORIGINS.join(", ")}; pin library versions. Use direct HTTPS URLs for audio/video, or data/blob URLs for embedded/generated clips. Default videos to controls playsinline preload="auto" so a first frame can appear before playback; do not autoplay. Images and video posters must be data URLs; media playback does not grant fetch access. Inline widgets cannot fetch APIs. Pinned data access needs declared and granted capabilities.netOrigins or capabilities.tools; inline previews never inherit those grants. Keep filters and controls local; user-clicked openclaw.prompt.send(text) requests an agent follow-up in the Control UI. Data, action, state, and cron host APIs are dashboard-only. openclaw.host.controlUiBaseUrl is the Control UI origin plus base path after dashboard initialization, otherwise null; read it at click time. Dashboard HTML links support HTTP(S) destinations only; open them with target="_blank" and rel="noopener noreferrer". Put local workspace file links in chat Markdown, not widget HTML; file:// links cannot open the Files panel. \`title\` is host metadata. Start directly with content; do not repeat the title or recreate dashboard chrome. Use host theme variables such as --text, --muted, --card, --border, --accent, --font-body, and --font-mono. Inline script syntax errors return line and column; fix and retry. Check library loading and rendered interactions; hosting success alone is not visual proof.${reportGuidance}`,
     parameters: createShowWidgetToolSchema(
       kinds,
-      explicitPresenters,
       describeDashboardCapabilities(currentPluginRegistry()),
       pinnedOnly,
       reportAvailable,
     ),
-    ...(currentChannelPresenter || pinnedOnly
-      ? {}
-      : { requiredClientCaps: SHOW_WIDGET_REQUIRED_CLIENT_CAPS }),
+    ...(pinnedOnly ? {} : { requiredClientCaps: SHOW_WIDGET_REQUIRED_CLIENT_CAPS }),
     execute: async (_toolCallId, args) => {
       const params = args as Record<string, unknown>;
       const requestedKind = readToolStringParam(params, "kind");
@@ -342,11 +220,10 @@ export function createShowWidgetTool(options: ShowWidgetToolOptions = {}): AnyAg
         if (!rawWidgetCode.trim()) {
           throw new WidgetHtmlInputError("widget_code required");
         }
-        assertWidgetHtmlSize(
-          rawWidgetCode,
-          kind === "html" ? WIDGET_HTML_MAX_UTF8_BYTES : REGISTERED_WIDGET_CODE_MAX_CHARS,
-          { inputName: "widget_code", unit: kind === "html" ? "bytes" : "characters" },
-        );
+        assertWidgetHtmlSize(rawWidgetCode, WIDGET_HTML_MAX_UTF8_BYTES, {
+          inputName: "widget_code",
+          unit: "bytes",
+        });
         if (kind === "html") {
           // Untrimmed so reported line/column match the widget_code the model sent.
           const scriptError = findWidgetScriptSyntaxError(rawWidgetCode);
@@ -393,60 +270,21 @@ export function createShowWidgetTool(options: ShowWidgetToolOptions = {}): AnyAg
         );
       }
       const report = isReport ? parseBoardReport(params.report) : undefined;
-      const registration =
-        kind === "html" || isReport
-          ? undefined
-          : resolveBoardWidgetContentKind(currentPluginRegistry(), kind);
-      if (kind !== "html" && !isReport && !registration) {
+      if (kind !== "html" && !isReport) {
+        throw new WidgetHtmlInputError(`unsupported widget kind ${JSON.stringify(kind)}`);
+      }
+      if (requestedTarget !== "assistant_message") {
         throw new WidgetHtmlInputError(
-          `widget kind ${JSON.stringify(kind)} is unavailable; enable the plugin that provides it and retry`,
+          `unsupported widget presentation target ${JSON.stringify(requestedTarget)}`,
         );
       }
-      if (registration) {
-        try {
-          registration.definition.validateSource(widgetCode);
-        } catch (error) {
-          throw new WidgetHtmlInputError(`invalid ${kind} widget source: ${String(error)}`);
-        }
-      }
-      const currentPresenterSupportsKind =
-        currentChannelPresenter?.capabilities.sourceKinds.includes(kind);
-      const wantsCurrentChannel =
-        requestedTarget === "assistant_message" && currentPresenterSupportsKind;
-      const wantsNodePanel = requestedTarget === "node_panel";
-      if (!inlineAvailable && !wantsCurrentChannel && !wantsNodePanel && !shouldPin) {
+      if (!inlineAvailable && !shouldPin) {
         throw new WidgetHtmlInputError(
           "inline widget hosting is disabled; set pin=true to place the widget on the session dashboard",
         );
       }
-      if (wantsCurrentChannel && currentChannelPresenter) {
-        const { maxSourceBytes } = currentChannelPresenter.capabilities;
-        if (maxSourceBytes !== undefined) {
-          assertWidgetHtmlSize(rawWidgetCode, maxSourceBytes, { inputName: "widget_code" });
-        }
-      }
-      const composedWidget = registration
-        ? registration.definition.composeDocument({
-            source: widgetCode,
-            title,
-            resourceUrls: Object.fromEntries(
-              registration.definition.resources.paths.map((resourcePath) => [
-                resourcePath,
-                resourcePath,
-              ]),
-            ),
-            promptGranted: false,
-          })
-        : widgetCode;
-      const wrappedDocument = isReport
-        ? ""
-        : buildWidgetDocument(
-            title,
-            composedWidget,
-            registration ? { scriptOrigins: ["'self'"] } : {},
-          );
-      const hasPresentationRoute =
-        !isReport && (inlineAvailable || wantsCurrentChannel || wantsNodePanel);
+      const wrappedDocument = isReport ? "" : buildWidgetDocument(title, widgetCode);
+      const hasPresentationRoute = !isReport && inlineAvailable;
       let pinnedText = "";
       let pinnedWidgetName: string | undefined;
       let capabilityState: BoardWidgetPutResult["widgets"][number]["grantState"] | undefined;
@@ -458,7 +296,7 @@ export function createShowWidgetTool(options: ShowWidgetToolOptions = {}): AnyAg
         const frame = readToolStringParam(presentation ?? {}, "frame");
         const after = readToolStringParam(params, "after");
         const pinnedTitle = truncateCodePoints(title, 80);
-        if (!registration && !isReport) {
+        if (!isReport) {
           assertPinnedWidgetDocumentSize(
             buildWidgetDocument(pinnedTitle, widgetCode, {
               connectOrigins: capabilities?.netOrigins,
@@ -479,9 +317,7 @@ export function createShowWidgetTool(options: ShowWidgetToolOptions = {}): AnyAg
           // can never run before its user-activation and bridge bootstrap.
           content: report
             ? { kind: "plugin", pluginKind: BOARD_REPORT_WIDGET_KIND, props: report }
-            : registration
-              ? { kind: "registered", contentKind: kind, source: widgetCode }
-              : { kind: "html", html: widgetCode },
+            : { kind: "html", html: widgetCode },
           ...(frame ? { presentation: frame } : {}),
           ...(capabilities ? { declared: capabilities } : {}),
           ...(!explicitName ? { generatedIdentity: generatedWidgetIdentity(title, name) } : {}),
@@ -552,86 +388,21 @@ export function createShowWidgetTool(options: ShowWidgetToolOptions = {}): AnyAg
           },
         ));
 
-      let presentationAttempt: WidgetPresentationAttempt | undefined;
-      if (wantsCurrentChannel && currentChannelPresenter) {
-        presentationAttempt = await presentWidget({
-          presenter: currentChannelPresenter,
-          document: { kind: "html", html: wrappedDocument },
-          title,
-          context: presenterContext,
-        });
-      } else if (wantsNodePanel) {
-        const hosted = await hostDocument();
-        presentationAttempt = await presentWidget({
-          presenter: explicitPresenters.find((presenter) => presenter.target === "node_panel"),
-          document: { kind: "html", html: wrappedDocument, hostedUrl: hosted.entryUrl },
-          title,
-          context: presenterContext,
-        });
-      }
-
-      if (presentationAttempt?.ok && presentationAttempt.value.kind === "message") {
-        const receipt = presentationAttempt.value.receipt;
-        const messageId = receipt.primaryPlatformMessageId ?? receipt.platformMessageIds[0];
-        return jsonResult({
-          kind: "widget",
-          presentation: {
-            target: "current_channel",
-            title,
-            receipt,
-          },
-          ...(pinnedWidgetName ? { boardWidgetName: pinnedWidgetName } : {}),
-          ...(capabilityState ? { capabilityState } : {}),
-          text: `Widget presented in the current channel${messageId ? ` as message ${messageId}` : ""}${pinnedText ? `; ${pinnedText}` : ""}`,
-        });
-      }
-
-      if (presentationAttempt && !presentationAttempt.ok && !inlineAvailable) {
-        const failureText = widgetPresentationFailureText(presentationAttempt.error, false);
-        if (pinnedWidgetName) {
-          return jsonResult({
-            status: "partial",
-            boardWidgetName: pinnedWidgetName,
-            capabilityState,
-            presentation: {
-              target: requestedTarget === "node_panel" ? "node_panel" : "current_channel",
-              status: "failed",
-              error: presentationAttempt.error,
-            },
-            text: `Widget ${pinnedText}, but presentation failed: ${failureText}`,
-          });
-        }
-        throw new WidgetHtmlInputError(`Widget presentation failed: ${failureText}`);
-      }
-
       const hosted = await hostDocument();
-      const presentedNode =
-        presentationAttempt?.ok && presentationAttempt.value.kind === "node"
-          ? presentationAttempt.value
-          : undefined;
-      const target = presentedNode ? "node_panel" : "assistant_message";
-      const presentationText = presentedNode
-        ? `; presented on ${presentedNode.nodeName ?? presentedNode.nodeId} (${presentedNode.nodeId})`
-        : presentationAttempt && !presentationAttempt.ok
-          ? `; ${widgetPresentationFailureText(presentationAttempt.error, true)}`
-          : "";
       return jsonResult({
         kind: "canvas",
         ...(capabilityState ? { capabilityState } : {}),
         presentation: {
-          target,
+          target: "assistant_message",
           title,
           sandbox: "scripts",
-          ...(presentedNode
-            ? { node: { id: presentedNode.nodeId, name: presentedNode.nodeName } }
-            : {}),
         },
         view: {
           id: hosted.id,
           url: hosted.entryUrl,
           ...(pinnedWidgetName ? { boardWidgetName: pinnedWidgetName } : {}),
         },
-        text: `Widget hosted at ${hosted.entryUrl}${pinnedText ? `; ${pinnedText}` : ""}${presentationText}`,
+        text: `Widget hosted at ${hosted.entryUrl}${pinnedText ? `; ${pinnedText}` : ""}`,
       });
     },
   };

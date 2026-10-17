@@ -65,15 +65,6 @@ describeControlUiE2e("Control UI plugin runtime actions", () => {
         acknowledgeCapabilities: { reviewToken: calendarInspection.reviewToken },
       });
       await gateway.setMethodResponse("plugins.list", inventory([calendarPlugin], 2));
-      await gateway.setMethodResponse("plugins.uiDescriptors", {
-        ok: true,
-        generation: 2,
-        descriptors: [],
-        methods: pluginMethods,
-        controlUiTabs: [],
-        controlUiWidgetKinds: [],
-        pluginSurfaceUrls: {},
-      });
       await gateway.emitGatewayEvent("plugins.changed", { generation: 2 });
       await gateway.resolveDeferred("plugins.setEnabled", {
         ok: true,

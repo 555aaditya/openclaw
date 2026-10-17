@@ -4,9 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
 import { clearRuntimeConfigSnapshot, setRuntimeConfigSnapshot } from "../config/io.js";
 import { setEmbeddedMode } from "../infra/embedded-mode.js";
-import type { WidgetPresenter } from "../plugins/plugin-registration.types.js";
-import { createEmptyPluginRegistry } from "../plugins/registry-empty.js";
-import { resetPluginRuntimeStateForTest, setActivePluginRegistry } from "../plugins/runtime.js";
 import * as userProfileList from "../state/user-profile-list.native.js";
 import { createAdmittedRunOperatorAuthority } from "./admitted-run-context.js";
 import { finalizeAgentToolAvailability } from "./agent-tool-availability.js";
@@ -331,105 +328,7 @@ function hasTool(tools: readonly { name: string }[], name: string): boolean {
   return tools.some((tool) => tool.name === name);
 }
 
-type ChannelPresenter = Extract<WidgetPresenter, { target: "current_channel" }>;
-
-function widgetPresenter(overrides: Partial<ChannelPresenter> = {}): ChannelPresenter {
-  return {
-    target: "current_channel",
-    description: "Present in the configured Discord channel",
-    capabilities: { sourceKinds: ["html"] },
-    match: (context) => context.messageChannel === "discord" && context.accountId === "configured",
-    availability: async () => ({ ok: true, value: { available: true } }),
-    present: async () => {
-      throw new Error("present must not run");
-    },
-    ...overrides,
-  };
-}
-
-function registerPresenters(...presenters: WidgetPresenter[]) {
-  const registry = createEmptyPluginRegistry();
-  registry.widgetPresenters.push(
-    ...presenters.map((presenter, index) => ({
-      pluginId: `fixture-${index}`,
-      presenter,
-      source: "widget-fixture",
-    })),
-  );
-  setActivePluginRegistry(registry);
-}
-
 describe("gateway client capability tool filtering", () => {
-  it("exposes one core widget tool for a matching current-channel presenter", async () => {
-    const present = vi.fn(async () => ({
-      ok: true as const,
-      value: {
-        kind: "message" as const,
-        receipt: {
-          primaryPlatformMessageId: "discord-message-1",
-          platformMessageIds: ["discord-message-1"],
-          parts: [],
-          sentAt: 1,
-        },
-      },
-    }));
-    registerPresenters(widgetPresenter({ present }));
-
-    try {
-      const tools = createOpenClawTools({
-        agentChannel: "discord",
-        agentAccountId: "configured",
-        nativeChannelId: "channel-1",
-        agentSessionKey: "agent:main:discord",
-      });
-      const widgetTools = tools.filter((tool) => tool.name === "show_widget");
-
-      expect(widgetTools).toHaveLength(1);
-      expect(widgetTools[0]?.requiredClientCaps).toBeUndefined();
-      const result = await widgetTools[0]?.execute("discord-widget", {
-        title: "Status",
-        widget_code: "<p>ready</p>",
-      });
-      expect(result?.details).toMatchObject({
-        kind: "widget",
-        presentation: {
-          target: "current_channel",
-          receipt: { primaryPlatformMessageId: "discord-message-1" },
-        },
-      });
-      expect(present).toHaveBeenCalledOnce();
-    } finally {
-      resetPluginRuntimeStateForTest();
-    }
-  });
-
-  it("hides current-channel widgets when no presenter matches the trusted run facts", () => {
-    registerPresenters(widgetPresenter());
-
-    try {
-      expect(
-        hasTool(
-          createOpenClawTools({ agentChannel: "discord", agentAccountId: "unconfigured" }),
-          "show_widget",
-        ),
-      ).toBe(false);
-      expect(hasTool(createOpenClawTools({ agentChannel: "slack" }), "show_widget")).toBe(false);
-    } finally {
-      resetPluginRuntimeStateForTest();
-    }
-  });
-
-  it("fails closed when current-channel presenter matching is ambiguous", () => {
-    const match: WidgetPresenter["match"] = (context) => context.messageChannel === "discord";
-    registerPresenters(widgetPresenter({ match }), widgetPresenter({ match }));
-
-    try {
-      expect(hasTool(createOpenClawTools({ agentChannel: "discord" }), "show_widget")).toBe(false);
-    } finally {
-      resetPluginRuntimeStateForTest();
-    }
-  });
-
   it("retains the requesting browser through coding tool assembly", async () => {
     const gatewayUiCommandTarget = { connId: "requester-tab", profileId: "requester" };
     const targets: unknown[] = [];

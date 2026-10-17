@@ -1,15 +1,9 @@
 import { createEffect, createMemo, onSettled, Show, untrack } from "solid-js";
-import {
-  availableLinkReaders,
-  availableLinkPreviewReaders,
-} from "../../app/link-reader-routing.ts";
 import { nativeGatewaysCapability } from "../../app/native-gateways.runtime.ts";
-import { projectGateway } from "../../lib/reactive/application.ts";
 import { projectProgressCard } from "../../lib/reactive/domain-keyed.ts";
 import { i18nRevision } from "../../lib/reactive/i18n.ts";
 import { projectSource } from "../../lib/reactive/projection.ts";
 import { useVisiblePoll } from "../../lib/reactive/visible-poll.ts";
-import { parseAgentSessionKey } from "../../lib/sessions/session-key.ts";
 import { ChatComposerCapabilityDialogs } from "./chat-composer-capability-host.tsx";
 import { PaneLayout } from "./chat-pane-layout-view.tsx";
 import type { ChatPaneRuntime } from "./chat-pane-render.ts";
@@ -26,8 +20,6 @@ function MountedChatPaneRuntime(props: { pane: ChatPaneOwner }) {
   // One runtime belongs to this mounted pane for its entire lifetime.
   const pane = untrack(() => props.pane);
   const runtime = pane.runtime;
-  const context = runtime.context;
-  const gateway = projectGateway(context.gateway);
   const presented = () => {
     pane.revision();
     return runtime.presented;
@@ -112,33 +104,14 @@ function MountedChatPaneRuntime(props: { pane: ChatPaneOwner }) {
       }
     },
   );
-  const sessionKey = () => {
-    frame();
-    return runtime.sessionKey;
-  };
-  const agentId = () => {
-    frame();
-    return runtime.agentId ?? parseAgentSessionKey(runtime.sessionKey)?.agentId;
-  };
-  // Keep this passthrough host cold: the shared hover bootstrap upgrades it on intent.
-  // Importing its renderer here makes the optional runtime a required boot dependency.
   return (
-    <openclaw-link-reader-hovercard-provider
-      prop:client={
-        gateway.read().snapshot.phase === "connected" ? gateway.read().snapshot.client : null
-      }
-      prop:readers={availableLinkPreviewReaders(gateway.read().snapshot)}
-      prop:claimedReaders={availableLinkReaders(gateway.read().snapshot)}
-      prop:pagePreviewContext={context}
-      prop:agentId={agentId()}
-      prop:sessionKey={sessionKey()}
-    >
+    <>
       <PaneLayout layout={frame().layout} />
       <ChatProviderReviewDialog owner={providerReview} />
       <Show when={frame().capabilityDialogs}>
         {(dialogs) => <ChatComposerCapabilityDialogs {...dialogs()} />}
       </Show>
-    </openclaw-link-reader-hovercard-provider>
+    </>
   );
 }
 

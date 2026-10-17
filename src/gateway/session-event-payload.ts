@@ -192,7 +192,6 @@ export function buildGatewaySessionSnapshot(params: {
     startedAt: sessionRow.startedAt,
     endedAt: sessionRow.endedAt ?? null,
     runtimeMs: sessionRow.runtimeMs ?? null,
-    pluginExtensions: sessionRow.pluginExtensions,
   };
   if (params.lifecycle) {
     // Lifecycle snapshots cannot replace selection metadata or clear an active fallback.

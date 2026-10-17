@@ -24,7 +24,7 @@ import { revokeMcpAppModelContext } from "./mcp-app-model-context.js";
 import {
   buildMcpRequesterRuntimeCacheKey,
   partitionMcpServersByConnectionScope,
-} from "./mcp-connection-resolver.js";
+} from "./mcp-requester-scope.js";
 import { resetMcpStartupBackoff } from "./mcp-startup-backoff.js";
 
 type RuntimeAcquisitionParams = Parameters<SessionMcpRuntimeManager["acquire"]>[0];
@@ -133,7 +133,6 @@ export function createSessionMcpRuntimeManager(opts: SessionMcpRuntimeManagerOpt
               configReloadAtAdmission,
               mcpServers: fullConfig.loaded.mcpServers,
               oauthRequesterServerNames: partition.oauthRequesterServerNames,
-              resolverRequesterServerNames: partition.resolverRequesterServerNames,
               scopedNameSet: new Set(partition.requesterScopedServerNames),
               safeServerNamesByServer,
               requesterSenderId: requester.senderId,
@@ -147,7 +146,6 @@ export function createSessionMcpRuntimeManager(opts: SessionMcpRuntimeManagerOpt
       configReloadAtAdmission?: SessionMcpConfigPublication;
       mcpServers: Record<string, BundleMcpServerConfig>;
       oauthRequesterServerNames: readonly string[];
-      resolverRequesterServerNames: readonly string[];
       scopedNameSet: ReadonlySet<string>;
       safeServerNamesByServer: ReadonlyMap<string, string>;
       requesterSenderId: string;
@@ -155,14 +153,12 @@ export function createSessionMcpRuntimeManager(opts: SessionMcpRuntimeManagerOpt
     },
   ) => {
     const oauthRequesterNameSet = new Set(params.oauthRequesterServerNames);
-    const resolverRequesterNameSet = new Set(params.resolverRequesterServerNames);
     const agentAccountId = normalizeOptionalString(params.agentAccountId);
     const messageChannel = normalizeOptionalString(params.messageChannel);
     const fullScopedFingerprint = loadSessionMcpConfig({
       ...params,
       logDiagnostics: false,
       includeServerNames: params.scopedNameSet,
-      redactConnectionServerNames: resolverRequesterNameSet,
     }).fingerprint;
     const runtime = await install.resolveAndInstallRequesterRuntime({
       ...params,

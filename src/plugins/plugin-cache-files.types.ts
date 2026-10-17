@@ -4,7 +4,14 @@ import type { PluginDiagnosticCode, PluginManifest } from "./manifest-types.js";
 
 export type CachedPluginManifestResult =
   | { ok: true; manifest: PluginManifest; manifestPath: string; warnings?: string[] }
-  | { ok: false; error: string; manifestPath: string; diagnosticCode?: PluginDiagnosticCode };
+  | {
+      ok: false;
+      error: string;
+      manifestPath: string;
+      manifestId?: string;
+      missing?: boolean;
+      diagnosticCode?: PluginDiagnosticCode;
+    };
 
 export type PluginJsonCacheResult = { ok: true; value: unknown } | { ok: false; error: unknown };
 

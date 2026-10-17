@@ -103,10 +103,6 @@ vi.mock("../../plugins/provider-auth-persistence.js", () => ({
   persistProviderAuthProfilesAfterLogin: mocks.persistProviderAuthProfilesAfterLogin,
 }));
 
-vi.mock("./auth-credential-import.js", () => ({
-  tryImportProviderCredential: mocks.tryImportProviderCredential,
-}));
-
 vi.mock("../../plugins/provider-auth-helpers.js", () => ({
   applyAuthProfileConfig: (
     cfg: OpenClawConfig,
@@ -423,8 +419,6 @@ describe("modelsAuthLoginCommand", () => {
       ok: true,
       value: { version: 1, profiles: {} },
     });
-    mocks.tryImportProviderCredential.mockReset();
-    mocks.tryImportProviderCredential.mockResolvedValue(undefined);
     mocks.removeProviderAuthProfilesWithLock.mockReset();
     mocks.removeProviderAuthProfilesWithLock.mockResolvedValue({ version: 1, profiles: {} });
     mocks.loadAuthProfileStoreWithoutExternalProfiles.mockReset().mockReturnValue({
@@ -695,45 +689,6 @@ describe("modelsAuthLoginCommand", () => {
       );
     },
   );
-
-  it("retains the imported profile and model-access choice after direct refresh fails", async () => {
-    const profileId = "openai:imported";
-    currentConfig = {
-      agents: {
-        defaults: { model: "other/current", modelPolicy: { allow: ["other/current"] } },
-      },
-    };
-    mocks.tryImportProviderCredential.mockResolvedValueOnce({
-      profileId,
-      provider: "openai",
-      mode: "oauth",
-      configUpdated: false,
-    });
-    const onModelAccessRequested = vi.fn();
-    const result = await runModelsAuthLoginFlowCore({
-      provider: "openai",
-      runtime: createRuntime(),
-      prompter: mocks.createClackPrompter(),
-      refreshAfterLogin: async () => {
-        throw new Error("Auth publication failed.");
-      },
-      onModelAccessRequested,
-    });
-    expect(result).toMatchObject({
-      authRefresh: "gateway-rejected",
-      profiles: [{ profileId, provider: "openai", mode: "oauth" }],
-    });
-    expect(onModelAccessRequested).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({
-        provider: "openai",
-        policy: { path: "agents.defaults.modelPolicy.allow", refs: ["other/current"] },
-      }),
-    );
-    expect(currentConfig.agents?.defaults).toEqual({
-      model: "other/current",
-      modelPolicy: { allow: ["other/current"] },
-    });
-  });
 
   it("identifies a config failure after credentials are saved and preserves its cause", async () => {
     const cause = new Error("config write failed");

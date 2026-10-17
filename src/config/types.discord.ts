@@ -244,7 +244,6 @@ export type DiscordAccountConfig = Omit<
     token?: SecretInput;
     /** Optional Discord application/client ID. Set this when REST application lookup is blocked. */
     applicationId?: string;
-    activities?: { clientSecret?: string; applicationId?: string };
     /** HTTP(S) proxy URL for Discord gateway WebSocket connections. */
     proxy?: string;
     /**

@@ -1,5 +1,5 @@
 import { expectDefined } from "@openclaw/normalization-core";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { setRuntimeConfigSnapshot } from "../config/runtime-snapshot.js";
 import {
   persistSessionTranscriptTurn,
@@ -12,21 +12,7 @@ import { persistDevicePairingStoreState } from "../infra/device-pairing-store.js
 import { ensureDeviceToken, rotateDeviceToken } from "../infra/device-pairing-tokens.js";
 import { getPairedDevice, updatePairedDeviceMetadata } from "../infra/device-pairing.js";
 import type { PairedDevice } from "../infra/device-pairing.types.js";
-import type { PluginGatewayAccessPolicy } from "../plugins/gateway-access-policy.types.js";
-import { createEmptyPluginRegistry } from "../plugins/registry-empty.js";
-import {
-  captureActivePluginRegistrySnapshot,
-  restoreActivePluginRegistrySnapshot,
-  stageActivePluginRegistry,
-} from "../plugins/runtime.js";
-import { createPluginRecord } from "../plugins/status.test-helpers.js";
-import { openOpenClawStateDatabase } from "../state/openclaw-state-db.js";
-import { setCanonicalUserProfileDisplayName } from "../state/user-profile-writes.js";
-import {
-  linkEmail,
-  setUserProfileRole,
-  syncGitHubIdentity,
-} from "../state/user-profile-writes.worker.js";
+import { linkEmail, setUserProfileRole } from "../state/user-profile-writes.worker.js";
 import { ensureProfileForEmail } from "../state/user-profiles.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import { captureAgentTurnPrincipal } from "./agent-turn/principal.js";
@@ -375,114 +361,6 @@ describe("restart recovery authenticated operator source", () => {
           }
         } finally {
           restored?.release();
-        }
-      });
-    },
-  );
-  it.each(["signal", "assertion", "new policy", "github binding", "policy callback"] as const)(
-    "resumes the original access grant once and fences retained recovery through %s",
-    async (revocation) => {
-      await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
-        const original = { pluginId: "recovery-access", grantId: "original-accepted-grant" };
-        let permitted = true;
-        let additionalApplicable = false;
-        let invalidateDuringPolicy = false;
-        const controller = new AbortController();
-        const grant = {
-          grantId: original.grantId,
-          signal: controller.signal,
-          assertCurrent: () => {
-            controller.signal.throwIfAborted();
-            if (!permitted) {
-              throw new Error("Original grant revoked");
-            }
-          },
-        };
-        const resume = vi.fn<NonNullable<PluginGatewayAccessPolicy["resume"]>>(({ profile }) =>
-          permitted && (revocation !== "github binding" || profile.githubAccountIds?.includes(42))
-            ? grant
-            : undefined,
-        );
-        const registry = createEmptyPluginRegistry();
-        registry.plugins.push(createPluginRecord({ id: original.pluginId }));
-        registry.gatewayAccessPolicies.push({
-          pluginId: original.pluginId,
-          source: "fixture",
-          policy: { authorize: () => grant, resume },
-        });
-        registry.plugins.push(createPluginRecord({ id: "additional-access" }));
-        registry.gatewayAccessPolicies.push({
-          pluginId: "additional-access",
-          source: "fixture",
-          policy: {
-            authorize: () => {
-              if (invalidateDuringPolicy) {
-                permitted = false;
-              }
-              return additionalApplicable ? grant : undefined;
-            },
-          },
-        });
-        const previous = captureActivePluginRegistrySnapshot();
-        stageActivePluginRegistry(registry, null, "default");
-        try {
-          const profile = ensureProfileForEmail("access@example.test");
-          if (revocation === "github binding") {
-            syncGitHubIdentity({
-              identity: { accountId: 41, login: "primary" },
-              authenticationAlias: { kind: "email", email: "access@example.test" },
-            });
-            syncGitHubIdentity({
-              identity: { accountId: 42, login: "secondary" },
-              authenticationAlias: { kind: "email", email: "secondary@example.test" },
-            });
-            linkEmail("secondary@example.test", profile.id);
-          }
-          const fixture = await createOperatorRecoveryFixture({
-            stateDir: state.stateDir,
-            context: createContext(),
-            profileId: profile.id,
-            config: {},
-            gatewayAccessGrant: original,
-          });
-          permitted = false;
-          await expect(fixture.restore()).rejects.toThrow("Gateway access is not active");
-          permitted = true;
-          resume.mockClear();
-          const restored = expectDefined(await fixture.restore(), "restored original grant");
-          try {
-            expect(restored.authority.gatewayAccessGrant).toEqual(original);
-            expect(resume).toHaveBeenCalledWith(
-              expect.objectContaining({ grantId: original.grantId }),
-            );
-            restored.authority.assertCurrent();
-            restored.authority.readCurrentRoleAssignment?.();
-            restored.authority.readCurrentGithubLogin?.();
-            expect(resume).toHaveBeenCalledTimes(1);
-            if (revocation === "signal") {
-              controller.abort(new Error("Original grant revoked"));
-              expect(restored.authority.signal?.aborted).toBe(true);
-            } else if (revocation === "assertion") {
-              permitted = false;
-            } else if (revocation === "policy callback") {
-              invalidateDuringPolicy = true;
-            } else if (revocation === "github binding") {
-              const { db } = openOpenClawStateDatabase();
-              // Seed a removed secondary identity, then publish through the profile writer.
-              db.prepare(
-                "DELETE FROM user_profile_identities WHERE provider = 'github' AND subject = ?",
-              ).run("42");
-              await setCanonicalUserProfileDisplayName(profile.id, "Updated display");
-            } else {
-              additionalApplicable = true;
-            }
-            expect(restored.authority.assertCurrent).toThrow();
-            expect(restored.authority.signal?.aborted).toBe(true);
-          } finally {
-            restored.release();
-          }
-        } finally {
-          restoreActivePluginRegistrySnapshot(previous);
         }
       });
     },

@@ -266,9 +266,7 @@ produces more than 200 newer results.
 ## Copy backups offsite
 
 Use a named [storage location](/concepts/storage-locations) for an external disk,
-mounted network directory, or plugin-provided object store. The built-in
-`filesystem` provider uses an existing directory; the
-[Cloudflare plugin](/plugins/cloudflare) provides R2 storage. Configure the
+or mounted network directory. The built-in `filesystem` provider uses an existing directory. Configure the
 location and its encryption first, then explicitly initialize the intended
 destination:
 
@@ -590,7 +588,6 @@ first with `openclaw database preflight`; see
 - [Agent workspace](/concepts/agent-workspace#git-backup-recommended-private) for keeping workspace files in a private git repository
 - [Backup CLI reference](/cli/backup)
 - [Cloudflare Containers](/install/cloudflare) — continuous Litestream replication to R2 for an ephemeral container deployment
-- [Cloudflare plugin](/plugins/cloudflare) — R2 storage locations for archive backups
 - [Database schemas](/reference/database-schemas)
 - [Migrating between machines](/install/migrating)
 - [Storage locations](/concepts/storage-locations)

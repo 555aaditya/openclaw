@@ -7,9 +7,11 @@ import {
   type createDraftPlaceRestoreState,
 } from "./draft-place-restore.ts";
 import type { DraftRepositoryStateOwner } from "./draft-repository-state.ts";
-import type { DraftSuggestedCloudProfile } from "./draft-suggested-cloud-profile.ts";
 import type { DraftRestoredFolderValidation } from "./folder-validation.ts";
-import { environmentDeviceDisabledReason } from "./hosted-environments.ts";
+import {
+  environmentCloudDisabledReason,
+  environmentDeviceDisabledReason,
+} from "./hosted-environments.ts";
 import type { NewSessionModelControl } from "./model-control.ts";
 import { resolveNewSessionWhere } from "./preferences.ts";
 
@@ -17,10 +19,10 @@ type DraftTargetPlace = {
   requiredPlacement: boolean;
   hostedEnvironment: unknown;
   devices: () => DevicePlacementOption[];
+  isAdmin: () => boolean;
   worktree: boolean;
   folder: string;
   deviceFolderAvailable: boolean;
-  suggestedCloudProfile: DraftSuggestedCloudProfile;
 };
 
 type DraftTargetContext = {
@@ -32,6 +34,7 @@ type DraftTargetContext = {
   repositoryState: DraftRepositoryStateOwner;
   browser: DraftPlaceBrowser;
   modelControl: NewSessionModelControl;
+  cloudProfiles: readonly import("./discovery.ts").DraftCloudProfile[];
   persistPreference: (patch: Parameters<DraftGatewayState["persistPreference"]>[2]) => void;
   clearDeviceFolder: () => void;
 };
@@ -88,7 +91,6 @@ export function selectDraftDevice(
   ) {
     return;
   }
-  context.place.suggestedCloudProfile.cancel();
   context.selection.whereSelectedByUser = true;
   context.selection.preferredWhereRestore = null;
   if (
@@ -118,13 +120,19 @@ export function selectDraftDevice(
 }
 
 export function selectDraftCloudProfile(context: DraftTargetContext, profileId: string) {
+  const snapshot = context.read();
+  const profile = context.cloudProfiles.find((candidate) => candidate.id === profileId);
   if (
-    !context.place.suggestedCloudProfile.canSelect(profileId) ||
+    snapshot.submitting ||
+    snapshot.pendingPlacementSessionKey ||
+    context.place.requiredPlacement ||
+    !context.place.isAdmin() ||
+    !profile ||
+    environmentCloudDisabledReason(context.modelControl, profile) ||
     !context.modelControl.selectHostEnvironment()
   ) {
     return;
   }
-  context.place.suggestedCloudProfile.cancel();
   context.clearDeviceFolder();
   context.selection.cloudProfileId = profileId;
   context.selection.deviceId = "";

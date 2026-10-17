@@ -35,10 +35,7 @@ import {
 } from "../../onboard-agent-target.js";
 import { rejectOnboardingOption } from "../../onboard-options.js";
 import type { OnboardOptions } from "../../onboard-types.js";
-import {
-  CODEX_RUNTIME_PLUGIN_ID,
-  ensureModelSelectionRuntimePlugins,
-} from "../../runtime-plugin-install.js";
+import { ensureModelSelectionRuntimePlugins } from "../../runtime-plugin-install.js";
 
 /** Applies a plugin-defined auth choice, or returns undefined when it is not plugin-backed. */
 export async function applyNonInteractivePluginProviderChoice(
@@ -468,19 +465,6 @@ export async function applyNonInteractivePluginProviderChoice(
   if (!runtimes.ok) {
     return reject(runtimes.message);
   }
-  if (runtimes.codexInstalled) {
-    // Non-interactive onboarding never auto-applies migration; emit a hint so
-    // the operator knows Codex CLI state is available to import deliberately.
-    // Gated on installed (not freshlyInstalled) so repair runs against an
-    // already-present harness still surface the hint.
-    const { offerPostInstallMigrations } =
-      await import("../../../wizard/setup.post-install-migration.js");
-    await offerPostInstallMigrations({
-      config: runtimes.cfg,
-      runtime: params.runtime,
-      installedPluginIds: [CODEX_RUNTIME_PLUGIN_ID],
-      nonInteractive: true,
-    });
-  }
+
   return projectProviderResult(runtimes.cfg);
 }

@@ -114,10 +114,6 @@ describe("guided onboarding inference composition", () => {
         },
         { selectValues: [team ? "team" : "one", "full", "detected-ai"] },
       );
-      const runSetupMemoryImportStep = vi.fn(async () => ({
-        status: "skipped" as const,
-        providers: [],
-      }));
       const runAppRecommendations = vi.fn(async ({ config }) => ({
         config,
         commitResult: vi.fn(async () => undefined),
@@ -184,7 +180,6 @@ describe("guided onboarding inference composition", () => {
           const result = await applySystemAgentSetup({ ...params, surface: "gateway" }, hooks);
           return interruptAfterProvision ? { ...result, workspaceReady: false } : result;
         },
-        runSetupMemoryImportStep,
         runAppRecommendations,
         launchHatchTui,
         runSystemAgentChat,
@@ -264,7 +259,6 @@ describe("guided onboarding inference composition", () => {
       );
       expect(inferenceReadyIndex).toBeGreaterThanOrEqual(0);
       expect(postInferenceIndex).toBeGreaterThan(inferenceReadyIndex);
-      expect(runSetupMemoryImportStep).toHaveBeenCalledOnce();
       expect(runAppRecommendations).toHaveBeenCalledWith(
         expect.objectContaining({
           modelRouteVerified: true,

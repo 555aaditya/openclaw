@@ -6,9 +6,6 @@ import { resolveCommandOwnerAuthority } from "../auto-reply/command-auth.js";
 import { ensureCliPluginRegistryLoaded } from "../cli/plugin-registry-loader.js";
 import { withUpdateCommandExecutor } from "../cli/update-cli/update-command-executor.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { createTestPluginRegistry } from "../plugins/registry-runtime.test-helpers.js";
-import { clearActivePluginRegistry, setActivePluginRegistry } from "../plugins/runtime.js";
-import { createPluginRecord } from "../plugins/status.test-helpers.js";
 import { createOpenClawDatabaseMaintenanceScope } from "../state/openclaw-state-db-async-lifecycle.js";
 import { closeOpenClawStateDatabaseAsync } from "../state/openclaw-state-db.js";
 import {
@@ -175,59 +172,6 @@ describe("managed update requester authority", () => {
       expect(validate).not.toHaveBeenCalled();
     },
   );
-
-  it("retains the original person-policy grant across updater checks and restoration", async () => {
-    const fixture = await linkedAdmins();
-    const builder = createTestPluginRegistry();
-    const record = createPluginRecord({ id: "required-update-access" });
-    builder.registry.plugins.push(record);
-    fixture.config.gateway!.roles!.definitions.admin!.accessPolicyPlugin = record.id;
-    await fs.writeFile(configPath, JSON.stringify(fixture.config));
-    let grant = new AbortController();
-    const authorize = vi.fn(() => {
-      const admittedGrant = grant;
-      return {
-        signal: admittedGrant.signal,
-        assertCurrent: () => admittedGrant.signal.throwIfAborted(),
-      };
-    });
-    builder
-      .createApi(record, { config: fixture.config })
-      .registerGatewayAccessPolicy({ authorize });
-    setActivePluginRegistry(builder.registry);
-    try {
-      const authority = await createManagedUpdateRequesterAuthority(fixture.requester, env);
-      expect(authority.isCurrent()).toBe(true);
-      grant.abort();
-      grant = new AbortController();
-      expect(authority.isCurrent()).toBe(false);
-      const validate = vi.fn();
-      const result = await runUpdateRepairLoop({
-        target: { installRoot: root, stateDir: root, configPath, workspaceDir: root },
-        context: { error: "Synthetic validation failure", phase: "validating" },
-        isCurrent: () => {
-          if (!authority.isCurrent()) {
-            throw new UpdateRequesterRevokedError();
-          }
-          return true;
-        },
-        validate,
-      });
-      expect(result).toMatchObject({
-        status: "aborted",
-        reason: "requester-revoked",
-        attempts: [],
-      });
-      expect(validate).not.toHaveBeenCalled();
-      expect(authorize).toHaveBeenCalledTimes(1);
-      const next = await createManagedUpdateRequesterAuthority(fixture.requester, env);
-      expect(next.isCurrent()).toBe(true);
-      expect(authorize).toHaveBeenCalledTimes(2);
-      expect(authority.isCurrent()).toBe(false);
-    } finally {
-      await clearActivePluginRegistry(builder.registry);
-    }
-  });
 
   it.each([
     { source: "profile", retainedRuns: 2 },

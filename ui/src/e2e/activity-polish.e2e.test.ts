@@ -6,12 +6,10 @@ import {
   computeInlineScriptHashes,
 } from "../../../src/gateway/control-ui-csp.js";
 import { installMockGateway } from "../test-helpers/control-ui-e2e.ts";
-import { TEST_LINK_READER } from "../test-helpers/link-reader.ts";
 import {
   activityPolishFixture,
   activityPolishImages,
   activityPolishKeys,
-  activityPolishPullRequest,
 } from "./activity-polish.test-support.ts";
 import { createControlUiE2eSuite } from "./control-ui-e2e-suite.test-support.ts";
 
@@ -294,17 +292,6 @@ suite.define(() => {
             Math.max(...boxes.map((box) => box.top)) - Math.min(...boxes.map((box) => box.top)),
           ).toBeLessThanOrEqual(1);
           expect(boxes.every((box) => box.height <= 80 && box.width <= 128)).toBe(true);
-          await pr.focus();
-          const card = page.locator(".link-reader-hovercard");
-          await expect.poll(() => card.textContent()).toContain(activityPolishPullRequest.title);
-          await gateway.waitForRequest(TEST_LINK_READER.linkReader.previewMethod!);
-          await gateway.rejectDeferred(TEST_LINK_READER.linkReader.previewMethod!, {
-            code: "UNAVAILABLE",
-            message: "Preview enrichment unavailable",
-          });
-          await expect.poll(() => card.textContent()).toContain(activityPolishPullRequest.title);
-          await page.screenshot({ path: path.join(suite.artifactDir, `03-hover-${width}.png`) });
-          await page.keyboard.press("Escape");
           await thumbnails.first().click();
           const lightbox = page.locator("openclaw-image-lightbox");
           await lightbox.locator("img").waitFor();

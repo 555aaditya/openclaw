@@ -26,10 +26,7 @@ import {
   ensureMemoryWikiVaultGeneration,
   loadMemoryWikiValidatedVaultIdentity,
 } from "./src/log.js";
-import {
-  createWikiPromptSectionBuilder,
-  createWikiPromptSectionPreparer,
-} from "./src/prompt-section.js";
+import { createWikiPromptSectionBuilder } from "./src/prompt-section.js";
 import {
   configureMemoryWikiSourceSyncStateStore,
   createMemoryWikiSourceSyncStateStore,
@@ -175,7 +172,7 @@ export default definePluginEntry({
     });
 
     api.registerMemoryPromptSupplement(createWikiPromptSectionBuilder());
-    api.registerMemoryPromptPreparation(createWikiPromptSectionPreparer({ config, resolveConfig }));
+
     api.registerMemoryCorpusSupplement(createWikiCorpusSupplement({ resolveConfig, getAppConfig }));
     registerMemoryWikiGatewayMethods({
       api,

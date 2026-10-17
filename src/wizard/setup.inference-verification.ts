@@ -42,9 +42,7 @@ export async function completeSetupModelAuth(params: {
   opts: OnboardOptions;
   prompter: WizardPrompter;
   runtime: RuntimeEnv;
-  usedImportFlow: boolean;
   keepExistingModelConfig: boolean;
-  importedInferenceVerified: boolean;
   configTarget: SetupInferenceConfigTarget;
 }): Promise<{ config: OpenClawConfig; verified: boolean; persisted: boolean }> {
   const { stagedCandidate, opts, baseConfig } = params;
@@ -67,12 +65,11 @@ export async function completeSetupModelAuth(params: {
   if (
     replacesCredential ||
     (opts.nonInteractive !== true &&
-      !params.importedInferenceVerified &&
       resolveAgentEffectiveModelPrimary(
         params.config,
         resolveAmbientOwnerAgentId(params.config),
       ) !== undefined &&
-      ((params.usedImportFlow && params.keepExistingModelConfig) || opts.authChoice !== "skip"))
+      opts.authChoice !== "skip")
   ) {
     const verification = await offerLiveModelVerification({
       config: params.config,
@@ -84,7 +81,7 @@ export async function completeSetupModelAuth(params: {
       prompter: params.prompter,
       runtime: params.runtime,
       configTarget: params.configTarget,
-      required: params.usedImportFlow && params.keepExistingModelConfig,
+      required: false,
     });
     let config = verification.config;
     if (!verification.verified && verification.attempted && stagedCandidate) {

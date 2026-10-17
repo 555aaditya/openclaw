@@ -10,16 +10,12 @@ import type {
 import type { JSX } from "@solidjs/web";
 import {
   agentRouteFromPath,
-  canonicalPluginTabLocation,
   dynamicRouteFromPath,
   isSessionRouteId,
   pathForAgentPanel,
   pathForRoute,
   locationForRoute,
-  pluginSlugCandidate,
-  pluginTabSlugFromPath,
   routeIdFromPath,
-  setPluginTabSlugs,
   sameRouteLocation,
   type RouteId,
 } from "./app-route-paths.ts";
@@ -165,9 +161,7 @@ function canonicalRouteLocation(
 ): RouteLocation {
   return routeId === "workboard"
     ? (resolveWorkboardRouteLocation(location, basePath).canonicalLocation ?? location)
-    : routeId === "plugin"
-      ? canonicalPluginTabLocation(location, basePath)
-      : location;
+    : location;
 }
 
 export function createApplicationRouter(): ApplicationRouter {
@@ -231,7 +225,6 @@ export async function startApplicationRouter(
   basePath: string,
   context: ApplicationContext,
 ): Promise<void> {
-  setPluginTabSlugs(context.gateway.snapshot.hello?.controlUiTabs);
   let location = history.location();
   const canonicalLocation = canonicalRouteLocation(
     routeIdFromPath(location.pathname, basePath),
@@ -251,11 +244,7 @@ export async function startApplicationRouter(
     });
     location = history.location();
   }
-  // Single-segment plugin deep links wait for hello before outlet recovery.
-  if (
-    routeIdFromPath(location.pathname, basePath) === null &&
-    !pluginSlugCandidate(location.pathname, basePath)
-  ) {
+  if (routeIdFromPath(location.pathname, basePath) === null) {
     history.replace({
       ...location,
       pathname: router.pathForRoute("chat", basePath),
@@ -270,7 +259,6 @@ export async function startApplicationRouter(
     listen: (listener) => {
       let listening = true;
       let recoveryQueued = false;
-      let lastHello = context.gateway.snapshot.hello;
       let interrupted:
         | {
             controller: AbortController;
@@ -360,7 +348,7 @@ export async function startApplicationRouter(
               // connections or data already presented offline need another lookup.
               verifySession:
                 interrupted?.verifySession === true ||
-                lastHello !== null ||
+                context.gateway.snapshot.hello !== null ||
                 target.data !== undefined,
             };
           }
@@ -409,40 +397,7 @@ export async function startApplicationRouter(
         });
       };
       const stopSessionRecovery = router.subscribe(recoverSessionRoute);
-      const stopGateway = context.gateway.subscribe((snapshot) => {
-        recoverSessionRoute();
-        if (lastHello === snapshot.hello) {
-          return;
-        }
-        lastHello = snapshot.hello;
-        setPluginTabSlugs(snapshot.hello?.controlUiTabs);
-        queueMicrotask(() => {
-          if (!listening || context.gateway.snapshot.phase !== "connected") {
-            return;
-          }
-          const current = history.location();
-          const canonical = canonicalPluginTabLocation(current, basePath);
-          const state = router.getState();
-          if (state.pendingMatches.some((match) => !sameRouteLocation(match.location, current))) {
-            return;
-          }
-          const slugRoute =
-            current.pathname !== pathForRoute("plugin", basePath) &&
-            [...state.matches, ...state.pendingMatches].some((match) => match.routeId === "plugin");
-          if (
-            !sameRouteLocation(current, canonical) ||
-            (slugRoute && pluginTabSlugFromPath(current.pathname, basePath))
-          ) {
-            void router
-              .navigate("plugin", context, { history: "replace" }, canonical)
-              .catch((error: unknown) => {
-                console.error("[openclaw] Plugin tab navigation failed", error);
-              });
-          } else if (slugRoute) {
-            listener(current);
-          }
-        });
-      });
+      const stopGateway = context.gateway.subscribe(() => recoverSessionRoute());
       const stopHistory = history.listen((next) => {
         if (context.nativeConversation?.interceptNavigation(next)) {
           const current = router.getState().location;

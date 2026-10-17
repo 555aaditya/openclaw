@@ -17,7 +17,7 @@ export function createGatewayHarness(client: GatewayBrowserClient) {
     phase: ApplicationGatewayPhase;
     sessionKey: string;
     hello?: GatewayHelloOk | null;
-    pluginCapabilities?: { generation?: number } | null;
+    pluginGeneration?: number | null;
   } = { client, phase: "connected", sessionKey: "main", hello: configGatewayHello() };
   const listeners = new Set<(next: typeof snapshot) => void>();
   return {
@@ -34,14 +34,14 @@ export function createGatewayHarness(client: GatewayBrowserClient) {
       connected: boolean,
       nextClient: GatewayBrowserClient = client,
       hello?: GatewayHelloOk | null,
-      pluginCapabilities?: { generation?: number } | null,
+      pluginPublication?: { generation?: number } | null,
     ) => {
       snapshot = {
         client: nextClient,
         phase: connected ? "connected" : "reconnecting",
         sessionKey: "main",
         hello: hello === undefined ? configGatewayHello() : hello,
-        pluginCapabilities,
+        pluginGeneration: pluginPublication?.generation,
       };
       for (const listener of listeners) {
         listener(snapshot);

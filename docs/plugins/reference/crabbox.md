@@ -1,5 +1,5 @@
 ---
-summary: "Cloud worker provider and lease-backed sandbox backend for the Crabbox CLI."
+summary: "Lease-backed sandbox backend for the Crabbox CLI."
 read_when:
   - You are installing, configuring, or auditing the crabbox plugin
 title: "Crabbox plugin reference"
@@ -10,7 +10,7 @@ Run `pnpm plugins:inventory:gen` to rebuild it. Hand-written text survives only
 between the openclaw-plugin-reference:manual-start and
 openclaw-plugin-reference:manual-end comment markers. -->
 
-Cloud worker provider and lease-backed sandbox backend for the Crabbox CLI.
+Lease-backed sandbox backend for the Crabbox CLI.
 
 ## Distribution
 
@@ -19,9 +19,7 @@ Cloud worker provider and lease-backed sandbox backend for the Crabbox CLI.
 
 ## Surface
 
-- CLI commands: `openclaw crabbox`
-- Contracts: `tools`, `workerProfileSuggestions`, `workerProviders`
-- Skills
+This plugin declares no channels, providers, commands, or contracts.
 
 <!-- openclaw-plugin-reference:manual-start -->
 

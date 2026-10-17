@@ -148,7 +148,7 @@ export function createMemoryPage(params: {
     client: createTestGatewayClient(request),
     phase: "connected",
     offlineStable: false,
-    pluginCapabilities: null,
+    pluginGeneration: null,
     canvasPluginSurfaceUrl: null,
     assistantAgentId: null,
     sessionKey: "main",
@@ -358,7 +358,7 @@ export function createMemoryPage(params: {
   const publishPluginGeneration = (generation: number) => {
     publishGateway({
       ...gateway.snapshot,
-      pluginCapabilities: { ok: true, generation, descriptors: [] },
+      pluginGeneration: generation,
     });
   };
   const setBootId = (bootId: string | undefined) => {

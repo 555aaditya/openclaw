@@ -16,12 +16,6 @@ import { isNativeSessionCatalogOptOutOnly } from "../plugins/native-session-cata
 import { loadPluginMetadataSnapshot } from "../plugins/plugin-metadata-snapshot.js";
 import { resolveOwningPluginIdsForModelRef } from "../plugins/providers.js";
 import { resolvePluginSetupAutoEnableReasons } from "../plugins/setup-registry.js";
-import {
-  collectConfiguredStorageProviderIds,
-  listBundledStorageProviderOwners,
-} from "../plugins/storage-provider-manifest.js";
-import { collectConfiguredWorkerProviderIds } from "../plugins/worker-provider-config.js";
-import { listBundledWorkerProviderOwners } from "../plugins/worker-provider-manifest.js";
 import { isKernelOwnedChannelConfigKey } from "./channel-config-keys.js";
 import {
   collectAutoEnableChannelIds,
@@ -219,8 +213,6 @@ function hasConfiguredPluginProviders(cfg: OpenClawConfig): boolean {
     collectConfiguredAgentHarnessRuntimes(cfg).length > 0 ||
     collectConfiguredSpeechProviderIds(cfg).size > 0 ||
     Boolean(resolveConfiguredTalkRealtimeProviderId(cfg)) ||
-    collectConfiguredWorkerProviderIds(cfg).length > 0 ||
-    collectConfiguredStorageProviderIds(cfg).length > 0 ||
     (webSearch?.enabled !== false &&
       typeof webSearch?.provider === "string" &&
       Boolean(webSearch.provider.trim()))
@@ -348,19 +340,6 @@ export function resolveConfiguredPluginAutoEnableCandidates(
         reason: `${realtimeProviderId} realtime voice provider selected`,
       });
     }
-  }
-
-  for (const { pluginId, providerId } of listBundledWorkerProviderOwners(
-    params.registry,
-    collectConfiguredWorkerProviderIds(params.config),
-  )) {
-    changes.push({ pluginId, kind: "worker-provider-selected", providerId });
-  }
-  for (const { pluginId, providerId } of listBundledStorageProviderOwners(
-    params.registry,
-    collectConfiguredStorageProviderIds(params.config),
-  )) {
-    changes.push({ pluginId, kind: "storage-provider-selected", providerId });
   }
 
   const decisionProviderIds = new Set(getConfiguredDecisionProviderIds(params.config));

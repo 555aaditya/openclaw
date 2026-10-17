@@ -6,13 +6,6 @@ import type {
   ProviderBuiltInModelSuppressionContext as ProviderBuiltInModelSuppressionContextType,
 } from "../plugins/types.js";
 import { createCachedLazyValueGetter } from "./lazy-value.js";
-
-export type {
-  StorageProvider,
-  StorageProviderOpenParams,
-  StorageBackend,
-  StorageObjectInfo,
-} from "../storage/types.js";
 export type {
   PluginCapabilityCatalogContext,
   PluginCapabilityCatalogEntry,
@@ -22,26 +15,12 @@ export type {
 export type { PluginCapabilityCatalog } from "../plugins/capability-catalog.types.js";
 export type { OpenClawConfig } from "../config/types.openclaw.js";
 export type {
-  SuggestedWorkerProfile,
-  WorkerProfileSuggestionDiscovery,
-} from "../plugins/worker-profile-suggestion.types.js";
-
-export type {
   AgentHarness,
   AgentPromptGuidance,
   AgentPromptGuidanceEntry,
   AgentPromptSurfaceKind,
   AnyAgentTool,
   MediaUnderstandingProviderPlugin,
-  MigrationApplyResult,
-  MigrationDetection,
-  MigrationItem,
-  MigrationPlan,
-  MigrationProviderContext,
-  MigrationProviderPlugin,
-  MigrationSummary,
-  OpenClawGatewayDiscoveryAdvertiseContext,
-  OpenClawGatewayDiscoveryService,
   OpenClawPluginApi,
   OpenClawPluginCommandDefinition,
   OpenClawPluginConfigSchema,
@@ -53,22 +32,17 @@ export type {
   OpenClawPluginNodeInvokePolicyContext,
   OpenClawPluginNodeInvokePolicyResult,
   OpenClawPluginReloadRegistration,
-  OpenClawPluginSecurityAuditCollector,
-  OpenClawPluginSecurityAuditContext,
   OpenClawPluginService,
   OpenClawPluginServiceContext,
   OpenClawPluginServiceContextV2,
   OpenClawPluginServiceV2,
   OpenClawPluginToolContext,
   OpenClawPluginToolFactory,
-  PluginAgentEventEmitParams,
-  PluginAgentEventEmitResult,
   PluginAgentEventSubscriptionRegistration,
   PluginAgentTurnPrepareEvent,
   PluginAgentTurnPrepareResult,
   PluginCommandContext,
   PluginCommandResult,
-  PluginControlUiDescriptor,
   PluginHeartbeatPromptContributionEvent,
   PluginHeartbeatPromptContributionResult,
   PluginJsonValue,
@@ -76,24 +50,8 @@ export type {
   PluginNextTurnInjection,
   PluginNextTurnInjectionEnqueueResult,
   PluginNextTurnInjectionRecord,
-  PluginRunContextGetParams,
-  PluginRunContextPatch,
   PluginRuntimeLifecycleRegistration,
   PluginServiceSchedulerV1,
-  PluginSessionActionContext,
-  PluginSessionActionRegistration,
-  PluginSessionActionResult,
-  PluginSessionAttachmentParams,
-  PluginSessionAttachmentResult,
-  PluginSessionExtensionProjection,
-  PluginSessionExtensionRegistration,
-  PluginSessionSchedulerJobHandle,
-  PluginSessionSchedulerJobRegistration,
-  PluginSessionTurnScheduleParams,
-  PluginSessionTurnUnscheduleByTagParams,
-  PluginSessionTurnUnscheduleByTagResult,
-  PluginToolMetadataRegistration,
-  PluginTrustedToolPolicyRegistration,
   ProviderApplyConfigDefaultsContext,
   ProviderAugmentModelCatalogContext,
   ProviderAppGuidedSetup,
@@ -119,8 +77,7 @@ export type {
   ProviderNormalizeModelIdContext,
   ProviderNormalizeResolvedModelContext,
   ProviderNormalizeToolSchemasContext,
-  ProviderNormalizeTransportContext,
-  // The plugin-authoring scaffold imports ProviderPlugin from this entrypoint.
+  ProviderNormalizeTransportContext, // The plugin-authoring scaffold imports ProviderPlugin from this entrypoint.
   ProviderPlugin,
   ProviderPrepareDynamicModelContext,
   ProviderPrepareExtraParamsContext,
@@ -155,16 +112,6 @@ export type {
   TranscriptSourceProvider,
   UnifiedModelCatalogProviderContext,
   UnifiedModelCatalogProviderPlugin,
-  WorkerDesktopApp,
-  WorkerDesktopEndpoint,
-  WorkerLease,
-  WorkerLeaseStatus,
-  WorkerMachineOption,
-  WorkerProfile,
-  WorkerProvider,
-  WorkerSshEndpoint,
-  WorkerSshIdentity,
-  WorkerSshIdentityRequest,
 } from "../plugins/types.js";
 
 // A direct re-export would inherit upstream @deprecated metadata, while this
@@ -175,7 +122,6 @@ export type {
   OpenClawPluginGatewayEventScope,
   OpenClawPluginGatewayEvents,
 } from "../plugins/gateway-events.js";
-export { WorkerProviderError } from "../plugins/capability-provider.types.js";
 
 export type {
   PluginConversationBinding,
@@ -223,7 +169,6 @@ type DefinePluginEntryOptions = {
   configSchema?: OpenClawPluginConfigSchema | (() => OpenClawPluginConfigSchema);
   reload?: OpenClawPluginDefinition["reload"];
   nodeHostCommands?: OpenClawPluginDefinition["nodeHostCommands"];
-  securityAuditCollectors?: OpenClawPluginDefinition["securityAuditCollectors"];
   register: NonNullable<OpenClawPluginDefinition["register"]>;
 };
 
@@ -249,7 +194,6 @@ export function definePluginEntry({
   configSchema = emptyPluginConfigSchema,
   reload,
   nodeHostCommands,
-  securityAuditCollectors,
   register,
 }: DefinePluginEntryOptions): DefinedPluginEntry {
   const getConfigSchema = createCachedLazyValueGetter(configSchema);
@@ -260,7 +204,6 @@ export function definePluginEntry({
     ...(kind ? { kind } : {}),
     ...(reload ? { reload } : {}),
     ...(nodeHostCommands ? { nodeHostCommands } : {}),
-    ...(securityAuditCollectors ? { securityAuditCollectors } : {}),
     get configSchema() {
       return getConfigSchema();
     },

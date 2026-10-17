@@ -61,7 +61,6 @@ import {
 } from "../configure.shared.js";
 import { repairModelSelectionRuntimePlugins } from "../runtime-plugin-install.js";
 import { saveModelProviderApiKey } from "./auth-api-key.js";
-import { tryImportProviderCredential } from "./auth-credential-import.js";
 import {
   looksLikeOpenAIApiKey,
   normalizeManualAuthProvider,
@@ -913,58 +912,12 @@ async function runModelsAuthLoginFlow(
     );
   }
 
-  const modelAccess = prepareProviderModelAccess({
-    config: context.config,
-    agentId: context.agentId,
-    provider: selectedProvider.id,
-    providerLabel: selectedProvider.label,
-  });
   // Snapshot before --force removes cached credentials. Provider-owned identity
   // matching may safely keep the old profile id for the same authenticated account.
   const existingProfiles = snapshotReloginAuthProfiles({
     agentDir: context.agentDir,
     matchesPersonalAccount: chosenMethod.matchesPersonalAccount,
   });
-  const imported =
-    !opts.credentialOnly && !opts.force && !opts.profileId && !opts.setDefault
-      ? await tryImportProviderCredential({
-          method: chosenMethod,
-          providerId: selectedProvider.id,
-          config: context.config,
-          agentId: context.agentId,
-          runtime: opts.runtime,
-          signal: opts.signal,
-          beforePersistentEffect: opts.beforePersistentEffect,
-        })
-      : undefined;
-  if (imported && "unavailableReason" in imported) {
-    await prompter.note(imported.unavailableReason, "Existing CLI sign-in");
-  } else if (imported) {
-    await promotePersistedAuthProfile({
-      config: context.config,
-      agentDir: context.agentDir,
-      provider: imported.provider,
-      profileId: imported.profileId,
-      assertCurrent: opts.assertCurrent,
-    });
-    const authRefresh = await refreshProviderAuthAfterLogin({ ...opts, agentId: context.agentId });
-    if (imported.configUpdated) {
-      logConfigUpdated(opts.runtime);
-    }
-    opts.runtime.log(
-      `Auth profile: ${imported.profileId} (${imported.provider}/${imported.mode}, imported)`,
-    );
-    await completeLoginModelAccess(opts, modelAccess);
-    return {
-      providerId: selectedProvider.id,
-      methodId: chosenMethod.id,
-      authRefresh,
-      imported: true,
-      profiles: [
-        { profileId: imported.profileId, provider: imported.provider, mode: imported.mode },
-      ],
-    };
-  }
 
   const forceLogin = Boolean(opts.force);
   if (forceLogin) {

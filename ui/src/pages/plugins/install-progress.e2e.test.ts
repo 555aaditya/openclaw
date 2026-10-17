@@ -5,7 +5,6 @@ import {
   calendarInspection,
   calendarPlugin,
   describeControlUiE2e,
-  enabledWorkboardCapabilities,
   installMockGateway,
   inventory,
   newContext,
@@ -132,11 +131,6 @@ describeControlUiE2e("plugin install button progress", () => {
             await gateway.setMethodResponse("plugins.inspect", {
               ...calendarInspection,
               plugin: installed,
-            });
-            await gateway.setMethodResponse("plugins.uiDescriptors", {
-              ...enabledWorkboardCapabilities(),
-              methods: [...pluginMethods, "openclaw.chat", "openclaw.chat.history"],
-              controlUiTabs: [],
             });
             await gateway.emitGatewayEvent("plugins.changed", { generation: 1 });
             await gateway.waitForRequest("plugins.inspect", { after: inspections });

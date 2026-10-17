@@ -1,10 +1,7 @@
-import type { MigrationProtocolSchemas } from "./migrations.js";
 import type { DerivedProtocolSchemas } from "./protocol-schema-selection.js";
 import type { SessionPlacementProtocolSchemas } from "./session-placement.js";
 
-type AvailableSchemas = typeof DerivedProtocolSchemas &
-  typeof MigrationProtocolSchemas &
-  typeof SessionPlacementProtocolSchemas;
+type AvailableSchemas = typeof DerivedProtocolSchemas & typeof SessionPlacementProtocolSchemas;
 type WritableKeys =
   | "ProgressCardStepStatus"
   | "ProgressCardStep"

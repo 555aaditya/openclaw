@@ -91,11 +91,6 @@ export type DeferredPluginToolApproval = {
 
 export type BeforeToolCallPolicyDiagnosticState = {
   hasBeforeToolCallHook: boolean;
-  trustedToolPolicies: Array<{
-    id: string;
-    pluginId: string;
-    pluginName?: string;
-  }>;
 };
 
 export type HookBlockedReason =

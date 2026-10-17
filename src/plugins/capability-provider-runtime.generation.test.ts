@@ -660,7 +660,7 @@ describe("capability loading from a Gateway generation", () => {
           ...startupSnapshot,
           pluginIds: ["fixture-seed"],
           startup: { pluginIds: ["fixture-seed"], channelPluginIds: [] },
-          workerProviderIds: [],
+
           metrics: { ...startupSnapshot.metrics, startupPlanMs: 0, startupPluginCount: 1 },
         },
       });

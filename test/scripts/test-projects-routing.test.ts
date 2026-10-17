@@ -291,11 +291,7 @@ describe("test-projects args", () => {
       target: "src/plugins/setup-registry.lifecycle.test.ts",
       config: "test/vitest/vitest.infra.config.ts",
     },
-    {
-      title: "routes wizard recovery to the host-owned infra fork shard",
-      target: "src/wizard/setup.inference-recovery.integration.test.ts",
-      config: "test/vitest/vitest.infra.config.ts",
-    },
+
     {
       title: "routes worker-backed ACP metadata to the infra config",
       target: "src/acp/runtime/session-meta.test.ts",

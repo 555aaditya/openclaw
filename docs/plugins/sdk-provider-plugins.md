@@ -39,31 +39,6 @@ with the accepted harness IDs. Model Setup stages those permissions on that
 agent in the same verified config commit as the runtime routing and plugin enable.
 Do not write a separate permission store or infer consent from successful login.
 
-## Import an existing credential during sign-in
-
-An auth method can declare `credentialImport` with a `migrationProviderId`,
-an exact `itemId`, and a `credentialKind` (`api_key`, `oauth`, or `token`).
-`models auth login` asks that migration owner for an auth-only plan before
-starting interactive sign-in. `--force`, `--profile-id`, and `--set-default` skip
-import. `--set-default` uses the auth method's recommended model through the normal
-sign-in flow.
-
-The migration plugin declares its ID in `contracts.migrationProviders` and can
-export `buildMigrationProvider()` from a top-level `migration-provider-api.ts`
-public artifact. Keep that entry lightweight. Bundled plugins and enabled
-installed plugins can supply it without replacing the running plugin registry.
-Explicitly disabled or denied migration owners cannot execute their artifacts.
-The existing bundled migration compatibility rules still apply.
-
-The login caller selects only the declared auth item. Its details must contain
-the matching `provider` and `credentialKind`. A migrated result also supplies
-the saved `profileId`. The owner must honor cancellation, reread the selected
-source before persistence, and reject a changed credential. Login passes
-`configPatchMode: "none"` so import preserves model defaults and restrictions.
-Unavailable storage or an unusable matching OAuth profile continues to interactive
-sign-in. A matching account identity alone does not make expired credentials usable.
-A failed selected import stops the operation instead of silently starting a different login.
-
 ## Loopback OAuth callbacks
 
 Bundled providers use `startProviderOAuthLoopbackCallbackServer` from

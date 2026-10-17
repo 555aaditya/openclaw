@@ -192,12 +192,6 @@ async function approveBindingRequest(approvalId: string, decision: PluginBinding
   });
 }
 
-async function flushMicrotasks(): Promise<void> {
-  await new Promise<void>((resolve) => {
-    setImmediate(resolve);
-  });
-}
-
 function clearPluginBindingApprovalRows(): void {
   runOpenClawStateWriteTransaction(({ db }) => {
     const approvalsDb = getNodeSqliteKysely<PluginBindingApprovalsDatabase>(db);
@@ -486,54 +480,6 @@ describe("plugin conversation binding approvals", () => {
         "/plugins/codex-b",
       ),
     );
-  });
-
-  it("does not wait for an approved bind callback before returning", async () => {
-    const pluginRoot = "/plugins/callback-slow-approve";
-    const requestInput = {
-      ...createDiscordCodexBindRequest(
-        "channel:slow-approve",
-        "Bind this conversation to Codex thread slow-approve.",
-      ),
-      pluginRoot,
-    };
-    const callbackGate = createDeferred();
-    const onResolved = vi.fn(async (_input: unknown) => callbackGate.promise);
-    const registry = createEmptyPluginRegistry();
-    registry.conversationBindingResolvedHandlers.push({
-      pluginId: "codex",
-      pluginRoot,
-      handler: onResolved,
-      source: `${pluginRoot}/index.ts`,
-      rootDir: pluginRoot,
-    });
-    setActivePluginRegistry(registry);
-    const request = await requestPendingBinding(requestInput);
-    let settled = false;
-    const resolution = approveBindingRequest(request.approvalId, "allow-once").then((result) => {
-      settled = true;
-      return result;
-    });
-    await flushMicrotasks();
-    expect(settled).toBe(true);
-    expect(onResolved).toHaveBeenCalledTimes(1);
-    expect(onResolved.mock.calls[0]?.[0]).toMatchObject({
-      status: "approved",
-      decision: "allow-once",
-      binding: {
-        pluginId: "codex",
-        pluginRoot,
-        conversationId: requestInput.conversation.conversationId,
-      },
-      request: {
-        summary: requestInput.binding?.summary,
-        detachHint: undefined,
-        requestedBySenderId: "user-1",
-        conversation: requestInput.conversation,
-      },
-    });
-    callbackGate.resolve();
-    expect((await resolution).status).toBe("approved");
   });
 
   it("refuses to claim a binding without plugin ownership metadata: agent:main:discord:channel:1", async () => {

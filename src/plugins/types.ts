@@ -20,35 +20,16 @@ export type {
 } from "./conversation-binding.types.js";
 export * from "./hook-types.js";
 export type {
-  PluginAgentEventEmitParams,
-  PluginAgentEventEmitResult,
   PluginAgentEventSubscriptionRegistration,
   PluginAgentTurnPrepareEvent,
   PluginAgentTurnPrepareResult,
-  PluginControlUiDescriptor,
   PluginHeartbeatPromptContributionEvent,
   PluginHeartbeatPromptContributionResult,
   PluginJsonValue,
   PluginNextTurnInjection,
   PluginNextTurnInjectionEnqueueResult,
   PluginNextTurnInjectionRecord,
-  PluginRunContextGetParams,
-  PluginRunContextPatch,
   PluginRuntimeLifecycleRegistration,
-  PluginSessionActionContext,
-  PluginSessionActionRegistration,
-  PluginSessionActionResult,
-  PluginSessionAttachmentParams,
-  PluginSessionAttachmentResult,
-  PluginSessionExtensionProjection,
-  PluginSessionExtensionRegistration,
-  PluginSessionSchedulerJobHandle,
-  PluginSessionSchedulerJobRegistration,
-  PluginSessionTurnScheduleParams,
-  PluginSessionTurnUnscheduleByTagParams,
-  PluginSessionTurnUnscheduleByTagResult,
-  PluginToolMetadataRegistration,
-  PluginTrustedToolPolicyRegistration,
 } from "./host-hooks.js";
 export type { PluginLogger } from "./logger-types.js";
 export type { PluginConfigUiHint } from "./manifest-types.js";
@@ -92,7 +73,6 @@ export type {
   WebSearchProviderToolDefinition,
   WebSearchProviderToolExecutionContext,
 } from "./web-provider-types.js";
-export type * from "./types.mcp-connection.js";
 
 export { WorkerProviderError } from "./capability-provider.types.js";
 export type * from "./capability-provider.types.js";

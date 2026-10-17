@@ -1,20 +1,9 @@
-import { IncomingMessage, ServerResponse } from "node:http";
-import { Socket } from "node:net";
+import { IncomingMessage } from "node:http";
 import type { AddressInfo } from "node:net";
-import { describe, expect, it, vi } from "vitest";
-import { createDeferred } from "../../test/helpers/promise.js";
+import { describe, expect, it } from "vitest";
 import { buildMcpAppSandboxPath } from "../agents/mcp-app-sandbox.js";
 import { SANDBOX_HOST_PATH } from "../agents/sandbox-host.js";
-import { createPluginBoardWidgetContentKindRegistrar } from "../plugins/board-widget-content-kinds.js";
-import { createPluginRecord } from "../plugins/loader-records.js";
-import { createEmptyPluginRegistry } from "../plugins/registry-empty.js";
-import type { PluginRegistry } from "../plugins/registry-types.js";
-import { markGatewayIngressTransport } from "./ingress-attribution.js";
-import {
-  createSandboxHostHttpServer,
-  createSandboxHostHttpRequestHandler,
-} from "./mcp-app-sandbox-http.js";
-import { createRemoteControlUiIngressTestContext } from "./remote-control-ui.test-support.js";
+import { createSandboxHostHttpServer } from "./mcp-app-sandbox-http.js";
 import { makeMockHttpResponse } from "./test-http-response.js";
 
 function request(url: string, method: "GET" | "HEAD" | "POST" = "GET") {
@@ -25,11 +14,8 @@ function request(url: string, method: "GET" | "HEAD" | "POST" = "GET") {
   return { res, end, setHeader };
 }
 
-async function withSandboxHost(
-  run: (origin: string) => Promise<void>,
-  resolvePluginRegistry?: () => PluginRegistry,
-): Promise<void> {
-  const server = createSandboxHostHttpServer(undefined, resolvePluginRegistry);
+async function withSandboxHost(run: (origin: string) => Promise<void>): Promise<void> {
+  const server = createSandboxHostHttpServer();
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", () => {
@@ -47,71 +33,7 @@ async function withSandboxHost(
   }
 }
 
-function publicResourceRegistry(
-  readPublicResource: (
-    resourcePath: string,
-  ) => Promise<{ body: Uint8Array; contentType: string } | undefined>,
-) {
-  const registry = createEmptyPluginRegistry();
-  const record = createPluginRecord({
-    id: "renderer",
-    source: "fixture",
-    origin: "bundled",
-    enabled: true,
-    configSchema: false,
-  });
-  createPluginBoardWidgetContentKindRegistrar(registry)(record, {
-    kind: "diagram",
-    label: "Diagram",
-    resources: {
-      surface: "renderer",
-      paths: ["/__openclaw__/renderer/app.js"],
-      readPublicResource,
-    },
-    validateSource() {},
-    composeDocument: () => "",
-  });
-  return registry;
-}
-
 describe("MCP App sandbox HTTP origin", () => {
-  it("fences an awaited public renderer resource when the remote grant closes", async () => {
-    const started = createDeferred();
-    const resource = createDeferred<{ body: Uint8Array; contentType: string }>();
-    const registry = publicResourceRegistry(async () => {
-      started.resolve();
-      return await resource.promise;
-    });
-    let current = true;
-    const req = new IncomingMessage(new Socket());
-    req.method = "GET";
-    req.url = "/__openclaw__/renderer/app.js";
-    markGatewayIngressTransport(req, {
-      kind: "remote-forwarded",
-      context: createRemoteControlUiIngressTestContext({
-        operatorScopeCeiling: ["operator.read"],
-        frameAncestors: [],
-        assertCurrent() {
-          if (!current) {
-            throw new Error("grant closed");
-          }
-        },
-      }),
-    });
-    const res = new ServerResponse(req);
-    const serve = createSandboxHostHttpRequestHandler(() => registry)(req, res);
-    await started.promise;
-    current = false;
-    resource.resolve({
-      body: Buffer.from("private-after-close"),
-      contentType: "application/javascript",
-    });
-    await serve;
-    expect(res.destroyed).toBe(true);
-    expect(res.writableEnded).toBe(false);
-    req.destroy();
-  });
-
   it("caches only the exact versioned public shell and separates effective policies", async () => {
     const mutablePolicy = { connectDomains: ["https://original.example"] };
     const originalPath = buildMcpAppSandboxPath(mutablePolicy);
@@ -179,50 +101,6 @@ describe("MCP App sandbox HTTP origin", () => {
       await response.text();
       expect(buildMcpAppSandboxPath({ connectDomains: ["invalid"] })).toBe(paths[0]);
     });
-  });
-
-  it("serves only explicitly public registered assets without Gateway credentials", async () => {
-    const read = vi.fn(async () => ({
-      body: Buffer.from("window.rendererReady=true"),
-      contentType: "application/javascript",
-    }));
-    const registry = publicResourceRegistry(read);
-    await withSandboxHost(
-      async (origin) => {
-        const url = `${origin}/__openclaw__/renderer/app.js`;
-        const get = await fetch(url);
-        const head = await fetch(url, { method: "HEAD" });
-        expect(get.status).toBe(200);
-        expect(await get.text()).toBe("window.rendererReady=true");
-        expect(head.status).toBe(200);
-        expect(await head.text()).toBe("");
-        expect(head.headers.get("content-length")).toBe(get.headers.get("content-length"));
-        expect(get.headers.get("set-cookie")).toBeNull();
-        expect(read).toHaveBeenCalledWith("/__openclaw__/renderer/app.js");
-        expect((await fetch(url, { method: "POST" })).status).toBe(404);
-        for (const deniedPath of [
-          "/",
-          "/__openclaw__/renderer/private.js",
-          "/__openclaw__/canvas/documents/private/index.html",
-        ]) {
-          expect((await fetch(`${origin}${deniedPath}`)).status).toBe(404);
-        }
-        expect(read).toHaveBeenCalledTimes(2);
-      },
-      () => registry,
-    );
-  });
-
-  it("does not expose registered assets without the public-reader opt-in", async () => {
-    const registry = publicResourceRegistry(async () => undefined);
-    registry.boardWidgetContentKinds.get("diagram")!.definition.resources.readPublicResource =
-      undefined;
-    await withSandboxHost(
-      async (origin) => {
-        expect((await fetch(`${origin}/__openclaw__/renderer/app.js`)).status).toBe(404);
-      },
-      () => registry,
-    );
   });
 
   it("supports HEAD and rejects other paths, methods, and malformed policy", () => {

@@ -887,27 +887,6 @@ describe("setupWizardCommand", () => {
     );
   });
 
-  it("rejects migration import before reset because provider input is not preplanned", async () => {
-    const runtime = makeRuntime();
-
-    await setupWizardCommand(
-      {
-        reset: true,
-        nonInteractive: true,
-        acceptRisk: true,
-        flow: "import",
-        importFrom: "hermes",
-      },
-      runtime,
-    );
-
-    expect(runtime.error).toHaveBeenCalledWith(
-      "Migration import cannot be combined with --reset because provider input must be planned before any state is removed. Run the import without --reset.",
-    );
-    expect(mocks.handleReset).not.toHaveBeenCalled();
-    expect(mocks.runNonInteractiveSetup).not.toHaveBeenCalled();
-  });
-
   it.each([
     ["--agent-name", { agentName: "robby" }],
     ["--team", { team: true }],

@@ -3,21 +3,14 @@ import { resolveGlobalSingleton } from "../shared/global-singleton.js";
 import type { GlobalHookRunnerRegistry } from "./hook-registry.types.js";
 import type { HookRunner } from "./hooks.js";
 import { isPluginRegistryRetired } from "./registry-lifecycle.js";
-import type {
-  PluginRegistry,
-  PluginTrustedToolPolicyRegistryRegistration,
-} from "./registry-types.js";
+import type { PluginRegistry } from "./registry-types.js";
 import { getActivePluginRegistry } from "./runtime.js";
 import { getPluginRuntimeGatewayRequestScope } from "./runtime/gateway-request-scope.js";
 import { getPluginRuntimeGenerationRegistry } from "./runtime/generation-scope.js";
 
-type TrustedPolicyHookRunnerRegistry = GlobalHookRunnerRegistry & {
-  trustedToolPolicies?: PluginTrustedToolPolicyRegistryRegistration[];
-};
-
 type HookRunnerGlobalState = {
   hookRunner: HookRunner | null;
-  registry: TrustedPolicyHookRunnerRegistry | null;
+  registry: GlobalHookRunnerRegistry | null;
 };
 
 const hookRunnerGlobalStateKey = Symbol.for("openclaw.plugins.hook-runner-global-state");
@@ -35,9 +28,7 @@ export const hookRunnerGlobalState = resolveGlobalSingleton<HookRunnerGlobalStat
   "plugin-registry",
 );
 
-function resolveRootHookRegistry(
-  state: HookRunnerGlobalState,
-): TrustedPolicyHookRunnerRegistry | null {
+function resolveRootHookRegistry(state: HookRunnerGlobalState): GlobalHookRunnerRegistry | null {
   const activeRegistry = getActivePluginRegistry();
   const initializedRegistry =
     state.registry && !isPluginRegistryRetired(state.registry as PluginRegistry)
@@ -52,9 +43,9 @@ function resolveRootHookRegistry(
 }
 
 function overlayHookRegistries(
-  baseRegistry: TrustedPolicyHookRunnerRegistry | null,
-  overlayRegistry: TrustedPolicyHookRunnerRegistry | null,
-): TrustedPolicyHookRunnerRegistry | null {
+  baseRegistry: GlobalHookRunnerRegistry | null,
+  overlayRegistry: GlobalHookRunnerRegistry | null,
+): GlobalHookRunnerRegistry | null {
   if (!overlayRegistry || overlayRegistry === baseRegistry) {
     return baseRegistry;
   }
@@ -79,21 +70,6 @@ function overlayHookRegistries(
   const overlayTypedHooks = new Set(
     overlayRegistry.typedHooks.map((hook) => `${hook.pluginId}\0${hook.hookName}`),
   );
-  const overlayTrustedPolicies = new Set(
-    (overlayRegistry.trustedToolPolicies ?? []).map(
-      (entry) => `${entry.pluginId}\0${entry.policy.id}`,
-    ),
-  );
-  const trustedToolPolicies = [
-    ...(baseRegistry.trustedToolPolicies ?? []).filter(
-      (entry) => !overlayTrustedPolicies.has(`${entry.pluginId}\0${entry.policy.id}`),
-    ),
-    ...(overlayRegistry.trustedToolPolicies ?? []),
-  ].toSorted((left, right) => {
-    const leftRank = left.origin === "bundled" ? 0 : 1;
-    const rightRank = right.origin === "bundled" ? 0 : 1;
-    return leftRank - rightRank;
-  });
   return {
     hooks: [
       ...baseRegistry.hooks.flatMap((hook) => {
@@ -116,11 +92,10 @@ function overlayHookRegistries(
       ...baseRegistry.plugins.filter((plugin) => !overlayPluginIds.has(plugin.id)),
       ...overlayRegistry.plugins,
     ],
-    trustedToolPolicies,
   };
 }
 
-function resolveHookRegistry(state: HookRunnerGlobalState): TrustedPolicyHookRunnerRegistry | null {
+function resolveHookRegistry(state: HookRunnerGlobalState): GlobalHookRunnerRegistry | null {
   const generationRegistry = getPluginRuntimeGenerationRegistry();
   if (generationRegistry && !isPluginRegistryRetired(generationRegistry)) {
     return generationRegistry;
@@ -134,7 +109,7 @@ function resolveHookRegistry(state: HookRunnerGlobalState): TrustedPolicyHookRun
 
 export function createLiveHookRegistryFacade(
   state: HookRunnerGlobalState,
-): TrustedPolicyHookRunnerRegistry {
+): GlobalHookRunnerRegistry {
   // The runner object stays stable while these getters select the current request
   // handle or process root on every dispatch.
   return {
@@ -147,14 +122,11 @@ export function createLiveHookRegistryFacade(
     get plugins() {
       return resolveHookRegistry(state)?.plugins ?? [];
     },
-    get trustedToolPolicies() {
-      return resolveHookRegistry(state)?.trustedToolPolicies ?? [];
-    },
   };
 }
 
 /** Get the registry view that backs global hook dispatch. */
-export function getGlobalHookRunnerRegistry(): TrustedPolicyHookRunnerRegistry | null {
+export function getGlobalHookRunnerRegistry(): GlobalHookRunnerRegistry | null {
   return resolveHookRegistry(hookRunnerGlobalState)
     ? createLiveHookRegistryFacade(hookRunnerGlobalState)
     : null;

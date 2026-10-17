@@ -1,5 +1,5 @@
 import { asOptionalObjectRecord } from "@openclaw/normalization-core/record-coerce";
-import { partitionMcpServersByConnectionScope } from "./mcp-connection-resolver.js";
+import { partitionMcpServersByConnectionScope } from "./mcp-requester-scope.js";
 import { resolveMcpTransportConfig } from "./mcp-transport-config.js";
 
 /** The shared operator OAuth connection that Settings may inspect and sign in. */

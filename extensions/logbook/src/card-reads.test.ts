@@ -52,7 +52,6 @@ it("serves timeline and status through their bounded store operations", async ()
     pluginConfig: { captureEnabled: false },
     lifecycle: { registerRuntimeLifecycle() {} },
     runtime: {},
-    session: { controls: { registerControlUiDescriptor() {} } },
     registerNodeInvokePolicy() {},
     registerService: (service: Parameters<OpenClawPluginApi["registerService"]>[0]) =>
       services.push(service),

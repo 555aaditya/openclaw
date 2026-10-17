@@ -1,10 +1,7 @@
 import type { OpenClawPluginApi } from "./plugin-api.types.js";
 import type { OpenClawPluginConfigSchema } from "./plugin-config-schema.types.js";
 import type { PluginKind } from "./plugin-kind.types.js";
-import type {
-  OpenClawPluginReloadRegistration,
-  OpenClawPluginSecurityAuditCollector,
-} from "./plugin-registration.types.js";
+import type { OpenClawPluginReloadRegistration } from "./plugin-registration.types.js";
 import type { OpenClawPluginNodeHostCommand } from "./types.node-host.js";
 
 /** Module-level plugin definition loaded from a native plugin entry file. */
@@ -23,7 +20,6 @@ export type OpenClawPluginDefinition = {
   configSchema?: OpenClawPluginConfigSchema;
   reload?: OpenClawPluginReloadRegistration;
   nodeHostCommands?: OpenClawPluginNodeHostCommand[];
-  securityAuditCollectors?: OpenClawPluginSecurityAuditCollector[];
   register?: (api: OpenClawPluginApi) => void;
 };
 

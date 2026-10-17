@@ -12,7 +12,7 @@ import { createPluginMetadataSnapshotFixture } from "../plugins/plugin-metadata.
 import { clearActivePluginRegistry, resetPluginRuntimeStateForTest } from "../plugins/runtime.js";
 import { withPluginRuntimeRegistryScope } from "../plugins/runtime/gateway-request-scope.js";
 import { cleanupTrackedTempDirs, makeTrackedTempDir } from "../plugins/test-helpers/fs-fixtures.js";
-import type { OpenClawPluginApi, OpenClawPluginServiceContext } from "../plugins/types.js";
+import type { OpenClawPluginServiceContext } from "../plugins/types.js";
 import {
   markGatewayRestartDraining,
   resetGatewayWorkAdmission,
@@ -31,7 +31,6 @@ import type { TranscriptStartRequest } from "../transcripts/provider-types.js";
 import { TranscriptsStore } from "../transcripts/store.js";
 import { buildGatewayReloadPlan } from "./config-reload-plan.js";
 import { createChannelManager } from "./server-channels.js";
-import { startGatewayDiscovery } from "./server-discovery-runtime.js";
 import {
   verifyIndependentPostCommitActivation,
   verifyLifecycleHookSettlement,
@@ -391,50 +390,6 @@ it("refuses recovery after gateway cleanup times out while retaining sibling cha
 it("bounds the wait for service startup and keeps retired dispatch fenced across retry", () =>
   verifyPendingServiceCleanupRetry(createRecoveryFixture));
 
-it("retains unrelated discovery after the selected service refuses cleanup", async () => {
-  await withEnvAsync(
-    { NODE_ENV: "development", VITEST: undefined, OPENCLAW_DISABLE_BONJOUR: undefined },
-    async () => {
-      const stops = { first: vi.fn(), sibling: vi.fn() };
-      const starts = { first: vi.fn(), sibling: vi.fn() };
-      const fixture = await createRecoveryFixture({
-        initialStop: async () => {
-          throw new Error("cleanup refused");
-        },
-        register: (api, owner) => {
-          api.registerGatewayDiscoveryService({
-            id: owner,
-            advertise: async () => {
-              starts[owner]();
-              return { stop: stops[owner] };
-            },
-          });
-        },
-      });
-      const discovery = await startGatewayDiscovery({
-        gatewayDiscoveryServices: fixture.previousRegistry.gatewayDiscoveryServices,
-        pluginRuntimeClaim: fixture.owner.currentClaim(),
-        machineDisplayName: "fixture-gateway",
-        port: 0,
-        tailscaleMode: "off",
-        logDiscovery: mocks.log,
-      });
-      fixture.runtime.runtimeState.discovery = discovery;
-      cleanups.push(() => discovery.stop());
-      try {
-        await expect(fixture.reload()).rejects.toMatchObject({ details: { committed: false } });
-        expect(stops.first).toHaveBeenCalledOnce();
-        expect(stops.sibling).not.toHaveBeenCalled();
-        expect(starts.sibling).toHaveBeenCalledOnce();
-        expect(fixture.siblingStop).not.toHaveBeenCalled();
-      } finally {
-        await discovery.stop();
-      }
-      expect(stops.sibling).toHaveBeenCalledOnce();
-    },
-  );
-});
-
 it.each(["commit", "rollback"])(
   "restarts pending channel preparation after command changes: %s",
   async (outcome) => {
@@ -518,107 +473,6 @@ it.each(["commit", "rollback"])(
       release.resolve();
       await original;
     }
-  },
-);
-
-it.each(["rollback", "after-commit error", "late startup"] as const)(
-  "keeps discovery handles owned across plugin replacement: %s",
-  async (outcome) => {
-    await withEnvAsync(
-      {
-        NODE_ENV: "development",
-        VITEST: undefined,
-        OPENCLAW_DISABLE_BONJOUR: undefined,
-        OPENCLAW_GATEWAY_DISCOVERY_ADVERTISE_TIMEOUT_MS: "10",
-      },
-      async () => {
-        const releaseStartup = createDeferredCore();
-        const registrations: OpenClawPluginApi[] = [];
-        const handles: Array<{ api: OpenClawPluginApi; stops: number }> = [];
-        const publicationFailure = new Error("publication rejected");
-        const fixture = await createRecoveryFixture({
-          abortOnCandidateStart: false,
-          register: (api, owner) => {
-            if (owner !== "first") {
-              return;
-            }
-            registrations.push(api);
-            api.registerGatewayDiscoveryService({
-              id: "fixture-discovery",
-              advertise: async () => {
-                const handle = { api, stops: 0 };
-                handles.push(handle);
-                if (outcome === "late startup" && handles.length === 1) {
-                  await releaseStartup.promise;
-                }
-                return {
-                  stop: () => {
-                    handle.stops += 1;
-                  },
-                };
-              },
-            });
-          },
-          beforePublish: async () => {
-            if (outcome === "rollback") {
-              throw publicationFailure;
-            }
-          },
-          afterPublish: async () => {
-            if (outcome === "after-commit error") {
-              throw publicationFailure;
-            }
-          },
-        });
-        cleanups.push(async () => {
-          releaseStartup.resolve();
-          await fixture.runtime.runtimeState.discovery?.stop();
-        });
-        const discovery = await startGatewayDiscovery({
-          discovery: { mdns: { mode: "minimal" } },
-          gatewayDiscoveryServices: fixture.previousRegistry.gatewayDiscoveryServices,
-          pluginRuntimeClaim: fixture.owner.currentClaim(),
-          machineDisplayName: "fixture-gateway",
-          port: 0,
-          tailscaleMode: "off",
-          logDiscovery: mocks.log,
-        });
-        fixture.runtime.runtimeState.discovery = discovery;
-        try {
-          expect(handles).toHaveLength(1);
-          if (outcome === "rollback" || outcome === "after-commit error") {
-            await expect(fixture.reload()).rejects.toMatchObject({
-              details: { committed: outcome === "after-commit error" },
-              cause: publicationFailure,
-            });
-          } else {
-            const reloading = fixture.reload();
-            void reloading.catch(() => {});
-            try {
-              await vi.waitFor(() =>
-                expect(fixture.owner.getReloadStatus()).toMatchObject({
-                  phase: "reloading",
-                  deadlineAtMs: expect.any(Number),
-                }),
-              );
-              expect(fixture.firstStop).not.toHaveBeenCalled();
-            } finally {
-              releaseStartup.resolve();
-              await reloading;
-            }
-          }
-          expect(
-            handles.filter((handle) => handle.stops === 0).map((handle) => handle.api),
-          ).toEqual([registrations.at(-1)]);
-          expect(fixture.siblingStart).toHaveBeenCalledOnce();
-          expect(fixture.siblingStop).not.toHaveBeenCalled();
-        } finally {
-          releaseStartup.resolve();
-          await discovery.stop();
-        }
-        expect(handles.every((handle) => handle.stops === 1)).toBe(true);
-      },
-    );
   },
 );
 

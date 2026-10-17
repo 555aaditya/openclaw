@@ -1,9 +1,6 @@
 import { onCleanup } from "solid-js";
-import type { ControlUiLinkReaderDescriptor } from "../../../../src/shared/control-ui-link-reader.js";
-import { resolveLinkReaderTarget } from "../../components/link-reader-target.ts";
 import {
   BROWSER_PANEL_TOGGLE_EVENT,
-  LINK_READER_PANEL_TOGGLE_EVENT,
   DESKTOP_PANEL_TOGGLE_EVENT,
   PORTAL_PANEL_TOGGLE_EVENT,
   PLUGIN_PANEL_TOGGLE_EVENT,
@@ -30,7 +27,6 @@ import { closeSlot, openSlot, setSidebarDock } from "./sidebar-layout.ts";
 interface ActivePanelOwner {
   renderRoot: ParentNode;
   state: ChatPageHost;
-  linkReaders: readonly ControlUiLinkReaderDescriptor[];
   pluginPanels: readonly `${string}/${string}`[];
   updateComplete: Promise<unknown>;
 }
@@ -51,21 +47,11 @@ interface SessionPanelToggleOptions {
 const panelToggleEvents = [
   [TERMINAL_PANEL_TOGGLE_EVENT, "terminal", "openclaw-terminal-panel"],
   [BROWSER_PANEL_TOGGLE_EVENT, "browser", "openclaw-browser-panel"],
-  [LINK_READER_PANEL_TOGGLE_EVENT, "link-reader", "openclaw-link-reader-panel"],
   [DESKTOP_PANEL_TOGGLE_EVENT, "desktop", "openclaw-desktop-panel"],
   [PORTAL_PANEL_TOGGLE_EVENT, "portal", "openclaw-portals-page"],
 ] as const;
 
 type PanelTagName = (typeof panelToggleEvents)[number][2];
-
-function canOpenLinkReader(owner: ActivePanelOwner | null, url: string | undefined): boolean {
-  return Boolean(
-    owner?.state.connected &&
-    owner.state.client &&
-    owner.linkReaders.length > 0 &&
-    (url === undefined || resolveLinkReaderTarget(url, owner.linkReaders)),
-  );
-}
 
 /** Owns shell-to-pane panel intent handoff for the active chat presentation. */
 export function createChatPaneSessionPanelToggles(options: SessionPanelToggleOptions): () => void {
@@ -109,18 +95,7 @@ export function createChatPaneSessionPanelToggles(options: SessionPanelToggleOpt
       return;
     }
     const detail = event instanceof CustomEvent ? event.detail : null;
-    if (
-      slot === "link-reader" &&
-      detail?.open !== false &&
-      !canOpenLinkReader(owner, detail?.url)
-    ) {
-      clearSessionPanelToggle(slot, event);
-      return;
-    }
     clearSessionPanelToggle(slot, event);
-    if (slot === "link-reader") {
-      event.preventDefault();
-    }
     if (detail?.open === false) {
       options.pending.delete(slot);
       options.updateSidebarLayout(closeSlot(owner.state.sidebarLayout, slot));
@@ -169,16 +144,6 @@ export function createChatPaneSessionPanelToggles(options: SessionPanelToggleOpt
       options.updateSidebarLayout(layout);
       return;
     }
-    const existing = options.pending.get(slot);
-    if (
-      slot === "link-reader" &&
-      existing?.owner === owner.state &&
-      existing.sessionKey === owner.state.sessionKey
-    ) {
-      existing.events.push(event);
-      options.updateSidebarLayout(layout);
-      return;
-    }
     const queue: PendingSessionPanelToggle = {
       events: [event],
       owner: owner.state,
@@ -219,11 +184,6 @@ export function createChatPaneSessionPanelToggles(options: SessionPanelToggleOpt
         for (const pendingEvent of queue.events) {
           if (!isCurrent()) {
             return;
-          }
-          const current = options.current();
-          const pendingDetail = pendingEvent instanceof CustomEvent ? pendingEvent.detail : null;
-          if (slot === "link-reader" && !canOpenLinkReader(current, pendingDetail?.url)) {
-            continue;
           }
           region?.deliverPanelEvent(slot, pendingEvent);
         }

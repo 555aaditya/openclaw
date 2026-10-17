@@ -1,5 +1,4 @@
 import type {
-  EnvironmentsListResult,
   WorkerMachineOption,
   WorkerOperatingSystem,
 } from "../../../../packages/gateway-protocol/src/schema/environments.ts";
@@ -163,8 +162,6 @@ export type WhereChipOptions = {
   onSelectDevice: (deviceId: string) => void;
   onSelectAutoDevice: () => void;
   onSelectCloudProfile: (profileId: string, useDefaults?: boolean) => void;
-  suggestedProfile?: EnvironmentsListResult["suggestedProfile"];
-  onAdoptSuggestedProfile?: () => void;
   onSelectCloudOs?: (osId: string) => void;
   onSelectCloudMachine?: (machineId: string) => void;
   onConnectMachine: () => void;

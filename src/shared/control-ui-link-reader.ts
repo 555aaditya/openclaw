@@ -1,6 +1,3 @@
-import type { Static } from "typebox";
-import type { SchemaContract } from "../../packages/gateway-protocol/src/schema-contract.js";
-import type { ControlUiLinkReaderDescriptorSchema } from "../../packages/gateway-protocol/src/schema/control-ui-link-reader.js";
 export const LINK_READER_BADGE_TONES = [
   "neutral",
   "positive",
@@ -9,19 +6,11 @@ export const LINK_READER_BADGE_TONES = [
   "accent",
 ] as const;
 
-/** Passive link-reader models shared by plugins and the Control UI. */
-export type ControlUiLinkReaderMetadata = ControlUiLinkReaderDescriptor["linkReader"];
-
-/** Scope-filtered descriptor advertised in hello.controlUiLinkReaders. */
-export type ControlUiLinkReaderDescriptor = SchemaContract<
-  Static<typeof ControlUiLinkReaderDescriptorSchema>
->;
-
 export type ControlUiLinkReaderPreviewParams = {
   url: string;
   /** Selected agent hint; the receiving owner still authorizes identity selection. */
   agentId?: string;
-  /** Present only for a descriptor opting into the foreground session context. */
+  /** Foreground session context authorized by the receiving owner. */
   sessionKey?: string;
 };
 export type ControlUiLinkReaderDeferredSection = "checks" | "files" | "discussion";

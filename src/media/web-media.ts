@@ -22,7 +22,6 @@ import { FsSafeError } from "../infra/fs-safe.js";
 import type { PinnedDispatcherPolicy, SsrFPolicy } from "../infra/net/ssrf.js";
 import { isPathInside } from "../infra/path-guards.js";
 import { resolvePreferredOpenClawTmpDir } from "../infra/tmp-openclaw-dir.js";
-import { getPluginRegistryForContext } from "../plugins/runtime/gateway-request-scope.js";
 import { captureOpenClawStateWorkerContext } from "../state/openclaw-state-worker-context.js";
 import type { OpenClawStateWorkerContext } from "../state/openclaw-state-worker-context.types.js";
 import { resolveUserPath } from "../utils.js";
@@ -118,25 +117,6 @@ async function resolveMediaStoreUriToPath(mediaUrl: string): Promise<string | nu
     }
     throw err;
   }
-}
-
-async function resolveHostedPluginMediaUrl(mediaUrl: string): Promise<string | null> {
-  const registry = getPluginRegistryForContext();
-  for (const entry of registry?.hostedMediaResolvers ?? []) {
-    try {
-      const resolved = await entry.resolver(mediaUrl);
-      if (typeof resolved === "string" && resolved.trim()) {
-        return resolved;
-      }
-    } catch (err) {
-      if (shouldLogVerbose()) {
-        logVerbose(
-          `Hosted media resolver failed (${entry.pluginId ?? "unknown"}): ${formatErrorMessage(err)}`,
-        );
-      }
-    }
-  }
-  return null;
 }
 
 function resolveWebMediaOptions(params: {
@@ -831,10 +811,7 @@ async function loadWebMediaInternal(
       throw new LocalMediaAccessError("invalid-file-url", (err as Error).message, { cause: err });
     }
   }
-  mediaUrl =
-    resolveCanvasHttpPathToLocalPath(mediaUrl) ??
-    (await resolveHostedPluginMediaUrl(mediaUrl)) ??
-    mediaUrl;
+  mediaUrl = resolveCanvasHttpPathToLocalPath(mediaUrl) ?? mediaUrl;
   mediaUrl = stripLegacyMediaDirectivePrefix(mediaUrl);
 
   const clampAndFinalize = async (params: WebMediaResult): Promise<WebMediaResult> => {

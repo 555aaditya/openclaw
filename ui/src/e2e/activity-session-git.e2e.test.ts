@@ -7,7 +7,6 @@ import {
   CONTROL_UI_SESSION_PULL_REQUESTS_CHANGED_EVENT,
   type ControlUiSessionPullRequestsChanged,
 } from "../../../src/gateway/control-ui-contract.js";
-import type { ControlUiLinkReaderPreview } from "../../../src/shared/control-ui-link-reader.js";
 import { SESSION_PULL_REQUESTS_SUBSCRIBE_METHOD } from "../lib/session-pull-requests.ts";
 import { takeControlUiViewportScreenshot } from "../test-helpers/control-ui-e2e-screenshot.ts";
 import {
@@ -15,7 +14,6 @@ import {
   installMockGateway,
   waitForControlUiRoute,
 } from "../test-helpers/control-ui-e2e.ts";
-import { TEST_LINK_READER } from "../test-helpers/link-reader.ts";
 import { chatSessionListResponse } from "./chat-flow.test-support.ts";
 import { createControlUiE2eSuite } from "./control-ui-e2e-suite.test-support.ts";
 
@@ -47,19 +45,6 @@ const reviewRequest = {
   url: "https://github.com/example/gateway/pull/17",
   state: "draft" as const,
 };
-const preview: ControlUiLinkReaderPreview = {
-  url: reviewRequest.url,
-  title: reviewRequest.title,
-  subtitle: "example/gateway #17",
-  author: "casey-example",
-  badge: { label: "Draft", tone: "neutral" },
-  metadata: [
-    { label: "", value: "+63" },
-    { label: "", value: "−8" },
-  ],
-  createdAt: "2026-09-10T12:00:00Z",
-  updatedAt: "2026-09-11T12:00:00Z",
-};
 
 async function capture(page: Page, filename: string, content: readonly Locator[]) {
   if (captureUiProof) {
@@ -71,7 +56,7 @@ async function capture(page: Page, filename: string, content: readonly Locator[]
 }
 
 suite.define(() => {
-  it("shows pushed changes and scoped PR previews without taking over session navigation", async () => {
+  it("shows pushed changes and PR links without taking over session navigation", async () => {
     await suite.withPage(
       {
         colorScheme: "light",
@@ -105,11 +90,8 @@ suite.define(() => {
           })),
         );
         const gateway = await installMockGateway(page, {
-          controlUiLinkReaders: [TEST_LINK_READER],
           featureMethods: [
             ...defaultControlUiFeatureMethods,
-            "forge.preview",
-            "forge.detail",
             SESSION_PULL_REQUESTS_SUBSCRIBE_METHOD,
           ],
           methodResponses: {
@@ -120,18 +102,6 @@ suite.define(() => {
               ],
             },
             [SESSION_PULL_REQUESTS_SUBSCRIBE_METHOD]: { subscribed: true },
-            "forge.detail": {
-              url: reviewRequest.url,
-              title: reviewRequest.title,
-              body: "Read this pull request without leaving Activity.",
-              comments: [],
-            },
-            "forge.preview": {
-              cases: [
-                { match: { url: reviewRequest.url }, response: preview },
-                { response: { ...preview, ...pullRequest } },
-              ],
-            },
           },
         });
         const watchedKeys = async () => {
@@ -211,53 +181,15 @@ suite.define(() => {
           .waitFor();
         await capture(page, "01-desktop-activity-git.png", [openPr, branch]);
 
-        const card = page.locator(".link-reader-hovercard");
-        await draftPr.hover();
-        await expect.poll(() => card.textContent()).toContain(reviewRequest.title);
-        const request = await gateway.waitForRequest("forge.preview", {
-          match: { url: reviewRequest.url },
-        });
-        expect(request.params).toMatchObject({ agentId: "reviewer", url: reviewRequest.url });
         expect(await draftPr.getAttribute("href")).toBe(reviewRequest.url);
         expect(await draftPr.getAttribute("target")).toBe("_blank");
-        await capture(page, "02-desktop-pr-hover.png", [card]);
-        await page.mouse.move(1, 1);
-        await expect.poll(() => card.count()).toBe(0);
-
         await page.setViewportSize({ width: 390, height: 844 });
         await draftPr.scrollIntoViewIfNeeded();
         await expect
           .poll(() => activity.evaluate((element) => element.scrollWidth - element.clientWidth))
           .toBeLessThanOrEqual(1);
-        await capture(page, "03-mobile-activity-git.png", [draftPr]);
-        await draftPr.focus();
-        await expect.poll(() => card.textContent()).toContain(reviewRequest.title);
-        const bounds = await card.boundingBox();
-        expect(bounds).not.toBeNull();
-        expect(bounds!.x).toBeGreaterThanOrEqual(0);
-        expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
-        await capture(page, "04-mobile-pr-focus.png", [card]);
-        await page.keyboard.press("Escape");
-        await expect.poll(() => card.count()).toBe(0);
-        expect(await draftPr.evaluate((element) => element === document.activeElement)).toBe(true);
-        await page.keyboard.press("Enter");
-        const reader = page.locator("openclaw-link-reader-panel");
-        await reader.getByRole("heading", { name: reviewRequest.title, exact: true }).waitFor();
-        expect(new URL(page.url()).pathname).toBe("/activity");
-        const external = reader.locator("a[data-link-reader-external]").first();
-        expect(await external.getAttribute("href")).toBe(reviewRequest.url);
-        const popupPromise = page.waitForEvent("popup");
-        await external.click();
-        const popup = await popupPromise;
-        await popup.waitForLoadState("domcontentloaded");
-        expect(popup.url()).toBe(reviewRequest.url);
-        expect(new URL(page.url()).pathname).toBe("/activity");
-        await popup.close();
-        await reader.getByRole("button", { name: "Close link reader", exact: true }).click();
+        await capture(page, "02-mobile-activity-git.png", [draftPr]);
 
-        const originalProvider = await row(keys.frontend)
-          .locator("openclaw-link-reader-hovercard-provider")
-          .elementHandle();
         const originalLink = await openPr.elementHandle();
         await gateway.emitGatewayEvent(CONTROL_UI_SESSION_PULL_REQUESTS_CHANGED_EVENT, {
           sessions: {
@@ -272,13 +204,11 @@ suite.define(() => {
           .poll(() => updatedPr.locator(".activity-feed__additions").textContent())
           .toBe("+192");
         expect(await updatedPr.locator(".activity-feed__deletions").textContent()).toBe("−30");
-        expect(await originalProvider?.evaluate((element) => element.isConnected)).toBe(true);
         expect(
           await originalLink?.evaluate(
             (element) => element.isConnected && element.getAttribute("data-state") === "merged",
           ),
         ).toBe(true);
-        await originalProvider?.dispose();
         await originalLink?.dispose();
         await expect
           .poll(() => row(keys.frontend).locator(".activity-feed__branch").textContent())

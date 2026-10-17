@@ -59,7 +59,7 @@ const viewports = [
 
 suite.define(() => {
   for (const destination of [
-    { from: "memory", route: "memory-import", title: "Import Memory", tab: "Settings" },
+    { from: "memory", route: "memory-import", title: "Backfill session memory", tab: "Settings" },
     { from: "skills", route: "plugins", title: "Plugins", tab: "Plugins" },
     { from: "skills", route: "skill-workshop", title: "Skill workshop", tab: "Skill workshop" },
   ] as const) {
@@ -75,11 +75,6 @@ suite.define(() => {
                 agentId: "main",
                 provider: "none",
                 embedding: { ok: false, checked: false },
-              },
-              "migrations.memory.plan": {
-                agentId: "main",
-                workspace: "/tmp/synthetic-workspace",
-                providers: [],
               },
             },
           });

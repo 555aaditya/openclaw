@@ -22,7 +22,7 @@ Codex app-server harness and native session catalog.
 - Providers: `codex`
 - CLI commands: `openclaw codex`
 - Slash commands: `/codex`
-- Contracts: `mediaUnderstandingProviders`, `migrationProviders`, `tools`, `webSearchProviders`
+- Contracts: `mediaUnderstandingProviders`, `tools`, `webSearchProviders`
 
 ## Related docs
 

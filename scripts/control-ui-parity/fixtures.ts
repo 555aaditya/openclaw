@@ -3,7 +3,6 @@ import type { QuestionRecord } from "../../packages/gateway-protocol/src/schema/
 import type { UserProfile } from "../../packages/gateway-protocol/src/schema/users.ts";
 import { computeBaseConfigSchemaResponse } from "../../src/config/schema-base.ts";
 import type { UsageSummary } from "../../src/infra/provider-usage.types.ts";
-import type { ControlUiLinkReaderDocument } from "../../src/shared/control-ui-link-reader.ts";
 import type { SessionsUsageResult } from "../../src/shared/usage-types.ts";
 import {
   defaultControlUiFeatureMethods,
@@ -12,7 +11,6 @@ import {
 import { createControlUiSessionRow } from "../../ui/src/test-helpers/control-ui-session-fixtures.ts";
 import { workboardUi } from "../../ui/src/test-helpers/control-ui-workboard-fixture.ts";
 import { buildWorkboardMocks } from "../../ui/src/test-helpers/control-ui-workboard-fixtures.ts";
-import { TEST_LINK_READER, testLinkPreview } from "../../ui/src/test-helpers/link-reader.ts";
 
 export const fixedTime = Date.parse("2026-09-01T12:00:00Z");
 export const sessionKey = "agent:main:parity";
@@ -328,7 +326,6 @@ export const parityBaseScenario: ControlUiMockGatewayScenario = {
     "approval.history": { items: [] },
     "exec.approval.grants.list": { grants: [] },
     "transcripts.list": { sessions: [], nextCursor: null },
-    "migrations.memory.plan": { agentId: "main", workspace: "/mock/workspace", providers: [] },
     "environments.list": { environments: [], profiles: [] },
     "portal.list": { portals: [] },
     "system.info": {
@@ -379,80 +376,6 @@ export const parityWorkboardScenario: ControlUiMockGatewayScenario = {
   methodResponses: workboard.methodResponses,
 };
 export const parityPluginPath = "/plugin?plugin=workboard&id=workboard";
-
-export const parityReaderDocuments: ControlUiLinkReaderDocument[] = Array.from(
-  { length: 10 },
-  (_, index) => ({
-    ...testLinkPreview({
-      url: `https://github.com/synthetic/parity/pull/${index + 1}`,
-      title: `Visual parity review ${index + 1}: keyboard, layout, and retained content`,
-      subtitle: `synthetic/parity #${index + 1}`,
-      author: "Synthetic reviewer",
-      authorUrl: "https://github.com/synthetic",
-      createdAt: new Date(fixedTime - 3_600_000).toISOString(),
-      updatedAt: new Date(fixedTime - 60_000).toISOString(),
-      badge: { label: "Ready for review", tone: "accent" },
-      coAuthors: [{ name: "Reviewer One" }, { name: "Reviewer Two" }],
-      coAuthorCount: 3,
-      metadata: [
-        { label: "Checks", value: "12 passed", tone: "positive" },
-        { label: "Files", value: "8" },
-      ],
-    }),
-    body: "## Visual parity review\n\nConfirm the desktop and mobile layouts, readable typography, and keyboard focus.\n\n- Navigation remains visible\n- Controls preserve their selected state\n- Long content wraps within the panel",
-    comments: [],
-    commentsTotal: 0,
-  }),
-);
-const readerResponses = {
-  "forge.preview": {
-    cases: parityReaderDocuments.map(
-      ({ body: _body, comments: _comments, commentsTotal: _count, ...preview }) => ({
-        match: { url: preview.url },
-        response: preview,
-      }),
-    ),
-  },
-  "forge.detail": {
-    cases: parityReaderDocuments.map((document) => ({
-      match: { url: document.url },
-      response: document,
-    })),
-  },
-};
-export const parityHovercardScenario: ControlUiMockGatewayScenario = {
-  controlUiLinkReaders: [TEST_LINK_READER],
-  historyMessages: [
-    {
-      role: "assistant",
-      timestamp: fixedTime - 30_000,
-      content: [
-        {
-          type: "text",
-          text: `Review [the visual parity proposal](${parityReaderDocuments[0]!.url}) before continuing.`,
-        },
-      ],
-    },
-  ],
-  methodResponses: readerResponses,
-};
-export const parityTabOverflowScenario: ControlUiMockGatewayScenario = {
-  ...parityHovercardScenario,
-  historyMessages: [
-    {
-      role: "assistant",
-      timestamp: fixedTime - 30_000,
-      content: [
-        {
-          type: "text",
-          text: parityReaderDocuments
-            .map((document, index) => `[Review ${index + 1}](${document.url})`)
-            .join(" · "),
-        },
-      ],
-    },
-  ],
-};
 
 const approval: PendingApprovalSnapshot = {
   id: "parity",

@@ -16,11 +16,7 @@ import {
 import { cleanupTempDirs } from "../../test/helpers/temp-dir.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { createPluginManifestRecordFixture } from "../plugins/plugin-metadata.test-support.js";
-import { withPluginRuntimeRegistryScope } from "../plugins/runtime/gateway-request-scope.js";
-import {
-  createGatewaySchedulerClock,
-  createTestGatewayScheduler,
-} from "../test-utils/gateway-scheduler-clock.js";
+import { createTestGatewayScheduler } from "../test-utils/gateway-scheduler-clock.js";
 import { createSessionMcpRuntimeManager } from "./agent-bundle-mcp-manager.test-support.js";
 import { materializeBundleMcpToolsForRun } from "./agent-bundle-mcp-materialize.js";
 import {
@@ -28,8 +24,6 @@ import {
   probeMcpServer as probe,
 } from "./agent-bundle-mcp-probe.test-support.js";
 import { createSessionMcpRuntime } from "./agent-bundle-mcp-runtime.js";
-import type { SessionMcpRuntime } from "./agent-bundle-mcp-types.js";
-import { createMcpProofPluginRegistry } from "./mcp-connection-resolver.test-fixtures.js";
 import type { McpOAuthIdentity } from "./mcp-oauth-identity.js";
 
 const startAuthorization = vi.hoisted(() => vi.fn(async () => ({ status: "authorized" })));
@@ -349,68 +343,6 @@ it.each(["remove", "public origin"])(
   },
 );
 
-it("rotates one requester's changed server while retaining sibling connections and requesters", async () => {
-  const resolverRegistry = createMcpProofPluginRegistry();
-  await withPluginRuntimeRegistryScope(resolverRegistry.registry, async () => {
-    const url = await httpProbe();
-    let generation = 0;
-
-    const resolverApi = resolverRegistry.apiFor("test-plugin");
-    for (const serverName of ["first", "second"]) {
-      resolverApi.registerMcpServerConnectionResolver({
-        serverName,
-        resolve: async ({ requesterSenderId }) => ({
-          url,
-          headers: {
-            Authorization: `proof-${requesterSenderId}-${serverName === "first" && requesterSenderId === "alice" ? generation : 0}`,
-          },
-        }),
-      });
-    }
-    const clock = createGatewaySchedulerClock(100_000);
-    const { manager, params } = await fixture(createTestGatewayScheduler(clock.clock));
-    const cfg: OpenClawConfig = {
-      plugins: { enabled: false },
-      mcp: {
-        servers: {
-          first: { transport: "streamable-http" },
-          second: { transport: "streamable-http" },
-        },
-      },
-    };
-    const aliceParams = { ...params, cfg, requesterSenderId: "alice" };
-    const bobParams = { ...params, cfg, requesterSenderId: "bob" };
-    const alice = await manager.getOrCreate(aliceParams);
-    const bob = await manager.getOrCreate(bobParams);
-    const before = await Promise.all([
-      probe(alice, "first"),
-      probe(alice, "second"),
-      probe(bob, "first"),
-      probe(bob, "second"),
-    ]);
-    generation++;
-    clock.setTime(clock.clock.now() + 300_000);
-    const nextAlice = await manager.getOrCreate(aliceParams);
-    const nextBob = await manager.getOrCreate(bobParams);
-    const after = await Promise.all([
-      probe(nextAlice, "first"),
-      probe(nextAlice, "second"),
-      probe(nextBob, "first"),
-      probe(nextBob, "second"),
-    ]);
-    expect(after[0]).not.toEqual(before[0]);
-    expect(after.slice(1)).toEqual(before.slice(1));
-    await manager.reloadConfig({
-      cfg,
-      manifestRegistry: params.manifestRegistry,
-      reloadPlugins: true,
-    });
-    await expect(probe(nextAlice, "first")).rejects.toThrow();
-    const successor = await manager.getOrCreate(aliceParams);
-    expect(await probe(successor, "first")).not.toEqual(after[0]);
-  });
-});
-
 it.each(["removal", "public origin change", "plugin replacement with explicit shadow"])(
   "revokes a retained connect callback on %s",
   async (change) => {
@@ -474,61 +406,6 @@ it.each(["removal", "public origin change", "plugin replacement with explicit sh
     expect(startAuthorization).toHaveBeenCalledOnce();
   },
 );
-
-it("retires an in-flight plugin across publication and reconnects on the next acquisition", async () => {
-  const resolverRegistry = createMcpProofPluginRegistry();
-  await withPluginRuntimeRegistryScope(resolverRegistry.registry, async () => {
-    const url = await httpProbe();
-    const { params } = await fixture();
-    const cfg: OpenClawConfig = {
-      plugins: { enabled: false },
-      mcp: { servers: { scoped: { transport: "streamable-http" } } },
-    };
-    const resolverApi = resolverRegistry.apiFor("test-plugin");
-    resolverApi.registerMcpServerConnectionResolver({
-      serverName: "scoped",
-      resolve: async () => ({ url }),
-    });
-    const started = createDeferred();
-    const released = createDeferred();
-    let retired: SessionMcpRuntime | undefined;
-    let firstConnection: Awaited<ReturnType<typeof probe>> | undefined;
-    releaseHeld.push(() => released.resolve());
-    const manager = createSessionMcpRuntimeManager({
-      async createRuntime(input) {
-        const runtime = createSessionMcpRuntime(input);
-        if (input.requesterScope && !retired) {
-          retired = runtime;
-          firstConnection = await probe(runtime, "scoped");
-          started.resolve();
-          await released.promise;
-        }
-        return runtime;
-      },
-    });
-    managers.push(manager);
-    const pending = manager.getOrCreate({ ...params, cfg, requesterSenderId: "alice" });
-    await started.promise;
-    resolverApi.registerMcpServerConnectionResolver({
-      serverName: "scoped",
-      resolve: async () => ({ url, headers: { Authorization: "replacement" } }),
-    });
-    await manager.reloadConfig({
-      cfg,
-      manifestRegistry: params.manifestRegistry,
-      reloadPlugins: true,
-    });
-    await manager.reloadConfig({
-      cfg: structuredClone(cfg),
-      manifestRegistry: params.manifestRegistry,
-    });
-    released.resolve();
-    await expect(probe(await pending, "scoped")).rejects.toThrow("disposed");
-    await expect(probe(expectDefined(retired, "retired plugin owner"), "scoped")).rejects.toThrow();
-    const next = await manager.getOrCreate({ ...params, cfg, requesterSenderId: "alice" });
-    expect(await probe(next, "scoped")).not.toEqual(firstConnection);
-  });
-});
 
 it.each(["shadow at publication", "shadow before transfer"])(
   "retires a transferred plugin with %s before the next queued acquisition",

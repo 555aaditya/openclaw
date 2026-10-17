@@ -18,10 +18,7 @@ vi.mock("./setup.shared.js", () => ({
   resolveQuickstartGatewayDefaults: () => ({ port: 19791 }),
   writeWizardConfigFile: writeConfig,
 }));
-vi.mock("./setup.migration-import.js", () => ({
-  detectSetupMigrationSources: async () => ({ detections: [], providerDescriptors: [] }),
-  listSetupMigrationOptions: async () => [],
-}));
+
 vi.mock("../commands/onboard-helpers.js", () => ({
   DEFAULT_WORKSPACE: "/tmp/workspace",
   printWizardHeader: async () => {},

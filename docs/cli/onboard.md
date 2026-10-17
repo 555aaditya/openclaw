@@ -42,8 +42,6 @@ openclaw onboard --modern
 openclaw onboard --flow quickstart
 openclaw onboard --agent-name robby
 openclaw onboard --flow manual
-openclaw onboard --flow import
-openclaw onboard --import-from hermes --import-source ~/.hermes
 openclaw onboard --skip-bootstrap
 openclaw onboard recommendations --json
 openclaw onboard recommendations --agent writer --json
@@ -110,7 +108,6 @@ not overwrite the existing skill.
   `--gateway-password <value>` to choose your own password. Tailscale Funnel
   still requires password mode. The mode selects the configured secret;
   clients can send it in either `auth.token` or `auth.password`.
-- `--flow import`: runs a detected migration provider (for example Hermes via `--import-from hermes`) against a fresh setup. After confirmation, onboarding stages config, credentials, workspace files, memory, and skills under private temporary targets; imported inference must pass a live completion before workspace and agent state are promoted and configuration is committed. Failure or cancellation before promotion leaves the live target untouched. External activation steps that cannot be rolled back, such as Codex plugin installation, run afterward and remain retryable from the migration report. Migration import options (`--flow import`, `--import-from`, `--import-source`, and `--import-secrets`) cannot be combined with `--reset`; run the import without `--reset`. Use [`openclaw migrate`](/cli/migrate) for dry-run plans, overwrite mode, verified backups, reports, and exact mappings.
 - `--remote-url`, `--remote-token`, and `--remote-password`: prefill the classic remote Gateway step and override stored remote values for this run. Pass either a token or a password, not both. Changing the URL does not reuse stored credentials unless you also provide a new token or password. The interactive step asks for one **Gateway secret**, whether the remote Gateway calls it a token or password, and stores it as `gateway.remote.token`. Credentials stay masked and follow the plaintext or SecretRef storage choice. Leave the secret blank and confirm to keep an existing credential. To connect without a shared secret, leave it blank, decline keeping an existing credential if offered, then explicitly confirm **Continue without a Gateway secret?**. Reference storage offers the same confirmation before asking for the reference.
 - `--modern` is a compatibility alias for the OpenClaw conversational setup
   assistant. It uses the same live-inference gate as `openclaw setup` and
@@ -168,17 +165,7 @@ For an explicitly managed multi-agent fleet, provider setup updates the configur
 system agent's model and aliases without replacing fleet-wide model defaults or
 another agent's model.
 
-After inference passes, onboarding checks for memories from supported local AI
-tools: Claude Code auto-memory, Codex consolidated memories, and Hermes memory
-files. When it finds any, one page offers to copy them into the agent workspace
-under `memory/imports/` for indexed recall. Nothing is imported without
-confirmation, previously imported files are skipped, and you can always import
-later from the Control UI [Memory import page](/web/control-ui), which offers
-the same memory-only scope. (A full [`openclaw migrate`](/cli/migrate) run is
-broader: it can also import config, skills, and credentials.) The classic
-wizard shows the same page after it prepares the workspace.
-
-After inference passes (and the memory-import offer), guided onboarding
+After inference passes, guided onboarding
 applies the standard setup automatically — workspace, Gateway, and sessions,
 the same plan the conversational `openclaw setup` chat would apply on "yes" —
 then offers plugin and skill recommendations from installed apps; app names
@@ -259,9 +246,8 @@ wizard's **Setup mode** menu. `--reset-scope` controls how much it removes:
 `config` (config only), `config+creds+sessions` (default when `--reset` is
 passed without a scope), or `full` (also resets the workspace). Before moving
 state to Trash, onboarding validates TTY availability, the reset scope, auth
-and Gateway options, migration import options, and the workspace target for a
-full reset. Migration import options cannot be combined with `--reset`; run the
-import without `--reset`. Non-interactive setup also requires `--accept-risk` before reset.
+and Gateway options, and the workspace target for a full reset. Non-interactive
+setup also requires `--accept-risk` before reset.
 Interactive classic setup performs reset before showing its risk
 acknowledgement, so invoking `--reset` can move state to Trash before you can
 decline that prompt. After reset, the command runs guided, classic, or
@@ -522,7 +508,6 @@ Some web-search providers trigger provider-specific follow-up prompts during onb
 - Local onboarding DM scope behavior: [CLI setup reference](/start/wizard-cli-reference#outputs-and-internals).
 - Fastest first chat: `openclaw dashboard` (Control UI, no channel setup).
 - Custom provider: connect any OpenAI- or Anthropic-compatible endpoint, including hosted providers not listed. Use **Unknown** compatibility to auto-detect via a live check.
-- If Hermes state is detected, onboarding offers a migration flow (see `--flow import` above).
 
 ## Common follow-up commands
 

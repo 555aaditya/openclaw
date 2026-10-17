@@ -49,7 +49,6 @@ export interface ShellViewHost extends ShellLazyOverlayHost {
   readonly custodianMinimizeRequestId: number;
   readonly desktopNavigationExpanded: boolean;
   readonly execApprovalElement: OptionalCustomElement;
-  readonly onboardingMemoryImportElement: OptionalCustomElement;
   readonly nativeHistoryState: () => NativeHistoryState;
   readonly navDrawerOpen: boolean;
   readonly shellLayout: ShellLayoutOwner;
@@ -137,11 +136,7 @@ export function readShellView(host: ShellViewHost) {
   // Plugin tabs share one route; the URL picks the active item.
   const activePluginRef =
     activeRoute === "plugin"
-      ? pluginTabRefFromSearch(
-          host.routeState.location?.search ?? "",
-          host.routeState.location?.pathname,
-          context.basePath,
-        )
+      ? pluginTabRefFromSearch(host.routeState.location?.search ?? "")
       : null;
   // Onboarding renders without any navigation chrome, so the settings takeover
   // must not reserve its fixed sidebar column (the grid would stay off-center).
@@ -156,7 +151,6 @@ export function readShellView(host: ShellViewHost) {
   const settingsTakeover = isSettingsTakeover(activeRoute) && !host.onboardingMode && !nativeEmbed;
   const runtimeConfig = context.runtimeConfig.state;
   const onboarding = host.onboardingMode;
-  const memoryImportActive = onboarding && activeRoute !== "custodian";
   const navDrawerOpen = host.navDrawerOpen && !onboarding && !nativeEmbed;
   const mobileNavLayout = isMobileNavLayout();
   const nativeWebChrome = isNativeWebChromeHost() && !nativeEmbed;
@@ -368,7 +362,6 @@ export function readShellView(host: ShellViewHost) {
     embedSettings,
     settingsTakeover,
     onboarding,
-    memoryImportActive,
     navDrawerOpen,
     mobileNavLayout,
     nativeWebChrome,

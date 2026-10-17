@@ -5,7 +5,6 @@ import type { OpenClawConfig, OpenClawPluginApi } from "openclaw/plugin-sdk/plug
 import { createTestPluginApi } from "openclaw/plugin-sdk/plugin-test-api";
 import { isRecord } from "openclaw/plugin-sdk/string-coerce-runtime";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import plugin from "../index.js";
 import { consentAuthority, relayCaller } from "./caller.js";
 import { registerMcpRelayConnectRoute, registerMcpRelayGatewayMethods } from "./gateway-methods.js";
 import { createTransportFixture } from "./relay.test-helpers.js";
@@ -390,18 +389,4 @@ describe("MCP relay connect entrypoint", () => {
       expect(result.headers.location).toBeUndefined();
     },
   );
-
-  it("advertises the matching Connected apps tab without starting the relay", () => {
-    const api = createTestPluginApi({ id: "mcp-relay" });
-    const register = vi.spyOn(api.session.controls, "registerControlUiDescriptor");
-    plugin.register?.(api);
-    expect(register).toHaveBeenCalledWith(
-      expect.objectContaining({
-        surface: "tab",
-        id: "connected-apps",
-        label: "Connected apps",
-        requiredScopes: ["operator.read"],
-      }),
-    );
-  });
 });

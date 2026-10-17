@@ -63,7 +63,6 @@ export type SystemAgentNavigationOperation =
   | { kind: "skills-setup" }
   | { kind: "search-setup" }
   | { kind: "gateway-config-setup" }
-  | { kind: "memory-import" }
   | {
       kind: "open-setup";
       target: "guided" | "classic" | "channels" | "search" | "gateway";
@@ -79,7 +78,6 @@ export function isSystemAgentNavigationOperation(
     case "skills-setup":
     case "search-setup":
     case "gateway-config-setup":
-    case "memory-import":
     case "model-setup":
     case "model-accounts":
     case "open-setup":

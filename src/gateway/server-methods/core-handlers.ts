@@ -85,15 +85,13 @@ const CORE_GATEWAY_HANDLER_MODULES = {
   "nodes-pending": () =>
     import("./nodes.pending-work.js").then((module) => module.nodePendingWorkHandlers),
   nodes: () => import("./nodes.js").then((module) => module.nodeHandlers),
-  "plugin-host-hooks": () =>
-    import("./plugin-host-hooks.js").then((module) => module.pluginHostHookHandlers),
+
   plugins: () => import("./plugins.js").then((module) => module.pluginsHandlers),
   "plugins-mutations": () =>
     import("./plugins-mutations.js").then((module) => module.pluginMutationHandlers),
   projects: () => import("./projects.js").then((module) => module.projectsHandlers),
   portals: () => import("./portals.js").then((module) => module.portalHandlers),
   "progress-card": () => import("./progress-card.js").then((module) => module.progressCardHandlers),
-  migrations: () => import("./migrations.js").then((module) => module.migrationsHandlers),
   backup: () => import("./backup.js").then((module) => module.backupHandlers),
   storage: () => import("./storage.js").then((module) => module.storageHandlers),
   push: () => import("./push.js").then((module) => module.pushHandlers),

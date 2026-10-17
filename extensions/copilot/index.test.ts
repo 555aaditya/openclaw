@@ -75,63 +75,6 @@ describe("copilot plugin", () => {
     expect(manifest.version).not.toBe("");
   });
 
-  it.each(["full", "discovery", "tool-discovery"] as const)(
-    "registers exactly one inert copilot agent harness in %s mode",
-    (registrationMode) => {
-      const registerAgentHarness = vi.fn();
-      const registerProvider = vi.fn();
-      const registerModelCatalogProvider = vi.fn();
-      const registerMediaUnderstandingProvider = vi.fn();
-      const registerMigrationProvider = vi.fn();
-      const registerCommand = vi.fn();
-      const registerNodeHostCommand = vi.fn();
-      const registerNodeInvokePolicy = vi.fn();
-      const on = vi.fn();
-      const onConversationBindingResolved = vi.fn();
-      const openKeyedStore = vi.fn(() => {
-        throw new Error("registration must not open state");
-      });
-
-      plugin.register(
-        createTestPluginApi({
-          id: "copilot",
-          name: "GitHub Copilot agent runtime",
-          source: "test",
-          config: {},
-          pluginConfig: {},
-          registrationMode,
-          runtime: { state: { openKeyedStore } } as never,
-          registerAgentHarness,
-          registerProvider,
-          registerModelCatalogProvider,
-          registerMediaUnderstandingProvider,
-          registerMigrationProvider,
-          registerCommand,
-          registerNodeHostCommand,
-          registerNodeInvokePolicy,
-          on,
-          onConversationBindingResolved,
-        }),
-      );
-
-      expect(registerAgentHarness).toHaveBeenCalledTimes(1);
-      expect(registerAgentHarness).toHaveBeenCalledWith(
-        expect.objectContaining({ id: "copilot", label: "GitHub Copilot agent runtime" }),
-      );
-      expect(registerProvider).not.toHaveBeenCalled();
-      expect(registerModelCatalogProvider).not.toHaveBeenCalled();
-      expect(registerMediaUnderstandingProvider).not.toHaveBeenCalled();
-      expect(registerMigrationProvider).not.toHaveBeenCalled();
-      expect(registerCommand).not.toHaveBeenCalled();
-      expect(registerNodeHostCommand).not.toHaveBeenCalled();
-      expect(registerNodeInvokePolicy).not.toHaveBeenCalled();
-      expect(on).not.toHaveBeenCalled();
-      expect(onConversationBindingResolved).not.toHaveBeenCalled();
-      expect(openKeyedStore).not.toHaveBeenCalled();
-      expect(createCopilotClientPool).not.toHaveBeenCalled();
-    },
-  );
-
   it.each(["cli-metadata", "setup-only", "setup-runtime"] as const)(
     "skips harness and state registration in %s mode",
     (registrationMode) => {

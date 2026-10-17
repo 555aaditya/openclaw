@@ -87,15 +87,7 @@ it.each([
     const connect = vi.spyOn(harness.gateway, "connect");
     harness.emit(client, true, {
       hello: harness.gateway.snapshot.hello,
-      pluginCapabilities: {
-        ok: true,
-        generation: 1,
-        descriptors: [],
-        methods: [],
-        controlUiTabs: [],
-        controlUiWidgetKinds: [],
-        pluginSurfaceUrls: {},
-      },
+      pluginGeneration: 1,
     });
     await page.updateComplete;
     page.routeData = route;
@@ -149,15 +141,7 @@ it("targets the selected installed route after its stale inventory refresh fails
   const harness = createGateway(client);
   harness.emit(client, true, {
     hello: harness.gateway.snapshot.hello,
-    pluginCapabilities: {
-      ok: true,
-      generation: 1,
-      descriptors: [],
-      methods: ["plugins.setEnabled"],
-      controlUiTabs: [],
-      controlUiWidgetKinds: [],
-      pluginSurfaceUrls: {},
-    },
+    pluginGeneration: 1,
   });
   const { page } = await mountPage(
     createContext(harness.gateway),

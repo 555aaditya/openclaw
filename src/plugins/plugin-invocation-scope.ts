@@ -199,9 +199,7 @@ export function collectRegistryInvocationInstances(
     ...registry.tools.map(({ factory }) => factory),
     ...registry.channels.map(({ plugin }) => plugin),
     ...[...registry.contextEngines.values()].map(({ factory }) => factory),
-    ...registry.widgetPresenters.map(({ presenter }) => presenter),
     ...registry.memoryCorpusSupplements.map(({ supplement }) => supplement),
-    ...registry.memoryPromptPreparations.map(({ prepare }) => prepare),
     ...registry.memoryPromptSupplements.map(({ builder }) => builder),
   ];
   for (const value of values) {

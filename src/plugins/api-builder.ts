@@ -2,15 +2,12 @@ import { attachPluginApiFacades, type OpenClawPluginApiWithoutFacades } from "./
 import type { PluginRuntime } from "./runtime/types.js";
 import type { OpenClawPluginApi } from "./types.js";
 
-type PluginApiHandlers = OpenClawPluginApi &
-  Pick<OpenClawPluginApi["session"]["workflow"], "steerActiveRun">;
-
 type BuildPluginApiParams = Omit<
   OpenClawPluginApiWithoutFacades,
-  keyof typeof noops | "registerNodeCliFeature" | "runtimeSource"
+  keyof typeof noops | "runtimeSource"
 > & {
   runtimeSource?: string;
-  handlers?: Partial<Pick<PluginApiHandlers, keyof typeof noops>>;
+  handlers?: Partial<Pick<OpenClawPluginApi, keyof typeof noops>>;
 };
 
 const noops = {
@@ -18,27 +15,17 @@ const noops = {
   registerTool: () => {},
   registerHook: () => {},
   registerHttpRoute: () => {},
-  registerHostedMediaResolver: () => {},
-  registerWidgetPresenter: () => {},
-  registerMcpServerConnectionResolver: () => {},
   registerChannel: () => {},
   registerGatewayMethod: () => {},
-  registerGatewayAccessPolicy: () => {},
   registerSessionCatalog: () => {},
   registerReload: () => {},
   registerNodeHostCommand: () => {},
   registerNodeInvokePolicy: () => {},
-  registerSecurityAuditCollector: () => {},
   registerService: () => {},
-  registerGatewayDiscoveryService: () => {},
   registerCliBackend: () => {},
-  registerTextTransforms: () => {},
   registerConfigMigration: () => {},
-  registerMigrationProvider: () => {},
   registerAutoEnableProbe: () => {},
   registerProvider: () => {},
-  registerWorkerProvider: () => {},
-  registerStorageProvider: () => {},
   registerModelCatalogProvider: () => {},
   registerEmbeddingProvider: () => {},
   registerSpeechProvider: () => {},
@@ -52,49 +39,23 @@ const noops = {
   registerWebFetchProvider: () => {},
   registerWebSearchProvider: () => {},
   registerInteractiveHandler: () => {},
-  onConversationBindingResolved: () => {},
   registerCommand: () => {},
   registerContextEngine: () => {},
-  registerCompactionProvider: () => {},
   registerDecisionProvider: () => {},
   registerAgentHarness: () => {},
-  registerAgentExecutorController: () => {},
-  registerCodexAppServerExtensionFactory: () => {},
   registerAgentToolResultMiddleware: () => {},
-  registerSessionExtension: () => {},
   enqueueNextTurnInjection: async (injection) => ({
     enqueued: false,
     id: "",
     sessionKey: injection.sessionKey,
   }),
-  steerActiveRun: async () => ({ steered: false, reason: "not wired" }),
-  registerTrustedToolPolicy: () => {},
-  registerToolMetadata: () => {},
-  registerControlUiDescriptor: () => {},
-  registerBoardWidgetContentKind: () => {},
   registerRuntimeLifecycle: () => {},
   registerAgentEventSubscription: () => {},
-  emitAgentEvent: () => ({
-    emitted: false,
-    reason: "not wired",
-  }),
-  setRunContext: () => false,
-  getRunContext: () => undefined,
-  clearRunContext: () => {},
-  registerSessionSchedulerJob: () => undefined,
-  registerSessionAction: () => {},
-  sendSessionAttachment: async () => ({
-    ok: false,
-    error: "not wired",
-  }),
-  scheduleSessionTurn: async () => undefined,
-  unscheduleSessionTurnsByTag: async () => ({ removed: 0, failed: 0 }),
   registerMemoryCapability: () => {},
   registerMemoryPromptSupplement: () => {},
-  registerMemoryPromptPreparation: () => {},
   registerMemoryCorpusSupplement: () => {},
   on: () => {},
-} satisfies Partial<PluginApiHandlers>;
+} satisfies Partial<OpenClawPluginApi>;
 const noopEntries = Object.entries(noops);
 
 export function createUnavailableRuntime(
@@ -123,14 +84,14 @@ export function buildPluginApi(params: BuildPluginApiParams): OpenClawPluginApi 
   const handlers = params.handlers ?? {};
   // Iterate the declared surface so inherited handlers and nullish defaults keep
   // the same behavior without maintaining a second list of every API method.
-  const { steerActiveRun, ...registrations } = Object.fromEntries(
+  const registrations = Object.fromEntries(
     noopEntries.map(([key, fallback]) => [
       key,
       // SAFETY: Object.entries reads only the fixed noops declaration, which defines these handler keys.
       handlers[key as keyof typeof noops] ?? fallback,
     ]),
     // SAFETY: Every declared method receives its typed handler or matching default.
-  ) as Pick<PluginApiHandlers, keyof typeof noops>;
+  ) as Pick<OpenClawPluginApi, keyof typeof noops>;
   const api: OpenClawPluginApiWithoutFacades = {
     id: params.id,
     name: params.name,
@@ -145,9 +106,7 @@ export function buildPluginApi(params: BuildPluginApiParams): OpenClawPluginApi 
     runtime: params.runtime,
     logger: params.logger,
     ...registrations,
-    registerNodeCliFeature: (registrar, opts) =>
-      registrations.registerCli(registrar, { ...opts, parentPath: ["nodes"] }),
     resolvePath: params.resolvePath,
   };
-  return attachPluginApiFacades(api, steerActiveRun);
+  return attachPluginApiFacades(api);
 }

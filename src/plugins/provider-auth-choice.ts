@@ -522,22 +522,6 @@ export async function prepareAuthChoiceLoadedPluginProvider<T>(
             agentDir: params.agentDir,
             workspaceDir,
           });
-          if (installed.codexInstalled) {
-            // Offer Codex CLI state migration whenever the harness is in place for
-            // the selected model, regardless of whether this run was a fresh install
-            // or a repair against an already-present harness. The user can always
-            // decline the prompt; surfacing it again costs nothing if there is no
-            // migratable state to find.
-            const { offerPostInstallMigrations } =
-              await import("../wizard/setup.post-install-migration.js");
-            const migrationResult = await offerPostInstallMigrations({
-              config: nextConfig,
-              runtime: params.runtime,
-              prompter: params.prompter,
-              installedPluginIds: [runtimePlugins.CODEX_RUNTIME_PLUGIN_ID],
-            });
-            nextConfig = migrationResult.config;
-          }
         }
         await params.prompter.note(
           preservesDifferentPrimary && previousPrimary

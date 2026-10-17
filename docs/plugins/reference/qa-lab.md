@@ -20,4 +20,4 @@ OpenClaw QA lab plugin with private debugger UI and scenario runner.
 ## Surface
 
 - CLI commands: `openclaw qa`
-- Contracts: `tools`, `webSearchProviders`, `workerProviders`
+- Contracts: `tools`, `webSearchProviders`

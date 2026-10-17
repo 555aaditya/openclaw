@@ -1,7 +1,6 @@
 // Covers context-engine message filtering, assemble validation, and turn finalization.
 import type { AgentMessage } from "openclaw/plugin-sdk/agent-core";
 import { describe, expect, it, vi } from "vitest";
-import { buildMemorySystemPromptAddition } from "../../context-engine/delegate.js";
 import { OPENCLAW_EMBEDDED_CONTEXT_ENGINE_HOST } from "../../context-engine/host-compat.js";
 import {
   registerContextEngineForOwner,
@@ -13,12 +12,6 @@ import type {
   ContextEngineRuntimeContext,
   ContextEngineRuntimeSettings,
 } from "../../context-engine/types.js";
-import {
-  clearMemoryPluginState,
-  registerMemoryPromptPreparation,
-  registerTestMemoryPromptBuilder,
-  type MemoryPromptSectionParams,
-} from "../../plugins/memory-state.test-fixtures.js";
 import { compactContextEngineWithSafetyTimeout } from "../embedded-agent-runner/compaction-safety-timeout.js";
 import { limitHistoryTurns } from "../embedded-agent-runner/history.js";
 import { OPENCLAW_RUNTIME_CONTEXT_CUSTOM_TYPE } from "../internal-runtime-context.js";
@@ -362,63 +355,6 @@ describe("harness context engine lifecycle", () => {
     expect(first?.contextProjection).toEqual(second?.contextProjection);
     expect(first?.systemPromptAddition).toBe("Required engine instructions");
     await lease.dispose();
-  });
-
-  it("isolates prepared memory tools across sandboxed non-legacy turns", async () => {
-    const sandboxed = true;
-    const prepare = vi.fn(async (params: MemoryPromptSectionParams) => {
-      const tools = [...params.availableTools].join(",");
-      params.availableTools.add("preparer-only");
-      await Promise.resolve();
-      return ["## Prepared Memory", `sandboxed=${params.sandboxed}; tools=${tools}`, ""];
-    });
-    registerTestMemoryPromptBuilder(({ availableTools }) => {
-      availableTools.add("builder-only");
-      return ["## Memory Recall", ""];
-    });
-    registerMemoryPromptPreparation("memory-wiki", prepare);
-    const assemble = vi.fn(async (params: Parameters<ContextEngine["assemble"]>[0]) => ({
-      messages: params.messages,
-      estimatedTokens: 0,
-      systemPromptAddition: buildMemorySystemPromptAddition({
-        availableTools: params.availableTools ?? new Set(),
-        citationsMode: params.citationsMode,
-      }),
-    }));
-
-    try {
-      for (const toolNames of [undefined, [], ["wiki_search"], ["memory_search"]]) {
-        const availableTools = toolNames ? new Set(toolNames) : undefined;
-        const result = await assembleHarnessContextEngine({
-          contextEngine: createContextEngine({ assemble }),
-          sessionId: sessionParams.sessionId,
-          sessionKey: "global",
-          agentId: "support",
-          messages: [textMessage("user", "visible ask", 1)],
-          availableTools,
-          citationsMode: "on",
-          sandboxed,
-          modelId: "gpt-test",
-        });
-
-        expect(result?.systemPromptAddition).toBe(
-          `## Memory Recall\n\n## Prepared Memory\nsandboxed=${sandboxed}; tools=${(toolNames ?? []).join(",")}`,
-        );
-        expect([...(availableTools ?? [])]).toEqual(toolNames ?? []);
-        expect(prepare).toHaveBeenLastCalledWith(
-          expect.objectContaining({
-            agentId: "support",
-            agentSessionKey: "global",
-            sandboxed,
-          }),
-        );
-      }
-      expect(buildMemorySystemPromptAddition({ availableTools: new Set() })).toBe(
-        "## Memory Recall",
-      );
-    } finally {
-      clearMemoryPluginState();
-    }
   });
 
   it("keeps persisted runtime-context carriers in place for append-only replay policies", async () => {

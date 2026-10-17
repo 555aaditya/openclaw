@@ -3,7 +3,6 @@ import path from "node:path";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { getContextEngineRegistration } from "../context-engine/registry.js";
 import { withEnv } from "../test-utils/env.js";
-import { getCompactionProvider } from "./compaction-provider.js";
 // Imported by loader.test.ts to keep its mocked suite in one Vitest module graph.
 import { refreshPersistedInstalledPluginIndex } from "./installed-plugin-index-store-write.js";
 import { loadOpenClawPlugins } from "./loader.js";
@@ -38,7 +37,6 @@ import {
   writeFixtureText,
   pluginManifest,
 } from "./loader.test-harness.js";
-import { listMemoryPromptPreparations } from "./memory-state.test-fixtures.js";
 import { requireActivePluginRegistry } from "./runtime.js";
 import type { PluginSdkResolutionPreference } from "./sdk-alias.js";
 
@@ -436,7 +434,6 @@ describe("loadOpenClawPlugins", () => {
               command: "missing-register-shape.command",
               handle: async () => "ok",
             }],
-            securityAuditCollectors: [async () => []],
           },
         },
       };`,
@@ -460,11 +457,9 @@ describe("loadOpenClawPlugins", () => {
     expect({
       reloads: registry.reloads.map((entry) => entry.pluginId),
       nodeHostCommands: registry.nodeHostCommands.map((entry) => entry.pluginId),
-      securityAuditCollectors: registry.securityAuditCollectors.map((entry) => entry.pluginId),
     }).toStrictEqual({
       reloads: [],
       nodeHostCommands: [],
-      securityAuditCollectors: [],
     });
   });
 
@@ -616,21 +611,6 @@ describe("loadOpenClawPlugins", () => {
         },
       },
       {
-        label: "rejects malformed compaction provider registration",
-        pluginId: "compaction-provider-malformed",
-        body: `module.exports = { id: "compaction-provider-malformed", register(api) {
-    api.registerCompactionProvider({ id: "broken-compaction", label: "Broken" });
-  } };`,
-        assert: (registry: ReturnType<typeof loadOpenClawPlugins>) => {
-          expectRegistryErrorDiagnostic({
-            registry,
-            pluginId: "compaction-provider-malformed",
-            message: 'compaction provider "broken-compaction" registration missing summarize',
-          });
-          expect(getCompactionProvider("broken-compaction")).toBeUndefined();
-        },
-      },
-      {
         label: "rejects malformed memory prompt supplement registration",
         pluginId: "memory-prompt-supplement-malformed",
         body: `module.exports = { id: "memory-prompt-supplement-malformed", register(api) {
@@ -643,21 +623,6 @@ describe("loadOpenClawPlugins", () => {
             message: "memory prompt supplement registration missing builder",
           });
           expect(requireActivePluginRegistry().memoryPromptSupplements).toStrictEqual([]);
-        },
-      },
-      {
-        label: "rejects malformed memory prompt preparation registration",
-        pluginId: "memory-prompt-preparation-malformed",
-        body: `module.exports = { id: "memory-prompt-preparation-malformed", register(api) {
-    api.registerMemoryPromptPreparation({ id: "broken-memory-prompt" });
-  } };`,
-        assert: (registry: ReturnType<typeof loadOpenClawPlugins>) => {
-          expectRegistryErrorDiagnostic({
-            registry,
-            pluginId: "memory-prompt-preparation-malformed",
-            message: "memory prompt preparation registration missing prepare function",
-          });
-          expect(listMemoryPromptPreparations()).toStrictEqual([]);
         },
       },
       {
@@ -679,7 +644,8 @@ describe("loadOpenClawPlugins", () => {
         label: "registers node feature CLI commands under nodes",
         pluginId: "node-cli-feature",
         body: `module.exports = { id: "node-cli-feature", register(api) {
-    api.registerNodeCliFeature(() => {}, {
+    api.registerCli(() => {}, {
+      parentPath: ["nodes"],
       descriptors: [
         {
           name: "demo-node",
@@ -771,27 +737,6 @@ describe("loadOpenClawPlugins", () => {
         assert: expectDuplicateRegistrationResult,
       },
       {
-        label: "gateway discovery service ids",
-        ownerA: "discovery-owner-a",
-        ownerB: "discovery-owner-b",
-        buildBody: (ownerId: string) => `module.exports = { id: "${ownerId}", register(api) {
-    api.registerGatewayDiscoveryService({ id: "shared-discovery", advertise() {} });
-  } };`,
-        selectCount: (registry: ReturnType<typeof loadOpenClawPlugins>) =>
-          registry.gatewayDiscoveryServices.filter(
-            (entry) => entry.service.id === "shared-discovery",
-          ).length,
-        duplicateMessage:
-          "gateway discovery service already registered: shared-discovery (discovery-owner-a)",
-        assertPrimaryOwner: (registry: ReturnType<typeof loadOpenClawPlugins>) => {
-          expect(
-            registry.plugins.find((entry) => entry.id === "discovery-owner-a")
-              ?.gatewayDiscoveryServiceIds,
-          ).toEqual(["shared-discovery"]);
-        },
-        assert: expectDuplicateRegistrationResult,
-      },
-      {
         label: "plugin context engine ids",
         ownerA: "context-engine-owner-a",
         ownerB: "context-engine-owner-b",
@@ -864,30 +809,6 @@ describe("loadOpenClawPlugins", () => {
       registry,
       message: "service already registered: shared-service",
     });
-  });
-
-  it("tracks regular services and gateway discovery services separately", () => {
-    useNoBundledPlugins();
-    const plugin = writePlugin({
-      id: "split-service-owner",
-      filename: "split-service-owner.cjs",
-      registration: `api.registerService({ id: "shared-service", start() {} });
-      api.registerGatewayDiscoveryService({ id: "shared-service", advertise() {} });`,
-    });
-
-    const registry = loadRegistryFromSinglePlugin({
-      plugin,
-      pluginConfig: {
-        allow: ["split-service-owner"],
-      },
-    });
-
-    const record = registry.plugins.find((entry) => entry.id === "split-service-owner");
-    expect(record?.services).toEqual(["shared-service"]);
-    expect(record?.gatewayDiscoveryServiceIds).toEqual(["shared-service"]);
-    expect(registry.services).toHaveLength(1);
-    expect(registry.gatewayDiscoveryServices).toHaveLength(1);
-    expect(registry.diagnostics).toStrictEqual([]);
   });
 
   it("rewrites removed registerHttpHandler failures into migration diagnostics", () => {

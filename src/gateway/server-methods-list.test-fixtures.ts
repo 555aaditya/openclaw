@@ -12,7 +12,7 @@ exec.approvals.node.get exec.approvals.node.set exec.approval.get exec.approval.
 exec.approval.request exec.approval.waitDecision exec.approval.resolve exec.approval.grants.list
 exec.approval.grants.revoke question.request question.waitAnswer question.resolve question.get
 question.list plugin.approval.list plugin.approval.request plugin.approval.waitDecision
-plugin.approval.resolve plugins.uiDescriptors plugins.sessionAction openclaw.chat
+plugin.approval.resolve openclaw.chat
 openclaw.chat.history openclaw.changes.list openclaw.approval.list openclaw.setup.detect
 openclaw.setup.activate openclaw.setup.activate.start openclaw.setup.auth.start
 openclaw.setup.prepare.start wizard.start wizard.next wizard.cancel wizard.status talk.catalog
@@ -47,7 +47,7 @@ sessions.list sessions.subscribe sessions.messages.subscribe sessions.messages.u
 sessions.viewers.set sessions.preview sessions.describe sessions.branches.list
 sessions.branches.switch sessions.rewind sessions.fork sessions.create sessions.recover
 sessions.send sessions.abort sessions.patch sessions.goal.update sessions.goal.clear
-sessions.pluginPatch sessions.cleanup sessions.reset sessions.delete sessions.compact
+sessions.cleanup sessions.reset sessions.delete sessions.compact
 sessions.groups.list sessions.groups.defaults sessions.groups.put sessions.groups.rename
 sessions.groups.update sessions.groups.delete last-heartbeat set-heartbeats wake node.pair.list
 node.pair.approve node.pair.reject node.pair.remove device.pair.list device.pair.approve
@@ -69,7 +69,7 @@ gateway.suspend.status gateway.suspend.resume chat.toolTitles sessions.diff
 openclaw.setup.verify environments.create environments.destroy sessions.catalog.list
 sessions.catalog.read terminal.upload sessions.catalog.continue sessions.catalog.archive
 approval.get approval.resolve sessions.search sessions.dispatch sessions.reclaim models.probe
-migrations.memory.plan migrations.memory.apply ui.command approval.history
+ui.command approval.history
 plugin.surface.refresh conversations.list session.discussion.info session.discussion.open
 board.prompt.authorize board.data.read board.action sessions.observer.visibility
 session.visibility.set session.members.list session.members.add session.members.remove

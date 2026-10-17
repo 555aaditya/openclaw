@@ -3,8 +3,6 @@ import {
   normalizeUniqueStringEntries,
 } from "@openclaw/normalization-core/string-normalization";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
-import type { StorageProvider } from "../storage/types.js";
-import type { AgentExecutorController } from "./agent-executor-controller.types.js";
 import type {
   AgentToolResultMiddleware,
   AgentToolResultMiddlewareOptions,
@@ -15,17 +13,10 @@ import {
 } from "./agent-tool-result-middleware.js";
 import { buildPluginApi, createUnavailableRuntime } from "./api-builder.js";
 import { resolveCapabilityProviderRegistration } from "./capability-catalog.js";
-import type { CodexAppServerExtensionFactory } from "./codex-app-server-extension-types.js";
 import type { EmbeddingProviderAdapter } from "./embedding-providers.js";
 import type {
   PluginAgentEventSubscriptionRegistration,
-  PluginControlUiDescriptor,
   PluginRuntimeLifecycleRegistration,
-  PluginSessionActionRegistration,
-  PluginSessionSchedulerJobRegistration,
-  PluginSessionExtensionRegistration,
-  PluginToolMetadataRegistration,
-  PluginTrustedToolPolicyRegistration,
 } from "./host-hooks.js";
 import { resolvePluginCapabilityCatalogContext } from "./loader-runtime-load.js";
 import type { PluginManifestContracts } from "./manifest-types.js";
@@ -41,11 +32,9 @@ import type {
   ImageGenerationProviderPlugin,
   MediaUnderstandingProviderPlugin,
   TranscriptSourceProvider,
-  MigrationProviderPlugin,
   MusicGenerationProviderPlugin,
   OpenClawPluginCliRootCommandDescriptor,
   OpenClawPluginCliRegistrar,
-  PluginTextTransformRegistration,
   ProviderPlugin,
   RealtimeTranscriptionProviderPlugin,
   RealtimeVoiceProviderPlugin,
@@ -54,7 +43,6 @@ import type {
   VideoGenerationProviderPlugin,
   WebFetchProviderPlugin,
   WebSearchProviderPlugin,
-  WorkerProvider,
 } from "./types.js";
 
 type CapturedPluginCliRegistration = {
@@ -91,11 +79,8 @@ export function createCapturedPluginRegistration(params?: {
   const captured = {
     providers: new Array<ProviderPlugin>(),
     agentHarnesses: new Array<AgentHarness>(),
-    agentExecutorControllers: new Array<AgentExecutorController>(),
     cliRegistrars: new Array<CapturedPluginCliRegistration>(),
     cliBackends: new Array<CliBackendPlugin>(),
-    textTransforms: new Array<PluginTextTransformRegistration>(),
-    codexAppServerExtensionFactories: new Array<CodexAppServerExtensionFactory>(),
     agentToolResultMiddlewares: new Array<PluginAgentToolResultMiddlewareRegistration>(),
     embeddingProviders: new Array<EmbeddingProviderAdapter>(),
     speechProviders: new Array<SpeechProviderPlugin>(),
@@ -108,22 +93,12 @@ export function createCapturedPluginRegistration(params?: {
     musicGenerationProviders: new Array<MusicGenerationProviderPlugin>(),
     webFetchProviders: new Array<WebFetchProviderPlugin>(),
     webSearchProviders: new Array<WebSearchProviderPlugin>(),
-    workerProviders: new Array<WorkerProvider>(),
-    storageProviders: new Array<StorageProvider>(),
-    migrationProviders: new Array<MigrationProviderPlugin>(),
-    sessionExtensions: new Array<PluginSessionExtensionRegistration>(),
-    trustedToolPolicies: new Array<PluginTrustedToolPolicyRegistration>(),
-    toolMetadata: new Array<PluginToolMetadataRegistration>(),
-    controlUiDescriptors: new Array<PluginControlUiDescriptor>(),
     runtimeLifecycles: new Array<PluginRuntimeLifecycleRegistration>(),
     agentEventSubscriptions: new Array<PluginAgentEventSubscriptionRegistration>(),
-    sessionSchedulerJobs: new Array<PluginSessionSchedulerJobRegistration>(),
-    sessionActions: new Array<PluginSessionActionRegistration>(),
     tools: new Array<AnyAgentTool>(),
     modelCatalogProviders: new Array<UnifiedModelCatalogProviderPlugin>(),
     sessionCatalogs: new Array<SessionCatalogProvider>(),
   };
-  let capturedSessionTurnCount = 0;
   const pluginId = params?.id ?? "captured-plugin-registration";
   const pluginName = params?.name ?? "Captured Plugin Registration";
   const pluginSource = params?.source ?? "captured-plugin-registration";
@@ -187,10 +162,6 @@ export function createCapturedPluginRegistration(params?: {
         registerModelCatalogProvider: captureInto(captured.modelCatalogProviders),
         registerSessionCatalog: captureInto(captured.sessionCatalogs),
         registerAgentHarness: captureInto(captured.agentHarnesses),
-        registerAgentExecutorController: captureInto(captured.agentExecutorControllers),
-        registerCodexAppServerExtensionFactory: captureInto(
-          captured.codexAppServerExtensionFactories,
-        ),
         registerAgentToolResultMiddleware(
           handler: AgentToolResultMiddleware,
           options?: AgentToolResultMiddlewareOptions,
@@ -229,7 +200,6 @@ export function createCapturedPluginRegistration(params?: {
           captured.agentToolResultMiddlewares.push(registration);
         },
         registerCliBackend: captureInto(captured.cliBackends),
-        registerTextTransforms: captureInto(captured.textTransforms),
         registerEmbeddingProvider: captureInto(captured.embeddingProviders),
         registerSpeechProvider: captureCapabilityInto(captured.speechProviders),
         registerRealtimeTranscriptionProvider: captureCapabilityInto(
@@ -243,40 +213,8 @@ export function createCapturedPluginRegistration(params?: {
         registerMusicGenerationProvider: captureInto(captured.musicGenerationProviders),
         registerWebFetchProvider: captureInto(captured.webFetchProviders),
         registerWebSearchProvider: captureInto(captured.webSearchProviders),
-        registerWorkerProvider: captureInto(captured.workerProviders),
-        registerStorageProvider: captureInto(captured.storageProviders),
-        registerMigrationProvider: captureInto(captured.migrationProviders),
-        registerSessionExtension: captureInto(captured.sessionExtensions),
-        registerTrustedToolPolicy(policy: PluginTrustedToolPolicyRegistration) {
-          const matcher = normalizePluginToolMatcher(policy.matcher);
-          captured.trustedToolPolicies.push({ ...policy, ...(matcher ? { matcher } : {}) });
-        },
-        registerToolMetadata: captureInto(captured.toolMetadata),
-        registerControlUiDescriptor: captureInto(captured.controlUiDescriptors),
         registerRuntimeLifecycle: captureInto(captured.runtimeLifecycles),
         registerAgentEventSubscription: captureInto(captured.agentEventSubscriptions),
-        emitAgentEvent: () => ({ emitted: false, reason: "captured registration" }),
-        registerSessionSchedulerJob(job: PluginSessionSchedulerJobRegistration) {
-          captured.sessionSchedulerJobs.push(job);
-          return {
-            id: job.id,
-            pluginId,
-            sessionKey: job.sessionKey,
-            kind: job.kind,
-          };
-        },
-        registerSessionAction: captureInto(captured.sessionActions),
-        sendSessionAttachment: async () => ({ ok: false, error: "captured registration" }),
-        scheduleSessionTurn: async (schedule) => {
-          capturedSessionTurnCount += 1;
-          return {
-            id: `captured-session-turn-${capturedSessionTurnCount}`,
-            pluginId,
-            sessionKey: schedule.sessionKey,
-            kind: "session-turn",
-          };
-        },
-        unscheduleSessionTurnsByTag: async () => ({ removed: 0, failed: 0 }),
         registerTool(tool) {
           if (typeof tool !== "function" && !("contextVersion" in tool)) {
             captured.tools.push(tool);

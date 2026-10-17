@@ -13,7 +13,6 @@ export async function collectSecurityAuditFindings(
     sourceConfig: config,
     includeFilesystem: false,
     includeChannelSecurity: false,
-    loadPluginSecurityCollectors: false,
     ...overrides,
   });
   return report.findings;

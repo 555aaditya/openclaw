@@ -27,7 +27,6 @@ import {
 } from "./draft-place-restore.ts";
 import { DraftRepositoryStateOwner } from "./draft-repository-state.ts";
 import type { PendingPlacementPlace } from "./draft-session-placement.ts";
-import { DraftSuggestedCloudProfile } from "./draft-suggested-cloud-profile.ts";
 import {
   selectDraftDevice,
   selectDraftDeviceFolder,
@@ -78,7 +77,6 @@ export class DraftPlaceState {
       this.selectTerminalHost(hostId),
     );
   }
-  readonly suggestedCloudProfile: DraftSuggestedCloudProfile;
   private agentIdValue = "";
   private folderValue = "";
   private deviceFolderValue: string | null = null;
@@ -136,7 +134,6 @@ export class DraftPlaceState {
     private readonly read: () => DraftPlaceSnapshot,
     private readonly callbacks: DraftPlaceCallbacks,
   ) {
-    this.suggestedCloudProfile = new DraftSuggestedCloudProfile(gateway, this, read, callbacks);
     this.folderValidation = new DraftRestoredFolderValidation(
       () => ({
         gateway: this.read().context?.gateway.snapshot,
@@ -216,7 +213,6 @@ export class DraftPlaceState {
     }
     if (this.modelControl.selectHostedEnvironment(runtimeId)) {
       this.deviceFolderValue = null;
-      this.suggestedCloudProfile.cancel();
       this.browser.close();
       this.callbacks.onError(null);
       this.callbacks.changed();
@@ -484,7 +480,6 @@ export class DraftPlaceState {
 
   private resetPlaceSelection() {
     this.deviceFolderValue = null;
-    this.suggestedCloudProfile.cancel();
     this.folderValidation.reset();
     Object.assign(this.selection, createDraftPlaceRestoreState());
     this.repositoryState.reset();
@@ -504,7 +499,6 @@ export class DraftPlaceState {
   }
 
   invalidateGatewayDiscovery(resetHostSelection: boolean) {
-    this.suggestedCloudProfile.cancel();
     this.repositoryState.invalidate();
     this.agentsHydrated = false;
     this.modelControl.invalidate(resetHostSelection);
@@ -699,6 +693,7 @@ export class DraftPlaceState {
       repositoryState: this.repositoryState,
       browser: this.browser,
       modelControl: this.modelControl,
+      cloudProfiles: this.gateway.cloudProfiles,
       persistPreference: (patch: Parameters<DraftGatewayState["persistPreference"]>[2]) =>
         this.persistPreference(patch),
       clearDeviceFolder: () => {

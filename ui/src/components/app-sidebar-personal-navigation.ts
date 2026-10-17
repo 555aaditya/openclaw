@@ -203,7 +203,6 @@ export function personalSidebarZone(host: PersonalNavigationHost, rows: SidebarR
     sidebarEntries: host.sidebarEntries,
     rows: [...pins, ...rows],
     pluginNavigation: host.pluginNavigation(),
-    pluginTabs: host.sessionDataContext?.gateway.snapshot.hello?.controlUiTabs,
     snapshot: host.sidebarSnapshot
       ? { model: host.sidebarSnapshot, selectedKey: host.getRouteSessionKey() }
       : undefined,

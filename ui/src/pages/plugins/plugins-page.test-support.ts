@@ -230,15 +230,7 @@ export function createGateway(client: GatewayBrowserClient, connected = true): G
     publishPlugins() {
       snapshot = {
         ...snapshot,
-        pluginCapabilities: {
-          ok: true,
-          generation: (snapshot.pluginCapabilities?.generation ?? 0) + 1,
-          descriptors: [],
-          methods: snapshot.hello?.features?.methods ?? [],
-          controlUiTabs: [],
-          controlUiWidgetKinds: [],
-          pluginSurfaceUrls: {},
-        },
+        pluginGeneration: (snapshot.pluginGeneration ?? 0) + 1,
       };
       for (const listener of listeners) {
         listener(snapshot);

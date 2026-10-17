@@ -1,7 +1,7 @@
 import type { SqlBool } from "kysely";
 import type { UserProfile as UserProfileListItem } from "../../packages/gateway-protocol/src/schema/users.js";
 import type { GatewayConfig } from "../config/types.gateway.js";
-import type { GatewayAccessGrantRef } from "../plugins/gateway-access-policy.types.js";
+import type { GatewayAccessGrantRef } from "../gateway/operator-access-policy.types.js";
 import type { USER_PROFILE_AVATAR_MIME_TYPES } from "../shared/avatar-limits.js";
 import type { DB } from "./openclaw-state-db.generated.js";
 

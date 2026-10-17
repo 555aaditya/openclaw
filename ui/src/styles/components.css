@@ -1387,7 +1387,6 @@ openclaw-toast-host[data-toast-placement="shell"]
   stroke-linejoin: round;
 }
 
-openclaw-link-reader-hovercard-provider,
 openclaw-session-progress-hovercard-provider {
   display: contents;
 }

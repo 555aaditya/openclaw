@@ -233,7 +233,6 @@ const ownerWatches: readonly UiE2eOwnerWatch[] = [
     "ui/src/e2e/activity-session-git.e2e.test.ts",
     ["activity"],
     [
-      "ui/src/components/link-reader-panel.ts",
       "ui/src/lib/session-pull-requests.ts",
       "ui/src/pages/activity/activity-page.ts",
       "ui/src/pages/activity/session-activity-git.ts",

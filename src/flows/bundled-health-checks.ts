@@ -1,26 +1,17 @@
 import { asOptionalObjectRecord as readRecord } from "@openclaw/normalization-core/record-coerce";
 import { collectConfiguredAgentHarnessRuntimes } from "../agents/harness-runtimes.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
-import type {
-  OpenKeyedStoreOptions,
-  PluginStateEntry,
-} from "../plugin-state/plugin-state-store.js";
 import { normalizePluginId, normalizePluginsConfig } from "../plugins/config-state.js";
 import { passesManifestOwnerBasePolicy } from "../plugins/manifest-owner-policy.js";
-import { loadBundledPluginManifestRegistry } from "../plugins/manifest-registry-build.js";
 import type { PluginManifestRegistry } from "../plugins/manifest-registry.types.js";
 import { loadPluginManifestRegistryForPluginRegistry } from "../plugins/plugin-registry.js";
 import type { InspectEmbeddingProviderSetup } from "../plugins/provider-policy-surface.js";
 import { resolveProviderPolicySurface } from "../plugins/provider-public-artifacts.js";
 import {
-  loadBundledPluginPublicArtifactModuleFromCandidatesSync,
   loadBundledPluginPublicArtifactModuleSync,
   loadPluginPublicArtifactModuleSync,
 } from "../plugins/public-surface-loader.js";
 import { describePluginAvailabilityFailure } from "../plugins/runtime-degraded-state.js";
-import { collectConfiguredWorkerProviderIds } from "../plugins/worker-provider-config.js";
-import { listBundledWorkerProviderOwners } from "../plugins/worker-provider-manifest.js";
-import type { SetupSecretMigrationInspection } from "../secrets/setup-secret-migration.js";
 import { getHealthCheck, registerHealthCheck } from "./health-check-registry.js";
 import type { HealthFinding } from "./health-checks.js";
 
@@ -56,18 +47,6 @@ type BundledHealthApi = {
     memoryCoreActive: boolean;
   }) => void;
   registerPolicyDoctorChecks?: (host: { registerHealthCheck: typeof registerHealthCheck }) => void;
-};
-
-type WorkerProviderHealthApi = {
-  registerWorkerProviderDoctorChecks?: (host: {
-    getHealthCheck: typeof getHealthCheck;
-    registerHealthCheck: typeof registerHealthCheck;
-    listPluginStateEntries: <T>(options: OpenKeyedStoreOptions) => Promise<PluginStateEntry<T>[]>;
-    inspectSetupSecrets: (
-      names: readonly string[],
-      env?: NodeJS.ProcessEnv,
-    ) => Promise<SetupSecretMigrationInspection[]>;
-  }) => void;
 };
 
 type BundledHealthCheckSelection = {
@@ -112,7 +91,6 @@ const HEALTH_CHECK_REGISTRATIONS = [
   defineHealthCheckRegistration(registerCodexHealthChecks),
   defineHealthCheckRegistration(registerPolicyHealthChecks),
   defineHealthCheckRegistration(registerCuaHealthChecks),
-  defineHealthCheckRegistration(registerBundledWorkerProviderHealthChecks),
 ];
 
 function loadMemoryCoreHealthApi(): BundledHealthApi {
@@ -320,40 +298,6 @@ function registerCuaHealthChecks(
       dirName: "cua-computer",
       artifactBasename: "api.js",
     }).registerCuaDriverDoctorChecks?.({ registerHealthCheck: registerCheck });
-  }
-}
-
-function registerBundledWorkerProviderHealthChecks(
-  params: BundledHealthCheckParams,
-  registerCheck: typeof registerHealthCheck,
-): void {
-  const env = params.env ?? process.env;
-  const providerIds = collectConfiguredWorkerProviderIds(params.cfg);
-  if (providerIds.length === 0) {
-    return;
-  }
-  const manifestRegistry = loadBundledPluginManifestRegistry({ env });
-  const pluginIds = new Set(
-    listBundledWorkerProviderOwners(manifestRegistry, providerIds).map((owner) => owner.pluginId),
-  );
-  for (const pluginId of pluginIds) {
-    loadBundledPluginPublicArtifactModuleFromCandidatesSync<WorkerProviderHealthApi>({
-      dirName: pluginId,
-      artifactCandidates: ["doctor-health-api.js"],
-    })?.registerWorkerProviderDoctorChecks?.({
-      getHealthCheck,
-      registerHealthCheck: registerCheck,
-      async inspectSetupSecrets(names, inspectionEnv) {
-        const { inspectSetupSecretMigration } =
-          await import("../secrets/setup-secret-migration.js");
-        return inspectSetupSecretMigration({ names, env: inspectionEnv ?? env });
-      },
-      async listPluginStateEntries<T>(options: OpenKeyedStoreOptions) {
-        const { createPluginStateKeyedStore } =
-          await import("../plugin-state/plugin-state-store.js");
-        return createPluginStateKeyedStore<T>(pluginId, options).entries();
-      },
-    });
   }
 }
 

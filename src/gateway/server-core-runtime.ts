@@ -20,7 +20,6 @@ import {
 import { isLoopbackHost } from "./net.js";
 import type { prepareGatewayLifecycle } from "./server-lifecycle.js";
 import type { GatewayRequestHandlers } from "./server-methods/types.js";
-import type { GatewayPluginRuntimeClaim } from "./server-plugin-runtime-generation.js";
 import type { GatewayReloadHandlerParams } from "./server-reload-contracts.js";
 import { getHealthVersion, getPresenceVersion } from "./server/health-state.js";
 import { listPluginNodeCapabilities } from "./server/plugins-http/route-capability.js";
@@ -479,25 +478,6 @@ export async function startGatewayCoreRuntime(input: {
       },
     };
   };
-  const refreshAttachedGatewayDiscovery = async (
-    nextPluginRegistry: typeof pluginRuntime.registry,
-    claim: GatewayPluginRuntimeClaim,
-  ) => {
-    if (minimalTestGateway) {
-      return;
-    }
-    try {
-      if (!(await claim.waitForUnblocked())) {
-        return;
-      }
-      await runtimeState.discovery?.update(
-        { gatewayDiscoveryServices: nextPluginRegistry.gatewayDiscoveryServices },
-        claim,
-      );
-    } catch (err) {
-      logDiscovery.warn(`gateway discovery refresh failed after plugin load: ${String(err)}`);
-    }
-  };
   const reloadAttachedGatewayPlugins: GatewayReloadHandlerParams["reloadPlugins"] = async (
     params,
   ) => {
@@ -532,7 +512,6 @@ export async function startGatewayCoreRuntime(input: {
     getAttachedGatewayMethodRegistry: () => attachedGatewayMethodRegistry,
     getPluginNodeCapabilities,
     prepareAttachedPluginRuntime,
-    refreshAttachedGatewayDiscovery,
     loadGatewayModelCatalog,
     loadGatewayModelCatalogSnapshot,
     readPreparedGatewayModelCatalog,

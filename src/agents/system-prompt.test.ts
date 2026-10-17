@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { CHANNEL_IDS } from "../channels/ids.js";
 import {
   clearMemoryPluginState,
-  registerMemoryPromptPreparation,
+  registerMemoryPromptSupplement,
 } from "../plugins/memory-state.test-fixtures.js";
 import {
   captureActivePluginRegistrySnapshot,
@@ -777,8 +777,8 @@ describe("system prompt memory and runtime cache boundary", () => {
   });
 
   it("hands prepared memory lines to synchronous prompt assembly", async () => {
-    const prepare = vi.fn(async () => ["## Prepared Wiki", "Prepared before assembly.", ""]);
-    registerMemoryPromptPreparation("memory-wiki", prepare);
+    const prepare = vi.fn(() => ["## Prepared Wiki", "Prepared before assembly.", ""]);
+    registerMemoryPromptSupplement("memory-wiki", prepare);
     const preparedMemoryPrompt = await prepareAgentMemoryPrompt({
       enabled: true,
       toolNames: ["WIKI_SEARCH"],
@@ -796,7 +796,7 @@ describe("system prompt memory and runtime cache boundary", () => {
 
   it("keeps refreshed memory recall instructions after the cached project context", async () => {
     let recall = "Recall from the first index.";
-    registerMemoryPromptPreparation("memory-wiki", async () => ["## Memory Recall", recall]);
+    registerMemoryPromptSupplement("memory-wiki", () => ["## Memory Recall", recall]);
     const params = {
       toolNames: ["wiki_search"],
       agentId: "main",

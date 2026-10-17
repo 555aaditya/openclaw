@@ -6,15 +6,15 @@ import {
 } from "./session-panel-toggle-buffer.ts";
 
 describe("session panel toggle buffer", () => {
-  it("lets a buffered close cancel all earlier reader opens", () => {
+  it("lets a buffered close cancel all earlier browser opens", () => {
     const open = (url: string) =>
-      new CustomEvent("openclaw:link-reader-toggle", { detail: { url, open: true } });
-    rememberSessionPanelToggle("link-reader", open("https://forge.example/items/1"));
-    rememberSessionPanelToggle("link-reader", open("https://forge.example/items/2"));
-    const close = new CustomEvent("openclaw:link-reader-toggle", { detail: { open: false } });
-    rememberSessionPanelToggle("link-reader", close);
-    expect(takeSessionPanelToggle("link-reader")).toBe(close);
-    expect(takeSessionPanelToggle("link-reader")).toBeNull();
+      new CustomEvent("openclaw:browser-toggle", { detail: { url, open: true } });
+    rememberSessionPanelToggle("browser", open("https://forge.example/items/1"));
+    rememberSessionPanelToggle("browser", open("https://forge.example/items/2"));
+    const close = new CustomEvent("openclaw:browser-toggle", { detail: { open: false } });
+    rememberSessionPanelToggle("browser", close);
+    expect(takeSessionPanelToggle("browser")).toBe(close);
+    expect(takeSessionPanelToggle("browser")).toBeNull();
   });
 
   it("keeps each conversation's target until that conversation claims it", () => {

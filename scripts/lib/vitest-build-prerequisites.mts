@@ -57,15 +57,6 @@ const runtimeConsumers = [
     dir: "src",
   },
   {
-    file: "src/gateway/server-methods/agent.visitor-access.test.ts",
-    configs: [
-      "test/vitest/vitest.gateway-methods-isolated.config.ts",
-      "test/vitest/vitest.gateway.config.ts",
-    ],
-    mode: "runtime",
-    dir: "src/gateway",
-  },
-  {
     file: "src/gateway/setup-inference.first-signin.integration.test.ts",
     configs: [
       "test/vitest/vitest.gateway-database-workers.config.ts",

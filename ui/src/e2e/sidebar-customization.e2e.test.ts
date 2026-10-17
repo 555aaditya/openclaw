@@ -308,7 +308,6 @@ suite.define(() => {
     const page = await context.newPage();
     const video = page.video();
     await installMockGateway(page, {
-      controlUiTabs: [{ group: "control", id: "logbook", label: "Logbook", pluginId: "logbook" }],
       methodResponses: {
         "config.get": {
           config: {},

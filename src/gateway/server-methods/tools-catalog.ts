@@ -13,9 +13,8 @@ import {
 } from "../../agents/tool-catalog.js";
 import { summarizeToolDescriptionText } from "../../agents/tool-description-summary.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import type { PluginRegistry } from "../../plugins/registry-types.js";
 import { getActivePluginRegistry } from "../../plugins/runtime.js";
-import { buildPluginToolMetadataKey, getPluginToolMeta } from "../../plugins/tool-metadata.js";
+import { getPluginToolMeta } from "../../plugins/tool-metadata.js";
 import {
   ensureStandalonePluginToolRegistryLoaded,
   resolvePluginTools,
@@ -100,17 +99,6 @@ function buildPluginGroups(params: {
   });
   const catalogRegistry = toolRegistry ?? getActivePluginRegistry();
   const groups = new Map<string, ToolCatalogGroup>();
-  // Key metadata by plugin ownership and tool name so we only project metadata that
-  // was registered BY the tool's owning plugin. Without this scoping, plugin-X
-  // could override the catalog label/description/risk/tags for another plugin's
-  // tool by registering metadata with the same toolName.
-  const pluginToolMetadata = new Map<string, PluginRegistry["toolMetadata"][number]["metadata"]>();
-  if (catalogRegistry) {
-    for (const entry of catalogRegistry.toolMetadata) {
-      const metadataKey = buildPluginToolMetadataKey(entry.pluginId, entry.metadata.toolName);
-      pluginToolMetadata.set(metadataKey, entry.metadata);
-    }
-  }
   const seenToolIds = new Set<string>();
   const appendTool = (
     pluginId: string,
@@ -132,19 +120,12 @@ function buildPluginGroups(params: {
   for (const tool of pluginTools) {
     const meta = getPluginToolMeta(tool);
     const pluginId = meta?.pluginId ?? "plugin";
-    const ownedMetadata = meta?.pluginId
-      ? pluginToolMetadata.get(buildPluginToolMetadataKey(meta.pluginId, tool.name))
-      : undefined;
+
     const parameters = summarizeToolParameters(tool.parameters);
-    const fullDescription =
-      ownedMetadata?.description ??
-      (typeof tool.description === "string" ? tool.description : undefined);
+    const fullDescription = typeof tool.description === "string" ? tool.description : undefined;
     appendTool(pluginId, pluginId, {
       id: tool.name,
-      label:
-        normalizeOptionalString(ownedMetadata?.displayName) ??
-        normalizeOptionalString(tool.label) ??
-        tool.name,
+      label: normalizeOptionalString(tool.label) ?? tool.name,
       description: summarizeToolDescriptionText({
         rawDescription: fullDescription,
         displaySummary: tool.displaySummary,
@@ -152,8 +133,6 @@ function buildPluginGroups(params: {
       fullDescription,
       ...(parameters?.length ? { parameters } : {}),
       optional: meta?.optional,
-      risk: ownedMetadata?.risk,
-      tags: ownedMetadata?.tags,
     });
   }
   for (const entry of catalogRegistry?.tools ?? []) {
@@ -164,20 +143,12 @@ function buildPluginGroups(params: {
       }
       // Declared-but-unresolved plugin tools still appear so operators can see
       // optional capabilities that may need config before they bind at runtime.
-      const ownedMetadata = pluginToolMetadata.get(
-        buildPluginToolMetadataKey(entry.pluginId, name),
-      );
+
       appendTool(entry.pluginId, entry.pluginName ?? entry.pluginId, {
         id: name,
-        label: normalizeOptionalString(ownedMetadata?.displayName) ?? name,
-        description:
-          summarizeToolDescriptionText({
-            rawDescription: ownedMetadata?.description,
-          }) || `Plugin tool from ${entry.pluginName ?? entry.pluginId}`,
-        fullDescription: ownedMetadata?.description,
+        label: name,
+        description: `Plugin tool from ${entry.pluginName ?? entry.pluginId}`,
         optional: entry.optional,
-        risk: ownedMetadata?.risk,
-        tags: ownedMetadata?.tags,
       });
     }
   }

@@ -3,7 +3,6 @@ import { ARTIFACT_DOWNLOAD_PATH } from "../../packages/gateway-protocol/src/arti
 import { getPluginRegistryForContext } from "../plugins/runtime/gateway-request-scope.js";
 import { matchesControlUiBootstrapConfigPath } from "./control-ui-bootstrap-contract.js";
 import { controlUiPluginAssetRoot } from "./control-ui-plugin-assets-contract.js";
-import { listControlUiPluginTabAuthGrants } from "./control-ui-plugin-tabs.js";
 import {
   parseControlUiResourcePath,
   parseControlUiUserAvatarPath,
@@ -34,14 +33,13 @@ export type RemoteControlUiHttpRoute =
   | "artifact"
   | "board"
   | "native-assets"
-  | "plugin-panel"
   | "liveness";
 
 /** Selects the permitted owner, never a permissive prefilter before arbitrary plugin dispatch. */
 export function resolveRemoteControlUiHttpRoute(
   req: Pick<IncomingMessage, "url" | "method" | "headers">,
   basePath: string,
-  scopes: readonly string[],
+  _scopes: readonly string[],
 ): RemoteControlUiHttpRoute | undefined {
   const raw = req.url ?? "";
   const url = URL.parse(raw, "http://openclaw.invalid");
@@ -138,14 +136,7 @@ export function resolveRemoteControlUiHttpRoute(
   const registry = getPluginRegistryForContext();
   const pluginRoute = registry ? findRegisteredPluginHttpRoute(registry, pathname) : undefined;
   if (pluginRoute) {
-    return listControlUiPluginTabAuthGrants(scopes).some(
-      (grant) =>
-        grant.pluginId === pluginRoute.pluginId &&
-        grant.path === pluginRoute.path &&
-        grant.match === pluginRoute.match,
-    )
-      ? "plugin-panel"
-      : undefined;
+    return undefined;
   }
   const reserved = [
     "/api",

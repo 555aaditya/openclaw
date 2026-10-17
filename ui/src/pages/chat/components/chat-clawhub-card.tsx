@@ -112,7 +112,7 @@ function ChatClawHubCardContent(props: Props, host: SolidBridgeElement<Props>) {
       scope?.client,
       agentId,
       connection.epoch,
-      card?.kind === "plugin" ? snapshot.pluginCapabilities?.generation : undefined,
+      card?.kind === "plugin" ? snapshot.pluginGeneration : undefined,
       card?.id,
       card?.kind,
       card?.kind === "skill" ? card.registry : undefined,

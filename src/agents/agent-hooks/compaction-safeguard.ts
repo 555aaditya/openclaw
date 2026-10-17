@@ -17,10 +17,6 @@ import {
 import { classifyToolUseResultPairing } from "../../../packages/agent-core/src/harness/session/tool-result-pairing.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
-import {
-  getCompactionProvider,
-  type CompactionProvider,
-} from "../../plugins/compaction-provider.js";
 import { isRealConversationMessage } from "../compaction-real-conversation.js";
 import { summarizeCompactionHistory } from "../compaction.js";
 import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "../copilot-dynamic-headers.js";
@@ -65,7 +61,6 @@ const CONTEXT_TRUNCATED_MARKER = "\n\n[Earlier compaction context truncated to f
 // Split-turn context supplements the generated summary and must not claim its
 // guaranteed half of the final artifact before common finalization runs.
 const MAX_SPLIT_TURN_CONTEXT_CHARS = Math.floor(MAX_COMPACTION_SUMMARY_CHARS / 2);
-const SPLIT_TURN_TRUNCATED_MARKER = "[Earlier split-turn messages truncated]\n";
 const PRESERVED_TURNS_TRUNCATED_MARKER = "[Earlier preserved messages truncated]\n";
 const DEFAULT_RECENT_TURNS_PRESERVE = 3;
 const DEFAULT_QUALITY_GUARD_MAX_RETRIES = 1;
@@ -598,15 +593,6 @@ function buildPreservedTurnsSection(messages: AgentMessage[]): ContextSection {
   });
 }
 
-function buildSplitTurnContextSection(messages: AgentMessage[]): ContextSection {
-  return formatBoundedContextSection({
-    messages,
-    heading: "**Turn Context (split turn):**\n",
-    truncatedMarker: SPLIT_TURN_TRUNCATED_MARKER,
-    truncatedLoss: "split-turn-head",
-  });
-}
-
 function formatGeneratedSplitTurnSection(summary: string, onTruncated: () => void): string {
   const heading = `${SPLIT_TURN_SECTION_HEADING}\n\n`;
   const summaryBudget = MAX_SPLIT_TURN_CONTEXT_CHARS - heading.length;
@@ -724,7 +710,7 @@ export default function compactionSafeguardExtension(api: ExtensionAPI): void {
     };
     const identifierPolicy = runtime?.identifierPolicy ?? "strict";
     const qualityGuardEnabled = runtime?.qualityGuardEnabled ?? false;
-    const providerId = runtime?.provider;
+
     const turnPrefixMessages = baseTurnPrefixMessages;
     const recentTurnsPreserve = resolveRecentTurnsPreserve(runtime?.recentTurnsPreserve);
     const structuredInstructions = buildCompactionStructureInstructions(
@@ -819,48 +805,6 @@ export default function compactionSafeguardExtension(api: ExtensionAPI): void {
         },
       },
     });
-    if (providerId) {
-      const compactionProvider: CompactionProvider | undefined = getCompactionProvider(providerId);
-      if (compactionProvider) {
-        try {
-          // Give the provider ALL messages — no pruning, no chunking, no split-turn splitting.
-          const providerResult = await compactionProvider.summarize({
-            messages: [...baseMessagesToSummarize, ...turnPrefixMessages],
-            signal,
-            customInstructions: structuredInstructions,
-            summarizationInstructions,
-            previousSummary,
-          });
-          if (typeof providerResult === "string" && providerResult.trim()) {
-            const { preservedMessages } = splitPreservedRecentTurns({
-              messages: baseMessagesToSummarize,
-              recentTurnsPreserve,
-            });
-            const finalized = await finalizeSummaryText(providerResult, {
-              splitTurnSection: preparation.isSplitTurn
-                ? buildSplitTurnContextSection(turnPrefixMessages)
-                : undefined,
-              preservedTurnsSection: buildPreservedTurnsSection(preservedMessages),
-            });
-            return compactionResult(finalized.summary);
-          }
-          log.warn(
-            `Compaction provider "${compactionProvider.id}" returned empty result, falling back to LLM.`,
-          );
-        } catch (err) {
-          // Escaped hook errors fall through to raw core compaction. Keep provider-local
-          // failures in the audited fallback unless the caller aborted.
-          if (signal?.aborted) {
-            throw err;
-          }
-          log.warn(`Compaction provider "${compactionProvider.id}" failed, falling back to LLM.`);
-        }
-      } else {
-        log.warn(
-          `Compaction provider "${providerId}" is configured but not registered. Falling back to LLM.`,
-        );
-      }
-    }
 
     const model = ctx.model ?? runtime?.model;
     if (!model) {

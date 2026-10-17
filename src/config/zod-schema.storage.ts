@@ -13,10 +13,14 @@ const StorageSettingsSchema = z.record(z.string(), z.unknown()).superRefine((val
 
 const StorageLocationSchema = z
   .strictObject({
-    provider: z.string().trim().min(1).register(configUiMetadata, {
-      label: "Storage Provider",
-      help: 'Storage provider id, such as "filesystem". Referencing a bundled provider automatically enables its plugin unless plugin policy disables it.',
-    }),
+    provider: z
+      .literal("filesystem", {
+        error: "Only the built-in filesystem storage provider is supported",
+      })
+      .register(configUiMetadata, {
+        label: "Storage Provider",
+        help: "The built-in filesystem storage backend.",
+      }),
     settings: StorageSettingsSchema.register(configUiMetadata, {
       label: "Storage Provider Settings",
       help: "Provider-owned bounded JSON settings. Secret-bearing values must use SecretRef objects, which the provider resolves only when needed. The filesystem provider requires an absolute path to an existing directory.",

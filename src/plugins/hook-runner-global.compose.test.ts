@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getGlobalHookRunnerRegistry } from "./hook-runner-global-state.js";
 import {
   getGlobalHookRunner,
   initializeGlobalHookRunner,
@@ -43,39 +42,17 @@ describe("global hook runner registry selection", () => {
     const scoped = createMockPluginRegistry([
       { hookName: "before_tool_call", handler: scopedHook, pluginId: "scoped" },
     ]);
-    root.trustedToolPolicies = [
-      {
-        pluginId: "root",
-        pluginName: "Root",
-        source: "test",
-        policy: { id: "root-policy", description: "root", evaluate: () => undefined },
-      },
-    ];
-    scoped.trustedToolPolicies = [
-      {
-        pluginId: "scoped",
-        pluginName: "Scoped",
-        source: "test",
-        policy: { id: "scoped-policy", description: "scoped", evaluate: () => undefined },
-      },
-    ];
 
     setActivePluginRegistry(root);
     initializeGlobalHookRunner(root);
     await withPluginRuntimeRegistryScope(scoped, async () => {
       await runner().runBeforeToolCall({ toolName: "read", params: {} }, toolCallContext());
-      expect(
-        getGlobalHookRunnerRegistry()?.trustedToolPolicies?.map((entry) => entry.policy.id),
-      ).toEqual(["root-policy", "scoped-policy"]);
     });
 
     expect(scopedHook).toHaveBeenCalledOnce();
     expect(rootHook).toHaveBeenCalledOnce();
     await runner().runBeforeToolCall({ toolName: "read", params: {} }, toolCallContext());
     expect(rootHook).toHaveBeenCalledTimes(2);
-    expect(
-      getGlobalHookRunnerRegistry()?.trustedToolPolicies?.map((entry) => entry.policy.id),
-    ).toEqual(["root-policy"]);
   });
 
   it("lets the request registry replace the same plugin without double dispatch", async () => {
@@ -103,14 +80,6 @@ describe("global hook runner registry selection", () => {
     const root = createMockPluginRegistry([
       { hookName: "before_tool_call", handler: rootHook, pluginId: "shared" },
     ]);
-    root.trustedToolPolicies = [
-      {
-        pluginId: "shared",
-        pluginName: "Shared",
-        source: "test",
-        policy: { id: "shared-policy", description: "shared", evaluate: () => undefined },
-      },
-    ];
     const scoped = createMockPluginRegistry([]);
     scoped.plugins = [
       createPluginRecord({ id: "shared", name: "Shared", status: "error", error: "load failed" }),
@@ -120,9 +89,6 @@ describe("global hook runner registry selection", () => {
 
     await withPluginRuntimeRegistryScope(scoped, async () => {
       await runner().runBeforeToolCall({ toolName: "read", params: {} }, toolCallContext());
-      expect(
-        getGlobalHookRunnerRegistry()?.trustedToolPolicies?.map((entry) => entry.policy.id),
-      ).toEqual(["shared-policy"]);
     });
 
     expect(rootHook).toHaveBeenCalledOnce();
@@ -138,14 +104,6 @@ describe("global hook runner registry selection", () => {
       { hookName: "before_tool_call", handler: rootToolHook, pluginId: "shared" },
       { hookName: "before_message_write", handler: rootWriteHook, pluginId: "shared" },
     ]);
-    root.trustedToolPolicies = [
-      {
-        pluginId: "shared",
-        pluginName: "Shared",
-        source: "test",
-        policy: { id: "shared-policy", description: "shared", evaluate: () => undefined },
-      },
-    ];
     const sdk = createMockPluginRegistry([
       { hookName: "before_message_write", handler: sdkWriteHook, pluginId: "shared" },
     ]);
@@ -164,9 +122,6 @@ describe("global hook runner registry selection", () => {
 
     await runner().runBeforeToolCall({ toolName: "read", params: {} }, toolCallContext());
     expect(rootToolHook).toHaveBeenCalledOnce();
-    expect(
-      getGlobalHookRunnerRegistry()?.trustedToolPolicies?.map((entry) => entry.policy.id),
-    ).toEqual(["shared-policy"]);
   });
 
   it("sees hooks added after initialization", () => {

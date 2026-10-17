@@ -73,7 +73,7 @@ describe("remote Control UI HTTP owner", () => {
     }
   });
 
-  it("allows declared panels without letting plugin routes claim native documents", () => {
+  it("rejects plugin HTTP routes while admitting native documents", () => {
     const registry = createEmptyPluginRegistry();
     for (const route of [
       { pluginId: "panel", path: "/reports", match: "prefix", auth: "gateway" },
@@ -82,24 +82,12 @@ describe("remote Control UI HTTP owner", () => {
     ] as const) {
       registry.httpRoutes.push({ ...route, source: "fixture", handler: () => true });
     }
-    registry.controlUiDescriptors.push({
-      pluginId: "panel",
-      pluginName: "Panel",
-      source: "fixture",
-      descriptor: {
-        id: "panel",
-        label: "Panel",
-        surface: "tab",
-        path: "/reports/",
-        requiredScopes: ["operator.read"],
-      },
-    });
     withPluginRuntimeRegistryScope(registry, () => {
       expect(
         resolveRemoteControlUiHttpRoute(remoteRequest("/reports/asset.js"), "/claw", [
           "operator.read",
         ]),
-      ).toBe("plugin-panel");
+      ).toBeUndefined();
       expect(
         resolveRemoteControlUiHttpRoute(remoteRequest("/webhook/event"), "/claw", [
           "operator.read",

@@ -4,7 +4,6 @@ import {
   validateBackupStatusParams,
 } from "../../../packages/gateway-protocol/src/index.js";
 import { summarizeBackupSchedules } from "../../cron/backup-command.js";
-import { getLoadedRuntimePluginRegistry } from "../../plugins/active-runtime-registry.js";
 import {
   readBackupRuns,
   recordBackupRunOutcome,
@@ -48,10 +47,7 @@ export const backupHandlers: GatewayRequestHandlers = {
       const result: BackupStatusResult = {
         targets: summarizeBackupTargets(runs),
         schedules: summarizeBackupSchedules(jobs),
-        locations: listStorageLocations(
-          context.getRuntimeConfig(),
-          getLoadedRuntimePluginRegistry() ?? undefined,
-        ),
+        locations: listStorageLocations(context.getRuntimeConfig()),
       };
       respond(true, result, undefined);
     },

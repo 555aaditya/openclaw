@@ -28,7 +28,7 @@ import { t } from "../lib/reactive/i18n.ts";
 import {
   renderSidebarAgentCard,
   renderAppSidebarFooterBar,
-  renderAppSidebarPluginTab,
+  renderAppSidebarPluginSnapshot,
   renderAppSidebarPageEntry,
   type AppSidebarRenderHost,
 } from "./app-sidebar-render.tsx";
@@ -210,7 +210,7 @@ function renderRailPin(
     entry.type === "plugin"
       ? host.pluginNavigation().find((candidate) => candidate.key === entry.key)
       : undefined;
-  const tab = () => (entry.type === "plugin" ? zone().pluginTabs.get(entry.key) : undefined);
+  const tab = () => (entry.type === "plugin" ? zone().pluginSnapshots.get(entry.key) : undefined);
   const label = () =>
     entry.type === "route"
       ? titleForRoute(entry.route)
@@ -270,7 +270,7 @@ function renderRailPin(
                 </Show>
               }
             >
-              {(item) => renderAppSidebarPluginTab(host, item)}
+              {(item) => renderAppSidebarPluginSnapshot(host, item)}
             </Show>
           ) : undefined
         }
@@ -465,7 +465,7 @@ export function renderSidebarPages(host: AppSidebarRenderHost): JSX.Element {
       host.sidebarMenus.isRouteEnabled(route),
     ).map((route) => ({ type: "route", route }));
     for (const key of new Set([
-      ...zone().pluginTabs.keys(),
+      ...zone().pluginSnapshots.keys(),
       ...host.pluginNavigation().map((entry) => entry.key),
     ])) {
       result.push({ type: "plugin", key });
@@ -493,7 +493,7 @@ export function renderSidebarPages(host: AppSidebarRenderHost): JSX.Element {
           const key = serializeSidebarEntry(fixedEntry);
           // Allocate once per entry; the rendered link owns its reactive fields.
           const content = untrack(() =>
-            renderAppSidebarPageEntry(host, fixedEntry, rows, () => zone().pluginTabs),
+            renderAppSidebarPageEntry(host, fixedEntry, rows, () => zone().pluginSnapshots),
           );
           return (
             <div class="sidebar-pages__entry">

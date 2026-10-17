@@ -20,16 +20,12 @@ import { sortUniquePluginIds } from "./gateway-startup-plugin-contracts.js";
 import { createInstalledPluginIndexScopeLookup } from "./installed-plugin-index-scope-lookup.js";
 import type { InstalledPluginIndex } from "./installed-plugin-index.js";
 import type { PluginMetadataSnapshotPluginIdScope } from "./plugin-metadata-snapshot.types.js";
-import { collectConfiguredStorageProviderIds } from "./storage-provider-manifest.js";
-import { collectConfiguredWorkerProviderIds } from "./worker-provider-config.js";
-import { normalizeWorkerProviderIds } from "./worker-provider-id.js";
 
 export function resolveGatewayStartupMetadataPluginIds(params: {
   config: OpenClawConfig;
   activationSourceConfig?: OpenClawConfig;
   env: NodeJS.ProcessEnv;
   index: InstalledPluginIndex;
-  workerProviderIds?: readonly string[];
   platform?: NodeJS.Platform;
   ambientEnvTriggers?: AmbientEnvTriggerPolicy;
 }): string[] | undefined {
@@ -122,15 +118,7 @@ export function resolveGatewayStartupMetadataPluginIds(params: {
   }
   lookup.addDirectProviderOwners(scope, configuredProviderIds);
 
-  for (const resolveProviderIds of [
-    () => configs.flatMap(getConfiguredDecisionProviderIds),
-    () =>
-      normalizeWorkerProviderIds([
-        ...configs.flatMap(collectConfiguredWorkerProviderIds),
-        ...(params.workerProviderIds ?? []),
-      ]),
-    () => configs.flatMap(collectConfiguredStorageProviderIds),
-  ]) {
+  for (const resolveProviderIds of [() => configs.flatMap(getConfiguredDecisionProviderIds)]) {
     const contributionProviderIds = resolveProviderIds();
     if (!lookup.hasProviderContributionOwners(contributionProviderIds)) {
       return undefined;
@@ -182,11 +170,9 @@ export function createGatewayStartupMetadataPluginIdScope(params: {
   config: OpenClawConfig;
   activationSourceConfig?: OpenClawConfig;
   env: NodeJS.ProcessEnv;
-  workerProviderIds?: readonly string[];
   platform?: NodeJS.Platform;
   ambientEnvTriggers?: AmbientEnvTriggerPolicy;
 }): PluginMetadataSnapshotPluginIdScope {
-  const workerProviderIds = normalizeWorkerProviderIds(params.workerProviderIds ?? []);
   return {
     resolve: ({ index }) =>
       resolveGatewayStartupMetadataPluginIds({
@@ -194,7 +180,6 @@ export function createGatewayStartupMetadataPluginIdScope(params: {
         activationSourceConfig: params.activationSourceConfig,
         env: params.env,
         index,
-        ...(workerProviderIds.length > 0 ? { workerProviderIds } : {}),
         platform: params.platform,
         ambientEnvTriggers: params.ambientEnvTriggers,
       }),

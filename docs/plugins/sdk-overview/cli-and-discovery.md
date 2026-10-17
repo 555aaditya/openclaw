@@ -4,39 +4,11 @@ title: "Plugin SDK CLI and discovery registration"
 sidebarTitle: "CLI and discovery"
 read_when:
   - You are adding a plugin-owned CLI command or node feature
-  - You are registering a local Gateway discovery advertiser
   - You own the default config for a local AI CLI backend
 ---
 
 Registrars for local Gateway discovery, plugin-owned CLI commands, and local AI
 CLI backends. Part of the [Plugin SDK overview](/plugins/sdk-overview).
-
-## Gateway discovery registration
-
-`api.registerGatewayDiscoveryService(...)` lets a plugin advertise the active
-Gateway on a local discovery transport such as mDNS/Bonjour. OpenClaw calls the
-service during Gateway startup when local discovery is enabled, passes the
-current Gateway ports and non-secret TXT hint data, and calls the returned
-`stop` handler during Gateway shutdown.
-
-```typescript
-api.registerGatewayDiscoveryService({
-  id: "my-discovery",
-  async advertise(ctx) {
-    // startMyAdvertiser is your plugin's own mDNS/Bonjour helper, not an SDK export.
-    const handle = await startMyAdvertiser({
-      gatewayPort: ctx.gatewayPort,
-      tls: ctx.gatewayTlsEnabled,
-      displayName: ctx.machineDisplayName,
-    });
-    return { stop: () => handle.stop() };
-  },
-});
-```
-
-Gateway discovery plugins must not treat advertised TXT values as secrets or
-authentication. Discovery is a routing hint; Gateway auth and TLS pinning still
-own trust.
 
 ## CLI registration metadata
 
@@ -60,7 +32,6 @@ helper; see [retained SDK contracts](/plugins/sdk-migration/compatibility-policy
 For paired-node features, use
 `api.registerCli(registrar, { parentPath: ["nodes"], ...opts })` to place commands
 such as `openclaw nodes canvas` under `nodes`. The existing
-`api.registerNodeCliFeature(registrar, opts?)` shorthand remains supported.
 
 Reuse the core node CLI owners when a plugin-owned node command needs the same
 Gateway flags, invoke envelope, terminal presentation, and authorization hints:

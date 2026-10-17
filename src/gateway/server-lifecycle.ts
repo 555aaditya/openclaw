@@ -657,11 +657,6 @@ export async function prepareGatewayLifecycle(params: {
     runtimeState,
     unavailableGatewayMethods,
     kernel,
-    pluginHostServices: {
-      get cron() {
-        return kernel.getCronService();
-      },
-    },
     shutdownRuntime,
     lifecycle,
     cronReconciliation,

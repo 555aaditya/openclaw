@@ -23,7 +23,7 @@ import {
   markPluginRegistryActive,
   withPluginRegistryPreparationScope,
 } from "../plugins/registry-lifecycle.js";
-import type { PluginRegistry, PluginRegistryParams } from "../plugins/registry-types.js";
+import type { PluginRegistry } from "../plugins/registry-types.js";
 import { createEmptyPluginRegistry } from "../plugins/registry.js";
 import { disposePluginRegistryInstances, getActivePluginRegistry } from "../plugins/runtime.js";
 import { withPluginRuntimeRegistryScope } from "../plugins/runtime/gateway-request-scope.js";
@@ -141,7 +141,6 @@ export async function prepareGatewayPluginBootstrap(params: {
   cfgAtStart: OpenClawConfig;
   activationSourceConfig?: OpenClawConfig;
   pluginMetadataSnapshot?: PluginMetadataSnapshot;
-  workerProviderIds?: readonly string[];
   minimalTestGateway: boolean;
   log: GatewayPluginBootstrapLog;
   ambientEnvTriggers?: AmbientEnvTriggerPolicy;
@@ -174,7 +173,6 @@ export async function prepareGatewayPluginBootstrap(params: {
           env: process.env,
           activationSourceConfig,
           metadataSnapshot: params.pluginMetadataSnapshot,
-          workerProviderIds: params.workerProviderIds ?? [],
           ambientEnvTriggers: params.ambientEnvTriggers,
         });
   // Startup logging and lifecycle publication consume the process-stable metadata snapshot.
@@ -331,7 +329,6 @@ export async function loadGatewayStartupPluginRuntime(params: {
   log: GatewayPluginBootstrapLog;
   baseMethods: string[];
   coreGatewayMethodNames?: readonly string[];
-  hostServices?: PluginRegistryParams["hostServices"];
   startupPluginIds: string[];
   pluginLookUpTable?: ReturnType<typeof loadPluginLookUpTable>;
   startupTrace?: Pick<GatewayStartupTrace, "detail">;
@@ -362,9 +359,6 @@ export async function loadGatewayStartupPluginRuntime(params: {
     log: params.log,
     coreGatewayMethodNames: params.coreGatewayMethodNames ?? params.baseMethods,
     baseMethods: params.baseMethods,
-    ...(params.hostServices !== undefined && {
-      hostServices: params.hostServices,
-    }),
     pluginIds: params.startupPluginIds,
     pluginLookUpTable: params.pluginLookUpTable,
     channelPluginLoadIntent: "full",

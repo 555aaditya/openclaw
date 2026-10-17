@@ -43,7 +43,6 @@ import {
   withPluginRuntimeRegistryScope,
 } from "../plugins/runtime/gateway-request-scope.js";
 import { adoptRuntimeToolRegistrations } from "../plugins/tool-registry-adoption.js";
-import { adoptRuntimeWidgetPresenterRegistrations } from "../plugins/widget-presenters.js";
 import { resolveUserPath } from "../utils.js";
 import {
   resolveAgentRuntimePluginLoadPlan,
@@ -201,13 +200,10 @@ function adoptAgentRuntimeRegistrations(
       getActivePluginRegistryWorkspaceDir() === resolveUserPath(params.workspaceDir)
         ? adoptRuntimeMemoryRegistrations(toolRegistry, activeRegistry, config)
         : toolRegistry;
-    registry = adoptRuntimeWidgetPresenterRegistrations(
-      adoptRuntimeContextEngineRegistrations(
-        config && canAdoptGatewayRegistrations
-          ? adoptRuntimeDecisionProviders(memoryRegistry, activeRegistry, config)
-          : memoryRegistry,
-        activeRegistry,
-      ),
+    registry = adoptRuntimeContextEngineRegistrations(
+      config && canAdoptGatewayRegistrations
+        ? adoptRuntimeDecisionProviders(memoryRegistry, activeRegistry, config)
+        : memoryRegistry,
       activeRegistry,
     );
   }

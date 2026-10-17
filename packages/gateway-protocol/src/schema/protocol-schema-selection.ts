@@ -65,8 +65,6 @@ const EXCLUDED_SCHEMA_EXPORTS = [
   "GitHubSetupHandleSchema",
   "HumanMentionsSchema",
   "InputProvenanceSchema",
-  "MigrationsMemoryApplyParamsSchema",
-  "MigrationsMemoryPlanParamsSchema",
   "ModelCatalogProviderOutcomeSchema",
   "PersonalGitHubAccountSchema",
   "PersonalGitHubGenerationSchema",

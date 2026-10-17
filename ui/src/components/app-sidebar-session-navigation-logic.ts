@@ -2,7 +2,6 @@ import { asNonNegativeFiniteNumber } from "@openclaw/normalization-core/number-c
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import type { ControlUiNavigationItem } from "../../../src/plugin-sdk/control-ui.js";
 import { isIncognitoSessionKey } from "../../../src/shared/incognito-session-key.js";
-import type { GatewayControlUiPluginTab } from "../api/gateway.ts";
 import type { GatewaySessionRow, SessionsListResult } from "../api/types.ts";
 import { parseSidebarEntry, serializeSidebarEntry, SIDEBAR_NAV_ROUTES } from "../app-navigation.ts";
 import type { ApplicationContext } from "../app/context.ts";
@@ -37,9 +36,7 @@ import {
   resolveUiSessionNavigationParentKey,
 } from "../lib/sessions/session-key.ts";
 import { reconcileSidebarZone } from "../lib/sidebar-zone.ts";
-import { pluginTabKey } from "../pages/plugin/route.ts";
 import type { ControlUiRegistration } from "../plugins/control-ui-capability.ts";
-import { sidebarPluginTabs } from "./app-sidebar-nav-menus.tsx";
 import {
   SIDEBAR_SESSION_NO_ATTENTION,
   type SidebarRecentSession,
@@ -302,7 +299,6 @@ export function buildReconciledSidebarZone(input: {
   sidebarEntries: readonly string[];
   rows: SidebarRecentSession[];
   pluginNavigation: readonly ControlUiRegistration<ControlUiNavigationItem>[];
-  pluginTabs: readonly GatewayControlUiPluginTab[] | undefined;
   snapshot?: { model: SidebarSnapshotModel; selectedKey: string };
   pendingPlugins?: Pick<SidebarSnapshotModel, "entries" | "plugins"> | null;
 }) {
@@ -318,33 +314,22 @@ export function buildReconciledSidebarZone(input: {
       }),
       sidebarEntries: model.entries,
       sessionRows: new Map(restoredRows.map((row) => [row.key, row])),
-      pluginTabs: new Map(model.plugins.map(({ key, ...tab }) => [key, tab])),
+      pluginSnapshots: new Map(model.plugins.map(({ key, ...tab }) => [key, tab])),
     };
   }
   const navigation = input.pluginNavigation;
-  const occupiedPlacements = new Set(SIDEBAR_NAV_ROUTES.map((route) => `route:${route}`));
-  const pluginTabs = new Map(
-    sidebarPluginTabs(input.pluginTabs)
-      .filter(
-        (tab) =>
-          (!tab.placement || !occupiedPlacements.has(tab.placement)) &&
-          !navigation.some(
-            (entry) => entry.pluginId === tab.pluginId && entry.value.page.id === tab.id,
-          ),
-      )
-      .map((tab) => [pluginTabKey(tab), tab]),
-  );
+  const pluginSnapshots = new Map<string, Omit<SidebarSnapshotModel["plugins"][number], "key">>();
   const availableRows = input.rows;
   const reconciled = reconcileSidebarZone(
     input.sidebarEntries,
     availableRows,
     SIDEBAR_NAV_ROUTES,
-    new Set([...pluginTabs.keys(), ...navigation.map((entry) => entry.key)]),
+    new Set(navigation.map((entry) => entry.key)),
   );
   const live = {
     ...reconciled,
     sessionRows: new Map(availableRows.map((row) => [row.key, row])),
-    pluginTabs,
+    pluginSnapshots,
   };
   const retained = input.pendingPlugins;
   if (retained) {
@@ -358,7 +343,7 @@ export function buildReconciledSidebarZone(input: {
       if (!tab) {
         continue;
       }
-      live.pluginTabs.set(entry.key, tab);
+      live.pluginSnapshots.set(entry.key, tab);
       const following = retained.entries
         .slice(index + 1)
         .find((candidate) => visible.has(candidate));

@@ -59,6 +59,8 @@ export type PluginDiagnosticCode =
 
 /** Diagnostic emitted while discovering or validating plugins. */
 export type PluginDiagnostic = {
+  /** Native manifest failure before a runtime record exists; resolved by admission policy. */
+  enabledNativePlugin?: boolean;
   level: "info" | "warn" | "error";
   message: string;
   pluginId?: string;

@@ -2,7 +2,6 @@
  * Core plugin SDK contract-test fixture builders and registration helpers.
  */
 import type { OpenClawConfig } from "../../config/config.js";
-import type { PluginRegistryParams } from "../../plugins/registry-types.js";
 import { createPluginRegistry, type PluginRecord } from "../../plugins/registry.js";
 import { createPluginRuntime } from "../../plugins/runtime/index.js";
 import { createPluginRecord } from "../../plugins/status.test-helpers.js";
@@ -20,7 +19,6 @@ export function createPluginRegistryFixture(
   config = {} as OpenClawConfig,
   params: {
     allowProcessHomeSessionCatalogs?: boolean;
-    hostServices?: PluginRegistryParams["hostServices"];
   } = {},
 ) {
   return {
@@ -34,7 +32,6 @@ export function createPluginRegistryFixture(
       },
       runtime: createPluginRuntime(),
       allowProcessHomeSessionCatalogs: params.allowProcessHomeSessionCatalogs ?? true,
-      ...(params.hostServices ? { hostServices: params.hostServices } : {}),
     }),
   };
 }

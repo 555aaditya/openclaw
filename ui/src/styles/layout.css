@@ -29,7 +29,7 @@
   --shell-topbar-height: 0px;
   --shell-dock-reserve-bottom: calc(
     var(--oc-terminal-reserve-bottom, 0px) + var(--oc-browser-reserve-bottom, 0px) +
-      var(--oc-link-reader-reserve-bottom, 0px) + var(--oc-assistant-reserve-bottom, 0px)
+      var(--oc-assistant-reserve-bottom, 0px)
   );
   --shell-focus-duration: 200ms;
   --shell-focus-ease: var(--ease-out);
@@ -4112,7 +4112,7 @@ button.gateway-status:focus-visible {
   margin-bottom: var(--shell-dock-reserve-bottom);
   margin-right: calc(
     var(--oc-terminal-reserve-right, 0px) + var(--oc-browser-reserve-right, 0px) +
-      var(--oc-link-reader-reserve-right, 0px) + var(--oc-assistant-reserve-right, 0px)
+      var(--oc-assistant-reserve-right, 0px)
   );
   transition:
     margin-bottom 0.16s ease,

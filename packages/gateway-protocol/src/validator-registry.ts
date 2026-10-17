@@ -220,9 +220,6 @@ export const validateEnvironmentsPrepareParams = compile(S.EnvironmentsPreparePa
 export const validateEnvironmentsPrepareResult = compile(S.EnvironmentsPrepareResultSchema);
 export const validateEnvironmentsDestroyParams = compile(S.EnvironmentsDestroyParamsSchema);
 export const validateEnvironmentsListParams = compile(S.EnvironmentsListParamsSchema);
-export const validateEnvironmentsAdoptSuggestedProfileParams = compile(
-  S.EnvironmentsAdoptSuggestedProfileParamsSchema,
-);
 export const validateEnvironmentsStatusParams = compile(S.EnvironmentsStatusParamsSchema);
 export const validatePortalListParams = compile(S.PortalListParamsSchema);
 export const validatePortalOpenParams = compile(S.PortalOpenParamsSchema);
@@ -364,7 +361,6 @@ export const validateSessionsProviderReviewContinueParams = compile(
   S.SessionsProviderReviewContinueParamsSchema,
 );
 export const validateSessionsPatchManyParams = compile(S.SessionsPatchManyParamsSchema);
-export const validateSessionsPluginPatchParams = compile(S.SessionsPluginPatchParamsSchema);
 export const validateSessionsResetParams = compile(S.SessionsResetParamsSchema);
 export const validateSessionsDeleteParams = compile(S.SessionsDeleteParamsSchema);
 export const validateSessionsAssignOwnerParams = compile(S.SessionsAssignOwnerParamsSchema);
@@ -570,14 +566,10 @@ export const validatePluginsCatalogGetParams = compile(S.PluginsCatalogGetParams
 export const validatePluginsInstallParams = compile(S.PluginsInstallParamsSchema);
 export const validatePluginsSetEnabledParams = compile(S.PluginsSetEnabledParamsSchema);
 export const validatePluginsUninstallParams = compile(S.PluginsUninstallParamsSchema);
-export const validatePluginsUiDescriptorsParams = compile(S.PluginsUiDescriptorsParamsSchema);
-export const validatePluginsUiDescriptorsResult = compile(S.PluginsUiDescriptorsResultSchema);
 export const validatePluginsControlUiListParams = compile(S.PluginsControlUiListParamsSchema);
 export const validatePluginsControlUiReloadParams = compile(S.PluginsControlUiReloadParamsSchema);
 export const validatePluginsControlUiReportParams = compile(S.PluginsControlUiReportParamsSchema);
 export const validatePluginsControlUiStatusParams = compile(S.PluginsControlUiStatusParamsSchema);
-export const validatePluginsSessionActionParams = compile(S.PluginsSessionActionParamsSchema);
-export const validatePluginsSessionActionResult = compile(S.PluginsSessionActionResultSchema);
 export const validateExecApprovalsNodeGetParams = compile(S.ExecApprovalsNodeGetParamsSchema);
 export const validateExecApprovalsNodeSetParams = compile(S.ExecApprovalsNodeSetParamsSchema);
 export const validateExecApprovalsNodeSnapshot = compile(S.ExecApprovalsNodeSnapshotSchema);

@@ -290,8 +290,6 @@ type SessionEntryCore = SessionRestartRecoveryState &
     pluginExtensions?: Record<string, Record<string, SessionPluginJsonValue>>;
     /** Trusted session initialization is incomplete; all work admission stays blocked. */
     initializationPending?: true;
-    /** Top-level SessionEntry mirror slots owned by plugin session extensions. */
-    pluginExtensionSlotKeys?: Record<string, Record<string, string>>;
     /** Durable one-shot prompt additions drained before the next agent turn. */
     pluginNextTurnInjections?: Record<string, SessionPluginNextTurnInjection[]>;
     sessionId: string;

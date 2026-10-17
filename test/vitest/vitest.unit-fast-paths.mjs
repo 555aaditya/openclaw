@@ -112,7 +112,6 @@ export const forcedUnitFastTestFiles = [
   "src/security/audit-sandbox-docker-config.test.ts",
   "src/security/audit-sandbox-browser.test.ts",
   "src/security/audit-extra.async.test.ts",
-  "src/security/audit-plugin-readonly-scope.test.ts",
   "src/skills/security/workspace-audit.test.ts",
   "src/security/fix.test.ts",
   "src/security/scan-paths.test.ts",

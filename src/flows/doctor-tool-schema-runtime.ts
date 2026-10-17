@@ -9,7 +9,7 @@ import { resolveEffectiveToolPolicy } from "../agents/agent-tools.policy.js";
 import { resolveConversationCapabilityProfile } from "../agents/conversation-capability-profile.js";
 import { applyFinalEffectiveToolPolicy } from "../agents/embedded-agent-runner/effective-tool-policy.js";
 import { shouldCreateBundleMcpRuntimeForAttempt } from "../agents/embedded-agent-runner/run/attempt-tool-construction-plan.js";
-import { partitionMcpServersByConnectionScope } from "../agents/mcp-connection-resolver.js";
+import { partitionMcpServersByConnectionScope } from "../agents/mcp-requester-scope.js";
 import { collectExplicitAllowlist, normalizeToolPolicyName } from "../agents/tool-policy.js";
 import type { AnyAgentTool } from "../agents/tools/common.js";
 import { isUpdateDoctorLintPass } from "../commands/doctor/shared/update-phase.js";

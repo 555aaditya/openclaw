@@ -4,7 +4,6 @@ import { parseSecretRef } from "../config/types.secrets.js";
 import type { StorageLocationConfig } from "../config/types.storage.js";
 import { hasErrnoCode, isMissingPathError } from "../infra/errno.js";
 import { formatErrorMessage } from "../infra/errors.js";
-import { resolveStorageProvider } from "../plugins/storage-provider-registry.js";
 import {
   decryptStorageObject,
   encryptedStorageSize,
@@ -22,13 +21,11 @@ import {
   type StorageMarker,
   type StorageState,
 } from "./marker.js";
-import { acquireStorageProvider, type StorageRegistry } from "./provider.js";
 import type { StorageObjectInfo } from "./types.js";
 
 export type StorageLocationParams = {
   name: string;
   config: OpenClawConfig;
-  registry?: StorageRegistry;
   env?: NodeJS.ProcessEnv;
   signal?: AbortSignal;
 };
@@ -116,16 +113,11 @@ async function prepare(params: StorageLocationParams) {
   if (invalid) {
     throw new StorageLocationError("error", invalid);
   }
-  const acquired = await acquireStorageProvider({
-    providerId: location.provider,
-    config: params.config,
-    registry: params.registry,
-    env: params.env,
-  }).catch((error: unknown) => {
-    throw storageLocationError(error);
-  });
+  if (location.provider !== "filesystem") {
+    throw new StorageLocationError("error", "Only filesystem storage locations are supported.");
+  }
   try {
-    const message = acquired.provider.validateSettings?.(location.settings);
+    const message = filesystemStorageProvider.validateSettings?.(location.settings);
     if (message) {
       throw new StorageLocationError("error", message);
     }
@@ -147,7 +139,7 @@ async function prepare(params: StorageLocationParams) {
         `Storage location "${params.name}" requires a nonempty encryption passphrase.`,
       );
     }
-    const backend = await acquired.provider.open({
+    const backend = await filesystemStorageProvider.open({
       locationName: params.name,
       settings: location.settings,
       signal: params.signal,
@@ -167,20 +159,13 @@ async function prepare(params: StorageLocationParams) {
       }
       closed = true;
       try {
-        try {
-          await backend.close?.();
-        } finally {
-          await acquired.release();
-        }
+        await backend.close?.();
       } catch (error) {
         throw storageLocationError(error);
       }
     };
     return { backend, passphrase, provider: location.provider, close };
   } catch (error) {
-    await acquired.release().catch((releaseError: unknown) => {
-      throw storageLocationError(releaseError);
-    });
     throw storageLocationError(error);
   }
 }
@@ -429,17 +414,11 @@ export async function probeStorageLocation(
 /** Configuration projection only; no provider activation or destination I/O. */
 export function listStorageLocations(
   config: OpenClawConfig,
-  registry?: StorageRegistry,
 ): Array<{ name: string; provider: string; encrypted: boolean; displayTarget?: string }> {
   return Object.entries(config.storage?.locations ?? {})
     .toSorted(([a], [b]) => a.localeCompare(b))
     .map(([name, location]) => {
-      const provider =
-        location.provider === "filesystem"
-          ? filesystemStorageProvider
-          : registry
-            ? resolveStorageProvider(registry, location.provider)
-            : undefined;
+      const provider = filesystemStorageProvider;
       const displayTarget = provider?.describeTarget?.(location.settings);
       const description = {
         name,

@@ -23,11 +23,6 @@ export default defineBundledChannelEntry({
     exportName: "inspectDiscordReadOnlyAccount",
   },
   registerFull(api) {
-    // Account inspection loads this entry too; runtime registration must stay behind its owner mode.
-    loadBundledEntryExportSync<(api: OpenClawPluginApi) => void>(import.meta.url, {
-      specifier: "./activities-api.js",
-      exportName: "registerDiscordActivities",
-    })(api);
     registerDiscordSubagentHooks(api);
   },
   registerCapabilities(api) {

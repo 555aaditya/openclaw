@@ -9,7 +9,7 @@ import { loadEmbeddedAgentMcpConfig } from "./embedded-agent-mcp.js";
 import {
   partitionMcpServersByConnectionScope,
   redactMcpServersForFingerprint,
-} from "./mcp-connection-resolver.js";
+} from "./mcp-requester-scope.js";
 import { createMcpServerToolDenyMatcher } from "./tool-policy-match.js";
 
 type LoadedMcpConfig = ReturnType<typeof loadEmbeddedAgentMcpConfig>;

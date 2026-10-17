@@ -5,7 +5,6 @@ import type { GatewayStartupPluginPlan } from "./gateway-startup-plugin-contract
 import { loadGatewayStartupPluginPlanWithMetadata } from "./gateway-startup-plugin-loader.js";
 import type { PluginMetadataSnapshot } from "./plugin-metadata-snapshot.js";
 import type { PluginRegistrySnapshot } from "./plugin-registry-snapshot.js";
-import { normalizeWorkerProviderIds } from "./worker-provider-id.js";
 
 type PluginLookUpTableMetrics = PluginMetadataSnapshot["metrics"] & {
   startupPlanMs: number;
@@ -14,7 +13,6 @@ type PluginLookUpTableMetrics = PluginMetadataSnapshot["metrics"] & {
 
 export type PluginLookUpTable = PluginMetadataSnapshot & {
   startup: GatewayStartupPluginPlan;
-  workerProviderIds: readonly string[];
   metrics: PluginLookUpTableMetrics;
 };
 
@@ -25,22 +23,19 @@ type LoadPluginLookUpTableParams = {
   env: NodeJS.ProcessEnv;
   index?: PluginRegistrySnapshot;
   metadataSnapshot?: PluginMetadataSnapshot;
-  workerProviderIds?: readonly string[];
   ambientEnvTriggers?: AmbientEnvTriggerPolicy;
 };
 
 export function loadPluginLookUpTable(params: LoadPluginLookUpTableParams): PluginLookUpTable {
-  const workerProviderIds = normalizeWorkerProviderIds(params.workerProviderIds ?? []);
   const {
     metadataSnapshot,
     plan: startup,
     startupPlanMs,
-  } = loadGatewayStartupPluginPlanWithMetadata({ ...params, workerProviderIds });
+  } = loadGatewayStartupPluginPlanWithMetadata(params);
 
   return {
     ...metadataSnapshot,
     startup,
-    workerProviderIds,
     metrics: {
       ...metadataSnapshot.metrics,
       startupPlanMs,

@@ -20,12 +20,6 @@ type CompactionSafeguardRuntimeValue = {
   postCompactionSections?: string[];
   qualityGuardEnabled?: boolean;
   qualityGuardMaxRetries?: number;
-  /**
-   * Id of a registered compaction provider plugin.
-   * When set and found in the compaction provider registry, the provider's
-   * `summarize()` is called instead of the built-in summary request.
-   */
-  provider?: string;
   /** Hook cancellation hides provider errors behind AgentSession's generic error. */
   cancellation?: CompactionSafeguardCancellation;
 };

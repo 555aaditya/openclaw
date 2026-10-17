@@ -18,8 +18,6 @@ import { manifestOwnsConfiguredModelProvider } from "./gateway-startup-plugin-pr
 import type { InstalledPluginIndex, InstalledPluginIndexRecord } from "./installed-plugin-index.js";
 import type { PluginManifestRecord } from "./manifest-registry.js";
 import { normalizePluginPolicyId } from "./plugin-policy-id.js";
-import { manifestOwnsStorageProvider } from "./storage-provider-manifest.js";
-import { manifestOwnsWorkerProvider } from "./worker-provider-manifest.js";
 
 type PluginStartupActivationParams = {
   plugin: InstalledPluginIndexRecord;
@@ -33,8 +31,6 @@ type PluginStartupActivationParams = {
 type GatewayStartupActivationParams = PluginStartupActivationParams & {
   manifest: PluginManifestRecord | undefined;
   requiredAgentHarnessRuntimes: ReadonlySet<string>;
-  configuredWorkerProviderIds: ReadonlySet<string>;
-  configuredStorageProviderIds: ReadonlySet<string>;
   configuredSpeechProviderIds: ReadonlySet<string>;
   configuredWebSearchProviderIds: ReadonlySet<string>;
   configuredModelProviderIds: ReadonlySet<string>;
@@ -47,8 +43,6 @@ type GatewayStartupActivationParams = PluginStartupActivationParams & {
 type StartupActivationPolicy =
   | "provider"
   | "implicit-external"
-  | "worker"
-  | "storage"
   | "decision"
   | "speech"
   | "root"
@@ -123,13 +117,7 @@ function resolveStartupActivationState(
 }
 
 function isProviderCompatStartupPolicy(policy: StartupActivationPolicy): boolean {
-  return (
-    policy === "provider" ||
-    policy === "worker" ||
-    policy === "storage" ||
-    policy === "speech" ||
-    policy === "implicit-external"
-  );
+  return policy === "provider" || policy === "speech" || policy === "implicit-external";
 }
 
 function hasExplicitHookPolicyConfig(
@@ -183,13 +171,7 @@ function passesPluginStartupPolicy(
   }
   const activationState = resolveStartupActivationState(
     params,
-    policy === "worker"
-      ? "cloud worker provider required"
-      : policy === "storage"
-        ? "storage provider required"
-        : policy === "decision"
-          ? "decision model selected"
-          : undefined,
+    policy === "decision" ? "decision model selected" : undefined,
     isProviderCompatStartupPolicy(policy) &&
       isBundledProviderCompatPlugin({
         origin: plugin.origin,
@@ -251,10 +233,6 @@ export function canStartGatewayStartupPlugin(params: GatewayStartupActivationPar
       passesPluginStartupPolicy(params, "harness")) ||
     (hasConfiguredActivationPath({ manifest, config: activationSource.rootConfig ?? config }) &&
       passesPluginStartupPolicy(params, "root")) ||
-    (manifestOwnsWorkerProvider(manifest, params.configuredWorkerProviderIds) &&
-      passesPluginStartupPolicy(params, "worker")) ||
-    (manifestOwnsStorageProvider(manifest, params.configuredStorageProviderIds) &&
-      passesPluginStartupPolicy(params, "storage")) ||
     (manifestOwnsConfiguredContract(
       manifest,
       "speechProviders",
@@ -289,8 +267,6 @@ export function canStartGatewayStartupPlugin(params: GatewayStartupActivationPar
       passesPluginStartupPolicy(params, "hook")) ||
     // Tool factories execute synchronously while an agent surface is built. Load enabled owners
     // at the Gateway lifecycle boundary so a first concurrent turn cannot block control traffic.
-    ((manifest?.contracts?.tools?.length ?? 0) > 0 && passesPluginStartupPolicy(params, "tool")) ||
-    ((manifest?.contracts?.trustedToolPolicies?.length ?? 0) > 0 &&
-      passesPluginStartupPolicy(params, "provider"))
+    ((manifest?.contracts?.tools?.length ?? 0) > 0 && passesPluginStartupPolicy(params, "tool"))
   );
 }

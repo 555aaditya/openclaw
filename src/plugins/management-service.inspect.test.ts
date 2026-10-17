@@ -344,33 +344,6 @@ describe("managed plugin inspection", () => {
     expect((await inspect()).mcpAuth).toEqual([{ serverName: "docs", state: "authorized" }]);
   });
 
-  it("omits resolver-owned requester credentials from operator plugin inspection", async () => {
-    const server = { url: "https://example.test/mcp", auth: "oauth" as const };
-    const snapshot = metadataSnapshot({ enabled: true });
-    snapshot.plugins[0]!.mcpServers = { docs: server };
-    mocks.metadata.mockReturnValue(snapshot);
-    const registry = createEmptyPluginRegistry();
-    registry.mcpServerConnectionResolvers.push({
-      pluginId: "workboard",
-      source: "/plugins/workboard/index.ts",
-      resolver: { serverName: "docs", resolve: async () => null },
-    });
-
-    const inspection = await withPluginRuntimeRegistryScope(registry, () =>
-      inspectManagedPlugin({
-        config: {
-          plugins: { entries: { workboard: { enabled: true } } },
-          mcp: { servers: { docs: server } },
-        },
-        pluginId: "workboard",
-        env: {},
-      }),
-    );
-
-    expect(inspection.mcpAuth).toBeUndefined();
-    expect(mocks.mcpAuth).not.toHaveBeenCalled();
-  });
-
   it.each([
     { value: undefined, env: {}, status: "missing" },
     { value: "private-literal", env: {}, status: "configured" },

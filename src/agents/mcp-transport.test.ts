@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { partitionMcpServersByConnectionScope } from "./mcp-connection-resolver.js";
 import type { McpOAuthIdentity } from "./mcp-oauth-identity.js";
+import { partitionMcpServersByConnectionScope } from "./mcp-requester-scope.js";
 import { resolveMcpTransport } from "./mcp-transport.js";
 
 type StreamableTransportOptions = {

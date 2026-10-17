@@ -65,8 +65,6 @@ export const CORE_GATEWAY_METHOD_SPECS = [
   ["plugin.approval.request", null, "operator.approvals", "<=2026.7"],
   ["plugin.approval.waitDecision", null, "operator.approvals", "<=2026.7", OBSERVATION],
   ["plugin.approval.resolve", null, "operator.approvals", "<=2026.7"],
-  ["plugins.uiDescriptors", "plugin-host-hooks", "operator.read", "<=2026.7"],
-  ["plugins.sessionAction", "plugin-host-hooks", "dynamic", "<=2026.7"],
   ["openclaw.chat", "system-agent", "operator.admin", "<=2026.7"],
   ["openclaw.chat.history", "system-agent", "operator.admin", "2026.7"],
   ["openclaw.changes.list", "system-changes", "operator.admin", "<=2026.7"],
@@ -255,7 +253,6 @@ export const CORE_GATEWAY_METHOD_SPECS = [
   ["sessions.patch", "sessions-mutations", "dynamic", "<=2026.7"],
   ["sessions.goal.update", "sessions-goal", "operator.write", "2026.8"],
   ["sessions.goal.clear", "sessions-goal", "operator.write", "2026.8"],
-  ["sessions.pluginPatch", "sessions-mutations", "operator.admin", "<=2026.7"],
   ["sessions.cleanup", "sessions-read", "operator.admin", "<=2026.7"],
   ["sessions.reset", "sessions-mutations", "operator.admin", "<=2026.7"],
   // State-aware: write scope may delete already-archived sessions
@@ -473,9 +470,6 @@ export const CORE_GATEWAY_METHOD_SPECS = [
     SIDECAR_CONTROL_PLANE_WRITE,
   ],
   ["models.probe", "models-probe", "operator.admin", "<=2026.7"],
-  // Memory migration reads host assistant state and writes agent workspaces.
-  ["migrations.memory.plan", "migrations", "operator.admin", "2026.7"],
-  ["migrations.memory.apply", "migrations", "operator.admin", "2026.7", CONTROL_PLANE_WRITE],
   ["ui.command", "ui-command", "operator.write", "2026.7"],
   ["approval.history", null, "operator.approvals", "2026.7"],
   ["plugin.surface.refresh", "nodes", "operator.read", "<=2026.7"],
@@ -725,13 +719,7 @@ export const CORE_GATEWAY_METHOD_SPECS = [
   ["users.background.remove", "users", "operator.write", "2026.9"],
   ["debugProxy.capture", "debug-proxy", "operator.admin", "2026.9"],
   ["openclaw.setup.auto", "system-agent", "operator.admin", "2026.10"],
-  [
-    "environments.adoptSuggestedProfile",
-    "environments",
-    "operator.admin",
-    "2026.10",
-    CONTROL_PLANE_WRITE,
-  ],
+
   ["ui.command.result", "ui-command", "operator.read", "2026.10"],
   ["mcp.events.list", "mcp-events", "operator.read", "2026.10"],
   ["projects.checkoutOptions", "projects", "operator.read", "2026.10"],

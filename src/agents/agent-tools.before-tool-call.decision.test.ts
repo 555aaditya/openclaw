@@ -226,41 +226,6 @@ describe("generic tool action decision receipts", () => {
     expect(Reflect.ownKeys(source)).toEqual(keys);
   });
 
-  it("records a generic trusted-policy veto as enforced without owner prose", async () => {
-    const registry = createEmptyPluginRegistry();
-    registry.trustedToolPolicies = [
-      {
-        pluginId: "SECRET_PLUGIN",
-        source: "test",
-        policy: {
-          id: "SECRET_POLICY",
-          description: "private policy",
-          evaluate: () => ({ block: true, blockReason: "SECRET_REASON" }),
-        },
-      },
-    ];
-    setActivePluginRegistry(registry);
-    initializeGlobalHookRunner(registry);
-    const works: ExecutionDecisionWork[] = [];
-    const execute = vi.fn();
-    const tool = wrapToolWithBeforeToolCallHook(assembledTool("data", "policy_subject", execute));
-
-    const result = await admittedRun({
-      works,
-      run: () => tool.execute("blocked-call", {}),
-    });
-
-    expect(result).toMatchObject({ details: { status: "blocked" } });
-    expect(execute).not.toHaveBeenCalled();
-    expect(works).toHaveLength(1);
-    expect(works[0]?.receipt).toMatchObject({
-      decision: { outcome: "denied", reasonCode: "generic_action_policy_denied" },
-      enforcement: { coverageState: "enforced" },
-      source: { owner: "tool-action" },
-    });
-    expect(JSON.stringify(works)).not.toMatch(/SECRET_PLUGIN|SECRET_POLICY|SECRET_REASON/u);
-  });
-
   it("does not duplicate a normal plugin-hook decision", async () => {
     const registry = createEmptyPluginRegistry();
     addTestHook({

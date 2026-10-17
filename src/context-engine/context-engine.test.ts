@@ -9,7 +9,6 @@ import { SessionTranscriptReadFenceError } from "../config/sessions/session-tran
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import {
   clearMemoryPluginState,
-  registerMemoryPromptPreparation,
   registerTestMemoryPromptBuilder,
 } from "../plugins/memory-state.test-fixtures.js";
 import { createEmptyPluginRegistry } from "../plugins/registry-empty.js";
@@ -23,11 +22,7 @@ import {
   createPassthroughEngineMethods,
   MockContextEngine,
 } from "./context-engine.test-support.js";
-import {
-  buildMemorySystemPromptAddition,
-  delegateCompactionToRuntime,
-  prepareMemorySystemPromptAddition,
-} from "./delegate.js";
+import { buildMemorySystemPromptAddition, delegateCompactionToRuntime } from "./delegate.js";
 import { LegacyContextEngine } from "./legacy.js";
 import { registerLegacyContextEngine } from "./legacy.registration.js";
 import {
@@ -347,20 +342,6 @@ describe("Engine contract tests", () => {
         availableTools: new Set(["memory_search"]),
       }),
     ).toBeUndefined();
-  });
-
-  it("prepares async memory state before context-engine prompt rendering", async () => {
-    const prepare = vi.fn(async () => ["## Prepared Memory", "loaded from sqlite", ""]);
-    registerMemoryPromptPreparation("memory-wiki", prepare);
-
-    await expect(
-      prepareMemorySystemPromptAddition({
-        availableTools: new Set(["wiki_search"]),
-        agentId: "main",
-        agentSessionKey: "agent:main:main",
-      }),
-    ).resolves.toBe("## Prepared Memory\nloaded from sqlite");
-    expect(prepare).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -1,8 +1,4 @@
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import type {
-  EnvironmentsListResult,
-  EnvironmentsAdoptSuggestedProfileResult,
-} from "../../../../packages/gateway-protocol/src/schema/environments.ts";
 import { readOfflineStorageScope } from "../../app/boot-record.ts";
 import type { ApplicationContext } from "../../app/context.ts";
 import { hasOperatorWriteAccess } from "../../app/operator-access.ts";
@@ -40,7 +36,6 @@ export class DraftGatewayState {
   }
 
   private cloudProfilesValue: DraftCloudProfile[] = [];
-  private suggestedProfileValue: EnvironmentsListResult["suggestedProfile"];
   private gatewayAuthorityValue = "";
   private environmentsValue: DraftEnvironment[] | null = null;
   private cloudProfilesReadyValue = false;
@@ -172,12 +167,10 @@ export class DraftGatewayState {
               ? [{ ...required, providerId: required.providerId }]
               : [],
             environments: [],
-            suggestedProfile: undefined,
           })
         : requestPlaceCatalog(client, runtimeId).then((placeCatalog) => ({
             ...placeCatalog,
             profiles: isAdmin ? placeCatalog.profiles : [],
-            suggestedProfile: isAdmin ? placeCatalog.suggestedProfile : undefined,
           }));
     this.cloudProfileComplete = result
       .then((placeCatalog) => {
@@ -188,8 +181,6 @@ export class DraftGatewayState {
         this.resetCloudProfileRetry();
         this.environmentsValue = placeCatalog.environments;
         this.applyCloudProfiles(placeCatalog.profiles);
-        this.suggestedProfileValue =
-          placeCatalog.profiles.length === 0 ? placeCatalog.suggestedProfile : undefined;
         this.cloudProfilesReadyValue = true;
       })
       .catch(() => {
@@ -219,43 +210,6 @@ export class DraftGatewayState {
 
   get cloudProfiles(): readonly DraftCloudProfile[] {
     return this.cloudProfilesValue;
-  }
-
-  get suggestedProfile(): EnvironmentsListResult["suggestedProfile"] {
-    return this.suggestedProfileValue;
-  }
-
-  async adoptSuggestedProfile(): Promise<string | undefined> {
-    const client = this.gatewayClientValue;
-    const epoch = this.gatewayConnectionEpochValue;
-    const scope = this.sessionCreateScope;
-    if (
-      !client ||
-      !this.gatewayConnectedValue ||
-      !this.read().isAdmin ||
-      !this.suggestedProfileValue
-    ) {
-      return undefined;
-    }
-    const { profile } = await client.request<EnvironmentsAdoptSuggestedProfileResult>(
-      "environments.adoptSuggestedProfile",
-      {},
-    );
-    if (
-      client !== this.gatewayClientValue ||
-      epoch !== this.gatewayConnectionEpochValue ||
-      scope !== this.sessionCreateScope ||
-      !this.gatewayConnectedValue ||
-      !this.read().isAdmin
-    ) {
-      return undefined;
-    }
-    // Retire an older catalog read before publishing the saved profile.
-    void this.readCloudProfiles();
-    this.applyCloudProfiles([profile]);
-    this.suggestedProfileValue = undefined;
-    this.callbacks.changed();
-    return profile.id;
   }
 
   /** The agent roster carries the policy, so it needs no request or wait of its own. */
@@ -464,7 +418,6 @@ export class DraftGatewayState {
     // Retire pending results synchronously before the next render can observe them.
     this.retireCloudProfiles();
     this.cloudProfilesValue = [];
-    this.suggestedProfileValue = undefined;
     this.cloudProfilesReadyValue = false;
     if (resetHostSelection) {
       this.environmentsValue = null;
@@ -620,7 +573,6 @@ export class DraftGatewayState {
     this.stopPreferences = undefined;
     this.identityPreferences = undefined;
     this.cloudProfilesValue = [];
-    this.suggestedProfileValue = undefined;
     this.cloudProfilesReadyValue = false;
     this.environmentsValue = null;
     this.cloudProfileRefresh = null;

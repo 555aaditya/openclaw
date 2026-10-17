@@ -19,7 +19,6 @@ describe("security audit deep probe failure", () => {
         deep: true,
         includeFilesystem: false,
         includeChannelSecurity: false,
-        loadPluginSecurityCollectors: false,
         probeGatewayFn: async ({ url: probeUrl }) => ({
           ok: false,
           url: probeUrl,

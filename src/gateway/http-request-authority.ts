@@ -4,6 +4,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { ToolAuthorizationError } from "../agents/tool-input-error.js";
 import { getRuntimeConfig } from "../config/io.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { GatewayOperatorAccessLifetime } from "../gateway/operator-access-policy.types.js";
 import { isAbortError } from "../infra/abort-signal.js";
 import { emitInternalDiagnosticEvent } from "../infra/diagnostic-events.js";
 import {
@@ -11,7 +12,6 @@ import {
   runHttpConnectionRequest,
   waitForHttpRequestRejection,
 } from "../infra/http-request-lifecycle.js";
-import type { PluginGatewayAccessAuthority } from "../plugins/gateway-access-policy.types.js";
 import { AsyncWorkScope, getAsyncWorkSignal } from "../shared/async-work-scope.js";
 import { readUserProfileAliasRevision } from "../state/user-profile-events.js";
 import { isGatewayAuthPolicyCurrent, captureGatewayAuthPolicy } from "./auth-policy.js";
@@ -191,7 +191,7 @@ export function captureHttpRequestAuthority(
 }
 
 export function bindHttpResponseAuthority<T>(
-  auth: T & { operatorAccessAuthority?: PluginGatewayAccessAuthority | null },
+  auth: T & { operatorAccessAuthority?: GatewayOperatorAccessLifetime | null },
   res: ServerResponse,
   hasCurrentClientAuthority: () => boolean,
 ): T & GatewayHttpResponseAuthority {

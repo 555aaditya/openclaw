@@ -9,9 +9,9 @@ import {
   resolveGroupToolPolicy,
 } from "../agents/agent-tools.policy.js";
 import { McpConnectionAuthorityError } from "../agents/mcp-connection-authority-error.js";
-import { partitionMcpServersByConnectionScope } from "../agents/mcp-connection-resolver.js";
 import { prepareMcpEventCredentialConnection } from "../agents/mcp-event-connection.js";
 import { requestMcpEvent } from "../agents/mcp-event-request.js";
+import { partitionMcpServersByConnectionScope } from "../agents/mcp-requester-scope.js";
 import { resolveSenderToolPolicy } from "../agents/sender-tool-policy.js";
 import { collectExplicitDenylist } from "../agents/tool-policy.js";
 import { isChannelAccountExplicitlyDisabled } from "../channels/account-config-enabled.js";
@@ -175,7 +175,6 @@ export async function prepareMcpEventConnection(params: {
         cfg,
         agentDir: resolveAgentDir(cfg, principal.agentId),
         requesterScope: principal.requester,
-        requesterResolver: partition.resolverRequesterServerNames.length > 0,
       },
       assertPolicyCurrent,
     );

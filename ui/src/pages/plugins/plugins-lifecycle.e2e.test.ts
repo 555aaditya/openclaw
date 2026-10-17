@@ -7,7 +7,6 @@ import {
   changedInstallPolicyWarning,
   configSnapshot,
   describeControlUiE2e,
-  enabledWorkboardCapabilities,
   initialInventory,
   installMockGateway,
   installPolicyWarning,
@@ -61,17 +60,9 @@ describeControlUiE2e("Control UI plugin lifecycle", () => {
         expect(await page.locator(".plugin-catalog-detail__actions .btn__spinner").count()).toBe(1);
         await captureScreenshot(page, `lifecycle-${enabled ? "enable" : "disable"}-pending.png`);
         const snapshot = inventory([plugin], index + 1);
-        const descriptors = {
-          ...enabledWorkboardCapabilities(),
-          generation: index + 1,
-          controlUiTabs: enabled ? enabledWorkboardCapabilities().controlUiTabs : [],
-        };
         await gateway.setMethodResponse("plugins.list", snapshot);
-        await gateway.setMethodResponse("plugins.uiDescriptors", descriptors);
-        const reads = (await gateway.getRequests("plugins.uiDescriptors")).length;
         const inventoryReads = (await gateway.getRequests("plugins.list")).length;
         await gateway.emitGatewayEvent("plugins.changed", { generation: index + 1 });
-        await gateway.waitForRequest("plugins.uiDescriptors", { after: reads });
         await gateway.waitForRequest("plugins.list", { after: inventoryReads });
         expect(await toggle.getAttribute("aria-busy")).toBe("true");
         expect(await toggle.isEnabled()).toBe(false);
@@ -101,19 +92,6 @@ describeControlUiE2e("Control UI plugin lifecycle", () => {
         expect(await page.locator(".plugins-row-message--success").count()).toBe(0);
         expect(await page.locator(".plugin-catalog-detail__actions .btn__spinner").count()).toBe(0);
       }
-      await page.locator(".settings-sidebar").getByRole("button", { name: "Back to app" }).click();
-      const sidebar = page.locator("openclaw-app-sidebar");
-      await sidebar.getByRole("button", { name: "Pages", exact: true }).click();
-      const workboardRoute = sidebar.locator(
-        '.sidebar-pages [data-sidebar-entry="plugin:workboard/workboard"] > .nav-item',
-      );
-      await workboardRoute.waitFor();
-      expect(await workboardRoute.getAttribute("href")).toBe("/workboard");
-      expect(
-        await sidebar
-          .locator('.sidebar-rail [data-sidebar-entry="plugin:workboard/workboard"]')
-          .count(),
-      ).toBe(0);
       expect(await gateway.getRequests("plugins.setEnabled")).toHaveLength(3);
       expect(await gateway.getRequests("connect")).toHaveLength(connects);
       expect(await gateway.getRequests("gateway.restart.request")).toHaveLength(0);
@@ -177,11 +155,6 @@ describeControlUiE2e("Control UI plugin lifecycle", () => {
         .click();
       await page.getByRole("button", { name: "Disable Calendar Plus", exact: true }).waitFor();
       const inspectionReads = (await gateway.getRequests("plugins.inspect")).length;
-      await gateway.setMethodResponse("plugins.uiDescriptors", {
-        ...enabledWorkboardCapabilities(),
-        generation: 17,
-        controlUiTabs: [],
-      });
       if (inspection === "before") {
         await gateway.deferNext("plugins.inspect");
         await gateway.emitGatewayEvent("plugins.changed", { generation: 17 });

@@ -5,7 +5,6 @@ export type SessionPanelToggleSlot =
   | "desktop"
   | "portal"
   | "terminal"
-  | "link-reader"
   | `plugin:${string}/${string}`;
 
 const INTENT_TTL_MS = 10_000;
@@ -24,7 +23,7 @@ export function panelToggleSessionKey(event: Event): string | undefined {
 
 /**
  * The application shell exists before a session pane finishes mounting. Keep
- * the newest panel intent (all reader opens in FIFO order) so early commands reach the pane rather
+ * the newest panel intent so early commands reach the pane rather
  * than disappearing during route startup.
  */
 export function rememberSessionPanelToggle(slot: SessionPanelToggleSlot, event: Event): void {
@@ -42,10 +41,7 @@ export function rememberSessionPanelToggle(slot: SessionPanelToggleSlot, event: 
     panelToggleSessionKey(event),
     event instanceof CustomEvent ? event.detail?.agentId : undefined,
   );
-  const closes = event instanceof CustomEvent && event.detail?.open === false;
-  const queue = slot === "link-reader" && !closes ? (pendingToggles.get(key) ?? []) : [];
-  queue.push({ event, createdAt: now });
-  pendingToggles.set(key, queue);
+  pendingToggles.set(key, [{ event, createdAt: now }]);
 }
 
 /** Clear an intent that the active pane already handled directly. */

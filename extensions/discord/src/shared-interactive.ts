@@ -15,10 +15,6 @@ import {
   type AskUserQuestionOptionIndices,
 } from "openclaw/plugin-sdk/reply-payload";
 import { buildDiscordApprovalCustomId } from "./approval-custom-id.js";
-import {
-  buildDiscordActivityCustomId,
-  isValidDiscordActivityWidgetId,
-} from "./component-custom-id.js";
 import type {
   DiscordComponentButtonSpec,
   DiscordComponentMessageSpec,
@@ -62,13 +58,7 @@ function buildDiscordButtonComponent(
     });
     return internalCustomId ? { ...component, internalCustomId } : undefined;
   }
-  if (
-    action.type === "web-app" &&
-    action.widgetId &&
-    isValidDiscordActivityWidgetId(action.widgetId)
-  ) {
-    component.internalCustomId = buildDiscordActivityCustomId(action.widgetId);
-  } else if (action.type === "url" || action.type === "web-app") {
+  if (action.type === "url" || action.type === "web-app") {
     if (action.type === "web-app" && !action.url) {
       return undefined;
     }

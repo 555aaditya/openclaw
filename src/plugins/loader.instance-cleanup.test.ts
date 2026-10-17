@@ -111,7 +111,7 @@ it.each(["settled", "rejected", "pending"] as const)(
 );
 
 it.each([true, false])(
-  "keeps workflow admission through registration and retirement (activate: %s)",
+  "keeps tool callback admission through registration and retirement (activate: %s)",
   async (activate) => {
     useNoBundledPlugins();
     const id = `registration-workflow-${activate}`;
@@ -122,12 +122,7 @@ it.each([true, false])(
       body: `const fs = require("node:fs");
         module.exports = { id: ${JSON.stringify(id)}, register(api) {
           const observe = (phase) => {
-            const set = api.runContext.setRunContext({ runId: "fixture-run", namespace: "startup", value: { phase } });
-            const value = api.runContext.getRunContext({ runId: "fixture-run", namespace: "startup" });
-            const event = api.agent.events.emitAgentEvent({ runId: "fixture-run", stream: ${JSON.stringify(`${id}.startup`)}, data: { phase } });
-            api.runContext.clearRunContext({ runId: "fixture-run", namespace: "startup" });
-            const cleared = api.runContext.getRunContext({ runId: "fixture-run", namespace: "startup" }) === undefined;
-            fs.writeFileSync(${JSON.stringify(observationFile)}, JSON.stringify({ phase, set, value, event, cleared }));
+            fs.writeFileSync(${JSON.stringify(observationFile)}, JSON.stringify({ phase }));
           };
           observe("register");
           api.registerTool(() => { observe("callback"); return null; }, { names: ["workflow_probe"] });
@@ -141,16 +136,7 @@ it.each([true, false])(
     });
     try {
       expect(registry.plugins[0]?.status).toBe("loaded");
-      const expected = (phase: string) => ({
-        phase,
-        // Admitted registration and callbacks can share scratch state without global activation.
-        set: true,
-        value: { phase },
-        event: activate
-          ? { emitted: true, stream: `${id}.startup` }
-          : { emitted: false, reason: "global side effects disabled" },
-        cleared: true,
-      });
+      const expected = (phase: string) => ({ phase });
       expect(observed()).toEqual(expected("register"));
       const factory = registry.tools[0]!.factory;
       expect(factory({})).toBeNull();

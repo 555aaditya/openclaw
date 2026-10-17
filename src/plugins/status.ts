@@ -93,7 +93,6 @@ export type PluginInspectReport = ReturnType<typeof buildPluginShapeSummary> & {
   cliCommands: string[];
   services: string[];
   decisions?: ReturnType<typeof inspectDecisionProviders>;
-  gatewayDiscoveryServices: string[];
   gatewayMethods: string[];
   mcpServers: Array<{
     name: string;
@@ -563,7 +562,6 @@ function buildPluginInspectRecord(
     decisions: inspectDecisionProviders(config, report).filter(
       (entry) => entry.pluginId === plugin.id,
     ),
-    gatewayDiscoveryServices: [...plugin.gatewayDiscoveryServiceIds],
     gatewayMethods,
     mcpServers,
     lspServers,

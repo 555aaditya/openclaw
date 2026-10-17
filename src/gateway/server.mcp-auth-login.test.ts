@@ -13,7 +13,6 @@ import type {
   WizardStartResult,
 } from "../../packages/gateway-protocol/src/index.js";
 import { getOrCreateSessionMcpRuntime } from "../agents/agent-bundle-mcp-manager.test-support.js";
-import { partitionMcpServersByConnectionScope } from "../agents/mcp-connection-resolver.js";
 import { operatorMcpOAuthIdentity } from "../agents/mcp-oauth-identity.js";
 import { readMcpOAuthStore } from "../agents/mcp-oauth-store.js";
 import {
@@ -31,13 +30,10 @@ import { setGatewayPluginMetadataSnapshot } from "../plugins/current-plugin-meta
 import { getCurrentPluginMetadataSnapshotState } from "../plugins/current-plugin-metadata-state.js";
 import { setCurrentPluginMetadataSnapshot } from "../plugins/current-plugin-metadata.test-support.js";
 import { createPluginMetadataSnapshotFixture } from "../plugins/plugin-metadata.test-support.js";
-import { createEmptyPluginRegistry } from "../plugins/registry-empty.js";
-import { withPluginRuntimeRegistryScope } from "../plugins/runtime/gateway-request-scope.js";
 import { createDeferredCore, type Deferred } from "../shared/deferred.js";
 import { GATEWAY_CLIENT_MODES, GATEWAY_CLIENT_NAMES } from "../utils/message-channel.js";
 import * as setupMigration from "../wizard/setup.migration-snapshot.js";
 import { pruneStaleControlPlaneBuckets } from "./control-plane-rate-limit.js";
-import { createGatewayMethodRegistry } from "./methods/registry.js";
 import { mcpAuthLoginHandlers } from "./server-methods/mcp-auth-login.js";
 import { whenAdmittedWizardSessionSettled } from "./server-methods/setup-admission.js";
 import type { GatewayRequestHandlerOptions } from "./server-methods/types.js";
@@ -72,7 +68,6 @@ describe("registered mcp.authLogin", () => {
   let redirectEntered = createDeferredCore();
   let releaseRedirect: Deferred | undefined;
   let admitted: GatewayRequestHandlerOptions | undefined;
-  let beforeLogin: ((request: GatewayRequestHandlerOptions) => Promise<void>) | undefined;
   let admissionSettled = createDeferredCore();
   let discoveryEntered = createDeferredCore();
   let releaseDiscovery: Deferred | undefined;
@@ -208,7 +203,6 @@ describe("registered mcp.authLogin", () => {
     vi.spyOn(mcpAuthLoginHandlers, "mcp.authLogin").mockImplementation(async (request) => {
       admitted = request;
       try {
-        await beforeLogin?.(request);
         await login(request);
       } finally {
         admissionSettled.resolve();
@@ -584,49 +578,6 @@ describe("registered mcp.authLogin", () => {
     }
   });
 
-  it("rejects a resolver replacement between dispatch and handler admission", async () => {
-    await clearMcpOAuthCredentials(identity());
-    const entered = createDeferredCore();
-    const release = createDeferredCore();
-    const sessionId = randomUUID();
-    const before = requests.length;
-    beforeLogin = async () => {
-      entered.resolve();
-      await release.promise;
-    };
-    const start = rpcReq(owner, "mcp.authLogin", { sessionId, serverName: "docs" });
-    await entered.promise;
-    const invocation = expectDefined(admitted, "admitted request");
-    const resolveRegistry = expectDefined(
-      invocation.context.getGatewayMethodRegistry,
-      "selected registry getter",
-    );
-    const registry = createEmptyPluginRegistry();
-    registry.mcpServerConnectionResolvers.push({
-      pluginId: "fixture-resolver",
-      source: "mcp-auth-login-fixture",
-      resolver: { serverName: "docs", resolve: async () => ({ url: resourceUrl }) },
-    });
-    const replacement = createGatewayMethodRegistry(resolveRegistry().descriptors(), registry);
-    try {
-      invocation.context.getGatewayMethodRegistry = () => replacement;
-      release.resolve();
-      expect((await start).ok).toBe(false);
-      expect(requests).toHaveLength(before);
-      expect((await readMcpOAuthStore(identity().storeKey)).tokens).toBeUndefined();
-    } finally {
-      beforeLogin = undefined;
-      release.resolve();
-      invocation.context.getGatewayMethodRegistry = resolveRegistry;
-      const session = invocation.context.wizardSessions.get(sessionId);
-      if (session) {
-        session.close(new Error("Test cleanup"));
-        await whenAdmittedWizardSessionSettled(session);
-        invocation.context.purgeWizardSession(sessionId);
-      }
-    }
-  });
-
   it("expires callbacks and cancels the exact published attempt", async () => {
     await clearMcpOAuthCredentials(identity());
     const started = await begin();
@@ -691,94 +642,6 @@ describe("registered mcp.authLogin", () => {
           gateway: { reload: { mode: "off" } },
           mcp: { servers: { docs: config } },
         });
-      }
-    },
-  );
-
-  it.each(["admin scope", "plugin registry", "connector URL", "in-place connector URL"] as const)(
-    "rejects token publication after its %s authority changes",
-    async (change) => {
-      await clearMcpOAuthCredentials(identity());
-      const started = await begin();
-      const invocation = expectDefined(admitted, "admitted request");
-      const client = expectDefined(invocation.client, "admitted client");
-      const scopes = client.connect.scopes;
-      const resolveRegistry = expectDefined(
-        invocation.context.getGatewayMethodRegistry,
-        "selected registry getter",
-      );
-      const originalRegistry = resolveRegistry();
-      const registry = createEmptyPluginRegistry();
-      registry.mcpServerConnectionResolvers.push({
-        pluginId: "fixture-resolver",
-        source: "mcp-auth-login-fixture",
-        resolver: { serverName: "docs", resolve: async () => ({ url: resourceUrl }) },
-      });
-      const replacement = createGatewayMethodRegistry(originalRegistry.descriptors(), registry);
-      let changedServer: McpServerConfig | undefined;
-      let originalUrl: string | undefined;
-      tokenEntered = createDeferredCore();
-      releaseToken = createDeferredCore();
-      try {
-        expect((await callback(started.state)).status).toBe(200);
-        await tokenEntered.promise;
-        if (change === "admin scope") {
-          client.connect.scopes = ["operator.read"];
-        } else if (change === "plugin registry") {
-          invocation.context.getGatewayMethodRegistry = () => replacement;
-          expect(
-            withPluginRuntimeRegistryScope(
-              registry,
-              () =>
-                partitionMcpServersByConnectionScope({ docs: config }).resolverRequesterServerNames,
-            ),
-          ).toEqual(["docs"]);
-        } else if (change === "connector URL") {
-          await writeConfigFile({
-            gateway: { reload: { mode: "off" } },
-            mcp: { servers: { docs: { ...config, url: resourceUrl + "/replacement" } } },
-          });
-          await rpcReq(owner, "wizard.status", { sessionId: started.sessionId });
-        } else {
-          changedServer = expectDefined(
-            invocation.context.getRuntimeConfig().mcp?.servers?.docs,
-            "published connector",
-          );
-          originalUrl = changedServer.url;
-          changedServer.url = resourceUrl + "/replacement";
-        }
-        const session = expectDefined(
-          invocation.context.wizardSessions.get(started.sessionId),
-          "admitted wizard",
-        );
-        releaseToken.resolve();
-        // rpcReq republishes disk config. Let the exchange inspect the edited
-        // runtime object before a subsequent RPC replaces that publication.
-        await whenAdmittedWizardSessionSettled(session);
-        expect(session.getStatus()).toBe("error");
-        expect((await readMcpOAuthStore(identity().storeKey)).tokens).toBeUndefined();
-        if (change === "connector URL" || change === "in-place connector URL") {
-          const result = await terminal(started.sessionId);
-          expect(result.status).toBe("error");
-          expect(JSON.stringify(result)).not.toContain("private exchange detail");
-        }
-      } finally {
-        releaseToken.resolve();
-        releaseToken = undefined;
-        client.connect.scopes = scopes;
-        invocation.context.getGatewayMethodRegistry = resolveRegistry;
-        if (changedServer) {
-          changedServer.url = originalUrl;
-        }
-        if (change === "connector URL" || change === "in-place connector URL") {
-          tokenError = false;
-          await writeConfigFile({
-            gateway: { reload: { mode: "off" } },
-            mcp: { servers: { docs: config } },
-          });
-        } else {
-          await terminal(started.sessionId);
-        }
       }
     },
   );

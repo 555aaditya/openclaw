@@ -4,13 +4,14 @@ import { validatePluginUiCapabilities } from "../../packages/gateway-protocol/sr
 import { normalizeOptionalString } from "../../packages/normalization-core/src/string-coerce.js";
 import { normalizeTrimmedStringList } from "../../packages/normalization-core/src/string-normalization.js";
 import { validatePluginCategories } from "../../packages/plugin-package-contract/src/index.js";
-import { matchRootFileOpenFailure } from "../infra/boundary-file-read.js";
+import { isRootFileMissingFailure, matchRootFileOpenFailure } from "../infra/boundary-file-read.js";
 import { isRecord } from "../utils.js";
 import { loadPluginControlUiDeclaration } from "./control-ui-build-manifest.js";
 import { coerceDoctorSessionRouteStateOwners } from "./doctor-session-route-state-owner-types.js";
 import * as capabilityNormalizers from "./manifest-capability-normalizers.js";
 import { normalizeManifestCommandAliases } from "./manifest-command-aliases.js";
 import { normalizeConfigGroups } from "./manifest-config-groups.js";
+import { PLUGIN_MANIFEST_CONTRACT_KEYS } from "./manifest-contract-keys.js";
 import { normalizeManifestModelCatalog } from "./manifest-decision-catalog.js";
 import * as modelProviderNormalizers from "./manifest-model-provider-normalizers.js";
 import { normalizeManifestPlatforms } from "./manifest-platforms.js";
@@ -174,10 +175,11 @@ export function loadPluginManifest(
   const manifestPath = file.ok ? file.path : path.join(rootDir, PLUGIN_MANIFEST_FILENAME);
   if (!file.ok) {
     return matchRootFileOpenFailure(file.failure, {
-      path: () => ({
+      path: (failure) => ({
         ok: false,
         error: `plugin manifest not found: ${manifestPath}`,
         manifestPath,
+        missing: isRootFileMissingFailure(failure),
       }),
       fallback: (failure) => ({
         ok: false,
@@ -189,20 +191,22 @@ export function loadPluginManifest(
   if (file.manifest) {
     return file.manifest;
   }
+  const parsed = parsePluginCacheJson(file, { json5: true });
+  const raw = parsed.ok && isRecord(parsed.value) ? parsed.value : undefined;
+  const id = normalizeOptionalString(raw?.id) ?? "";
   const cacheResult = (result: PluginManifestLoadResult): PluginManifestLoadResult => {
-    return (file.manifest = result);
+    // Validation can fail after identity is known. Keep that identity for the
+    // existing activation policy instead of substituting a directory/package hint.
+    return (file.manifest = !result.ok && id ? { ...result, manifestId: id } : result);
   };
   const fail = (error: string): PluginManifestLoadResult =>
     cacheResult({ ok: false, error, manifestPath });
-  const parsed = parsePluginCacheJson(file, { json5: true });
   if (!parsed.ok) {
     return fail(`failed to parse plugin manifest: ${String(parsed.error)}`);
   }
-  const raw = parsed.value;
-  if (!isRecord(raw)) {
+  if (!raw) {
     return fail("plugin manifest must be an object");
   }
-  const id = normalizeOptionalString(raw.id) ?? "";
   if (!id) {
     return fail("plugin manifest requires id");
   }
@@ -235,6 +239,14 @@ export function loadPluginManifest(
   );
   const providers = normalizeTrimmedStringList(raw.providers);
   const channels = normalizeTrimmedStringList(raw.channels);
+  if (raw.contracts && typeof raw.contracts === "object" && !Array.isArray(raw.contracts)) {
+    const unsupported = Object.keys(raw.contracts).filter(
+      (key) => !PLUGIN_MANIFEST_CONTRACT_KEYS.some((supported) => supported === key),
+    );
+    if (unsupported.length > 0) {
+      return fail(`unsupported plugin manifest contracts: ${unsupported.join(", ")}`);
+    }
+  }
   const contracts = capabilityNormalizers.normalizeManifestContracts(raw.contracts);
   const cliBackends = normalizeTrimmedStringList(raw.cliBackends);
   const rawDoctorContract = isRecord(raw.doctorContract) ? raw.doctorContract : undefined;

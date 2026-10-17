@@ -10,7 +10,6 @@ import {
   findActiveDegradedPlugin,
   formatPluginVerificationDiagnostic,
 } from "../plugins/runtime-degraded-state.js";
-import { resolveDurableWorkerProviderAutoEnabledReasons } from "../plugins/worker-provider-manifest.js";
 import { mergeActivationSectionsIntoRuntimeConfig } from "./plugin-activation-runtime-config.js";
 import { loadGatewayPlugins } from "./server-plugins.js";
 
@@ -58,13 +57,8 @@ export async function prepareGatewayPluginLoad(params: GatewayPluginBootstrapPar
               runtimeConfig: params.cfg,
               activationConfig: autoEnabled.config,
             });
-      const durableReasons = params.pluginLookUpTable
-        ? resolveDurableWorkerProviderAutoEnabledReasons(
-            params.pluginLookUpTable.manifestRegistry,
-            params.pluginLookUpTable.workerProviderIds,
-          )
-        : {};
-      const autoEnabledReasons = { ...autoEnabled.autoEnabledReasons, ...durableReasons };
+
+      const autoEnabledReasons = autoEnabled.autoEnabledReasons;
       params.startupTrace?.detail("plugins.gateway-prepare", [
         ["autoEnableMs", autoEnableMs],
         ["resolvedConfigMs", performance.now() - started - autoEnableMs],

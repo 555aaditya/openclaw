@@ -2,24 +2,13 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
 import * as agentHarnessRuntime from "openclaw/plugin-sdk/agent-harness-runtime";
-import { withPluginRuntimeRegistryScope } from "openclaw/plugin-sdk/channel-test-helpers";
-import {
-  createPluginRecord,
-  createPluginRegistry,
-  createPluginRuntimeMock,
-  disposePluginRegistryInstances,
-} from "openclaw/plugin-sdk/plugin-test-runtime";
 import { describe, expect, it, vi } from "vitest";
 import { readAttemptTerminal } from "./attempt-terminal.test-helper.js";
-import { setCodexTestToolFactory } from "./host-capability.test-support.js";
 import {
-  createCodexRuntimePlanFixture,
   createParams,
   createResumeHarness,
-  createRuntimeDynamicTool,
   createStartedThreadHarness,
   runCodexAppServerAttempt,
-  setCodexTestModelSupportsTools,
   setupRunAttemptTestHooks,
   tempDir,
 } from "./run-attempt-test-harness.js";
@@ -70,41 +59,6 @@ async function attempt(params: ReturnType<typeof createParams>, resume = false) 
 }
 
 describe("Codex workspace instruction snapshots", () => {
-  it("keeps loaded instructions when optional memory preparation fails and freezes them on resume", async () => {
-    const { params, agentsPath } = await workspace(initial);
-    setCodexTestToolFactory(params, () => [createRuntimeDynamicTool("memory_get")]);
-    params.disableTools = false;
-    params.runtimePlan = createCodexRuntimePlanFixture();
-    setCodexTestModelSupportsTools(params, true);
-    const registration = createPluginRegistry({
-      runtime: createPluginRuntimeMock(),
-      logger: { info() {}, warn() {}, error() {}, debug() {} },
-      activateGlobalSideEffects: false,
-    });
-    const record = createPluginRecord({ id: "workspace-memory-failure" });
-    registration.registry.plugins.push(record);
-    const failure = new Error("optional memory contribution unavailable");
-    const warn = vi.spyOn(agentHarnessRuntime.embeddedAgentLog, "warn");
-    const api = registration.createApi(record, { config: params.config ?? {} });
-    api.registerMemoryPromptPreparation(
-      vi.fn<() => Promise<string[]>>().mockRejectedValueOnce(failure).mockResolvedValue([]),
-    );
-    try {
-      await withPluginRuntimeRegistryScope(registration.registry, async () => {
-        expect((await attempt(params)).instructions).toContain(initial);
-        expect(warn).toHaveBeenCalledWith("failed to prepare codex memory recall instructions", {
-          error: failure,
-        });
-        await fs.writeFile(agentsPath, updated);
-        const { instructions } = await attempt(params, true);
-        expect(instructions).toContain(initial);
-        expect(instructions).not.toContain(updated);
-      });
-    } finally {
-      await disposePluginRegistryInstances(registration.registry);
-    }
-  });
-
   it("retains the first successful capture after resume bootstrap loading fails", async () => {
     const { params, agentsPath } = await workspace(initial);
     await attempt(params);

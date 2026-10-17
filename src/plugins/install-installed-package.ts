@@ -74,7 +74,9 @@ export async function validatePackagePluginInstallSource(params: {
   const pkgName = normalizeOptionalString(manifest.name) ?? "";
   const npmPluginId = pkgName || "plugin";
   const ocManifestResult = params.runtime.loadPluginManifest(params.packageDir);
-  if (!ocManifestResult.ok && params.requirePluginManifest) {
+  // Optional manifests may be absent for legacy packages, but a present invalid
+  // declaration must not lose its security contracts by falling back to package.json.
+  if (!ocManifestResult.ok && (params.requirePluginManifest || !ocManifestResult.missing)) {
     return {
       ok: false,
       error: `package missing valid openclaw.plugin.json: ${ocManifestResult.error}`,

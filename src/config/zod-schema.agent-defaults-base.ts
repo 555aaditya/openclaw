@@ -132,12 +132,6 @@ export const AgentDefaultsBaseSchema = z.strictObject({
       /** Enable embedded proactive auto-compaction. Default: true. */
       enabled: z.boolean().optional(),
       mode: z.union([z.literal("default"), z.literal("safeguard")]).optional(),
-      /**
-       * Id of a registered compaction provider plugin.
-       * When set, the provider's summarize() is called instead of the
-       * built-in summary request. Falls back to built-in on failure.
-       */
-      provider: z.string().optional(),
       /** Thinking level for embedded OpenClaw compaction summaries. Default: low. */
       thinkingLevel: z.union([AgentThinkingLevelSchema, z.literal("inherit")]).optional(),
       /** Embedded OpenClaw keepRecentTokens budget used for cut-point selection. */

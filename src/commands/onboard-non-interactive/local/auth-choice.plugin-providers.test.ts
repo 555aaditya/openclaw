@@ -22,10 +22,7 @@ vi.mock("../../runtime-plugin-install.js", () => ({
   CODEX_RUNTIME_PLUGIN_ID: "codex",
   ensureModelSelectionRuntimePlugins,
 }));
-const offerPostInstallMigrations = vi.hoisted(() => vi.fn(async () => {}));
-vi.mock("../../../wizard/setup.post-install-migration.js", () => ({
-  offerPostInstallMigrations,
-}));
+
 const resolvePreferredProviderForAuthChoice = vi.hoisted(() => vi.fn(async () => undefined));
 vi.mock("../../../plugins/provider-auth-choice-preference.js", () => ({
   resolvePreferredProviderForAuthChoice,
@@ -72,7 +69,6 @@ beforeEach(() => {
     cfg,
     codexInstalled: false,
   }));
-  offerPostInstallMigrations.mockClear();
 });
 
 function createRuntime() {
@@ -812,80 +808,6 @@ describe("applyNonInteractivePluginProviderChoice", () => {
     expect(mockArg(resolvePluginProvidersCore).includeUntrustedWorkspacePlugins).toBe(false);
   });
 
-  it("ensures Codex after a non-interactive OpenAI provider choice sets the default model", async () => {
-    const runtime = createRuntime();
-    const selectedConfig = {
-      agents: { defaults: { model: { primary: "openai/gpt-5.5" } } },
-    } as OpenClawConfig;
-    const installedConfig = {
-      ...selectedConfig,
-      plugins: { entries: { codex: { enabled: true } } },
-    } as OpenClawConfig;
-    const runNonInteractive = vi.fn(async () => selectedConfig);
-    ensureModelSelectionRuntimePlugins.mockResolvedValue({
-      ok: true,
-      cfg: installedConfig,
-      codexInstalled: true,
-    });
-    resolvePluginProvidersCore.mockReturnValue([{ id: "openai", pluginId: "openai" }] as never);
-    resolveProviderPluginChoice.mockReturnValue({
-      provider: { id: "openai", pluginId: "openai", label: "OpenAI" },
-      method: { runNonInteractive },
-    });
-
-    const result = await applyChoice({
-      authChoice: "openai-api-key",
-      runtime,
-    });
-
-    expect(runNonInteractive).toHaveBeenCalledOnce();
-    const ensureInput = mockArg(ensureModelSelectionRuntimePlugins);
-    expect(ensureInput.cfg).toBe(selectedConfig);
-    expect(ensureInput.model).toBe("openai/gpt-5.5");
-    expect(ensureInput.runtime).toBe(runtime);
-    expectWorkspaceDir(ensureInput.workspaceDir);
-    expect(result).toBe(installedConfig);
-    expect(offerPostInstallMigrations).toHaveBeenCalledOnce();
-    const migrationInput = mockArg(offerPostInstallMigrations);
-    expect(migrationInput.config).toBe(installedConfig);
-    expect(migrationInput.installedPluginIds).toEqual(["codex"]);
-    expect(migrationInput.nonInteractive).toBe(true);
-  });
-
-  it("rejects an unavailable required runtime before later setup effects", async () => {
-    const status = "failed";
-    const runtime = createRuntime();
-    const selectedConfig = {
-      agents: { defaults: { model: { primary: "openai/gpt-5.5" } } },
-    } as OpenClawConfig;
-    const runNonInteractive = vi.fn(async () => selectedConfig);
-    const message = `Codex runtime is required but unavailable (status: ${status}). Retry setup after checking npm and the configured registry.`;
-    ensureModelSelectionRuntimePlugins.mockResolvedValue({ ok: false, message });
-    resolvePluginProvidersCore.mockReturnValue([{ id: "openai", pluginId: "openai" }] as never);
-    resolveProviderPluginChoice.mockReturnValue({
-      provider: { id: "openai", pluginId: "openai", label: "OpenAI" },
-      method: { runNonInteractive },
-    });
-
-    const result = await applyChoice({
-      authChoice: "openai-api-key",
-      opts: { json: true } as never,
-      runtime,
-    });
-
-    expect(result).toBeNull();
-    expect(runtime.exit).toHaveBeenCalledWith(1);
-    expect(runtime.error).toHaveBeenCalledWith(message);
-    expect(JSON.parse(String(runtime.log.mock.calls[0]?.[0]))).toEqual({
-      ok: false,
-      error: { type: "cli_error", message },
-      phase: "options",
-      message,
-    });
-    expect(runtime.log).toHaveBeenCalledOnce();
-    expect(offerPostInstallMigrations).not.toHaveBeenCalled();
-  });
-
   it("ensures Copilot after a non-interactive GitHub Copilot choice opts into the runtime", async () => {
     const runtime = createRuntime();
     const selectedConfig = {
@@ -925,30 +847,5 @@ describe("applyNonInteractivePluginProviderChoice", () => {
     expect(ensureInput.runtime).toBe(runtime);
     expectWorkspaceDir(ensureInput.workspaceDir);
     expect(result).toBe(installedConfig);
-  });
-
-  it("does not offer post-install migration when Codex is not required for the selected model", async () => {
-    const runtime = createRuntime();
-    const selectedConfig = {
-      agents: { defaults: { model: { primary: "openai/gpt-5.5" } } },
-    } as OpenClawConfig;
-    const runNonInteractive = vi.fn(async () => selectedConfig);
-    ensureModelSelectionRuntimePlugins.mockResolvedValue({
-      ok: true,
-      cfg: selectedConfig,
-      codexInstalled: false,
-    });
-    resolvePluginProvidersCore.mockReturnValue([{ id: "openai", pluginId: "openai" }] as never);
-    resolveProviderPluginChoice.mockReturnValue({
-      provider: { id: "openai", pluginId: "openai", label: "OpenAI" },
-      method: { runNonInteractive },
-    });
-
-    await applyChoice({
-      authChoice: "openai-api-key",
-      runtime,
-    });
-
-    expect(offerPostInstallMigrations).not.toHaveBeenCalled();
   });
 });

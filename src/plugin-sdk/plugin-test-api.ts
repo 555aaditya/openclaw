@@ -21,7 +21,7 @@ export type TestPluginApiInput = Partial<OpenClawPluginApi>;
 
 /** Create a minimal plugin API object for plugin-sdk contract and unit tests. */
 export function createTestPluginApi(api: TestPluginApiInput = {}): OpenClawPluginApi {
-  const { agent, lifecycle, runContext, session, ...flatApi } = api;
+  const { agent, lifecycle, session, ...flatApi } = api;
   const mergedApi = {
     id: "test-plugin",
     name: "test-plugin",
@@ -33,25 +33,16 @@ export function createTestPluginApi(api: TestPluginApiInput = {}): OpenClawPlugi
     registerTool() {},
     registerHook() {},
     registerHttpRoute() {},
-    registerHostedMediaResolver() {},
-    registerWidgetPresenter() {},
-    registerMcpServerConnectionResolver() {},
     registerChannel() {},
     registerGatewayMethod() {},
-    registerGatewayAccessPolicy() {},
     registerSessionCatalog() {},
     registerCli() {},
-    registerNodeCliFeature() {},
     registerCliBackend() {},
-    registerTextTransforms() {},
     registerService() {},
-    registerGatewayDiscoveryService() {},
     registerReload() {},
     registerNodeHostCommand() {},
     registerNodeInvokePolicy() {},
-    registerSecurityAuditCollector() {},
     registerConfigMigration() {},
-    registerMigrationProvider() {},
     registerAutoEnableProbe() {},
     registerProvider() {},
     registerModelCatalogProvider() {},
@@ -66,42 +57,21 @@ export function createTestPluginApi(api: TestPluginApiInput = {}): OpenClawPlugi
     registerVideoGenerationProvider() {},
     registerWebFetchProvider() {},
     registerWebSearchProvider() {},
-    registerWorkerProvider() {},
-    registerStorageProvider() {},
     registerInteractiveHandler() {},
-    onConversationBindingResolved() {},
     registerCommand() {},
     registerContextEngine() {},
-    registerCompactionProvider() {},
     registerDecisionProvider() {},
     registerAgentHarness() {},
-    registerAgentExecutorController() {},
-    registerCodexAppServerExtensionFactory() {},
     registerAgentToolResultMiddleware() {},
-    registerSessionExtension() {},
     enqueueNextTurnInjection: async (injection) => ({
       enqueued: false,
       id: "",
       sessionKey: injection.sessionKey,
     }),
-    registerTrustedToolPolicy() {},
-    registerToolMetadata() {},
-    registerControlUiDescriptor() {},
-    registerBoardWidgetContentKind() {},
     registerRuntimeLifecycle() {},
     registerAgentEventSubscription() {},
-    emitAgentEvent: () => ({ emitted: false as const, reason: "test api" }),
-    setRunContext: () => false,
-    getRunContext: () => undefined,
-    clearRunContext() {},
-    registerSessionSchedulerJob: () => undefined,
-    registerSessionAction() {},
-    sendSessionAttachment: async () => ({ ok: false, error: "test plugin api" }),
-    scheduleSessionTurn: async () => undefined,
-    unscheduleSessionTurnsByTag: async () => ({ removed: 0, failed: 0 }),
     registerMemoryCapability() {},
     registerMemoryPromptSupplement() {},
-    registerMemoryPromptPreparation() {},
     registerMemoryCorpusSupplement() {},
     resolvePath(input: string) {
       return input;
@@ -109,18 +79,14 @@ export function createTestPluginApi(api: TestPluginApiInput = {}): OpenClawPlugi
     on() {},
     ...flatApi,
   } satisfies OpenClawPluginApiWithoutFacades;
-  // Facades derive nested `agent`, `lifecycle`, `runContext`, and `session`
+  // Facades derive nested `agent`, `lifecycle`, and `session`
   // views from the flat API; explicit overrides below let tests replace only
   // the nested surface under test without rebuilding every no-op method.
-  const withFacades = attachPluginApiFacades(mergedApi, async () => ({
-    steered: false,
-    reason: "test api",
-  }));
+  const withFacades = attachPluginApiFacades(mergedApi);
   return {
     ...withFacades,
     ...(agent ? { agent } : {}),
     ...(lifecycle ? { lifecycle } : {}),
-    ...(runContext ? { runContext } : {}),
     ...(session ? { session } : {}),
   };
 }

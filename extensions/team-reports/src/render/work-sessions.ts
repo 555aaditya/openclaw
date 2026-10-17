@@ -26,7 +26,7 @@ function sessionRow(ctx: PageContext, session: WorkSession): string {
       : status === "failed" || status === "timeout"
         ? "warning"
         : "neutral";
-  return `<li class="oc-resource-list-item work-session"><div class="work-session-main"><a class="work-session-title" href="${escapeHtml(path)}" target="_top" data-work-session-key="${escapeHtml(session.key)}"${session.agentId ? ` data-work-session-agent="${escapeHtml(session.agentId)}"` : ""}>${escapeHtml(title)}</a><span class="muted">${escapeHtml(owner)}${session.projectId ? ` · ${escapeHtml(session.projectId)}` : ""}</span></div><div class="work-session-meta"><span class="oc-badge oc-badge-${tone}">${escapeHtml(status)}</span></div></li>`;
+  return `<li class="oc-resource-list-item work-session"><div class="work-session-main"><a class="work-session-title" href="${escapeHtml(path)}" target="_top">${escapeHtml(title)}</a><span class="muted">${escapeHtml(owner)}${session.projectId ? ` · ${escapeHtml(session.projectId)}` : ""}</span></div><div class="work-session-meta"><span class="oc-badge oc-badge-${tone}">${escapeHtml(status)}</span></div></li>`;
 }
 
 function workSessionList(ctx: PageContext, result: PersonWorkSessions): string {

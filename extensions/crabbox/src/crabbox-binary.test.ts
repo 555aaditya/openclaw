@@ -1,7 +1,6 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { findCrabboxBinary, resolveCrabboxBinary } from "./crabbox-binary.js";
-import { resolveOpenClawRoot } from "./crabbox-worker-profile.js";
+import { findCrabboxBinary, resolveCrabboxBinary, resolveOpenClawRoot } from "./crabbox-binary.js";
 
 const OPENCLAW_ROOT = path.resolve(path.sep, "workspace", "openclaw");
 const SIBLING_BINARY = path.resolve(OPENCLAW_ROOT, "../crabbox/bin/crabbox");

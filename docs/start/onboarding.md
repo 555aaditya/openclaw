@@ -213,13 +213,6 @@ onboarding in the dashboard. OpenClaw helps configure the remaining workspace,
 Gateway, channels, and other optional features, then hands you off to normal
 agent chat. An already configured model opens the normal dashboard instead.
 
-Memory import is part of guided setup, not a separate native onboarding page.
-For a local Gateway, supported sources include Claude Code auto-memory, Codex
-consolidated memories, and Hermes memory files. Selected memories are copied
-into the agent workspace under `memory/imports/` for indexed recall;
-already-imported files are skipped. Import is optional and remains available
-later under **Settings → Import Memory**, with per-file control.
-
 There is no separate native permissions walkthrough before this handoff. Grant
 macOS access for the features you want to use from **Settings → Permissions**.
 Available permissions include Automation (AppleScript), Notifications,

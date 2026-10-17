@@ -44,7 +44,6 @@ type MemoryWikiPluginApiHarness = {
   registerCli: ReturnType<typeof vi.fn>;
   registerGatewayMethod: ReturnType<typeof vi.fn>;
   registerMemoryCorpusSupplement: ReturnType<typeof vi.fn>;
-  registerMemoryPromptPreparation: ReturnType<typeof vi.fn>;
   registerMemoryPromptSupplement: ReturnType<typeof vi.fn>;
   registerService: ReturnType<typeof vi.fn>;
   registerTool: ReturnType<typeof vi.fn>;
@@ -229,7 +228,6 @@ export function createMemoryWikiTestHarness() {
     const registerCli = vi.fn();
     const registerGatewayMethod = vi.fn();
     const registerMemoryCorpusSupplement = vi.fn();
-    const registerMemoryPromptPreparation = vi.fn();
     const registerMemoryPromptSupplement = vi.fn();
     const registerService = vi.fn();
     const registerTool = vi.fn();
@@ -248,7 +246,6 @@ export function createMemoryWikiTestHarness() {
       registerCli,
       registerGatewayMethod,
       registerMemoryCorpusSupplement,
-      registerMemoryPromptPreparation,
       registerMemoryPromptSupplement,
       registerService,
       registerTool,
@@ -259,7 +256,6 @@ export function createMemoryWikiTestHarness() {
       registerCli,
       registerGatewayMethod,
       registerMemoryCorpusSupplement,
-      registerMemoryPromptPreparation,
       registerMemoryPromptSupplement,
       registerService,
       registerTool,

@@ -38,10 +38,6 @@ import { respondDesktopLaunch, respondDesktopObserve } from "./environments.desk
 import { listWorkerProfilesWithMachines } from "./environments.profiles.js";
 import { environmentsSessionExecHandlers } from "./environments.session-exec.js";
 import { environmentsSessionHandlers } from "./environments.session.js";
-import {
-  adoptSuggestedWorkerProfile,
-  listSuggestedWorkerProfile,
-} from "./environments.suggested-profile.js";
 import { respondUnavailableOnThrow } from "./response.js";
 import { readGatewayRequestMutationAuthority } from "./session-mutation-guards.js";
 import type {
@@ -250,7 +246,6 @@ function defineEnvironmentMutation<T extends Record<string, unknown>>(
 
 export const environmentsHandlers: GatewayRequestHandlers = {
   ...environmentsSessionHandlers,
-  "environments.adoptSuggestedProfile": adoptSuggestedWorkerProfile,
   ...environmentsSessionExecHandlers,
   "environments.list": async (options) => {
     const { params, respond, client, context } = options;
@@ -289,7 +284,6 @@ export const environmentsHandlers: GatewayRequestHandlers = {
         );
       }
       const profiles = await listWorkerProfilesWithMachines(context);
-      const suggestedProfile = await listSuggestedWorkerProfile(context);
       authority.assertCurrent();
       const includeCurrentPreparedDetails =
         includePreparedDetails &&
@@ -309,7 +303,6 @@ export const environmentsHandlers: GatewayRequestHandlers = {
         true,
         {
           environments,
-          ...(suggestedProfile ? { suggestedProfile } : {}),
           ...(context.getRuntimeConfig().cloudWorkers?.requiredProfile
             ? { requiredProfile: context.getRuntimeConfig().cloudWorkers?.requiredProfile }
             : {}),

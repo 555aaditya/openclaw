@@ -7,7 +7,7 @@ import type { PluginDiscoveryResult } from "./discovery.js";
 import type { PluginManifestRegistry } from "./manifest-registry.js";
 import type { PluginModuleLoaderRecovery } from "./plugin-instance.types.js";
 import type { PluginRuntimeArtifact } from "./plugin-runtime-artifact-selection.js";
-import type { PluginRecord, PluginRegistry, PluginRegistryParams } from "./registry-types.js";
+import type { PluginRecord, PluginRegistry } from "./registry-types.js";
 import type { CreatePluginRuntimeOptions } from "./runtime/types.js";
 import type { PluginSdkResolutionPreference } from "./sdk-alias.js";
 import type { PluginLogger } from "./types.js";
@@ -40,7 +40,6 @@ export type PluginLoadOptions = {
   coreGatewayMethodNames?: readonly string[];
   /** Registry-construction fact supplied by the process composition root. */
   allowProcessHomeSessionCatalogs?: boolean;
-  hostServices?: PluginRegistryParams["hostServices"];
   runtimeOptions?: CreatePluginRuntimeOptions;
   startupTrace?: {
     detail: (name: string, metrics: ReadonlyArray<readonly [string, number | string]>) => void;

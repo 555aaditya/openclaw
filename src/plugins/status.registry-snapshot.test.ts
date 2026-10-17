@@ -247,7 +247,6 @@ describe("buildPluginRegistrySnapshotReport", () => {
           realtimeTranscriptionProviders: ["indexed-transcription-provider"],
           realtimeVoiceProviders: ["indexed-voice-provider"],
           tools: ["indexed_echo", "indexed_search", "indexed_echo"],
-          trustedToolPolicies: ["workflow-budget"],
         },
         commandAliases: [{ name: "indexed-demo" }],
         configSchema: { type: "object", additionalProperties: false, properties: {} },

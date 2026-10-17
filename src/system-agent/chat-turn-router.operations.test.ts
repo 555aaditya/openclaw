@@ -25,7 +25,6 @@ import {
 } from "./chat-engine.test-support.js";
 import { ChatTurnRouter } from "./chat-turn-router.js";
 import { ChatWizardHost } from "./chat-wizard-host.js";
-import type { SystemAgentOperation } from "./operation-types.js";
 import { SystemAgentOperationExitError } from "./operations-execution-helpers.js";
 import { describeSystemAgentPersistentOperation } from "./operations.js";
 import { installSystemAgentClaudeCliBackendTestFixture } from "./system-agent.test-helpers.js";
@@ -151,64 +150,6 @@ describe("SystemAgentChatEngine operations", () => {
         }),
       );
       expect(await router.resolveOperatorApproval("allow-once", proposal.hash)).toBeNull();
-    },
-  );
-
-  it.each([
-    {
-      source: "typed",
-      command: "connect telegram",
-      directive: { kind: "channel-setup", channel: "telegram" },
-    },
-    { source: "typed", command: "model setup", directive: { kind: "model-setup" } },
-    {
-      source: "typed",
-      command: "open channel wizard",
-      directive: { kind: "open-setup", target: "channels" },
-    },
-    {
-      source: "tool",
-      command: "connect telegram",
-      directive: { kind: "channel-setup", channel: "telegram" },
-    },
-  ] satisfies Array<{
-    source: "typed" | "tool";
-    command: string;
-    directive: SystemAgentOperation;
-  }>)(
-    "keeps delegated $source $command with the operator",
-    async ({ source, command, directive }) => {
-      const startWizard = vi.fn(async () => {});
-      const importMemory = vi.fn(async () => ({
-        status: "workspace-missing" as const,
-        providers: [] as [],
-        workspace: "/tmp/openclaw-no-workspace",
-      }));
-      const router = createRouterHarness(
-        {
-          operatorApprovalOnly: true,
-          runAgentTurn: async () =>
-            source === "tool" ? { text: "Opening setup.", directive } : null,
-        },
-        {
-          wizardDependencies: {
-            runChannelSetupWizard: startWizard,
-            runSkillsSetupWizard: startWizard,
-            runSearchSetupWizard: startWizard,
-            runGatewaySetupWizard: startWizard,
-            runMemoryImportWizard: importMemory,
-          },
-        },
-      );
-
-      const reply = await router.resolveTurn(source === "typed" ? command : "help me set up");
-
-      expect(reply.action).toBe("none");
-      expect(reply.handoff).toBeUndefined();
-      expect(reply.step).toBeUndefined();
-      expect(reply.text).toContain("cannot run from a delegated agent request");
-      expect(startWizard).not.toHaveBeenCalled();
-      expect(importMemory).not.toHaveBeenCalled();
     },
   );
 

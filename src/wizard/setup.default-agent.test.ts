@@ -42,12 +42,6 @@ vi.mock("./setup.shared.js", async (importOriginal) => {
   };
 });
 
-vi.mock("./setup.migration-import.js", () => ({
-  detectSetupMigrationSources: vi.fn(async () => ({ detections: [], providerDescriptors: [] })),
-  listSetupMigrationOptions: vi.fn(async () => []),
-  runSetupMigrationImport: vi.fn(),
-}));
-
 vi.mock("./setup.model-auth.js", () => ({
   runSetupModelAuthStep: async ({ config }: { config: OpenClawConfig }) => ({
     config,
@@ -77,10 +71,6 @@ vi.mock("./setup.gateway-config.js", () => ({
       gatewayToken: "test-token",
     },
   }),
-}));
-
-vi.mock("./setup.memory-import.js", () => ({
-  runSetupMemoryImportStep: vi.fn(),
 }));
 
 vi.mock("./setup.official-plugins.js", () => ({

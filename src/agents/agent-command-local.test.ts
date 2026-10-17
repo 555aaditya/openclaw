@@ -465,10 +465,8 @@ it("keeps runtime memory registrations through local command preparation", async
   const pluginId = "memory-fixture";
   registry.plugins.push(createPluginRecord({ id: pluginId }));
   const supplement = { search: async () => [], get: async () => null };
-  const prepare = async () => ["prepared memory"];
   const builder = () => ["memory guidance"];
   registry.memoryCorpusSupplements.push({ pluginId, supplement });
-  registry.memoryPromptPreparations.push({ pluginId, prepare });
   registry.memoryPromptSupplements.push({ pluginId, builder });
   setActivePluginRegistry(registry, undefined, "default", state.workspaceDir);
   mocks.prepare.mockResolvedValueOnce({
@@ -481,7 +479,6 @@ it("keeps runtime memory registrations through local command preparation", async
     run: async () => {
       const captured = getPluginRuntimeGenerationRegistry();
       expect(captured?.memoryCorpusSupplements).toContainEqual({ pluginId, supplement });
-      expect(captured?.memoryPromptPreparations).toContainEqual({ pluginId, prepare });
       expect(captured?.memoryPromptSupplements).toContainEqual({ pluginId, builder });
     },
   });

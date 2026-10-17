@@ -17,7 +17,6 @@ import type { PluginMetadataSnapshot } from "../plugins/plugin-metadata-snapshot
 import { getPluginModuleLoaderStats } from "../plugins/plugin-module-loader-cache.js";
 import { createEmptyPluginRegistry } from "../plugins/registry-empty.js";
 import { capturePluginLifecycleAuthority } from "../plugins/registry-lifecycle.js";
-import type { PluginRegistryParams } from "../plugins/registry-types.js";
 import {
   bindGatewayContextResolver,
   getGatewayContextLifetime,
@@ -373,7 +372,6 @@ export async function loadGatewayPlugins(params: {
   workspaceDir?: string;
   coreGatewayHandlers?: Record<string, GatewayRequestHandler>;
   coreGatewayMethodNames?: readonly string[];
-  hostServices?: PluginRegistryParams["hostServices"];
   baseMethods: string[];
   pluginIds?: string[];
   pluginLookUpTable?: PluginLookUpTable;
@@ -469,7 +467,6 @@ export async function loadGatewayPlugins(params: {
           onlyPluginIds: pluginIds,
           coreGatewayHandlers: params.coreGatewayHandlers,
           coreGatewayMethodNames: params.coreGatewayMethodNames,
-          hostServices: params.hostServices,
           runtimeOptions: {
             allowGatewaySubagentBinding: true,
             ...gatewayRuntimeBindings.runtime,

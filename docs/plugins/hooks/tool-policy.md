@@ -235,34 +235,6 @@ See [Plugin permission requests](/plugins/plugin-permission-requests) for
 approval routing, decision behavior, and when to use `requireApproval` instead
 of optional tools or exec approvals.
 
-Plugins that need host-level policy can register trusted tool policies with
-`api.registerTrustedToolPolicy(...)`. These run before ordinary
-`before_tool_call` hooks and before normal hook decisions. Bundled trusted
-policies run first; installed-plugin trusted policies run next in plugin-load
-order; ordinary `before_tool_call` hooks run after them. Bundled plugins keep
-the existing trusted-policy path. Installed plugins must be explicitly enabled
-and declare every policy id in `contracts.trustedToolPolicies`; undeclared ids
-are rejected before registration. Policy ids are scoped to the registering
-plugin, so different plugins may reuse the same local id. Use this tier only
-for host-trusted gates such as workspace policy, budget enforcement, or
-reserved workflow safety.
-
-Trusted policies may set `matcher` to the same standard tool-id list accepted
-by `before_tool_call`. Omit the matcher to retain match-all behavior.
-
-When trusted-policy approval completes inline, ordinary `before_tool_call`
-hooks receive an isolated copy of the approved parameters. Calls with unchanged
-parameters remain allowed, subject to ordinary vetoes and later execution
-checks. An ordinary hook that transforms those parameters must return
-`requireApproval` with its final `params` so the replacement receives separate
-approval. Without that approval request, the changed call is blocked with
-`Tool call parameters changed after trusted approval`.
-
-When upgrading plugins that combine trusted approval with ordinary parameter
-rewrites, update the transforming hook to request separate approval. The first
-approval does not authorize the replacement arguments. This inline boundary
-does not change the narrower native-relay contracts described above.
-
 ### Tool call observation
 
 `after_tool_call` observes a tool call that has already run. It is the other

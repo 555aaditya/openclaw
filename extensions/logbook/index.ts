@@ -87,18 +87,6 @@ export default definePluginEntry({
         }
       };
 
-    // Declares the dashboard tab; the Control UI renders it only while this
-    // plugin is active, so no core code references the plugin id.
-    api.session.controls.registerControlUiDescriptor({
-      surface: "tab",
-      id: "logbook",
-      label: "Logbook",
-      description: "Your day as a timeline, built from screen snapshots.",
-      icon: "sun",
-      group: "control",
-      requiredScopes: ["operator.write"],
-    });
-
     // Adds logbook.snapshot to the default macOS node allowlist; without a
     // policy the gateway strips plugin commands from pairing surfaces.
     api.registerNodeInvokePolicy({

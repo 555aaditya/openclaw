@@ -175,18 +175,8 @@ describe("collectRootDependencyOwnershipCheckErrors", () => {
       repoRoot,
       "package.json",
       JSON.stringify({
-        dependencies: { "@homebridge/ciao": "^1.3.7", "playwright-core": "1.59.1" },
+        dependencies: { "playwright-core": "1.59.1" },
       }),
-    );
-    writeRepoFile(
-      repoRoot,
-      "extensions/bonjour/package.json",
-      JSON.stringify({ dependencies: { "@homebridge/ciao": "^1.3.7" } }),
-    );
-    writeRepoFile(
-      repoRoot,
-      "extensions/bonjour/src/advertiser.ts",
-      'const CIAO_MODULE_ID = "@homebridge/ciao";\nimport(CIAO_MODULE_ID);\n',
     );
     writeRepoFile(
       repoRoot,
@@ -202,18 +192,6 @@ describe("collectRootDependencyOwnershipCheckErrors", () => {
     const records = collectRootDependencyOwnershipAudit({ repoRoot, scanRoots: ["extensions"] });
 
     expect(records).toEqual([
-      {
-        category: "root_owned_extension_runtime",
-        declaredInExtensions: ["bonjour:dependencies"],
-        depName: "@homebridge/ciao",
-        fileCount: 1,
-        internalizedBundledRuntimeOwners: [],
-        recommendation:
-          "keep at root; the Bonjour runtime is shipped with packaged startup surfaces even though the bundled plugin also declares it",
-        sampleFiles: ["extensions/bonjour/src/advertiser.ts"],
-        sections: ["extensions"],
-        spec: "^1.3.7",
-      },
       {
         category: "root_owned_extension_runtime",
         declaredInExtensions: ["browser:dependencies"],

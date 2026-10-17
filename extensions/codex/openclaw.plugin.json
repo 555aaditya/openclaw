@@ -1,8 +1,14 @@
 {
   "id": "codex",
-  "categories": ["agent-runtimes"],
-  "providers": ["codex"],
-  "syntheticAuthRefs": ["codex"],
+  "categories": [
+    "agent-runtimes"
+  ],
+  "providers": [
+    "codex"
+  ],
+  "syntheticAuthRefs": [
+    "codex"
+  ],
   "providerCatalogEntry": "./provider-discovery.ts",
   "backupResources": [
     {
@@ -24,8 +30,12 @@
   "doctorContract": {
     "configRepair": true,
     "stateMigrations": [
-      { "id": "codex-app-server-sidecars-to-plugin-state" },
-      { "id": "codex-native-task-assignments" },
+      {
+        "id": "codex-app-server-sidecars-to-plugin-state"
+      },
+      {
+        "id": "codex-native-task-assignments"
+      },
       {
         "id": "codex-native-assignment-repair",
         "doctorOnly": true,
@@ -43,10 +53,23 @@
     {
       "id": "codex",
       "label": "Codex",
-      "providerIds": ["codex", "codex-cli", "openai-codex"],
-      "runtimeIds": ["codex", "codex-cli"],
-      "cliSessionKeys": ["codex-cli"],
-      "authProfilePrefixes": ["codex:", "codex-cli:", "openai-codex:"]
+      "providerIds": [
+        "codex",
+        "codex-cli",
+        "openai-codex"
+      ],
+      "runtimeIds": [
+        "codex",
+        "codex-cli"
+      ],
+      "cliSessionKeys": [
+        "codex-cli"
+      ],
+      "authProfilePrefixes": [
+        "codex:",
+        "codex-cli:",
+        "openai-codex:"
+      ]
     }
   ],
   "name": "Codex",
@@ -59,8 +82,9 @@
     }
   ],
   "contracts": {
-    "mediaUnderstandingProviders": ["codex"],
-    "migrationProviders": ["codex"],
+    "mediaUnderstandingProviders": [
+      "codex"
+    ],
     "tools": [
       "codex_threads",
       "codex_plugins",
@@ -70,11 +94,15 @@
       "codex_session_send",
       "codex_session_interrupt"
     ],
-    "webSearchProviders": ["codex"]
+    "webSearchProviders": [
+      "codex"
+    ]
   },
   "mediaUnderstandingProviderMetadata": {
     "codex": {
-      "capabilities": ["image"],
+      "capabilities": [
+        "image"
+      ],
       "defaultModels": {
         "image": "gpt-6-astra"
       }
@@ -82,8 +110,12 @@
   },
   "activation": {
     "onStartup": false,
-    "onAgentHarnesses": ["codex"],
-    "onCommands": ["codex"],
+    "onAgentHarnesses": [
+      "codex"
+    ],
+    "onCommands": [
+      "codex"
+    ],
     "onConfigPaths": [
       "plugins.entries.codex.config.appServer.transport",
       "plugins.entries.codex.config.sessionCatalog.enabled",
@@ -117,37 +149,51 @@
       "id": "dynamic-tools",
       "title": "Dynamic tools",
       "order": 10,
-      "properties": ["codexDynamicToolsLoading", "codexDynamicToolsExclude"]
+      "properties": [
+        "codexDynamicToolsLoading",
+        "codexDynamicToolsExclude"
+      ]
     },
     {
       "id": "native-sessions",
       "title": "Native sessions",
       "order": 20,
-      "properties": ["sessionCatalog", "supervision"]
+      "properties": [
+        "sessionCatalog",
+        "supervision"
+      ]
     },
     {
       "id": "model-discovery",
       "title": "Model discovery",
       "order": 30,
-      "properties": ["discovery"]
+      "properties": [
+        "discovery"
+      ]
     },
     {
       "id": "computer-use",
       "title": "Computer use",
       "order": 40,
-      "properties": ["computerUse"]
+      "properties": [
+        "computerUse"
+      ]
     },
     {
       "id": "native-plugins",
       "title": "Native plugins",
       "order": 50,
-      "properties": ["codexPlugins"]
+      "properties": [
+        "codexPlugins"
+      ]
     },
     {
       "id": "app-server-connection",
       "title": "App Server connection",
       "order": 60,
-      "properties": ["appServer"]
+      "properties": [
+        "appServer"
+      ]
     }
   ],
   "configSchema": {
@@ -156,31 +202,53 @@
     "properties": {
       "codexDynamicToolsLoading": {
         "type": "string",
-        "enum": ["searchable", "direct"],
+        "enum": [
+          "searchable",
+          "direct"
+        ],
         "default": "searchable"
       },
       "codexDynamicToolsExclude": {
         "type": "array",
-        "items": { "type": "string" },
+        "items": {
+          "type": "string"
+        },
         "default": []
       },
       "sessionCatalog": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "enabled": { "type": "boolean", "default": true },
+          "enabled": {
+            "type": "boolean",
+            "default": true
+          },
           "homes": {
             "type": "array",
             "items": {
               "anyOf": [
-                { "type": "string", "minLength": 1, "pattern": "\\S" },
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "\\S"
+                },
                 {
                   "type": "object",
                   "additionalProperties": false,
-                  "required": ["path"],
+                  "required": [
+                    "path"
+                  ],
                   "properties": {
-                    "path": { "type": "string", "minLength": 1, "pattern": "\\S" },
-                    "label": { "type": "string", "minLength": 1, "pattern": "\\S" }
+                    "path": {
+                      "type": "string",
+                      "minLength": 1,
+                      "pattern": "\\S"
+                    },
+                    "label": {
+                      "type": "string",
+                      "minLength": 1,
+                      "pattern": "\\S"
+                    }
                   }
                 }
               ]
@@ -192,7 +260,9 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "enabled": { "type": "boolean" },
+          "enabled": {
+            "type": "boolean"
+          },
           "timeoutMs": {
             "type": "number",
             "minimum": 1,
@@ -233,12 +303,20 @@
           },
           "healthCheckIntervalMinutes": {
             "type": "number",
-            "enum": [30, 60, 120, 240],
+            "enum": [
+              30,
+              60,
+              120,
+              240
+            ],
             "default": 60
           },
           "pluginCacheMode": {
             "type": "string",
-            "enum": ["shared", "independent"],
+            "enum": [
+              "shared",
+              "independent"
+            ],
             "default": "independent"
           },
           "strictReadiness": {
@@ -281,7 +359,17 @@
             "default": false
           },
           "allow_destructive_actions": {
-            "oneOf": [{ "type": "boolean" }, { "const": "auto" }, { "const": "ask" }],
+            "oneOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "const": "auto"
+              },
+              {
+                "const": "ask"
+              }
+            ],
             "default": true
           },
           "plugins": {
@@ -301,7 +389,17 @@
                   "type": "string"
                 },
                 "allow_destructive_actions": {
-                  "oneOf": [{ "type": "boolean" }, { "const": "auto" }, { "const": "ask" }]
+                  "oneOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "const": "auto"
+                    },
+                    {
+                      "const": "ask"
+                    }
+                  ]
                 }
               }
             }
@@ -312,7 +410,10 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "enabled": { "type": "boolean", "default": false },
+          "enabled": {
+            "type": "boolean",
+            "default": false
+          },
           "endpoints": {
             "type": "array",
             "items": {
@@ -321,31 +422,65 @@
                   "type": "object",
                   "additionalProperties": false,
                   "properties": {
-                    "id": { "type": "string" },
-                    "label": { "type": "string" },
-                    "transport": { "const": "stdio-proxy" },
-                    "command": { "type": "string" },
-                    "args": { "type": "array", "items": { "type": "string" } },
-                    "cwd": { "type": "string" }
+                    "id": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "transport": {
+                      "const": "stdio-proxy"
+                    },
+                    "command": {
+                      "type": "string"
+                    },
+                    "args": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "cwd": {
+                      "type": "string"
+                    }
                   }
                 },
                 {
                   "type": "object",
                   "additionalProperties": false,
-                  "required": ["transport", "url"],
+                  "required": [
+                    "transport",
+                    "url"
+                  ],
                   "properties": {
-                    "id": { "type": "string" },
-                    "label": { "type": "string" },
-                    "transport": { "const": "websocket" },
-                    "url": { "type": "string" },
-                    "authTokenEnv": { "type": "string" }
+                    "id": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "transport": {
+                      "const": "websocket"
+                    },
+                    "url": {
+                      "type": "string"
+                    },
+                    "authTokenEnv": {
+                      "type": "string"
+                    }
                   }
                 }
               ]
             }
           },
-          "allowRawTranscripts": { "type": "boolean", "default": false },
-          "allowWriteControls": { "type": "boolean", "default": false }
+          "allowRawTranscripts": {
+            "type": "boolean",
+            "default": false
+          },
+          "allowWriteControls": {
+            "type": "boolean",
+            "default": false
+          }
         }
       },
       "appServer": {
@@ -354,36 +489,66 @@
         "properties": {
           "mode": {
             "type": "string",
-            "enum": ["yolo", "guardian"]
+            "enum": [
+              "yolo",
+              "guardian"
+            ]
           },
           "transport": {
             "type": "string",
-            "enum": ["stdio", "websocket", "unix"],
+            "enum": [
+              "stdio",
+              "websocket",
+              "unix"
+            ],
             "default": "stdio"
           },
           "homeScope": {
             "type": "string",
-            "enum": ["agent", "user"]
+            "enum": [
+              "agent",
+              "user"
+            ]
           },
-          "command": { "type": "string" },
+          "command": {
+            "type": "string"
+          },
           "args": {
             "oneOf": [
               {
                 "type": "array",
-                "items": { "type": "string" }
+                "items": {
+                  "type": "string"
+                }
               },
-              { "type": "string" }
+              {
+                "type": "string"
+              }
             ]
           },
-          "url": { "type": "string" },
-          "authToken": { "type": ["string", "object"] },
+          "url": {
+            "type": "string"
+          },
+          "authToken": {
+            "type": [
+              "string",
+              "object"
+            ]
+          },
           "headers": {
             "type": "object",
-            "additionalProperties": { "type": ["string", "object"] }
+            "additionalProperties": {
+              "type": [
+                "string",
+                "object"
+              ]
+            }
           },
           "clearEnv": {
             "type": "array",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           },
           "remoteWorkspaceRoot": {
             "type": "string"
@@ -391,10 +556,18 @@
           "nativeHookRelay": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["url", "credentialDirectory"],
+            "required": [
+              "url",
+              "credentialDirectory"
+            ],
             "properties": {
-              "url": { "type": "string", "format": "uri" },
-              "credentialDirectory": { "type": "string" }
+              "url": {
+                "type": "string",
+                "format": "uri"
+              },
+              "credentialDirectory": {
+                "type": "string"
+              }
             }
           },
           "codeModeOnly": {
@@ -412,29 +585,61 @@
           },
           "approvalPolicy": {
             "type": "string",
-            "enum": ["never", "on-request", "on-failure", "untrusted"]
+            "enum": [
+              "never",
+              "on-request",
+              "on-failure",
+              "untrusted"
+            ]
           },
           "sandbox": {
             "type": "string",
-            "enum": ["read-only", "workspace-write", "danger-full-access"]
+            "enum": [
+              "read-only",
+              "workspace-write",
+              "danger-full-access"
+            ]
           },
           "approvalsReviewer": {
             "type": "string",
-            "enum": ["user", "auto_review", "guardian_subagent"]
+            "enum": [
+              "user",
+              "auto_review",
+              "guardian_subagent"
+            ]
           },
-          "serviceTier": { "type": ["string", "null"] },
-          "enableUltrafast": { "type": "boolean", "default": true },
+          "serviceTier": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "enableUltrafast": {
+            "type": "boolean",
+            "default": true
+          },
           "cyberFailover": {
             "type": "object",
             "additionalProperties": false,
             "properties": {
-              "mode": { "type": "string", "enum": ["auto", "off"], "default": "auto" },
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "auto",
+                  "off"
+                ],
+                "default": "auto"
+              },
               "model": {
                 "type": "string",
                 "minLength": 1,
                 "default": "gpt-daybreak-blue-latest"
               },
-              "cooloffMs": { "type": "number", "minimum": 1, "default": 600000 }
+              "cooloffMs": {
+                "type": "number",
+                "minimum": 1,
+                "default": 600000
+              }
             }
           },
           "networkProxy": {
@@ -445,37 +650,67 @@
                 "type": "boolean",
                 "default": false
               },
-              "profileName": { "type": "string" },
+              "profileName": {
+                "type": "string"
+              },
               "baseProfile": {
                 "type": "string",
-                "enum": ["read-only", "workspace"]
+                "enum": [
+                  "read-only",
+                  "workspace"
+                ]
               },
               "mode": {
                 "type": "string",
-                "enum": ["limited", "full"]
+                "enum": [
+                  "limited",
+                  "full"
+                ]
               },
               "domains": {
                 "type": "object",
                 "additionalProperties": {
                   "type": "string",
-                  "enum": ["allow", "deny"]
+                  "enum": [
+                    "allow",
+                    "deny"
+                  ]
                 }
               },
               "unixSockets": {
                 "type": "object",
                 "additionalProperties": {
                   "type": "string",
-                  "enum": ["allow", "none"]
+                  "enum": [
+                    "allow",
+                    "none"
+                  ]
                 }
               },
-              "proxyUrl": { "type": "string" },
-              "socksUrl": { "type": "string" },
-              "enableSocks5": { "type": "boolean" },
-              "enableSocks5Udp": { "type": "boolean" },
-              "allowUpstreamProxy": { "type": "boolean" },
-              "allowLocalBinding": { "type": "boolean" },
-              "dangerouslyAllowNonLoopbackProxy": { "type": "boolean" },
-              "dangerouslyAllowAllUnixSockets": { "type": "boolean" }
+              "proxyUrl": {
+                "type": "string"
+              },
+              "socksUrl": {
+                "type": "string"
+              },
+              "enableSocks5": {
+                "type": "boolean"
+              },
+              "enableSocks5Udp": {
+                "type": "boolean"
+              },
+              "allowUpstreamProxy": {
+                "type": "boolean"
+              },
+              "allowLocalBinding": {
+                "type": "boolean"
+              },
+              "dangerouslyAllowNonLoopbackProxy": {
+                "type": "boolean"
+              },
+              "dangerouslyAllowAllUnixSockets": {
+                "type": "boolean"
+              }
             }
           },
           "defaultWorkspaceDir": {
@@ -498,8 +733,14 @@
   "configContracts": {
     "secretInputs": {
       "paths": [
-        { "path": "appServer.authToken", "expected": "string" },
-        { "path": "appServer.headers.*", "expected": "string" }
+        {
+          "path": "appServer.authToken",
+          "expected": "string"
+        },
+        {
+          "path": "appServer.headers.*",
+          "expected": "string"
+        }
       ]
     }
   },

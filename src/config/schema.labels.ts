@@ -465,7 +465,6 @@ export const FIELD_LABELS: Record<string, string> = {
   "agents.defaults.compaction": "Compaction",
   "agents.defaults.compaction.enabled": "Embedded Auto-Compaction",
   "agents.defaults.compaction.mode": "Compaction Mode",
-  "agents.defaults.compaction.provider": "Compaction Provider",
   "agents.defaults.compaction.thinkingLevel": "Compaction Thinking Level",
   "agents.defaults.compaction.keepRecentTokens": "Compaction Keep Recent Tokens",
   "agents.defaults.compaction.identifierPolicy": "Compaction Identifier Policy",

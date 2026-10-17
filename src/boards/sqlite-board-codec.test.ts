@@ -1,19 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { parseManifest } from "./sqlite-board-codec.js";
+import { parseManifest, parsePluginContent } from "./sqlite-board-codec.js";
 
 describe("board widget manifest codec", () => {
-  it("preserves registered content ownership independently of frame instance metadata", () => {
+  it("rejects retired source descriptors instead of treating them as native widget props", () => {
+    expect(() =>
+      parsePluginContent(JSON.stringify({ pluginKind: "diagram:diagram", source: "source" })),
+    ).toThrow(/unsupported/i);
     expect(
-      parseManifest(
-        JSON.stringify({ contentOwner: "registered", registeredContentKind: "diagram" }),
-      ),
-    ).toMatchObject({ contentOwner: "registered", registeredContentKind: "diagram" });
+      parsePluginContent(JSON.stringify({ pluginKind: "report", props: { title: "Report" } })),
+    ).toEqual({ pluginKind: "report", props: { title: "Report" } });
   });
 
   it.each([
     { contentOwner: "unknown" },
     { contentOwner: "registered" },
-    { contentOwner: "registered", registeredContentKind: "Invalid Kind" },
+    { contentOwner: "registered", registeredContentKind: "diagram" },
+    { registeredInstanceId: "a".repeat(32) },
     { contentOwner: "plugin", registeredContentKind: "diagram" },
   ])("rejects invalid explicit widget ownership %j", (manifest) => {
     expect(() => parseManifest(JSON.stringify(manifest))).toThrow(/content ownership/i);

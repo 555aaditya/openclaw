@@ -615,9 +615,6 @@ export function* loadRuntimePluginCandidate(params: {
         if (ownedDefinition?.reload) {
           params.registryBuilder.registerReload(record, ownedDefinition.reload);
         }
-        for (const collector of ownedDefinition?.securityAuditCollectors ?? []) {
-          params.registryBuilder.registerSecurityAuditCollector(record, collector);
-        }
       }
       const api = params.registryBuilder.createApi(record, {
         config: context.cfg,

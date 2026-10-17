@@ -364,11 +364,11 @@ export function createConfigWriteCoordinator({
     publish,
     reconcileDraft: reconcileAutoSaveDraftConnection,
   });
-  let pluginGeneration = gateway.snapshot.pluginCapabilities?.generation;
+  let pluginGeneration = gateway.snapshot.pluginGeneration;
   const stopGateway = gateway.subscribe((snapshot) => {
     const clientChanged = state.client !== snapshot.client;
     const connectionChanged = state.connected !== (snapshot.phase === "connected");
-    const nextPluginGeneration = snapshot.pluginCapabilities?.generation;
+    const nextPluginGeneration = snapshot.pluginGeneration;
     const pluginsChanged =
       nextPluginGeneration !== undefined && nextPluginGeneration !== pluginGeneration;
     pluginGeneration = nextPluginGeneration;

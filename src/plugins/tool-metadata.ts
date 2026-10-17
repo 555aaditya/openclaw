@@ -57,16 +57,9 @@ export function copyPluginToolMeta(source: AnyAgentTool, target: AnyAgentTool): 
   }
 }
 
-/** Builds a collision-proof key for plugin-owned tool metadata lookups. */
-export function buildPluginToolMetadataKey(pluginId: string, toolName: string): string {
-  return JSON.stringify([pluginId, toolName]);
-}
-
 /** Binds a side-effect declaration to the concrete plugin tool that owns it. */
 export function getPluginToolSideEffectOwnerKey(tool: AnyAgentTool): string | undefined {
   const meta = getPluginToolMeta(tool);
   const toolName = normalizeToolPolicyName(tool.name);
-  return meta?.sideEffecting && toolName
-    ? buildPluginToolMetadataKey(meta.pluginId, toolName)
-    : undefined;
+  return meta?.sideEffecting && toolName ? JSON.stringify([meta.pluginId, toolName]) : undefined;
 }

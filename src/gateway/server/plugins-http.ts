@@ -19,7 +19,6 @@ import type { PluginHttpRouteRegistration, PluginRegistry } from "../../plugins/
 import { withPluginRuntimeGatewayRequestScope } from "../../plugins/runtime/gateway-request-scope.js";
 import { rejectWebSocketUpgrade } from "../../shared/websocket-upgrade-reject.js";
 import { onUserProfilesChanged } from "../../state/user-profile-events.js";
-import { respondControlUiPluginAuthCookieProbe } from "../control-ui-plugin-auth-cookie.js";
 import { listControlUiPluginTabAuthGrants } from "../control-ui-plugin-tabs.js";
 import { prepareGatewayRecipientProfile } from "../expected-profile.js";
 import { finishFailedGatewayHttpResponse } from "../http-common.js";
@@ -362,9 +361,6 @@ export function createGatewayPluginRequestHandler(params: {
 
     // The probe is intercepted only after route ownership and cookie auth are
     // established. Plugin code never sees the reserved capability request.
-    if (controlUiPluginGrant && respondControlUiPluginAuthCookieProbe(req, res)) {
-      return true;
-    }
 
     for (const route of matchedRoutes) {
       if (

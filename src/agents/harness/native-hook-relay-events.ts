@@ -7,7 +7,6 @@ import { getGlobalHookRunnerRegistry } from "../../plugins/hook-runner-global-st
 import { hasGlobalHooks } from "../../plugins/hook-runner-global.js";
 import { getToolHookMatcherScope } from "../../plugins/hooks.js";
 import { mergePluginToolMatcherScopes } from "../../plugins/tool-hook-matcher.js";
-import { getTrustedToolPolicyMatcherScope } from "../../plugins/trusted-tool-policy.js";
 import {
   cancelDeferredPluginToolApproval,
   hasBeforeToolCallPolicy,
@@ -102,10 +101,8 @@ export function nativeHookRelayEventToolMatcher(
       return undefined;
     }
     // Relay selection and policy execution must read the same scoped/root registry.
-    const policyRegistry = getGlobalHookRunnerRegistry();
     const scope = mergePluginToolMatcherScopes([
       getGlobalToolHookMatcherScope("before_tool_call"),
-      getTrustedToolPolicyMatcherScope(policyRegistry),
       registration.executionAdmissionToolNames?.length
         ? { matchAll: false, toolNames: registration.executionAdmissionToolNames }
         : undefined,

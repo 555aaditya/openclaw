@@ -162,11 +162,9 @@ outside click dismisses it. Use `host.ui.isNavigationPinned(id)` to read a saved
 pin and `host.ui.unpinNavigation(id)` to remove it; repeated calls have no additional effect. Plugins choose
 which actions to offer and own confirmation for destructive actions.
 
-For a dashboard widget, also register a backend
-`api.session.controls.registerControlUiDescriptor` with `surface: "widget"`,
-the same widget `id`, and its `requiredScopes`. The Gateway advertises widget
-kinds for the current connection's scopes; a native view renders only when its
-matching backend descriptor is advertised.
+Native dashboard widgets are registered through `host.ui.registerWidget`.
+Backend Control UI descriptors and the `plugins.uiDescriptors` RPC have been
+removed; they are no longer a second registration step.
 
 Use `host.ui.openPanel("editor", { sessionKey, agentId })` to open one of your
 registered panels beside a session. Omitting the session uses the currently

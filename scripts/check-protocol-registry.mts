@@ -96,7 +96,6 @@ for (const key of Object.keys(derived)) {
 }
 const fragments: ReadonlyArray<Readonly<Record<string, unknown>>> = [
   derived,
-  schemaModules.MigrationProtocolSchemas,
   schemaModules.SessionPlacementProtocolSchemas,
 ];
 const expectedKeys: string[] = [];
@@ -155,8 +154,8 @@ const ownerModules = [
   ...schemaModulesSource.matchAll(/^export \* from "\.\/schema\/([^"]+)\.js";$/gmu),
 ].map(([, moduleName = ""]) => moduleName);
 check(
-  ownerModules.length === 74 && new Set(ownerModules).size === ownerModules.length,
-  "schema-modules.ts must contain one unique 74-module owner list",
+  ownerModules.length === 73 && new Set(ownerModules).size === ownerModules.length,
+  "schema-modules.ts must contain one unique 73-module owner list",
 );
 check(
   schemaModulesSource.split("\n").filter(Boolean).length === ownerModules.length,

@@ -137,15 +137,7 @@ describe("ClawHub chat recommendations", () => {
         harness.emit(client, true);
       } else {
         harness.emit(client, true, {
-          pluginCapabilities: {
-            ok: true,
-            generation: 1,
-            descriptors: [],
-            methods: [],
-            controlUiTabs: [],
-            controlUiWidgetKinds: [],
-            pluginSurfaceUrls: {},
-          },
+          pluginGeneration: 1,
         });
       }
       await vi.waitFor(() =>
@@ -220,15 +212,7 @@ describe("ClawHub chat recommendations", () => {
       } else {
         pending = false;
         harness.emit(client, true, {
-          pluginCapabilities: {
-            ok: true,
-            generation: 1,
-            descriptors: [],
-            methods: [],
-            controlUiTabs: [],
-            controlUiWidgetKinds: [],
-            pluginSurfaceUrls: {},
-          },
+          pluginGeneration: 1,
         });
       }
       await vi.waitFor(() =>
@@ -284,15 +268,7 @@ describe("ClawHub chat recommendations", () => {
     await vi.advanceTimersByTimeAsync(0);
     refreshing = true;
     harness.emit(client, true, {
-      pluginCapabilities: {
-        ok: true,
-        generation: 1,
-        descriptors: [],
-        methods: [],
-        controlUiTabs: [],
-        controlUiWidgetKinds: [],
-        pluginSurfaceUrls: {},
-      },
+      pluginGeneration: 1,
     });
     await vi.advanceTimersByTimeAsync(0);
     expect(card.querySelector(".chat-clawhub-card__status-skeleton")).not.toBeNull();

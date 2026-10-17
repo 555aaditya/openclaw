@@ -35,7 +35,6 @@ import {
   resolveProjectedAgentRunModel,
   type ProjectedAgentRunIndex,
 } from "../infra/agent-run-registry.js";
-import { projectPluginSessionExtensionsSync } from "../plugins/host-hook-state.js";
 import type { PluginMetadataSnapshot } from "../plugins/plugin-metadata-snapshot.types.js";
 import { parseAgentSessionKey } from "../routing/session-key.js";
 import { resolveSessionCommunicationPolicy } from "../sessions/communication-policy.js";
@@ -189,8 +188,6 @@ export function readSessionRowInputs(params: {
   });
   const resolvedModelContextTokens = asPositiveFiniteNumber(modelContext.contextTokens);
 
-  const pluginExtensions =
-    !lightweight && entry ? projectPluginSessionExtensionsSync({ sessionKey: key, entry }) : [];
   if (entry?.repositoryWorkspaceId && params.preparedRepositoryWorkspace === undefined) {
     throw new Error("Repository workspace facts must be prepared before presenting the session");
   }
@@ -254,7 +251,6 @@ export function readSessionRowInputs(params: {
           : resolvedModelContextTokens,
         authoredContextTokens: asPositiveFiniteNumber(modelContext.authoredContextTokens),
       }),
-      pluginExtensions,
       includeSwarmSummary: params.rowContext !== undefined,
       childLinks:
         params.childLinks ??
@@ -572,7 +568,6 @@ export function materializeSessionRow(input: ReturnType<typeof readSessionRowInp
     lastTo: deliveryFields.lastTo,
     lastAccountId: deliveryFields.lastAccountId,
     lastThreadId: deliveryFields.lastThreadId,
-    pluginExtensions: input.pluginExtensions.length > 0 ? input.pluginExtensions : undefined,
   };
   // JSON omits undefined fields; keep the resident projection equally sparse.
   for (const field in row) {

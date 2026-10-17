@@ -3,7 +3,6 @@ import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import type { ReplyPayload } from "../auto-reply/reply-payload.js";
 import { getChannelPlugin, normalizeChannelId } from "../channels/plugins/index.js";
-import { formatErrorMessage } from "../infra/errors.js";
 import {
   expectedCurrentSessionBinding,
   type CurrentSessionBindingExpectation,
@@ -38,12 +37,10 @@ import {
 } from "./conversation-binding-state.js";
 import type {
   PluginConversationBinding,
-  PluginConversationBindingResolvedEvent,
   PluginConversationBindingResolutionDecision,
   PluginConversationBindingRequestParams,
   PluginConversationBindingRequestResult,
 } from "./conversation-binding.types.js";
-import { getActivePluginRegistry } from "./runtime.js";
 
 const log = createSubsystemLogger("plugins/binding");
 
@@ -52,7 +49,7 @@ const PLUGIN_BINDING_CUSTOM_ID_PREFIX = "pluginbind";
 // configured channel bindings compiled from config.
 type PluginBindingApprovalDecision = PluginConversationBindingResolutionDecision;
 
-type PluginBindingConversation = PluginConversationBindingResolvedEvent["request"]["conversation"];
+type PluginBindingConversation = PendingPluginBindingRequest["conversation"];
 
 type PluginBindingApprovalAction = {
   approvalId: string;
@@ -548,11 +545,6 @@ export async function resolvePluginConversationBindingApproval(params: {
       return { status: "expired" };
     }
     if (resolution.decision === "deny") {
-      dispatchPluginConversationBindingResolved({
-        status: "denied",
-        decision: "deny",
-        request,
-      });
       logPluginBindingLifecycleEvent({
         event: "denied",
         identity: request,
@@ -591,12 +583,7 @@ export async function resolvePluginConversationBindingApproval(params: {
       conversation: request.conversation,
       decision: resolution.decision,
     });
-    dispatchPluginConversationBindingResolved({
-      status: "approved",
-      binding,
-      decision: resolution.decision,
-      request,
-    });
+
     return {
       status: "approved",
       binding,
@@ -604,51 +591,6 @@ export async function resolvePluginConversationBindingApproval(params: {
       decision: resolution.decision,
     };
   });
-}
-
-function dispatchPluginConversationBindingResolved(
-  params: PluginConversationBindingResolvedEvent & { request: PendingPluginBindingRequest },
-): void {
-  // Keep platform interaction acks fast even if the plugin does slow post-bind work.
-  queueMicrotask(() => {
-    void notifyPluginConversationBindingResolved(params).catch((error: unknown) => {
-      log.warn(`plugin binding resolved dispatch failed: ${String(error)}`);
-    });
-  });
-}
-
-async function notifyPluginConversationBindingResolved(
-  params: PluginConversationBindingResolvedEvent & { request: PendingPluginBindingRequest },
-): Promise<void> {
-  const registrations = getActivePluginRegistry()?.conversationBindingResolvedHandlers ?? [];
-  for (const registration of registrations) {
-    if (registration.pluginId !== params.request.pluginId) {
-      continue;
-    }
-    const registeredRoot = registration.pluginRoot?.trim();
-    if (registeredRoot && registeredRoot !== params.request.pluginRoot) {
-      continue;
-    }
-    try {
-      const event: PluginConversationBindingResolvedEvent = {
-        status: params.status,
-        binding: params.binding,
-        decision: params.decision,
-        request: {
-          summary: params.request.summary,
-          detachHint: params.request.detachHint,
-          data: params.request.data,
-          requestedBySenderId: params.request.requestedBySenderId,
-          conversation: params.request.conversation,
-        },
-      };
-      await registration.handler(event);
-    } catch (error) {
-      log.warn(
-        `plugin binding resolved callback failed plugin=${registration.pluginId} root=${registration.pluginRoot ?? "<none>"}: ${formatErrorMessage(error)}`,
-      );
-    }
-  }
 }
 
 export function buildPluginBindingResolvedText(params: PluginBindingResolveResult): string {

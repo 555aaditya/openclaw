@@ -2,10 +2,6 @@ import fs from "node:fs/promises";
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
 import { Socket } from "node:net";
 import path from "node:path";
-import {
-  createPluginRegistryFixture,
-  registerVirtualTestPlugin,
-} from "openclaw/plugin-sdk/plugin-test-contracts";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import * as avatarFile from "../agents/identity-avatar-file.js";
@@ -20,13 +16,12 @@ import type { OpenClawConfig } from "../config/types.openclaw.js";
 import * as devInstallBranch from "../infra/dev-install-branch.js";
 import { createEmptyPluginRegistry } from "../plugins/registry-empty.js";
 import { resetPluginRuntimeStateForTest, setActivePluginRegistry } from "../plugins/runtime.js";
+import { createPluginRecord } from "../plugins/status.test-helpers.js";
 import { createDeferredCore } from "../shared/deferred.js";
-import { prepareUserProfileCatalog } from "../state/user-profile-list.js";
 import {
   ensureCanonicalUserProfileForEmail,
   setCanonicalUserProfileRole,
 } from "../state/user-profile-writes.js";
-import { ensureProfileForEmail } from "../state/user-profiles.js";
 import {
   createOpenClawTestState,
   withOpenClawTestState,
@@ -83,109 +78,6 @@ describe("Control UI response authority", () => {
     });
   });
 
-  it("withholds prepared bootstrap bytes when visitor authority expires before its abort signal", async () => {
-    await withOpenClawTestState({ scenario: "minimal" }, async () => {
-      const trustedProxy = { userHeader: "x-visitor-email", allowLoopback: true };
-      const config: OpenClawConfig = {
-        gateway: {
-          auth: { mode: "trusted-proxy", trustedProxy },
-          trustedProxies: ["127.0.0.1"],
-        },
-      };
-      const auth: ResolvedGatewayAuth = {
-        mode: "trusted-proxy",
-        trustedProxy,
-        allowTailscale: false,
-      };
-      setRuntimeConfigSnapshot(config);
-      ensureProfileForEmail("visitor@example.test");
-      const grant = new AbortController();
-      const expiresAt = 1_000;
-      let now = 0;
-      const { registry } = createPluginRegistryFixture(config);
-      registerVirtualTestPlugin({
-        registry,
-        config,
-        id: "person-access",
-        name: "Person access",
-        register(api) {
-          api.registerGatewayAccessPolicy({
-            authorize: () => ({
-              signal: grant.signal,
-              assertCurrent() {
-                grant.signal.throwIfAborted();
-                if (now >= expiresAt) {
-                  throw new Error("Visitor grant expired");
-                }
-              },
-            }),
-          });
-          api.registerHttpRoute({
-            path: "/secure-hook",
-            auth: "gateway",
-            match: "prefix",
-            handler: async () => true,
-          });
-          api.session.controls.registerControlUiDescriptor({
-            surface: "tab",
-            id: "panel",
-            label: "Visitor panel",
-            path: "/secure-hook/panel",
-          });
-        },
-      });
-      setActivePluginRegistry(registry.registry);
-      const entered = createDeferredCore();
-      const release = createDeferredCore();
-      vi.spyOn(devInstallBranch, "resolveDevInstallGitBranch").mockImplementation(async () => {
-        entered.resolve();
-        await release.promise;
-        return "private-branch";
-      });
-      const req = new IncomingMessage(new Socket());
-      Object.defineProperty(req.socket, "remoteAddress", { value: "127.0.0.1" });
-      req.method = "GET";
-      req.url = CONTROL_UI_BOOTSTRAP_CONFIG_PATH;
-      req.headers = {
-        "x-visitor-email": "visitor@example.test",
-        "x-forwarded-for": "203.0.113.10",
-        "x-openclaw-scopes": "operator.read",
-      };
-      const res = new ServerResponse(req);
-      const end = vi.spyOn(res, "end");
-      const catalog = await prepareUserProfileCatalog();
-      const pending = handleControlUiHttpRequest(req, res, {
-        config,
-        cfg: config,
-        auth,
-        trustedProxies: config.gateway?.trustedProxies,
-        getResolvedAuth: () => auth,
-        getRuntimeConfig: () => config,
-      });
-      const settled = pending.catch((error: unknown) => error);
-      try {
-        await Promise.race([entered.promise, pending]);
-        expect(res.getHeader("Set-Cookie")).toEqual(
-          expect.arrayContaining([expect.stringContaining("Path=/secure-hook")]),
-        );
-        now = expiresAt;
-        expect(grant.signal.aborted).toBe(false);
-        release.resolve();
-
-        expect(await settled).toBeInstanceOf(Error);
-        expect(res.destroyed).toBe(true);
-        expect(res.headersSent).toBe(false);
-        expect(end).not.toHaveBeenCalled();
-      } finally {
-        release.resolve();
-        await settled;
-        res.destroy();
-        req.destroy();
-        catalog.release();
-      }
-    });
-  });
-
   it.each(["avatar", "bootstrap"] as const)(
     "withholds a prepared %s response after requester authority changes",
     async (kind) => {
@@ -196,24 +88,14 @@ describe("Control UI response authority", () => {
       const release = createDeferredCore();
       if (kind === "bootstrap") {
         const registry = createEmptyPluginRegistry();
-        registry.controlUiDescriptors.push({
-          pluginId: "demo-plugin",
-          source: "demo-plugin",
-          descriptor: {
-            surface: "tab",
-            id: "demo",
-            label: "Demo",
-            path: "/secure-hook/panel",
-          },
-        });
-        registry.httpRoutes.push({
-          pluginId: "demo-plugin",
-          source: "demo-plugin",
-          path: "/secure-hook",
-          auth: "gateway",
-          match: "prefix",
-          handler: async () => true,
-        });
+        registry.plugins.push(
+          createPluginRecord({
+            id: "demo-plugin",
+            origin: "bundled",
+            rootDir: workspace,
+            controlUi: { entry: "dist/control-ui/index.js" },
+          }),
+        );
         setActivePluginRegistry(registry);
         vi.spyOn(devInstallBranch, "resolveDevInstallGitBranch").mockImplementation(async () => {
           entered.resolve();
@@ -258,7 +140,9 @@ describe("Control UI response authority", () => {
         expect(res.writableEnded).toBe(false);
         if (kind === "bootstrap") {
           expect(res.getHeader("Set-Cookie")).toEqual(
-            expect.arrayContaining([expect.stringContaining("Path=/secure-hook")]),
+            expect.arrayContaining([
+              expect.stringContaining("Path=/__openclaw__/plugins/control-ui/demo-plugin/"),
+            ]),
           );
           config = { ...config, gateway: { roles: { definitions: {} } } };
         } else {

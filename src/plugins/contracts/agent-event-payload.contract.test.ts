@@ -4,10 +4,7 @@ import {
 } from "openclaw/plugin-sdk/plugin-test-contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resetAgentEventsForTest } from "../../infra/agent-events.js";
-import {
-  clearPluginHostRuntimeState,
-  dispatchPluginAgentEventSubscriptions,
-} from "../host-hook-runtime.js";
+import { dispatchPluginAgentEventSubscriptions } from "../host-hook-runtime.js";
 import { createEmptyPluginRegistry } from "../registry-empty.js";
 import { setActivePluginRegistry } from "../runtime.js";
 import { createPluginRecord } from "../status.test-helpers.js";
@@ -21,7 +18,6 @@ async function waitForPluginEventHandlers(): Promise<void> {
 
 afterEach(() => {
   setActivePluginRegistry(createEmptyPluginRegistry());
-  clearPluginHostRuntimeState();
   resetAgentEventsForTest();
 });
 

@@ -1,15 +1,11 @@
 import { expectDefined } from "@openclaw/normalization-core";
 import { expect, it, vi } from "vitest";
-import {
-  bindOperatorModelExecution,
-  resolveAdmittedRunActiveAssertion,
-} from "../../agents/admitted-run-context.js";
+import { resolveAdmittedRunActiveAssertion } from "../../agents/admitted-run-context.js";
 import { buildExecAutoReviewTranscript } from "../../agents/exec-auto-review-transcript.js";
 import { castAgentMessage } from "../../agents/test-helpers/agent-message-fixtures.js";
 import { resolveCommandAuthorization } from "../../auto-reply/command-auth.js";
 import {
   captureCommandOwnerAssertion,
-  CommandOwnerRevokedError,
   getCommandOwnerAuthority,
 } from "../../auto-reply/command-owner-authority.js";
 import { prepareChannelRunAdmission } from "../../auto-reply/reply/channel-run-admission.js";
@@ -38,12 +34,7 @@ import { mergeImportedChatHistoryMessages } from "../../gateway/cli-session-hist
 import { captureGatewayOperatorRunAuthority } from "../../gateway/operator-run-authority.js";
 import { createOperatorClient } from "../../gateway/server-plugin-in-process-dispatch.test-support.js";
 import { resolveGatewayScopedTools } from "../../gateway/tool-resolution.js";
-import {
-  createPluginRegistryFixture,
-  registerVirtualTestPlugin,
-} from "../../plugin-sdk/test-helpers/contracts-testkit.js";
 import { createPluginRuntimeMock } from "../../plugin-sdk/test-helpers/plugin-runtime-mock.js";
-import { stageActivePluginRegistry } from "../../plugins/runtime.js";
 import { readConfigMachineState } from "../../state/config-machine-state.js";
 import * as stateReads from "../../state/openclaw-state-db-readonly.js";
 import {
@@ -485,98 +476,6 @@ it.each([
       },
       change === "identity-scopes" ? "identity-grant" : "role",
     );
-  },
-);
-
-it.each(["allowed", "revoked", "replaced", "unavailable"] as const)(
-  "resumes only the original plugin grant when it is %s",
-  async (change) => {
-    await withAdminIngress(async ({ cfg, state, admins, activatePolicy, context }) => {
-      const pluginId = "channel-owner-access";
-      const originalId = "86633673-b1dd-4500-85e2-b6e6e490810f";
-      let grantId: string | undefined = originalId;
-      let lifetime = new AbortController();
-      let unavailable = false;
-      const { config, registry } = createPluginRegistryFixture(cfg);
-      registerVirtualTestPlugin({
-        registry,
-        config,
-        id: pluginId,
-        name: "Channel owner access",
-        register(api) {
-          const current = () => {
-            if (unavailable) {
-              throw new Error("Policy store is unavailable");
-            }
-            const signal = lifetime.signal;
-            return grantId
-              ? { grantId, signal, assertCurrent: () => signal.throwIfAborted() }
-              : undefined;
-          };
-          api.registerGatewayAccessPolicy({
-            authorize: current,
-            resume: ({ grantId: requested }) => (requested === grantId ? current() : undefined),
-          });
-        },
-      });
-      stageActivePluginRegistry(registry.registry, null, "default");
-      const roles = structuredClone(cfg.gateway!.roles!);
-      roles.definitions.admin!.accessPolicyPlugin = pluginId;
-      await activatePolicy({ roles });
-      const original = await prepareChannelOperatorAdmin(cfg, admins[0]!.identity);
-      const reference = original!.recoveryReference!;
-      expect(reference).toBeDefined();
-      const authority =
-        change === "revoked"
-          ? prepareInternalGetReplyOptions(undefined, await context(admins[0]!.identity.senderId))
-              ?.operatorAuthority
-          : undefined;
-      const models =
-        change === "revoked"
-          ? [
-              bindOperatorModelExecution(authority, undefined),
-              bindOperatorModelExecution(authority, undefined),
-            ]
-          : [];
-      try {
-        for (const model of models) {
-          expect(model?.signal.aborted).toBe(false);
-        }
-        if (change === "revoked" || change === "replaced") {
-          lifetime.abort();
-          grantId = change === "revoked" ? undefined : "78a7c3d0-c3a6-49a5-91e7-02c153e39ab5";
-          lifetime = new AbortController();
-        }
-        for (const model of models) {
-          expect(model?.signal.aborted).toBe(true);
-          expect(model?.signal.reason).toBeInstanceOf(CommandOwnerRevokedError);
-          expect(model?.signal.reason).toMatchObject({
-            message: "Channel operator authority changed; send a new request.",
-          });
-        }
-      } finally {
-        for (const model of models) {
-          model?.release();
-        }
-      }
-      unavailable = change === "unavailable";
-      await closeOpenClawStateDatabaseByPathAsync(resolveOpenClawStateSqlitePath(state.env));
-      if (change === "unavailable") {
-        await expect(prepareChannelOperatorAdmin(cfg, reference)).rejects.toMatchObject({
-          name: "GatewayOperatorAccessUnavailableError",
-        });
-      } else if (change === "allowed") {
-        expect((await prepareChannelOperatorAdmin(cfg, reference))?.isCurrent(cfg)).toBe(true);
-      } else {
-        await expect(prepareChannelOperatorAdmin(cfg, reference)).resolves.toBeUndefined();
-        // Restoring access creates a successor grant, never the retired grant's identity.
-        grantId = "78a7c3d0-c3a6-49a5-91e7-02c153e39ab5";
-        expect((await prepareChannelOperatorAdmin(cfg, admins[0]!.identity))?.isCurrent(cfg)).toBe(
-          true,
-        );
-        await expect(prepareChannelOperatorAdmin(cfg, reference)).resolves.toBeUndefined();
-      }
-    });
   },
 );
 

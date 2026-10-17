@@ -8,4 +8,3 @@ export { handleSessionBrowserGatewayRequest } from "./src/gateway/session-browse
 export { hasBrowserNodeHostWork, runBrowserProxyCommand } from "./src/node-host/invoke-browser.js";
 export { createBrowserPluginService } from "./src/plugin-service.js";
 export { stopBrowserControlService } from "./src/control-service.js";
-export { collectBrowserSecurityAuditFindings } from "./src/security-audit.js";

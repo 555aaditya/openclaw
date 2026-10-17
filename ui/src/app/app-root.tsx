@@ -16,7 +16,6 @@ import {
   untrack,
 } from "solid-js";
 import "../components/gateway-url-confirmation.ts";
-import "../components/link-reader-hovercard-registration.ts";
 import { LazyElementStateView, LazyViewError } from "../components/solid/lazy-view-error.tsx";
 import { ConnectingSplash } from "../components/solid/loading-skeleton.tsx";
 import { installTitleTooltips } from "../components/tooltip-title.ts";
@@ -50,7 +49,6 @@ import {
   QUESTION_PAGE_ELEMENT,
   TERMINAL_PANEL_ELEMENT,
 } from "./lazy-custom-element.ts";
-import { availableLinkReaders, availableLinkPreviewReaders } from "./link-reader-routing.ts";
 import { nativeEmbedHost, isNativeWebChromeHost } from "./native-web-chrome.ts";
 import { resolveOnboardingMode } from "./onboarding-mode.ts";
 import { isDesktopPanelAvailable } from "./panel-availability.ts";
@@ -575,13 +573,7 @@ function OpenClawApp(props: { host: HTMLElement; runtime: ApplicationRuntime }):
   }
   function Shell(): SolidJSX.Element {
     return (
-      <openclaw-link-reader-hovercard-provider
-        prop:client={connected() ? snapshot().client : null}
-        prop:readers={availableLinkPreviewReaders(snapshot())}
-        prop:claimedReaders={availableLinkReaders(snapshot())}
-        prop:pagePreviewContext={context}
-        prop:agentId={selection.read().state.selectedId ?? snapshot().assistantAgentId ?? undefined}
-      >
+      <>
         <openclaw-session-progress-hovercard-provider
           prop:client={snapshot().client}
           prop:context={context}
@@ -594,7 +586,7 @@ function OpenClawApp(props: { host: HTMLElement; runtime: ApplicationRuntime }):
             fallback={<Splash />}
           />
         </openclaw-session-progress-hovercard-provider>
-      </openclaw-link-reader-hovercard-provider>
+      </>
     );
   }
   return (

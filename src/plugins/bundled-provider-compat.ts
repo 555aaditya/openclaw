@@ -13,10 +13,7 @@ const BUNDLED_PROVIDER_COMPAT_CONTRACT_KEYS = [
   "musicGenerationProviders",
   "webFetchProviders",
   "webSearchProviders",
-  "workerProviders",
-  "storageProviders",
   "usageProviders",
-  "migrationProviders",
 ] as const satisfies readonly PluginManifestContractListKey[];
 const BUNDLED_PROVIDER_COMPAT_CONTRACTS: ReadonlySet<PluginManifestContractListKey> = new Set(
   BUNDLED_PROVIDER_COMPAT_CONTRACT_KEYS,

@@ -200,8 +200,6 @@ describe("runtime postbuild static assets", () => {
       "extensions/diffs-language-pack/assets/viewer-runtime.js",
     );
     expect(payload.sources).not.toContain("extensions/diffs/assets/viewer-runtime.js");
-    expect(payload.sources).not.toContain("extensions/discord/assets/embedded-app-sdk.mjs");
-    expect(payload.packageOutputs).toContain("dist/extensions/discord/assets/embedded-app-sdk.mjs");
     expect(payload.sources).toContain("extensions/crabbox/assets/openclaw-worker-wallpaper.png");
   });
 

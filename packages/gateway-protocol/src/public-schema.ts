@@ -278,7 +278,6 @@ export {
   SessionsPatchManyTargetSchema,
   SessionsPatchManyParamsSchema,
   SessionsPatchManyResultSchema,
-  SessionsPluginPatchParamsSchema,
   SessionsResetParamsSchema,
   SessionsDeleteParamsSchema,
   SessionsAssignOwnerParamsSchema,

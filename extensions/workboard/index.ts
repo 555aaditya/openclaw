@@ -81,27 +81,6 @@ export default definePluginEntry({
       onMatched: automationNudge.nudge,
     });
     resourceServices.push(lifecycleSync);
-    api.session.controls.registerControlUiDescriptor({
-      surface: "tab",
-      id: "workboard",
-      label: "Workboard",
-      placement: "route:workboard",
-      icon: "kanban",
-      group: "control",
-      requiredScopes: ["operator.read"],
-    });
-    for (const [id, label, scope] of [
-      ["board", "Workboard board", "operator.read"],
-      ["card", "Workboard card", "operator.write"],
-      ["mini", "Workboard summary", "operator.read"],
-    ] as const) {
-      api.session.controls.registerControlUiDescriptor({
-        surface: "widget",
-        id,
-        label,
-        requiredScopes: [scope],
-      });
-    }
     registerWorkboardGatewayMethods({ api, store, sessionsBoard });
     registerWorkboardCommand({ api, store });
     for (const service of [changeEvents, automationNudge, sessionsBoard, lifecycleSync]) {

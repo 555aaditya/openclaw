@@ -14,7 +14,6 @@ import {
 } from "./current-plugin-metadata-snapshot.js";
 import { clearCurrentPluginMetadataSnapshot } from "./current-plugin-metadata-state.js";
 import { setCurrentPluginMetadataSnapshot } from "./current-plugin-metadata.test-support.js";
-import { getGlobalHookRunnerRegistry } from "./hook-runner-global-state.js";
 import { withPluginInstallRoots } from "./install-root-context.js";
 import * as installedPluginIndexPolicy from "./installed-plugin-index-policy.js";
 import { writePersistedInstalledPluginIndex } from "./installed-plugin-index-store-write.js";
@@ -135,18 +134,6 @@ describe("current plugin metadata snapshot", () => {
       source: "test",
       provider: { id: "outer", label: "Outer", auth: [], classifyFailoverReason: () => "billing" },
     });
-    outerRegistry.trustedToolPolicies = [
-      {
-        pluginId: "outer",
-        pluginName: "Outer",
-        source: "test",
-        policy: {
-          id: "outer-policy",
-          description: "outer",
-          evaluate: () => undefined,
-        },
-      },
-    ];
     setActivePluginRegistry(outerRegistry, "outer-generation", "default", "/workspace/outer");
 
     try {
@@ -182,7 +169,6 @@ describe("current plugin metadata snapshot", () => {
                     context: { provider: "outer", errorMessage: "fixture failure" },
                   }),
                 ).toBeUndefined();
-                expect(getGlobalHookRunnerRegistry()?.trustedToolPolicies).toEqual([]);
                 throw new Error("inner generation failed");
               },
             ),
@@ -202,9 +188,6 @@ describe("current plugin metadata snapshot", () => {
               context: { provider: "outer", errorMessage: "fixture failure" },
             }),
           ).toBe("billing");
-          expect(
-            getGlobalHookRunnerRegistry()?.trustedToolPolicies?.map((entry) => entry.policy.id),
-          ).toEqual(["outer-policy"]);
         },
       );
 

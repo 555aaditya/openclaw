@@ -57,12 +57,6 @@ const widgetContents = [
   { kind: "html", html: "<p>original</p>" },
   { kind: "plugin", pluginKind: "workboard:card", props: { cardId: "original" } },
   {
-    kind: "registered",
-    contentKind: "diagram",
-    pluginKind: "diagram:diagram",
-    source: "diagram:original",
-  },
-  {
     kind: "mcp-app",
     descriptor: {
       serverName: "server",
@@ -104,162 +98,140 @@ describe("board store", () => {
     });
   });
 
-  it.each(
-    widgetContents.filter((content) => content.kind === "plugin" || content.kind === "registered"),
-  )("preserves $kind widget ownership across same-name updates", async (content) => {
-    const store = createTestBoardStore();
-    const name = `${content.kind}-status`;
-    const created = await store.putWidget({ sessionKey: "session", name, content });
-    expect(created.widgets[0]?.instanceId).toMatch(/^[a-f0-9]{32}$/u);
+  it.each(widgetContents.filter((content) => content.kind === "plugin"))(
+    "preserves $kind widget ownership across same-name updates",
+    async (content) => {
+      const store = createTestBoardStore();
+      const name = `${content.kind}-status`;
+      const created = await store.putWidget({ sessionKey: "session", name, content });
+      expect(created.widgets[0]?.instanceId).toMatch(/^[a-f0-9]{32}$/u);
 
-    expect(created.widgets[0]).toMatchObject({
-      contentOwner: content.kind,
-      ...(content.kind === "registered" ? { registeredContentKind: content.contentKind } : {}),
-    });
+      expect(created.widgets[0]).toMatchObject({
+        contentOwner: content.kind,
+      });
 
-    for (const replacement of widgetContents.filter(
-      (candidate) => candidate.kind !== content.kind,
-    )) {
-      await expect(
-        store.putWidget({ sessionKey: "session", name, content: replacement }),
-      ).rejects.toThrow(
-        expect.objectContaining({
-          code: "invalid_operation",
-          message: expect.stringMatching(/same content kind.*remove/i),
-        }),
+      for (const replacement of widgetContents.filter(
+        (candidate) => candidate.kind !== content.kind,
+      )) {
+        await expect(
+          store.putWidget({ sessionKey: "session", name, content: replacement }),
+        ).rejects.toThrow(
+          expect.objectContaining({
+            code: "invalid_operation",
+            message: expect.stringMatching(/same content kind.*remove/i),
+          }),
+        );
+        expect(await store.getSnapshot({ sessionKey: "session" })).toMatchObject({
+          revision: created.revision,
+          widgets: created.widgets,
+        });
+      }
+
+      if (content.kind === "plugin") {
+        await expect(
+          store.putWidget({
+            sessionKey: "session",
+            name,
+            content: { ...content, pluginKind: "other:replacement" },
+          }),
+        ).rejects.toThrow(expect.objectContaining({ code: "invalid_operation" }));
+        expect(await store.getSnapshot({ sessionKey: "session" })).toMatchObject({
+          revision: created.revision,
+          widgets: created.widgets,
+        });
+      }
+
+      if (content.kind === "plugin") {
+        const withIncidentalInstance = {
+          ...created,
+          widgets: created.widgets.map((widget) => ({ ...widget, instanceId: "incidental" })),
+        };
+        expect(
+          createBoardWidgetPutSnapshot(
+            withIncidentalInstance,
+            { sessionKey: created.sessionKey, name, content },
+            { grantScopeMatches: true, instanceId: "replacement" },
+          ).widgets[0],
+        ).toMatchObject({ contentOwner: "plugin", revision: 2 });
+      }
+
+      const updated = (await store.putWidget({ sessionKey: "session", name, content })).widgets[0]!;
+      expect(updated).toMatchObject({
+        name,
+        revision: 2,
+      });
+      if (content.kind === "plugin") {
+        expect(updated.instanceId).toBe(created.widgets[0]?.instanceId);
+      } else {
+        expect(updated.instanceId).not.toBe(created.widgets[0]?.instanceId);
+      }
+      expect((await store.getSnapshot({ sessionKey: "session" })).widgets[0]?.instanceId).toBe(
+        updated.instanceId,
       );
-      expect(await store.getSnapshot({ sessionKey: "session" })).toMatchObject({
-        revision: created.revision,
-        widgets: created.widgets,
-      });
-    }
 
-    if (content.kind === "plugin" || content.kind === "registered") {
-      await expect(
-        store.putWidget({
-          sessionKey: "session",
-          name,
-          content: { ...content, pluginKind: "other:replacement" },
-        }),
-      ).rejects.toThrow(expect.objectContaining({ code: "invalid_operation" }));
-      expect(await store.getSnapshot({ sessionKey: "session" })).toMatchObject({
-        revision: created.revision,
-        widgets: created.widgets,
-      });
-    }
-
-    if (content.kind === "registered") {
-      await expect(
-        store.putWidget({
-          sessionKey: "session",
-          name,
-          content: { ...content, contentKind: "alternate" },
-        }),
-      ).rejects.toThrow(expect.objectContaining({ code: "invalid_operation" }));
-      expect(await store.getSnapshot({ sessionKey: "session" })).toMatchObject({
-        revision: created.revision,
-        widgets: created.widgets,
-      });
-    }
-
-    if (content.kind === "plugin") {
-      const withIncidentalInstance = {
-        ...created,
-        widgets: created.widgets.map((widget) => ({ ...widget, instanceId: "incidental" })),
-      };
+      await store.applyOps({ sessionKey: "session" }, [{ kind: "widget_remove", name }]);
+      const replacement = widgetContents.find((candidate) => candidate.kind !== content.kind)!;
       expect(
-        createBoardWidgetPutSnapshot(
-          withIncidentalInstance,
-          { sessionKey: created.sessionKey, name, content },
-          { grantScopeMatches: true, instanceId: "replacement" },
-        ).widgets[0],
-      ).toMatchObject({ contentOwner: "plugin", revision: 2 });
-    }
+        (await store.putWidget({ sessionKey: "session", name, content: replacement })).widgets[0],
+      ).toMatchObject({
+        contentKind: replacement.kind,
+        contentOwner: replacement.kind,
+        revision: 1,
+      });
+    },
+  );
 
-    const updated = (await store.putWidget({ sessionKey: "session", name, content })).widgets[0]!;
-    expect(updated).toMatchObject({
-      name,
-      revision: 2,
-    });
-    if (content.kind === "plugin") {
-      expect(updated.instanceId).toBe(created.widgets[0]?.instanceId);
-    } else {
-      expect(updated.instanceId).not.toBe(created.widgets[0]?.instanceId);
-    }
-    expect((await store.getSnapshot({ sessionKey: "session" })).widgets[0]?.instanceId).toBe(
-      updated.instanceId,
-    );
-
-    await store.applyOps({ sessionKey: "session" }, [{ kind: "widget_remove", name }]);
-    const replacement = widgetContents.find((candidate) => candidate.kind !== content.kind)!;
-    expect(
-      (await store.putWidget({ sessionKey: "session", name, content: replacement })).widgets[0],
-    ).toMatchObject({
-      contentKind: replacement.kind === "registered" ? "plugin" : replacement.kind,
-      contentOwner: replacement.kind,
-      revision: 1,
-    });
-  });
-
-  it("upgrades registered ownership from its exact legacy descriptor and preserves it", async () => {
-    const stateDir = tempDirs.make("openclaw-board-legacy-registered-");
-    const env = { OPENCLAW_STATE_DIR: stateDir };
-    const sessionKey = "agent:main:legacy-registered";
-    const store = createTestBoardStore({ stateDir });
-    const content = {
-      kind: "registered" as const,
-      contentKind: "diagram",
-      pluginKind: "diagram:diagram",
-      source: "diagram:first",
-    };
-    await store.putWidget({ sessionKey, name: "status", content, declared: { tools: ["health"] } });
-    const database = openOpenClawAgentDatabase({ agentId: "main", env });
-    database.db
-      .prepare(
-        "UPDATE board_widgets SET manifest = json_set(manifest, '$.registeredContentKind', 'other') WHERE session_key = ? AND name = 'status'",
-      )
-      .run(sessionKey);
-    await expect(store.getSnapshot({ sessionKey })).rejects.toThrow(/content ownership/i);
-    database.db
-      .prepare(
-        "UPDATE board_widgets SET manifest = json_remove(manifest, '$.contentOwner', '$.registeredContentKind', '$.registeredInstanceId') WHERE session_key = ? AND name = 'status'",
-      )
-      .run(sessionKey);
-
-    const legacy = (await store.getSnapshot({ sessionKey })).widgets[0]!;
-    expect(legacy).toMatchObject({ contentOwner: "registered", registeredContentKind: "diagram" });
-    expect(legacy).not.toHaveProperty("instanceId");
-    await expect(
-      store.putWidget({
+  it.each([false, true])(
+    "excludes retired renderer rows without changing persisted bytes (ownership=%s)",
+    async (explicitOwnership) => {
+      const stateDir = tempDirs.make("openclaw-board-retired-renderer-");
+      const env = { OPENCLAW_STATE_DIR: stateDir };
+      const sessionKey = "agent:main:retired-renderer";
+      const store = createTestBoardStore({ stateDir });
+      await putHtml(store, sessionKey, "retained");
+      await store.putWidget({
         sessionKey,
-        name: "status",
-        content: { kind: "plugin", pluginKind: "diagram:diagram" },
-      }),
-    ).rejects.toThrow(/same content kind.*remove/i);
-    await expect(
-      store.putWidget({
-        sessionKey,
-        name: "status",
-        content: { ...content, contentKind: "other" },
-      }),
-    ).rejects.toThrow(/same content kind.*remove/i);
+        name: "retired",
+        content: { kind: "plugin", pluginKind: "diagram:diagram", props: {} },
+      });
+      const database = openOpenClawAgentDatabase({ agentId: "main", env });
+      const descriptor = JSON.stringify({
+        pluginKind: "diagram:diagram",
+        source: "retired source",
+      });
+      const manifest = JSON.stringify(
+        explicitOwnership
+          ? {
+              contentOwner: "registered",
+              registeredContentKind: "diagram",
+              registeredInstanceId: "a".repeat(32),
+            }
+          : {},
+      );
+      database.db
+        .prepare(
+          "UPDATE board_widgets SET descriptor_json = ?, manifest = ?, grant_state = 'granted' WHERE session_key = ? AND name = 'retired'",
+        )
+        .run(descriptor, manifest, sessionKey);
 
-    const refreshed = await store.putWidget({
-      sessionKey,
-      name: "status",
-      content: { ...content, source: "diagram:refreshed" },
-      declared: { tools: ["health"] },
-    });
-    await store.grant({ sessionKey }, "status", "granted", 2, refreshed.widgets[0]?.instanceId);
-    const row = database.db
-      .prepare("SELECT manifest FROM board_widgets WHERE session_key = ? AND name = 'status'")
-      .get(sessionKey) as { manifest: string };
-    expect(JSON.parse(row.manifest)).toMatchObject({
-      contentOwner: "registered",
-      registeredContentKind: "diagram",
-      grantSemanticsVersion: 2,
-    });
-  });
+      expect((await store.getSnapshot({ sessionKey })).widgets.map(({ name }) => name)).toEqual([
+        "retained",
+      ]);
+      expect(
+        await store.useWidgetDocument({ sessionKey }, "retired", (value) => value),
+      ).toBeUndefined();
+      await expect(
+        store.grant({ sessionKey }, "retired", "granted", 1, "a".repeat(32)),
+      ).rejects.toThrow(/not found/i);
+      expect(
+        database.db
+          .prepare(
+            "SELECT descriptor_json, manifest FROM board_widgets WHERE session_key = ? AND name = 'retired'",
+          )
+          .get(sessionKey),
+      ).toMatchObject({ descriptor_json: descriptor, manifest });
+    },
+  );
 
   it("returns immutable snapshots and isolates session boards", async () => {
     const store = createTestBoardStore();
@@ -579,13 +551,10 @@ describe("SqliteBoardStore behavior", () => {
     );
   });
 
-  it.each(["html", "registered"] as const)(
+  it.each(["html"] as const)(
     "preserves %s grants only for unchanged bytes with equal or narrower declarations",
     async (kind) => {
-      const documentContent = (text: string) =>
-        kind === "html"
-          ? { kind, html: text }
-          : { kind, contentKind: "diagram", pluginKind: "diagram:diagram", source: text };
+      const documentContent = (text: string) => ({ kind, html: text });
       const store = createTestBoardStore();
       const first = await store.putWidget({
         ...boardSession,
@@ -611,7 +580,7 @@ describe("SqliteBoardStore behavior", () => {
       expect(
         await store.useWidgetDocument(boardSession, "scoped", (document) => document),
       ).toMatchObject({
-        ...(kind === "html" ? { html: "one" } : { source: "one" }),
+        html: "one",
         grantState: "granted",
       });
 

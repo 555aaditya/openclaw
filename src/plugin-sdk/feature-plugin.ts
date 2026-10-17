@@ -1,13 +1,9 @@
-/** Registers typed feature operations on existing host-owned tools, commands, and actions. */
+/** Registers typed feature operations on host-owned tools and commands. */
 import type { TSchema } from "typebox";
 import type { AgentToolUpdateCallback } from "../agents/runtime/index.js";
 import { jsonResult } from "../agents/tools/common.js";
 import type { OpenClawPluginGatewayEvents } from "../plugins/gateway-events.js";
-import {
-  isPluginJsonValue,
-  type PluginJsonValue,
-  type PluginSessionActionContext,
-} from "../plugins/host-hooks.js";
+import { isPluginJsonValue, type PluginJsonValue } from "../plugins/host-hooks.js";
 import type { PluginCommandContext, PluginCommandResult } from "../plugins/plugin-command.types.js";
 import { validateJsonSchemaValue } from "../plugins/schema-validator.js";
 import type { JsonSchemaObject } from "../shared/json-schema.types.js";
@@ -27,7 +23,6 @@ import {
 import { toolPluginMetadataSymbol, type ToolPluginMetadata } from "./tool-plugin.js";
 
 export type FeatureInvocationContext = { api: OpenClawPluginApi } & (
-  | { source: "session-action"; action: PluginSessionActionContext }
   | {
       source: "tool";
       tool: OpenClawPluginToolContext;
@@ -177,26 +172,6 @@ export function defineFeaturePlugin<C extends FeatureContract>(
           );
         };
         const requiredScope = operation.kind === "query" ? "operator.read" : "operator.write";
-        api.session.controls.registerSessionAction({
-          id,
-          description: operation.description,
-          // SAFETY: registerSessionAction validates the schema as bounded JSON before retaining it.
-          schema: operation.input as PluginJsonValue,
-          requiredScopes: [requiredScope],
-          async handler(action) {
-            try {
-              return {
-                ok: true,
-                result: await invoke(action.payload, { source: "session-action", action, api }),
-              };
-            } catch (error) {
-              if (error instanceof FeatureValidationError) {
-                return { ok: false, error: error.message, code: error.code };
-              }
-              throw error;
-            }
-          },
-        });
         if (operation.tool) {
           const tool = operation.tool;
           api.registerTool(

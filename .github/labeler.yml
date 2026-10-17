@@ -154,13 +154,10 @@
   - changed-files:
       - any-glob-to-any-file:
           - "extensions/migrate-hermes/**"
-          - "docs/cli/migrate.md"
 "plugin: migrate-claude":
   - changed-files:
       - any-glob-to-any-file:
           - "extensions/migrate-claude/**"
-          - "docs/cli/migrate.md"
-          - "docs/install/migrating-claude.md"
 "plugin: mcp-events":
   - changed-files:
       - any-glob-to-any-file:
@@ -619,7 +616,6 @@
   - changed-files:
       - any-glob-to-any-file:
           - "extensions/cloudflare/**"
-          - "docs/plugins/cloudflare.md"
 "extensions: cloudflare-ai-gateway":
   - changed-files:
       - any-glob-to-any-file:

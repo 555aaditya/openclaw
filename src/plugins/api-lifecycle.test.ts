@@ -38,36 +38,13 @@ function captureRegisteredPluginApi(handlers: Parameters<typeof buildPluginApi>[
 }
 
 describe("plugin api lifecycle", () => {
-  it("returns inert results for unwired runtime and scheduler handlers", async () => {
+  it("returns an inert result for unwired next-turn injection", async () => {
     const api = createPluginApi();
     const sessionKey = "agent:main:main";
-
-    expect(api.emitAgentEvent({ runId: "run", stream: "lifecycle", data: {} })).toEqual({
-      emitted: false,
-      reason: "not wired",
-    });
-    expect(api.setRunContext({ runId: "run", namespace: "workflow", value: 1 })).toBe(false);
-    expect(api.getRunContext({ runId: "run", namespace: "workflow" })).toBeUndefined();
-    expect(
-      api.registerSessionSchedulerJob({ id: "job", sessionKey, kind: "session-turn" }),
-    ).toBeUndefined();
     await expect(api.enqueueNextTurnInjection({ sessionKey, text: "queued" })).resolves.toEqual({
       enqueued: false,
       id: "",
       sessionKey,
-    });
-    await expect(
-      api.session.workflow.steerActiveRun({ sessionKey, text: "guidance" }),
-    ).resolves.toEqual({ steered: false, reason: "not wired" });
-    await expect(
-      api.sendSessionAttachment({ sessionKey, files: [{ path: "/tmp/attachment.txt" }] }),
-    ).resolves.toEqual({ ok: false, error: "not wired" });
-    await expect(
-      api.scheduleSessionTurn({ sessionKey, message: "wake", delayMs: 1_000 }),
-    ).resolves.toBeUndefined();
-    await expect(api.unscheduleSessionTurnsByTag({ sessionKey, tag: "wake" })).resolves.toEqual({
-      removed: 0,
-      failed: 0,
     });
   });
 
@@ -100,7 +77,7 @@ describe("plugin api lifecycle", () => {
     expect(api.registerCli).toBe(registerCli);
     api.registerHook("message_received", hook);
     expect(registerHook).toHaveBeenCalledExactlyOnceWith("message_received", hook);
-    api.registerNodeCliFeature(registrar, { commands: ["camera"] });
+    api.registerCli(registrar, { parentPath: ["nodes"], commands: ["camera"] });
     expect(registerCli).toHaveBeenCalledExactlyOnceWith(registrar, {
       commands: ["camera"],
       parentPath: ["nodes"],
@@ -150,47 +127,20 @@ describe("plugin api lifecycle", () => {
     });
   });
 
-  it("exposes steering only through the workflow facade after registration", async () => {
-    const steerActiveRun = vi.fn<OpenClawPluginApi["session"]["workflow"]["steerActiveRun"]>(
-      async () => ({
-        steered: true,
-        runId: "active-run",
-      }),
-    );
-    const api = captureRegisteredPluginApi({ steerActiveRun });
-    expect(api).not.toHaveProperty("steerActiveRun");
-    const input = { sessionKey: "agent:main:main", text: "guidance", idempotencyKey: "review-1" };
-    await expect(api.session.workflow.steerActiveRun(input)).resolves.toEqual({
-      steered: true,
-      runId: "active-run",
-    });
-    expect(steerActiveRun).toHaveBeenCalledExactlyOnceWith(input);
-  });
-
   it("blocks registration-phase methods after registration", () => {
-    const registerSessionExtension = vi.fn();
-    const api = captureRegisteredPluginApi({ registerSessionExtension });
-
-    const result = api.session.state.registerSessionExtension({
-      namespace: "workflow",
-      description: "workflow",
+    const registerAgentEventSubscription = vi.fn();
+    const api = captureRegisteredPluginApi({ registerAgentEventSubscription });
+    const result = api.agent.events.registerAgentEventSubscription({
+      id: "events",
+      handle: () => {},
     });
-
     expect(result).toBeUndefined();
-    expect(registerSessionExtension).not.toHaveBeenCalled();
+    expect(registerAgentEventSubscription).not.toHaveBeenCalled();
   });
 
   it.each<[string, boolean]>([
-    ["clearRunContext", true],
-    ["emitAgentEvent", true],
     ["enqueueNextTurnInjection", true],
-    ["getRunContext", true],
-    ["sendSessionAttachment", true],
-    ["scheduleSessionTurn", true],
-    ["setRunContext", true],
-    ["unscheduleSessionTurnsByTag", true],
     ["registerTool", false],
-    ["registerSessionExtension", false],
     ["unknown", false],
     ["", false],
     ["constructor", false],

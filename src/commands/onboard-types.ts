@@ -24,7 +24,7 @@ export type AuthChoiceGroupId = "custom" | (string & {});
 export type ResetScope = "config" | "config+creds+sessions" | "full";
 const NODE_MANAGER_CHOICES = ["npm", "pnpm", "bun"] as const;
 export type NodeManagerChoice = (typeof NODE_MANAGER_CHOICES)[number];
-const ONBOARD_FLOWS = ["quickstart", "advanced", "manual", "import"] as const;
+const ONBOARD_FLOWS = ["quickstart", "advanced", "manual"] as const;
 type OnboardFlow = (typeof ONBOARD_FLOWS)[number];
 export type ChannelChoice = ChannelId;
 export type { SecretInputMode } from "../plugins/provider-auth-types.js";
@@ -110,8 +110,5 @@ export type OnboardOptions = OnboardDynamicProviderOptions & {
   remoteUrl?: string;
   remoteToken?: string;
   remotePassword?: string;
-  importFrom?: string;
-  importSource?: string;
-  importSecrets?: boolean;
   json?: boolean;
 };

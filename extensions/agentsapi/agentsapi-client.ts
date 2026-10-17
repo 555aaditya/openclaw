@@ -314,7 +314,6 @@ export class AgentsApiClient {
   async pendingFunctionCalls(
     sessionId: string,
     signal: AbortSignal,
-    connectEnvironment?: (environmentId: string) => Promise<void>,
   ): Promise<AgentsApiFunctionCall[]> {
     const session = sessionSchema.parse(await this.session(sessionId, signal));
     if (session.status === "failed") {
@@ -330,11 +329,7 @@ export class AgentsApiClient {
         session.environment.type === "self_hosted" &&
         action.environment_id === session.environment.id
       ) {
-        if (connectEnvironment) {
-          await connectEnvironment(action.environment_id);
-          this.assertCurrent();
-        }
-        // Without a deployment callback, the operator's executor connects independently.
+        // The external controller connects the executor independently.
         continue;
       }
       if (action.type !== "function_call") {

@@ -1,5 +1,5 @@
 import type { ServerResponse } from "node:http";
-import type { PluginGatewayAccessAuthority } from "../plugins/gateway-access-policy.types.js";
+import type { GatewayOperatorAccessLifetime } from "../gateway/operator-access-policy.types.js";
 import type { GatewayAuthResult } from "./auth.js";
 import {
   prepareGatewayHttpErrorResponse,
@@ -30,7 +30,7 @@ export function sendGatewayHttpAuthFailure(
 /** The listener belongs to this response, never to a reusable keep-alive socket. */
 export function bindHttpOperatorAccessAuthority(
   res: ServerResponse,
-  authority: PluginGatewayAccessAuthority | null | undefined,
+  authority: GatewayOperatorAccessLifetime | null | undefined,
   replyOnFailure = true,
 ): boolean {
   if (!authority) {

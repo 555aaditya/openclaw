@@ -167,29 +167,6 @@ describe("captured plugin registration", () => {
           label: "Captured Provider",
           auth: [],
         });
-        api.registerWorkerProvider({
-          id: "captured-worker",
-          resolveAllocation: async () => ({ leaseId: "captured-lease", sharedHost: false }),
-          provision: async () => ({
-            leaseId: "captured-lease",
-            ssh: {
-              host: "worker.example",
-              port: 22,
-              user: "worker",
-              hostKey: ["ssh-ed25519", "AAAA"].join(" "),
-              keyRef: { source: "env", provider: "default", id: "WORKER_SSH_KEY" },
-            },
-          }),
-          inspect: async () => ({ status: "active" }),
-          destroy: async () => {},
-        });
-        api.registerStorageProvider({
-          id: "captured-storage",
-          label: "Captured storage",
-          open: async () => {
-            throw new Error("capture must not open storage");
-          },
-        });
         api.registerModelCatalogProvider({
           provider: "captured-provider",
           kinds: ["text"],
@@ -232,10 +209,6 @@ describe("captured plugin registration", () => {
             tracks: [],
           }),
         });
-        api.registerTextTransforms({
-          input: [{ from: /red basket/g, to: "blue basket" }],
-          output: [{ from: /blue basket/g, to: "red basket" }],
-        });
         api.registerChannel({
           plugin: {
             id: "captured-channel",
@@ -268,8 +241,6 @@ describe("captured plugin registration", () => {
 
     expect(captured.tools.map((tool) => tool.name)).toEqual(["captured-tool"]);
     expect(captured.providers.map((provider) => provider.id)).toEqual(["captured-provider"]);
-    expect(captured.workerProviders.map((provider) => provider.id)).toEqual(["captured-worker"]);
-    expect(captured.storageProviders.map((provider) => provider.id)).toEqual(["captured-storage"]);
     expect(captured.modelCatalogProviders.map((provider) => provider.provider)).toEqual([
       "captured-provider",
     ]);
@@ -280,8 +251,6 @@ describe("captured plugin registration", () => {
     expect(captured.musicGenerationProviders.map((provider) => provider.id)).toEqual([
       "captured-music",
     ]);
-    expect(captured.textTransforms).toHaveLength(1);
-    expect(captured.textTransforms[0]?.input).toHaveLength(1);
     expect(captured.agentToolResultMiddlewares).toHaveLength(1);
     expect(captured.agentToolResultMiddlewares[0]?.runtimes).toEqual(["codex"]);
     expect(captured.api.runtime.version).toEqual(expect.any(String));
@@ -313,51 +282,5 @@ describe("captured plugin registration", () => {
     await registration.handler({ ...event, toolName: "exec" }, { runtime: "codex" });
 
     expect(handler).toHaveBeenCalledOnce();
-  });
-
-  it("returns synthetic scheduled-turn ids independent of human-readable names", async () => {
-    let scheduleSessionTurn: OpenClawPluginApi["scheduleSessionTurn"] | undefined;
-    let registerSessionSchedulerJob: OpenClawPluginApi["registerSessionSchedulerJob"] | undefined;
-    const captured = capturePluginRegistration({
-      id: "captured-custom-plugin",
-      name: "Captured Custom Plugin",
-      register(api) {
-        registerSessionSchedulerJob = api.session.workflow.registerSessionSchedulerJob;
-        scheduleSessionTurn = api.session.workflow.scheduleSessionTurn;
-      },
-    });
-
-    expect(
-      registerSessionSchedulerJob?.({
-        id: "captured-job",
-        sessionKey: "agent:main:main",
-        kind: "session-turn",
-      }),
-    ).toEqual({
-      id: "captured-job",
-      pluginId: "captured-custom-plugin",
-      sessionKey: "agent:main:main",
-      kind: "session-turn",
-    });
-    await expect(
-      scheduleSessionTurn?.({
-        sessionKey: "agent:main:main",
-        message: "wake",
-        delayMs: 1_000,
-        name: "human-readable-name",
-      }),
-    ).resolves.toEqual({
-      id: "captured-session-turn-1",
-      pluginId: "captured-custom-plugin",
-      sessionKey: "agent:main:main",
-      kind: "session-turn",
-    });
-    expect(captured.sessionSchedulerJobs).toEqual([
-      {
-        id: "captured-job",
-        sessionKey: "agent:main:main",
-        kind: "session-turn",
-      },
-    ]);
   });
 });

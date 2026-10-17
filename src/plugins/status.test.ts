@@ -161,7 +161,6 @@ describe("plugin status reports", () => {
           contracts: { webContentExtractors: ["readability"] },
           webFetchProviderIds: ["fetch"],
           webSearchProviderIds: ["search"],
-          migrationProviderIds: ["importer"],
         }),
       ],
       hooks: [createCustomHook({ pluginId: id, events: ["message"] })],
@@ -177,7 +176,6 @@ describe("plugin status reports", () => {
       { kind: "web-content-extractors", ids: ["readability"] },
       { kind: "web-fetch", ids: ["fetch"] },
       { kind: "web-search", ids: ["search"] },
-      { kind: "migration-provider", ids: ["importer"] },
       { kind: "context-engine", ids: ["context"] },
     ]);
     expect(result.policy).toEqual({

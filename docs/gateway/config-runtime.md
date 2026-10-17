@@ -123,24 +123,9 @@ hosted catalog traffic.
 
 ## Discovery
 
-### mDNS (Bonjour)
+### Discovery metadata
 
-```json5
-{
-  discovery: {
-    mdns: {
-      mode: "minimal", // minimal | full | off
-    },
-  },
-}
-```
-
-- `minimal` (default): omit `cliPath` + `sshPort` from TXT records.
-- `full`: include `cliPath` + `sshPort`; LAN multicast advertising still requires the bundled `bonjour` plugin to be enabled.
-- `off`: suppress LAN multicast advertising without changing plugin enablement.
-- The bundled `bonjour` plugin auto-starts on macOS hosts and is opt-in on Linux, Windows, and containerized Gateway deployments.
-- Hostname defaults to the system hostname when it is a valid DNS label, falling back to `openclaw`. Override with `OPENCLAW_MDNS_HOSTNAME`.
-- `OPENCLAW_DISABLE_BONJOUR=1` disables mDNS advertising outright, overriding `discovery.mdns.mode`.
+`discovery.mdns.mode="full"` includes `cliPath` and `sshPort` in wide-area DNS-SD records. Other values omit those fields. Local multicast advertising and the bundled Bonjour plugin have been removed.
 
 ### Wide-area (DNS-SD)
 

@@ -13,7 +13,6 @@ import {
   resolveLeastPrivilegeOperatorScopesForMethod,
 } from "./method-scopes.js";
 import { createPluginGatewayMethodDescriptor } from "./methods/descriptor.js";
-import { createExpectedBroadOperatorScopes } from "./scope-expectations.test-support.js";
 import { listGatewayMethods } from "./server-methods-list.js";
 import { coreGatewayHandlers } from "./server-methods.js";
 import type { GatewayRequestHandler } from "./server-methods/types.js";
@@ -185,90 +184,6 @@ describe("method scope resolution and authorization", () => {
         { bootstrapCommandOwner: true },
       ),
     ).toEqual({ allowed: true });
-  });
-
-  it("classifies plugin session actions with a CLI-safe default operator scope", () => {
-    expect(resolveLeastPrivilegeOperatorScopesForMethod("plugins.sessionAction")).toEqual([
-      "operator.write",
-    ]);
-    expect(isGatewayMethodClassified("plugins.sessionAction")).toBe(true);
-    expect(authorizeOperatorScopesForMethod("plugins.sessionAction", ["operator.read"])).toEqual({
-      allowed: false,
-      missingScope: "operator.write",
-    });
-  });
-
-  it("derives least-privilege scopes from registered plugin session action params", () => {
-    const registry = createEmptyPluginRegistry();
-    registry.sessionActions = [
-      {
-        pluginId: "scope-plugin",
-        pluginName: "Scope Plugin",
-        source: "test",
-        action: {
-          id: "approve",
-          requiredScopes: ["operator.approvals"],
-          handler: () => ({ result: { ok: true } }),
-        },
-      },
-      {
-        pluginId: "scope-plugin",
-        pluginName: "Scope Plugin",
-        source: "test",
-        action: {
-          id: "view",
-          requiredScopes: ["operator.read"],
-          handler: () => ({ result: { ok: true } }),
-        },
-      },
-      {
-        pluginId: "scope-plugin",
-        pluginName: "Scope Plugin",
-        source: "test",
-        action: {
-          id: "default-write",
-          handler: () => ({ result: { ok: true } }),
-        },
-      },
-    ];
-    setActivePluginRegistry(registry);
-
-    expect(
-      resolveLeastPrivilegeOperatorScopesForMethod("plugins.sessionAction", {
-        pluginId: "scope-plugin",
-        actionId: "approve",
-      }),
-    ).toEqual(["operator.approvals"]);
-    expect(
-      resolveLeastPrivilegeOperatorScopesForMethod("plugins.sessionAction", {
-        pluginId: " scope-plugin ",
-        actionId: " view ",
-      }),
-    ).toEqual(["operator.read"]);
-    expect(
-      resolveLeastPrivilegeOperatorScopesForMethod("plugins.sessionAction", {
-        pluginId: "scope-plugin",
-        actionId: "default-write",
-      }),
-    ).toEqual(["operator.write"]);
-    expect(
-      resolveLeastPrivilegeOperatorScopesForMethod("plugins.sessionAction", {
-        pluginId: "scope-plugin",
-        actionId: "missing",
-      }),
-    ).toEqual(createExpectedBroadOperatorScopes());
-    expect(
-      authorizeOperatorScopesForMethod("plugins.sessionAction", ["operator.approvals"], {
-        pluginId: "scope-plugin",
-        actionId: "approve",
-      }),
-    ).toEqual({ allowed: true });
-    expect(
-      authorizeOperatorScopesForMethod("plugins.sessionAction", ["operator.write"], {
-        pluginId: "scope-plugin",
-        actionId: "approve",
-      }),
-    ).toEqual({ allowed: false, missingScope: "operator.approvals" });
   });
 
   it("defers Gateway cwd containment to sessions.create while keeping node cwd admin-only", () => {
@@ -701,35 +616,6 @@ describe("session-scoped method admission", () => {
         allowedScopes: ["operator.sessions.write"],
       }),
     ).toEqual(["operator.sessions.write"]);
-  });
-
-  it.each([
-    ["sessions.create", { incognito: true }],
-    ["sessions.patch", { key: "agent:main:own", permissionMode: "full" }],
-    ["sessions.patchMany", { targets: [{ key: "agent:main:own" }], patch: { sandboxMode: "off" } }],
-    ["sessions.patch", { key: "agent:main:own", unknownMutation: true }],
-    ["sessions.delete", { key: "agent:main:own" }],
-    ["sessions.delete", { key: "agent:main:own", archivedOnly: true }],
-    ["agent", { message: "/reset" }],
-    ["tools.invoke", {}],
-    ["plugins.sessionAction", { pluginId: "custom", actionId: "protected" }],
-  ] as const)("does not turn the session grant into broader authority for %s", (method, params) => {
-    expect(
-      authorizeOperatorScopesForMethod(method, ["operator.sessions.write"], params),
-    ).toMatchObject({ allowed: false });
-    expect(
-      projectOperatorScopesForMethod({
-        method,
-        requestParams: params,
-        requestedScopes: ["operator.write", "operator.admin", "operator.questions"],
-        allowedScopes: ["operator.sessions.write"],
-      }),
-    ).toEqual([]);
-    if (method === "sessions.delete" && "archivedOnly" in params) {
-      expect(authorizeOperatorScopesForMethod(method, ["operator.write"], params)).toEqual({
-        allowed: true,
-      });
-    }
   });
 
   it("preserves a dispatch registry's stronger scope and does not borrow broad read for a write", () => {

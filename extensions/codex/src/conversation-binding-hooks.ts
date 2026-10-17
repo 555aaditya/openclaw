@@ -3,23 +3,18 @@ import { formatErrorMessage } from "openclaw/plugin-sdk/error-runtime";
 import { KeyedAsyncQueue } from "openclaw/plugin-sdk/keyed-async-queue";
 import type {
   PluginConversationBinding,
-  PluginConversationBindingResolvedEvent,
   PluginHookInboundClaimContext,
   PluginHookInboundClaimEvent,
 } from "openclaw/plugin-sdk/plugin-entry";
 import type { ReplyPayload } from "openclaw/plugin-sdk/reply-payload";
 import { isIncognitoSessionKey } from "openclaw/plugin-sdk/session-key-runtime";
 import type { resolveCodexAppServerAuthProfileIdForAgent } from "./app-server/auth-profile.js";
-import { assertCodexBindingMayBeReplaced } from "./app-server/session-binding-record.js";
 import type { CodexAppServerBindingStore } from "./app-server/session-binding.js";
 import { withCodexConversationThreadActivity } from "./app-server/thread-ownership-queue.js";
 import { defineCodexBuildState } from "./build-state.js";
 import { canMutateCodexHost, CODEX_NATIVE_EXECUTION_AUTH_ERROR } from "./command-authorization.js";
 import { formatCodexDisplayText } from "./command-formatters.js";
-import {
-  readCodexConversationBindingData,
-  readCodexConversationBindingDataRecord,
-} from "./conversation-binding-data.js";
+import { readCodexConversationBindingData } from "./conversation-binding-data.js";
 import type { resumeCodexCliSessionOnNode } from "./node-cli-sessions.js";
 
 type CodexConversationRunOptions = {
@@ -159,34 +154,5 @@ export async function handleCodexConversationInboundClaim(
         text: `${runtime} turn failed: ${formatCodexDisplayText(formatErrorMessage(error))}`,
       },
     };
-  }
-}
-
-export async function handleCodexConversationBindingResolved(
-  event: PluginConversationBindingResolvedEvent,
-  options: { bindingStore: CodexAppServerBindingStore },
-): Promise<void> {
-  if (event.status !== "denied") {
-    return;
-  }
-  const data = readCodexConversationBindingDataRecord(event.request.data ?? {});
-  if (!data || data.kind !== "codex-app-server-session") {
-    return;
-  }
-  const identity = { kind: "conversation" as const, bindingId: data.bindingId };
-  const binding = await options.bindingStore.readAsync(identity);
-  assertCodexBindingMayBeReplaced(binding, "clearing a denied conversation binding");
-  if (binding && (!data.start?.id || binding.conversationStartId === data.start.id)) {
-    await withCodexConversationThreadActivity(identity.bindingId, async () => {
-      const { retireCodexConversationThreadBinding } =
-        await import("./app-server/thread-ownership.js");
-      return retireCodexConversationThreadBinding({
-        bindingStore: options.bindingStore,
-        identity,
-        expectedThreadId: binding.threadId,
-        ...(data.start?.id ? { expectedStartId: data.start.id } : {}),
-        ...(isIncognitoSessionKey(data.source?.sessionKey) ? { allowUntracked: true } : {}),
-      });
-    });
   }
 }

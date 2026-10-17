@@ -4,13 +4,11 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { withPluginRuntimeRegistryScope } from "../plugins/runtime/gateway-request-scope.js";
 import {
   buildCodexMcpServersConfig,
   loadCodexBundleMcpApprovalConfig,
   loadCodexBundleMcpThreadConfigCore,
 } from "./codex-mcp-config.js";
-import { createMcpProofPluginRegistry } from "./mcp-connection-resolver.test-fixtures.js";
 
 const mocks = vi.hoisted(() => ({
   loadExecApprovalsReadOnlyAsync: vi.fn(),
@@ -358,67 +356,5 @@ describe("loadCodexBundleMcpThreadConfigCore", () => {
       expect(loaded.evaluated).toBe(true);
       expect(loaded.staticServerNames).toEqual([]);
     }
-  });
-
-  it("excludes requester-scoped servers from projection and fingerprint", async () => {
-    const resolverRegistry = createMcpProofPluginRegistry();
-    await withPluginRuntimeRegistryScope(resolverRegistry.registry, async () => {
-      const resolverApi = resolverRegistry.apiFor("test-plugin");
-      resolverApi.registerMcpServerConnectionResolver({
-        serverName: "user-mail",
-        resolve: async () => ({ url: "https://should-never-project.example/mcp" }),
-      });
-      mocks.bundleMcp = {
-        config: {
-          mcpServers: {
-            search: {
-              type: "http",
-              url: "https://mcp.example.com/mcp",
-            },
-            "user-mail": {
-              type: "http",
-              url: "https://unresolved.invalid",
-            },
-          },
-        },
-        diagnostics: [],
-      };
-
-      const loaded = await loadCodexBundleMcpThreadConfigCore({
-        workspaceDir: "/workspace",
-        cfg: {},
-        toolsEnabled: true,
-      });
-      // Same static set without a scoped entry must fingerprint identically.
-      mocks.bundleMcp = {
-        config: {
-          mcpServers: {
-            search: {
-              type: "http",
-              url: "https://mcp.example.com/mcp",
-            },
-          },
-        },
-        diagnostics: [],
-      };
-      const withoutScopedConfig = await loadCodexBundleMcpThreadConfigCore({
-        workspaceDir: "/workspace",
-        cfg: {},
-        toolsEnabled: true,
-      });
-
-      expect(loaded.configPatch).toEqual({
-        mcp_servers: {
-          search: {
-            url: "https://mcp.example.com/mcp",
-          },
-        },
-      });
-      expect(JSON.stringify(loaded.configPatch)).not.toContain("unresolved.invalid");
-      expect(JSON.stringify(loaded.configPatch)).not.toContain("user-mail");
-      expect(loaded.configPatch).toEqual(withoutScopedConfig.configPatch);
-      expect(loaded.fingerprint).toBe(withoutScopedConfig.fingerprint);
-      expect(loaded.staticServerNames).toEqual(["search"]);
-    });
   });
 });

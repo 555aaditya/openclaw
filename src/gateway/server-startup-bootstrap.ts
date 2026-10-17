@@ -522,7 +522,6 @@ async function prepareGatewayServerBootstrapSelected(input: {
       cfgAtStart,
       activationSourceConfig: startupActivationSourceConfig,
       pluginMetadataSnapshot: startupConfigLoad.pluginMetadataSnapshot,
-      workerProviderIds: workerEnvironmentStartup?.durableProviderIds ?? [],
       minimalTestGateway,
       ambientEnvTriggers,
       log,

@@ -1,8 +1,4 @@
 import path from "node:path";
-import {
-  createPluginRegistryFixture,
-  registerVirtualTestPlugin,
-} from "openclaw/plugin-sdk/plugin-test-contracts";
 import { afterEach, expect, onTestFinished, test, vi } from "vitest";
 import type { WebSocket } from "ws";
 import {
@@ -22,11 +18,7 @@ import { seedOriginDeviceToken } from "../infra/device-auth-store.test-support.j
 import { loadOrCreateDeviceIdentity } from "../infra/device-identity.js";
 import { getPairedDevice, listDevicePairing } from "../infra/device-pairing.js";
 import { connectUserModelAccount } from "../state/user-model-accounts.js";
-import {
-  linkEmail,
-  setDisplayName,
-  setUserProfileRole,
-} from "../state/user-profile-writes.worker.js";
+import { setUserProfileRole } from "../state/user-profile-writes.worker.js";
 import { ensureProfileForEmail } from "../state/user-profiles.js";
 import { gitHubPublicApi } from "./github-public-api.js";
 import { invalidateOperatorRolePolicy } from "./operator-role-policy.js";
@@ -45,7 +37,6 @@ import {
   waitForWsClose,
   withGatewayServer,
 } from "./server.auth.test-helpers.js";
-import { getTestPluginRegistry, setTestPluginRegistry } from "./test-helpers.plugin-registry.js";
 
 installGatewayTestHooks({ scope: "suite" });
 
@@ -275,91 +266,6 @@ function gitHubTailscalePeople(
     }
   };
 }
-
-test("denies missing person access, retires grant or alias authority, and preserves staff", async () => {
-  await configureGatewayAuth(proxyAuth(), {
-    default: "reader",
-    definitions: {
-      reader: { accessPolicyPlugin: "person-access", ...role(["operator.read"]) },
-      staff: role(["operator.admin"], "write"),
-    },
-  });
-  setUserProfileRole(ensureProfileForEmail("staff@example.com").id, "staff");
-  const { config, registry } = createPluginRegistryFixture();
-  let grant: AbortController | undefined;
-  registerVirtualTestPlugin({
-    registry,
-    config,
-    id: "person-access",
-    name: "Person access",
-    register(api) {
-      api.registerGatewayAccessPolicy({
-        authorize({ profile }) {
-          if (profile.assignedRole === "staff") {
-            return undefined;
-          }
-          const current = grant;
-          if (!current) {
-            throw new Error("An active grant is required");
-          }
-          return { signal: current.signal, assertCurrent: () => current.signal.throwIfAborted() };
-        },
-      });
-    },
-  });
-  setTestPluginRegistry(registry.registry);
-  await withIdentityServer(async ({ connect: connectIdentity }) => {
-    const connect = (email: string) => {
-      return connectIdentity({}, { ...TRUSTED_PROXY_HEADERS, "x-forwarded-user": email });
-    };
-    const accessPolicies = getTestPluginRegistry().gatewayAccessPolicies;
-    const registeredPolicies = [...accessPolicies];
-    try {
-      grant = new AbortController();
-      accessPolicies.length = 0;
-      expect((await connect("visitor@example.com")).connected).toMatchObject({
-        ok: false,
-        error: { code: "FORBIDDEN", details: { code: "OPERATOR_ACCESS_DENIED" } },
-      });
-      const staff = await connect("staff@example.com");
-      expect(staff.connected.ok).toBe(true);
-      accessPolicies.push(...registeredPolicies);
-      grant = undefined;
-      expect((await connect("visitor@example.com")).connected).toMatchObject({
-        ok: false,
-        error: { code: "FORBIDDEN", details: { code: "OPERATOR_ACCESS_DENIED" } },
-      });
-      grant = new AbortController();
-      const guest = await connect("visitor@example.com");
-      expect(guest.connected.ok).toBe(true);
-      expect((await rpcReq(guest.ws, "status")).ok).toBe(true);
-      grant.abort(new Error("Grant expired"));
-      expect(await waitForWsClose(guest.ws, 1_000)).toBe(true);
-      expect((await rpcReq(staff.ws, "status")).ok).toBe(true);
-      expect((await connect("visitor@example.com")).connected.ok).toBe(false);
-
-      grant = new AbortController();
-      const person = ensureProfileForEmail("visitor@example.com");
-      linkEmail("retained@example.com", person.id);
-      const replacement = ensureProfileForEmail("replacement@example.com");
-      const aliasGuest = await connect("visitor@example.com");
-      expect(aliasGuest.connected.ok).toBe(true);
-      setDisplayName(person.id, "Updated visitor");
-      linkEmail("added@example.com", person.id);
-      expect((await rpcReq(aliasGuest.ws, "status")).ok).toBe(true);
-
-      const closed = waitForWsClose(aliasGuest.ws, 1_000);
-      linkEmail("visitor@example.com", replacement.id);
-      linkEmail("visitor@example.com", person.id);
-      expect(await closed).toBe(true);
-      expect(grant.signal.aborted).toBe(false);
-      expect((await rpcReq(staff.ws, "status")).ok).toBe(true);
-      expect((await connect("visitor@example.com")).connected.ok).toBe(true);
-    } finally {
-      accessPolicies.splice(0, accessPolicies.length, ...registeredPolicies);
-    }
-  });
-});
 
 test.each([
   roleCase("unassigned default guest", undefined, READ_WRITE),

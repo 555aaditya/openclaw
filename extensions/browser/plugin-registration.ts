@@ -1,6 +1,6 @@
 /**
  * Browser plugin registration helpers. This file keeps registration lazy while
- * advertising Browser tools, services, node-host commands, and audits.
+ * advertising Browser tools, services, node-host commands.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createLazyRuntimeSurface } from "openclaw/plugin-sdk/lazy-runtime";
@@ -9,7 +9,6 @@ import type {
   OpenClawPluginApi,
   OpenClawPluginGatewayEvents,
   OpenClawPluginNodeHostCommand,
-  OpenClawPluginSecurityAuditCollector,
   OpenClawPluginService,
   OpenClawPluginToolContext,
 } from "openclaw/plugin-sdk/plugin-entry";
@@ -177,13 +176,6 @@ function createBrowserProxyNodeHostCommand(command: string): OpenClawPluginNodeH
 export const browserPluginNodeHostCommands: OpenClawPluginNodeHostCommand[] = [
   createBrowserProxyNodeHostCommand(BROWSER_PROXY_COMMAND),
   createBrowserProxyNodeHostCommand(BROWSER_PROXY_UPLOAD_COMMAND),
-];
-
-export const browserSecurityAuditCollectors: OpenClawPluginSecurityAuditCollector[] = [
-  async (ctx) => {
-    const { collectBrowserSecurityAuditFindings } = await loadBrowserRegistrationRuntimeModule();
-    return collectBrowserSecurityAuditFindings(ctx);
-  },
 ];
 
 /** One service subscription owns discovery and reconciliation through shutdown. */
@@ -358,32 +350,6 @@ function createLazyBrowserPluginService(
 
 export function registerBrowserPlugin(api: OpenClawPluginApi) {
   const runtime = initializeBrowserSessionTabStore(api.runtime);
-  api.session.controls.registerControlUiDescriptor({
-    id: "dashboard",
-    surface: "widget",
-    label: "Browser",
-    description:
-      "An interactive HTTP(S) browser dashboard. Session writers share an isolated session context with the agent's dashboard selector; administrators use the separate managed-profile browser. Author with dashboard widget_put.",
-    requiredScopes: ["operator.sessions.write"],
-    schema: {
-      type: "object",
-      additionalProperties: false,
-      required: ["url"],
-      properties: {
-        url: {
-          type: "string",
-          maxLength: 4096,
-          description: "HTTP(S) website URL without embedded credentials",
-        },
-        profile: {
-          type: "string",
-          maxLength: 128,
-          description:
-            "Administrator-only local managed profile (default openclaw). Session browser uses the configured default profile; omit this property.",
-        },
-      },
-    },
-  });
   api.on("session_end", async (event) => {
     if (
       event.reason !== "deleted" ||

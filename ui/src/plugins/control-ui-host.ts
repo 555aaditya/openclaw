@@ -5,7 +5,7 @@ import type {
   ControlUiPageTarget,
 } from "../../../src/plugin-sdk/control-ui.js";
 import { serializeSidebarEntry } from "../app-navigation.ts";
-import { isRouteId, pathForRoute, pluginTabLocation } from "../app-route-paths.ts";
+import { pluginPageLocation } from "../app-route-paths.ts";
 import type { ApplicationContext } from "../app/context.ts";
 import { hasOperatorReadAccess, readGatewayOperatorAccess } from "../app/operator-access.ts";
 import {
@@ -55,33 +55,20 @@ export function createControlUiPluginHost(
     options?: Pick<ControlUiPageNavigationOptions, "preserveSearch">,
   ) => {
     const context = current();
-    const tab = context.gateway.snapshot.hello?.controlUiTabs?.find(
-      (candidate) => candidate.pluginId === owner.descriptor.pluginId && candidate.id === target.id,
-    );
-    const route = tab?.placement?.startsWith("route:")
-      ? tab.placement.slice("route:".length)
-      : null;
-    const nativeRoute = route && isRouteId(route) ? route : null;
-    const tabLocation = pluginTabLocation(
-      tab ?? { pluginId: owner.descriptor.pluginId, id: target.id },
+    const location = pluginPageLocation(
+      { pluginId: owner.descriptor.pluginId, id: target.id },
       context.basePath,
     );
-    const path = nativeRoute ? pathForRoute(nativeRoute, context.basePath) : tabLocation.pathname;
-    const suffix = nativeRoute ? target.path?.map(encodeURIComponent).join("/") : undefined;
     const search = new URLSearchParams(options?.preserveSearch ? window.location.search : "");
-    if (!nativeRoute) {
-      search.delete("plugin");
-      search.delete("id");
-      for (const [key, value] of new URLSearchParams(tabLocation.search)) {
-        search.set(key, value);
-      }
+    for (const [key, value] of new URLSearchParams(location.search)) {
+      search.set(key, value);
     }
     for (const [key, value] of Object.entries(target.params ?? {})) {
       search.set(`p.${key}`, value);
     }
     return {
-      route: nativeRoute ?? ("plugin" as const),
-      pathname: suffix ? `${path}/${suffix}` : path,
+      route: "plugin" as const,
+      pathname: location.pathname,
       search: search.size ? `?${search}` : "",
     };
   };

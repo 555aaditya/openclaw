@@ -1,6 +1,5 @@
 import type { UserProfile } from "../../../packages/gateway-protocol/src/index.js";
 import type { GatewaySuspension } from "../../../packages/gateway-protocol/src/schema/gateway-suspend.js";
-import type { PluginsUiDescriptorsResult } from "../../../packages/gateway-protocol/src/schema/plugins.js";
 import type { ControlUiBootstrapProfileHint } from "../../../src/gateway/control-ui-bootstrap-contract.js";
 import type { SessionCostUsagePublication } from "../../../src/shared/usage-types.js";
 import type { EventLogEntry } from "../api/event-log.ts";
@@ -24,7 +23,7 @@ export type ApplicationGatewaySnapshot = {
   suspensionPhase?: GatewaySuspension["phase"];
   /** Transport identity stays stable while plugin capability fields are refreshed. */
   hello: GatewayHelloOk | null;
-  pluginCapabilities?: PluginsUiDescriptorsResult | null;
+  pluginGeneration?: number | null;
   usagePublications?: Readonly<
     Record<string, Readonly<Omit<SessionCostUsagePublication, "agentId"> & { committedAt: number }>>
   >;

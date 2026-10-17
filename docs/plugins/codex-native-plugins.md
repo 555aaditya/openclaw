@@ -54,33 +54,7 @@ for the OpenAI account and admin model.
 
 ## Quickstart
 
-The source Codex home is the Codex CLI state directory you are migrating from:
-`~/.codex` by default, or `CODEX_HOME` when that variable is set. See
-[`openclaw migrate`](/cli/migrate) to point at a different one with `--from`.
-
-Preview migration from the source Codex home:
-
-```bash
-openclaw migrate codex --dry-run
-```
-
-Add `--verify-plugin-apps` to make migration read the source installed app
-snapshot and app metadata, requiring every owned app to be present, enabled,
-and accessible before planning native activation:
-
-```bash
-openclaw migrate codex --dry-run --verify-plugin-apps
-```
-
-Apply the migration when the plan looks right:
-
-```bash
-openclaw migrate apply codex --yes
-```
-
-Migration writes explicit `codexPlugins` entries for eligible plugins and
-calls Codex app-server `plugin/install` for selected plugins. A migrated
-config looks like this:
+Enable native Codex plugins explicitly in your configuration:
 
 ```json5
 {
@@ -107,8 +81,7 @@ config looks like this:
 }
 ```
 
-Migration remains limited to `openai-curated`. To find another plugin that
-Codex can already see, list the available marketplace catalog and install the
+To find a plugin that Codex can already see, list the available marketplace catalog and install the
 exact marketplace-qualified identity:
 
 ```text
@@ -799,4 +772,3 @@ unsafe elicitation schemas and ambiguous plugin identity are still rejected.
 - [Codex harness reference](/plugins/codex-harness-reference)
 - [Codex harness runtime](/plugins/codex-harness-runtime)
 - [Configuration reference](/gateway/config-extensions#codex-harness-plugin-config)
-- [Migrate CLI](/cli/migrate)

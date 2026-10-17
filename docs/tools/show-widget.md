@@ -3,14 +3,14 @@ summary: "Show HTML widgets on supported chat surfaces or pin native data report
 title: "Show widget"
 sidebarTitle: "Show widget"
 read_when:
-  - You want an agent to render an interactive result in web chat, a native app, or Discord
+  - You want an agent to render an interactive result in web chat or a native app
   - You want to pin a report with metrics, tables, charts, or links to a dashboard
   - You want widget buttons to send follow-up prompts into the chat
   - You want to theme widgets with the shared design tokens
   - You need the show_widget input, security, or retention contract
 ---
 
-`show_widget` is a core tool that shows a self-contained HTML widget on the user's current surface. OpenClaw renders it inline in the Control UI and in iOS, Android, macOS, and Linux Quick Chat transcripts. The Linux dashboard uses the browser Control UI. In a Discord session with [Activities](/channels/discord-activities) enabled, the Discord plugin posts an **Open widget** button that launches it as an Activity.
+`show_widget` is a core tool that shows a self-contained HTML widget on the user's current surface. OpenClaw renders it inline in the Control UI and in iOS, Android, macOS, and Linux Quick Chat transcripts. The Linux dashboard uses the browser Control UI.
 
 For a pinned data report, provide a structured `report` with `pin: true`. Reports render directly in the Control UI dashboard using its native typography and layout, without a document frame. Use HTML for arbitrary interactive content or an inline preview. See [Native dashboard reports](#native-dashboard-reports).
 
@@ -23,8 +23,6 @@ non-code visualizations that belong together.
 ## How widgets work
 
 For HTML widgets, OpenClaw core validates `widget_code` by parsing every inline JavaScript `<script>` (classic and module), skipping scripts with `src` or a non-JavaScript `type`, then wraps it once in the standard HTML document. Core rejects the call with the line and column of the first syntax error, so a widget with a broken script is never hosted. For an inline client, core stores that document as a Canvas document and returns a preview handle. The Control UI reads the document over its authenticated Gateway connection and renders it through the dedicated-origin, double-iframe sandbox used by dashboard widgets and MCP Apps. The widget frame does not need its own login session. iOS, Android, macOS, and Linux Quick Chat use isolated web views. Full chat clients restore the widget after history reload. Quick Chat keeps the widget for its active reply.
-
-Channel plugins can register a contextual presenter behind the same core tool. In a configured Discord session, core hands the composed document to the Discord presenter, which stores it and posts the Activity button in the current channel. The model still makes one `show_widget` call. There is no transport-specific widget tool or content kind.
 
 In Control UI sessions, a Canvas widget can also be pinned to the session dashboard. Set `pin: true` in the tool call, or use **Pin to dashboard** on an existing transcript widget. Pinning gives the dashboard copy its own identity and capability grants. The inline preview never inherits those grants. The browser never resolves a widget data binding inside the untrusted frame.
 
@@ -39,7 +37,7 @@ For browser embedding, the wrapper document injects six small host bridges aroun
 
 Everything else stays inside the frame. The document runs in an opaque origin with a restrictive Content Security Policy. Widget scripts cannot directly reach the Control UI or Gateway. Public CDN assets are allowed as described below; API connections remain separate from static-resource loading.
 
-OpenClaw exposes `show_widget` only when the originating Gateway client declares the `inline-widgets` capability or exactly one registered current-channel presenter synchronously matches trusted run context. The Control UI and supported native apps declare the inline capability automatically. Linux Quick Chat stays text-only for Gateway connections that require a custom TLS leaf pin because its platform WebView cannot bind that pin. Discord matches only when Activities are configured for the current account and a concrete channel is available. Other channel runs without an inline client or matching presenter do not receive the tool.
+OpenClaw exposes inline `show_widget` when the originating Gateway client declares the `inline-widgets` capability. The Control UI and supported native apps declare it automatically. Linux Quick Chat stays text-only for Gateway connections that require a custom TLS leaf pin because its platform WebView cannot bind that pin. Channel runs without an inline client do not receive the inline tool.
 
 An agent-turn automation bound to a persistent session and carrying a server-authored scheduled tool policy may explicitly allow `show_widget` without an inline client. That scheduled surface is pinned-only: every call requires `pin: true`, writes to the bound session dashboard, and cannot set `presentation.target`. Detached cron-run sessions, ordinary capless channel runs, and scheduled jobs without an explicit tool cap remain excluded. The originating-client capability remains mandatory for inline presentation.
 
@@ -47,7 +45,7 @@ When the Gateway automatically resumes an interrupted Control UI turn after a re
 
 A `status: "pinned"` tool result means the widget is on the session dashboard. Open that dashboard tab in the Control UI, or use `dashboard` with `action: "focus_tab"` and the saved widget's `tabId` when the tool is available. Widget hosting URLs are internal rendering resources and should not be opened in the Browser panel to substitute for widget presentation.
 
-Capability transport covers embedded, Codex app-server, and CLI-backed model backends. Grant-authenticated MCP callers without `inline-widgets` are rejected unless their trusted run context matches a presenter. Authenticated direct HTTP `tools/invoke` requests cannot request inline rendering, but a request carrying eligible current-channel context can use the matching presenter. Authentication never bypasses presenter or route eligibility.
+Capability transport covers embedded, Codex app-server, and CLI-backed model backends. MCP callers without `inline-widgets` cannot request inline rendering. Direct HTTP `tools/invoke` authentication does not grant inline presentation rights.
 
 ## Design system
 
@@ -148,26 +146,24 @@ rewrite chat history.
 
 ## Use the tool
 
-The core tool requires `title` and one content input: `widget_code` for HTML or registered source, or `report` for a native dashboard report.
+The core tool requires `title` and one content input: `widget_code` for HTML or SVG, or `report` for a native dashboard report.
 
 <ParamField path="title" type="string" required>
-  Short widget title shown by the destination surface. HTML documents also use it as the document title. Discord accepts up to 80 characters.
+  Short widget title shown by the destination surface. HTML documents also use it as the document title.
 </ParamField>
 
 <ParamField path="widget_code" type="string">
-  Required for HTML, SVG, or registered source. Omit when providing `report`. For HTML, core parses every inline JavaScript `<script>` (classic and module), skipping scripts with `src` or a non-JavaScript `type`. The call is rejected with the line and column of the first syntax error, so a widget with a broken script is never hosted. For inline-widget clients, input beginning with `<svg` after trimming is rendered in SVG mode. HTML and SVG accept up to 10 MiB of UTF-8 data, including OpenClaw's wrapper in the final document. Registered source remains limited to 262,144 characters and 256 KiB when pinned. The Discord presenter accepts HTML source up to 48 KiB. A Discord-only route does not advertise or accept registered non-HTML content kinds.
+  Required for HTML or SVG. Omit when providing `report`. For HTML, core parses every inline JavaScript `<script>` (classic and module), skipping scripts with `src` or a non-JavaScript `type`. The call is rejected with the line and column of the first syntax error, so a widget with a broken script is never hosted. For inline-widget clients, input beginning with `<svg` after trimming is rendered in SVG mode. HTML and SVG accept up to 10 MiB of UTF-8 data, including OpenClaw's wrapper in the final document.
 </ParamField>
 
 <ParamField path="report" type="object">
   Structured native report with a `blocks` array. Requires `pin: true`. Omit `widget_code`, `kind`, and `capabilities`. Device presentation is unavailable. Maximum 8KB of UTF-8 JSON. See [Native dashboard reports](#native-dashboard-reports).
 </ParamField>
 
-Discord also accepts optional `button_label` text for the Activity launch button. The Canvas schema intentionally omits this Discord-only field.
+The core `show_widget` tool also accepts these optional dashboard placement fields:
 
-The core `show_widget` tool also accepts these optional dashboard placement fields, including when Discord is the presentation destination:
-
-- `kind`: `html` by default, plus active registered source kinds when available. Applies to `widget_code`. Omit with `report`.
-- `pin`: also place an HTML or registered widget on the session dashboard. Required for reports and on the pinned-only scheduled surface.
+- `kind`: `html`. Applies to `widget_code`. Omit with `report`.
+- `pin`: also place an HTML widget on the session dashboard. Required for reports and on the pinned-only scheduled surface.
 - `name`: stable widget name. Defaults to a slug of `title`.
 - `tab`: destination tab slug.
 - `size`: one of `sm`, `md`, `lg`, `xl`, or `full`.
@@ -175,15 +171,13 @@ The core `show_widget` tool also accepts these optional dashboard placement fiel
 - `after`: sibling widget name after which to place the widget.
 - `capabilities`: access requested by a pinned widget. `netOrigins` contains exact HTTPS origins. `tools` contains `prompt`, an allowlisted read binding, or an exact `cron.trigger:<jobId>` action.
 
-An inline result includes a Canvas preview handle, so the Control UI and supported native apps render the widget directly from the tool call and restore it after history reload. A successful current-channel presentation returns a generic message receipt describing what became visible. Pinned results retain the board widget name so the Control UI does not offer a duplicate pin after transcript reload.
+An inline result includes a Canvas preview handle, so the Control UI and supported native apps render the widget directly from the tool call and restore it after history reload. Pinned results retain the board widget name so the Control UI does not offer a duplicate pin after transcript reload.
 
 Pinned results also report `capabilityState`: `none`, `pending`, `rejected`, or
 `granted`. A saved widget is not necessarily authorized to read data. For
 `pending`, ask the operator to review the dashboard permission card. For
 `rejected`, review the requested access and session permission policy with the
 operator before retrying. The inline preview does not inherit dashboard grants.
-
-If current-channel presentation fails, core falls back inline only when the originating client actually supports inline widgets. Otherwise the tool fails visibly. When `pin: true` succeeded before presentation failed, the result is explicitly partial and names the durable board widget. Presentation failure never rolls back that unrelated board state.
 
 ## Native dashboard reports
 
@@ -214,7 +208,7 @@ Use a report for a pinned summary made of text, metrics, tables, simple charts, 
 }
 ```
 
-The result names the pinned board widget. It creates no inline preview, native device panel, or Discord Activity. Do not combine `report` with `widget_code`, `kind`, `capabilities`, or device presentation. The report field does not change the registered source-kind namespace.
+The result names the pinned board widget. Do not combine `report` with `widget_code`, `kind`, or `capabilities`.
 
 Each block has a required `type`:
 
@@ -230,16 +224,10 @@ A report contains 1â€“24 blocks and at most 8KB of encoded JSON. Titles have 1â€
 
 Reuse the same `name` and `pin: true` with a new `report` object to replace a report's data. The `dashboard` tool can also create or update it with `action: "widget_put"`, `pluginKind: "session:report"`, and `props: report`. To convert an existing HTML widget, first remove it with `dashboard` action `widget_remove`, then create the report. A same-name update cannot change the widget's content owner.
 
-## Show on a device
-
-When a widget presenter plugin is active, `presentation.target` also offers `node_panel`. OpenClaw creates the same hosted widget document, selects a connected widget-panel-capable Mac, and opens its native panel at that document. The tool result names the selected Mac.
-
-If no eligible Mac is connected or the node command fails, the widget still appears inline in chat and the result explains how to recover. Pair a Mac running OpenClaw or open the macOS app, then retry. Widgets shown in a native panel are render-only. Widget actions are disabled there.
-
 ## Audio and video
 
 HTML widgets can play direct HTTPS audio and video URLs in `<audio>` or `<video>`
-elements. This works in inline previews, pinned dashboards, and native panels.
+elements. This works in inline previews and pinned dashboards.
 Small embedded `data:` clips and generated `blob:` media are also supported.
 Include playback controls so the user can start playback when the browser blocks
 autoplay. The format must be supported by the browser or native web view.
@@ -307,7 +295,7 @@ Accepted prompts appear in the transcript as regular user messages and start a n
 
 ## Dashboard capabilities
 
-Pinned HTML and registered-source widgets expose one ticket-bound host API. An explicit [session permission mode](/gateway/permission-modes) determines how declared capabilities are approved: **Full access** grants them immediately. **Workspace** uses an AI reviewer and rejects anything it does not allow. **Guarded** shows an **Allow** / **Reject** card. **Read only** rejects them. Without an explicit session mode, the equivalent configured exec approval policy applies.
+Pinned HTML widgets expose one ticket-bound host API. An explicit [session permission mode](/gateway/permission-modes) determines how declared capabilities are approved: **Full access** grants them immediately. **Workspace** uses an AI reviewer and rejects anything it does not allow. **Guarded** shows an **Allow** / **Reject** card. **Read only** rejects them. Without an explicit session mode, the equivalent configured exec approval policy applies.
 
 - `openclaw.host.controlUiBaseUrl` exposes the Control UI origin plus its configured base path after the dashboard host initializes. It is `null` before initialization and outside the dashboard, so read it in the link's click handler rather than when the widget script first runs.
 - `openclaw.prompt.send(text)` requires transient user activation and posts a visible composer message. Declaring and receiving the `prompt` tool grant skips the extra per-click confirmation. Validation, focus checks, and rate limits still apply.
@@ -369,7 +357,7 @@ preview credential or a human's publication-only **My GitHub** connection.
 A configured but unavailable identity blocks the request with reconnect guidance.
 It does not retry anonymously or fall through to another account.
 
-Before saving an HTML or registered widget declaring this binding, the Gateway
+Before saving an HTML widget declaring this binding, the Gateway
 verifies the selected identity. An unavailable identity or retired caller fails
 without replacing an existing widget, creating a pending grant, or broadcasting
 a change. Reconnect the agent's GitHub identity in Settings and retry. Pinning
@@ -409,7 +397,7 @@ hits. Removing one widget does not fail another authorized widget's shared read.
 
 ## Security and storage
 
-Widget documents use restrictive Content Security Policies. Inline style and script and the listed public CDN scripts, stylesheets, and fonts are allowed; other external resource loads remain blocked. Registered content kinds can load their explicitly public static renderer assets from the isolated sandbox origin. Inline transcript widgets cannot make API connections. A pinned dashboard widget can fetch only exact HTTPS origins that the agent declared and the session policy granted.
+Widget documents use restrictive Content Security Policies. Inline style and script and the listed public CDN scripts, stylesheets, and fonts are allowed; other external resource loads remain blocked. Inline transcript widgets cannot make API connections. A pinned dashboard widget can fetch only exact HTTPS origins that the agent declared and the session policy granted.
 
 The Control UI's widget content iframe always omits `allow-same-origin`, even when the global embed mode is `trusted`, so widget scripts cannot read the parent application origin. With scripts enabled, the outer proxy runs on a dedicated origin and relays messages across the frame boundary. In `strict` mode, the Control UI still reads the document through its authenticated Gateway connection, but renders it without scripts or scripted interactions. Native clients use isolated, nonpersistent web views and block navigation away from the hosted widget. The core document host also serves sandbox-marked widgets with the resource policy and `sandbox allow-scripts` in the response header, so direct rendering still runs the widget in an opaque origin instead of an application origin. Only render widget code you are willing to execute in that isolated frame.
 
@@ -422,6 +410,5 @@ Canvas retains at most 32 widgets per session (or per agent when no session is a
 ## Related
 
 - [Control UI hosted embeds](/web/control-ui/chat#hosted-embeds)
-- [Discord Activities](/channels/discord-activities)
 - [macOS widget panel](/platforms/mac/canvas)
 - [Gateway protocol client capabilities](/gateway/protocol/handshake#client-capabilities)

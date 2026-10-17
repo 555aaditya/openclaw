@@ -38,11 +38,7 @@ import { createCodexAppServerProcessReaperService } from "./src/app-server/trans
 import { codexNativeProfileRecoveryService } from "./src/auth-profile-health.js";
 import type { CodexPluginsConfigBlock } from "./src/command-plugin-config.js";
 import { createCodexCommand } from "./src/commands.js";
-import {
-  handleCodexConversationBindingResolved,
-  handleCodexConversationInboundClaim,
-} from "./src/conversation-binding-hooks.js";
-import { buildCodexMigrationProvider } from "./src/migration/provider.js";
+import { handleCodexConversationInboundClaim } from "./src/conversation-binding-hooks.js";
 import { createCodexPluginsTool } from "./src/native-plugin-tool.js";
 import { createCodexThreadsTool } from "./src/native-thread-tool.js";
 import {
@@ -272,7 +268,7 @@ export default definePluginEntry({
     api.registerWebSearchProvider(
       createCodexWebSearchProvider({ resolvePluginConfig: resolveCurrentPluginConfig }),
     );
-    api.registerMigrationProvider(buildCodexMigrationProvider({ runtime: api.runtime }));
+
     api.registerTool(
       {
         contextVersion: 2,
@@ -286,13 +282,7 @@ export default definePluginEntry({
       },
       { name: "codex_threads" },
     );
-    api.registerToolMetadata({
-      toolName: "codex_threads",
-      displayName: "Codex Threads",
-      description: "Manage native Codex threads in the shared user Codex home.",
-      risk: "high",
-      tags: ["codex", "sessions"],
-    });
+
     api.registerTool(
       {
         contextVersion: 2,
@@ -305,13 +295,7 @@ export default definePluginEntry({
       },
       { name: "codex_plugins" },
     );
-    api.registerToolMetadata({
-      toolName: "codex_plugins",
-      displayName: "Codex Plugins",
-      description: "Discover available Codex plugins without installing or enabling them.",
-      risk: "low",
-      tags: ["codex", "plugins", "discovery"],
-    });
+
     for (const command of createCodexCliSessionNodeHostCommands((agentId) =>
       sessionCatalogControlFactory.forNode(agentId),
     )) {
@@ -376,9 +360,7 @@ export default definePluginEntry({
           resumeCodexCliSessionOnNode({ runtime: api.runtime, ...params }),
       }),
     );
-    api.onConversationBindingResolved((event) =>
-      handleCodexConversationBindingResolved(event, { bindingStore }),
-    );
+
     api.on("session_end", async (event, ctx) => {
       if (!event.reason || !ENDED_SESSION_REASONS.has(event.reason)) {
         return;

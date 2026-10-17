@@ -30,15 +30,6 @@ export default definePluginEntry({
     );
     registerMcpRelayGatewayMethods(api, () => service);
     registerMcpRelayConnectRoute(api, parseMcpRelayConfig(api.pluginConfig).relayUrl);
-    api.session.controls.registerControlUiDescriptor({
-      surface: "tab",
-      id: "connected-apps",
-      slug: "connected-apps",
-      label: "Connected apps",
-      icon: "plug",
-      group: "control",
-      requiredScopes: ["operator.read"],
-    });
     api.registerService({
       id: "mcp-relay",
       apiVersion: 2,

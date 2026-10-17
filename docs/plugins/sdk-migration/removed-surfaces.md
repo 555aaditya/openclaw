@@ -10,6 +10,51 @@ sidebarTitle: "Removed surfaces"
 
 What the July 2026 sweep removed, plus the per-API replacement mappings for removed surfaces and later-window deprecations. Part of the [Plugin SDK migration](/plugins/sdk-migration) guide.
 
+## Retired plugin capabilities
+
+The 31 methods below are removed together with their grouped counterparts,
+registries, dispatch paths, and capability-specific types. This is a breaking
+capability retirement: plugins that call these methods must remove the feature
+or use an independently supported API where one is listed. A namespace change
+alone does not restore the removed behavior.
+
+| Removed method                           | Effect or remaining independent API                                                                                                                                            |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `registerHostedMediaResolver`            | Plugin-defined hosted-media URL resolution is removed. Ordinary media loading remains.                                                                                         |
+| `registerWidgetPresenter`                | Plugin-selected widget destinations are removed.                                                                                                                               |
+| `registerBoardWidgetContentKind`         | Plugin-defined board content kinds and renderers are removed. Core board formats remain.                                                                                       |
+| `registerGatewayAccessPolicy`            | Plugin authorization policies and Visitor Access are removed. Persisted visitor grants are rejected.                                                                           |
+| `registerNodeCliFeature`                 | Use `registerCli` with `parentPath: ["nodes"]` for nested CLI registration.                                                                                                    |
+| `registerGatewayDiscoveryService`        | Plugin discovery advertising and the Bonjour bundle are removed.                                                                                                               |
+| `registerTextTransforms`                 | Global plugin text rewrites are removed. Provider/backend-owned transforms remain.                                                                                             |
+| `registerMigrationProvider`              | Plugin import providers, their CLI/UI flows, Claude/Hermes migration bundles, and Codex credential import are removed. Doctor/config migration and transcript backfill remain. |
+| `registerWorkerProvider`                 | Plugin worker provisioning, Cloudflare workers, and Crabbox worker integration are removed. Built-in device workers and standalone Crabbox sandboxes remain.                   |
+| `registerStorageProvider`                | Plugin storage providers are removed. Built-in filesystem storage remains.                                                                                                     |
+| `registerAgentExecutorController`        | External agent executor control is removed. Native agent execution remains.                                                                                                    |
+| `registerCodexAppServerExtensionFactory` | Plugin factories for Codex app-server extensions are removed. Core Codex tool handling remains.                                                                                |
+| `onConversationBindingResolved`          | Plugin binding-resolution callbacks are removed. Core conversation binding remains.                                                                                            |
+| `registerToolMetadata`                   | Runtime plugin tool metadata overrides are removed. Manifest-owned tool metadata remains.                                                                                      |
+| `registerMemoryPromptPreparation`        | Asynchronous plugin prompt preparation and Memory Wiki compiled digests are removed. Synchronous prompt sections and search remain.                                            |
+| `registerCompactionProvider`             | Plugin compaction providers are removed. Core compaction remains.                                                                                                              |
+| `steerActiveRun`                         | Plugin active-run steering and Advisor are removed, including `session.workflow.steerActiveRun`.                                                                               |
+| `emitAgentEvent`                         | Plugin-attributed event emission is removed, including `agent.events.emitAgentEvent`. Core event publication and subscriptions remain.                                         |
+| `setRunContext`                          | Plugin run-context storage is removed, including the `runContext` namespace.                                                                                                   |
+| `getRunContext`                          | Plugin run-context reads are removed.                                                                                                                                          |
+| `clearRunContext`                        | Plugin run-context cleanup is removed.                                                                                                                                         |
+| `registerSessionAction`                  | Plugin session actions, their RPC dispatch, and generated browser clients are removed. Feature tools and commands remain.                                                      |
+| `unscheduleSessionTurnsByTag`            | Plugin-tagged scheduled-turn cancellation is removed.                                                                                                                          |
+| `scheduleSessionTurn`                    | Plugin scheduled-turn creation is removed. Core Automations remain.                                                                                                            |
+| `sendSessionAttachment`                  | The plugin session-attachment workflow is removed. Channel-owned outbound delivery remains.                                                                                    |
+| `registerSessionExtension`               | Registered session projections and promoted extension slots are removed. Independently owned session metadata remains.                                                         |
+| `registerSessionSchedulerJob`            | Plugin session scheduler jobs are removed.                                                                                                                                     |
+| `registerControlUiDescriptor`            | Registered plugin tabs, session controls, and link-reader UI are removed. Native UI capabilities remain.                                                                       |
+| `registerMcpServerConnectionResolver`    | Plugin connection/credential resolvers are removed. Configured requester OAuth remains; failed enabled native plugins block MCP activation.                                    |
+| `registerTrustedToolPolicy`              | Plugin trusted-policy dispatch is removed; retired manifest contracts fail validation. Core tool authorization remains.                                                        |
+| `registerSecurityAuditCollector`         | Plugin collectors and the `securityAuditCollectors` definition field are removed. Built-in security checks remain.                                                             |
+
+The `migration` and `migration-runtime` SDK subpaths are also removed. There are
+no inert aliases or grouped compatibility copies of these capabilities.
+
 ## Removed compatibility surfaces
 
 The July 2026 sweep removed the root SDK and compat barrels, the extension API

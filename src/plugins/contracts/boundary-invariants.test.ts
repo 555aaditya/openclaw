@@ -18,7 +18,6 @@ const tsFilesCache = new Map<string, string[]>();
 const BUNDLED_TYPED_HOOK_REGISTRATION_FILES = [
   "extensions/acpx/index.ts",
   "extensions/active-memory/index.ts",
-  "extensions/advisor/index.ts",
   "extensions/agent-guidance/index.ts",
   "extensions/browser/plugin-registration.ts",
   "extensions/clickclack/src/discussions/register.ts",
@@ -34,14 +33,12 @@ const BUNDLED_TYPED_HOOK_REGISTRATION_FILES = [
   "extensions/memory-lancedb/index.ts",
   "extensions/onepassword/index.ts",
   "extensions/qa-lab/src/gateway-registration.ts",
-  "extensions/visitor-access/index.ts",
   "extensions/workboard/index.ts",
   "extensions/x/src/work-origin.ts",
 ] as const;
 const BUNDLED_TYPED_HOOK_REGISTRATION_GUARDS = {
   "extensions/acpx/index.ts": ["reply_dispatch"],
   "extensions/active-memory/index.ts": ["agent_end", "before_prompt_build"],
-  "extensions/advisor/index.ts": ["before_agent_reply"],
   "extensions/agent-guidance/index.ts": ["before_prompt_build"],
   "extensions/browser/plugin-registration.ts": ["session_end"],
   "extensions/clickclack/src/discussions/register.ts": ["before_tool_call"],
@@ -57,7 +54,6 @@ const BUNDLED_TYPED_HOOK_REGISTRATION_GUARDS = {
   "extensions/memory-lancedb/index.ts": ["agent_end", "before_prompt_build", "session_end"],
   "extensions/onepassword/index.ts": ["before_tool_call"],
   "extensions/qa-lab/src/gateway-registration.ts": ["before_agent_run"],
-  "extensions/visitor-access/index.ts": ["gateway_start"],
   "extensions/workboard/index.ts": ["agent_end", "gateway_start", "gateway_stop", "subagent_ended"],
   "extensions/x/src/work-origin.ts": ["before_prompt_build"],
 } as const satisfies Record<

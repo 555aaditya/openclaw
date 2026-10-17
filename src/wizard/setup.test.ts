@@ -11,21 +11,19 @@ import {
 import { upsertAuthProfileWithLock } from "../agents/auth-profiles/profiles.js";
 import { persistAuthProfileBatch } from "../agents/auth-profiles/upsert-with-lock.js";
 import { committedConfigFiles } from "../commands/committed-config.test-support.js";
-import { createConfigIO as createRealConfigIO } from "../config/io.factory.js";
 import { createConfigFileSnapshot } from "../config/io.snapshot-shared.js";
 import { materializeRuntimeConfig } from "../config/materialize.js";
 import type { ConfigFileSnapshot, OpenClawConfig } from "../config/types.openclaw.js";
 import type { PluginCompatibilityNotice } from "../plugins/status.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { createCanonicalAgentConfigFixture } from "../test-utils/config-roster.js";
-import type { WizardPrompter, WizardSelectParams } from "./prompts.js";
+import type { WizardPrompter } from "./prompts.js";
 import {
   expectSavedSetupCredential,
   modelConfigWithApiKey,
   openAiAuthProfile,
 } from "./setup.credentials.test-support.js";
 import { runSetupWizard } from "./setup.js";
-import { SetupMigrationTargetChangedError } from "./setup.migration-snapshot.js";
 
 type ResolveProviderPluginChoice =
   typeof import("../plugins/provider-auth-choice.runtime.js").resolveProviderPluginChoice;
@@ -37,9 +35,7 @@ type PrepareAuthChoice = typeof import("../commands/auth-choice.apply.js").prepa
 type VerifySetupInferenceConfig =
   typeof import("../system-agent/setup-inference.js").verifySetupInferenceConfig;
 type ConfigureGatewayForSetup = typeof import("./setup.gateway-config.js").configureGatewayForSetup;
-type ListSetupMigrationOptions =
-  typeof import("./setup.migration-import.js").listSetupMigrationOptions;
-type RunSetupMigrationImport = typeof import("./setup.migration-import.js").runSetupMigrationImport;
+
 type RunSearchSetupFlow = typeof import("../flows/search-setup.js").runSearchSetupFlow;
 
 const ensureAuthProfileStore = vi.hoisted(() => vi.fn(() => ({ profiles: {} })));
@@ -72,16 +68,6 @@ const finalizeSetupWizard = vi.hoisted(() =>
 const listChannelPlugins = vi.hoisted(() => vi.fn(() => []));
 const logConfigUpdated = vi.hoisted(() => vi.fn(() => {}));
 
-const detectSetupMigrationSources = vi.hoisted(() =>
-  vi.fn(async () => ({ detections: [], providerDescriptors: [] })),
-);
-const listSetupMigrationOptions = vi.hoisted(() =>
-  vi.fn<ListSetupMigrationOptions>(async () => []),
-);
-const runSetupMigrationImport = vi.hoisted(() =>
-  vi.fn<RunSetupMigrationImport>(async () => ({ kind: "no-imported-inference" })),
-);
-const runSetupMemoryImportStep = vi.hoisted(() => vi.fn(async () => {}));
 const runMemorySetupFlow = vi.hoisted(() =>
   vi.fn<typeof import("../flows/memory-setup.js").runMemorySetupFlow>(async (config) => config),
 );
@@ -276,14 +262,6 @@ vi.mock("../plugins/provider-auth-choice.runtime.js", () => ({
 }));
 
 vi.mock("../flows/model-picker.js", () => ({ promptDefaultModel }));
-
-vi.mock("./setup.migration-import.js", () => ({
-  detectSetupMigrationSources,
-  listSetupMigrationOptions,
-  runSetupMigrationImport,
-}));
-
-vi.mock("./setup.memory-import.js", () => ({ runSetupMemoryImportStep }));
 
 vi.mock("../system-agent/setup-inference.js", () => ({ verifySetupInferenceConfig }));
 
@@ -485,13 +463,12 @@ describe("runSetupWizard", () => {
     promptDefaultModel.mockReset().mockResolvedValue({});
     warnIfModelConfigLooksOff.mockReset().mockResolvedValue(undefined);
     buildPluginCompatibilitySnapshotNotices.mockReset().mockReturnValue([]);
-    runSetupMigrationImport.mockReset().mockResolvedValue({ kind: "no-imported-inference" });
+
     verifySetupInferenceConfig.mockReset().mockResolvedValue({
       ok: true,
       modelRef: "openai/gpt-5.5",
       latencyMs: 250,
     });
-    runSetupMemoryImportStep.mockReset().mockResolvedValue(undefined);
     runMemorySetupFlow.mockReset().mockImplementation(async (config) => config);
     ensureOnboardingConfig.mockClear();
   });
@@ -633,145 +610,6 @@ describe("runSetupWizard", () => {
     expect(persistedWizardConfigs().at(-1)?.telemetry).toBeUndefined();
     expect(prompter.select).not.toHaveBeenCalledWith(
       expect.objectContaining({ message: "Help make OpenClaw better?" }),
-    );
-  });
-
-  it("returns to setup mode after an interactive import target change", async () => {
-    listSetupMigrationOptions.mockResolvedValueOnce([
-      { providerId: "hermes", label: "Import from Hermes" },
-    ]);
-    runSetupMigrationImport.mockRejectedValueOnce(
-      new SetupMigrationTargetChangedError(
-        "Migration target changed before promotion. Review it and retry.",
-      ),
-    );
-    const setupChoices: Array<"import" | "quickstart"> = ["import", "quickstart"];
-    const select = vi.fn(async (params: WizardSelectParams<unknown>) => {
-      if (params.message === "Setup mode") {
-        expect(params.options).toEqual([
-          expect.objectContaining({ value: "quickstart", label: "QuickStart (recommended)" }),
-          expect.objectContaining({ value: "advanced", label: "Manual setup" }),
-          expect.objectContaining({ value: "import", label: "Import from another agent" }),
-        ]);
-        return setupChoices.shift();
-      }
-      return "__skip__";
-    });
-    const prompter = buildWizardPrompter({ select: select as unknown as WizardPrompter["select"] });
-
-    await runWizard({ flow: undefined }, createRuntime(), prompter);
-
-    expect(select.mock.calls.filter(([params]) => params.message === "Setup mode")).toHaveLength(2);
-    expect(runSetupMigrationImport).toHaveBeenCalledOnce();
-    expect(prompter.note).toHaveBeenCalledWith(
-      expect.stringContaining("Migration target changed before promotion"),
-      "Existing config detected",
-    );
-    expect(finalizeSetupWizard).toHaveBeenCalledOnce();
-  });
-
-  it("returns from the migration picker without restarting setup", async () => {
-    listSetupMigrationOptions.mockResolvedValueOnce([
-      { providerId: "hermes", label: "Import from Hermes" },
-    ]);
-    runSetupMigrationImport.mockResolvedValueOnce({ kind: "back" });
-    const setupChoices: Array<"import" | "quickstart"> = ["import", "quickstart"];
-    const select = vi.fn(async ({ message }: WizardSelectParams<unknown>) =>
-      message === "Setup mode" ? setupChoices.shift() : "__skip__",
-    );
-
-    await runWizard(
-      { flow: undefined },
-      createRuntime(),
-      buildWizardPrompter({ select: select as unknown as WizardPrompter["select"] }),
-    );
-
-    expect(select.mock.calls.filter(([params]) => params.message === "Setup mode")).toHaveLength(2);
-    expect(detectSetupMigrationSources).toHaveBeenCalledOnce();
-    expect(runSetupMigrationImport).toHaveBeenCalledOnce();
-    expect(finalizeSetupWizard).toHaveBeenCalledOnce();
-  });
-
-  it("continues onboarding after a recovered promotion", async () => {
-    const acknowledgePromotion = vi.fn(async () => {});
-    runSetupMigrationImport.mockResolvedValueOnce({
-      kind: "no-imported-inference",
-      acknowledgePromotion,
-    });
-
-    await runWizard({ importFrom: "hermes" });
-
-    expect(finalizeSetupWizard).toHaveBeenCalledOnce();
-    expect(acknowledgePromotion).toHaveBeenCalledOnce();
-    expect(runSetupMemoryImportStep).not.toHaveBeenCalled();
-  });
-
-  it("rejects an agent name when the import supplies an authored roster", async () => {
-    const workspaceDir = await fs.realpath(await makeCaseDir("import-naming-"));
-    const configPath = path.join(workspaceDir, "openclaw.json");
-    await fs.writeFile(
-      configPath,
-      JSON.stringify({ agents: { entries: { main: {} }, defaults: { workspace: workspaceDir } } }),
-    );
-    const importedSnapshot = await createRealConfigIO({
-      configPath,
-      pluginValidation: "skip",
-    }).readConfigFileSnapshot();
-    expect(importedSnapshot.valid).toBe(true);
-    readConfigFileSnapshot
-      .mockResolvedValueOnce(configSnapshot({}, false))
-      .mockResolvedValue(importedSnapshot);
-    const runtime = createRuntime();
-    const prompter = buildWizardPrompter({ text: vi.fn(async () => "robby") });
-
-    await runWizard(
-      { importFrom: "hermes", agentName: "robby", workspace: workspaceDir },
-      runtime,
-      prompter,
-    );
-
-    expect(runSetupMigrationImport).toHaveBeenCalledOnce();
-    expect(runtime.error).toHaveBeenCalledWith(
-      "--agent-name cannot be combined with an import that supplies an agent roster. Remove --agent-name or choose an import without agents.",
-    );
-    expect(runtime.exit).toHaveBeenCalledWith(1);
-    expect(ensureOnboardingConfig).not.toHaveBeenCalled();
-    expect(prompter.text).not.toHaveBeenCalledWith(
-      expect.objectContaining({ message: "What should we call your first agent?" }),
-    );
-  });
-
-  it("does not reuse imported verification after changing the model", async () => {
-    runSetupMigrationImport.mockResolvedValueOnce({
-      kind: "verified-inference",
-      modelRef: "openai/gpt-5.6-sol",
-    });
-    const imported = modelConfig("anthropic/claude-sonnet-4-6");
-    readConfigFileSnapshot
-      .mockResolvedValueOnce(configSnapshot({}, false))
-      .mockResolvedValue(configSnapshot(imported));
-    await runWizard(
-      { importFrom: "hermes", authChoice: "demo-provider" },
-      createRuntime(),
-      buildWizardPrompter({ confirm: vi.fn(async () => false) }),
-    );
-    expect(applyAuthChoice).toHaveBeenCalledOnce();
-    expect(verifySetupInferenceConfig).not.toHaveBeenCalled();
-  });
-
-  it("treats --import-source alone as import intent instead of prompting for a setup mode", async () => {
-    const prompter = buildWizardPrompter();
-    const runtime = createRuntime();
-
-    await runWizard({ importSource: "~/.hermes", flow: undefined }, runtime, prompter);
-
-    expect(runSetupMigrationImport).toHaveBeenCalledOnce();
-    expect(runSetupMigrationImport).toHaveBeenCalledWith(
-      expect.objectContaining({ opts: expect.objectContaining({ importSource: "~/.hermes" }) }),
-    );
-    expect(prompter.select).toHaveBeenCalledOnce();
-    expect(prompter.select).toHaveBeenCalledWith(
-      expect.objectContaining({ message: "Help make OpenClaw better?", initialValue: false }),
     );
   });
 

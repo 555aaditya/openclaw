@@ -99,9 +99,6 @@ export const sidebarSnapshotSchema = z.object({
       id: text,
       label: text,
       icon: optionalText,
-      placement: optionalText,
-      path: optionalText,
-      slug: optionalText,
     })
     .array(),
   onlineUsers: user

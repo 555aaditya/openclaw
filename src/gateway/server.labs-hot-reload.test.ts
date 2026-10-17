@@ -6,7 +6,6 @@ import { WebSocket } from "ws";
 import type {
   HelloOk,
   PluginsControlUiCatalog,
-  PluginsUiDescriptorsResult,
 } from "../../packages/gateway-protocol/src/index.js";
 import { withTestTimeout } from "../../test/helpers/promise.js";
 import { runQaGatewayFixture } from "../../test/helpers/qa-gateway-cleanup.js";
@@ -123,9 +122,6 @@ it("applies all Labs switches through config.patch without restarting the Gatewa
     `fixtures/${PLUGIN_ID}/index.js`,
     `module.exports = { id: "${PLUGIN_ID}", register(api) {
       const instance = require("node:crypto").randomUUID();
-      api.session.controls.registerControlUiDescriptor({
-        id: "summary", surface: "widget", label: "Labs summary"
-      });
       api.registerGatewayMethod("labsFixture.identity", ({ client, respond }) => {
         respond(true, { instance, connId: client.connId });
       }, { scope: "operator.read" });
@@ -201,13 +197,6 @@ it("applies all Labs switches through config.patch without restarting the Gatewa
               code: "custom-plugin-ui-disabled",
             }),
           ],
-    );
-    const descriptors = await gateway.request<PluginsUiDescriptorsResult>(
-      "plugins.uiDescriptors",
-      {},
-    );
-    expect(descriptors.controlUiWidgetKinds?.some((entry) => entry.pluginId === PLUGIN_ID)).toBe(
-      enabled,
     );
   };
   const observeHost = () =>

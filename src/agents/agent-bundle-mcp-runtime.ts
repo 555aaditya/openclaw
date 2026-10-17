@@ -36,15 +36,11 @@ import {
   McpClientConnectTimeoutError,
 } from "./mcp-client-lifecycle.js";
 import { resolveProjectedMcpCodexToolApprovalMode } from "./mcp-codex-tool-approval.js";
-import {
-  applyMcpConnectionOverride,
-  hashMcpResolvedConnections,
-  partitionMcpServersByConnectionScope,
-} from "./mcp-connection-resolver.js";
 import { isMcpMethodNotFoundError, redactMcpDiagnosticError } from "./mcp-error.js";
 import { createMcpJsonSchemaValidator } from "./mcp-json-schema-validator.js";
 import { buildMcpClientCapabilities, summarizeServerCapabilities } from "./mcp-metadata.js";
 import { collectMcpPaginatedItems } from "./mcp-pagination.js";
+import { partitionMcpServersByConnectionScope } from "./mcp-requester-scope.js";
 import {
   connectWithMcpStartupBackoff,
   McpStartupBackoffError,
@@ -121,7 +117,6 @@ export function createSessionMcpRuntime(
   });
   const safeNames = declared.safeServerNamesByServer;
   const configForServer = (serverName: string, nextParams = params, loaded = config.loaded) => {
-    const connection = nextParams.connectionOverrides?.get(serverName);
     const serverConfig = loadSessionMcpConfig({
       ...nextParams,
       loaded,
@@ -138,9 +133,6 @@ export function createSessionMcpRuntime(
         ),
       },
     });
-    if (connection) {
-      serverConfig.fingerprint += `:${hashMcpResolvedConnections(new Map([[serverName, connection]]))}`;
-    }
     return serverConfig;
   };
   const owned = new Map<string, ServerMcpRuntime>();
@@ -569,10 +561,7 @@ function createServerMcpRuntime(
     }
     const inFlight = (async (): Promise<McpToolCatalog> => {
       const rawServer = loaded.mcpServers[serverName]!;
-      const override = params.connectionOverrides?.get(serverName);
-      const transportSource = override
-        ? applyMcpConnectionOverride(rawServer, override)
-        : rawServer;
+      const transportSource = rawServer;
       const resolved = resolveMcpTransport(serverName, transportSource, {
         cfg: params.cfg,
         agentDir: params.agentDir,
@@ -583,10 +572,7 @@ function createServerMcpRuntime(
         return { version: 1, generatedAt: Date.now(), servers: {}, tools: [] };
       }
       const safeServerName = params.safeServerNamesByServer?.get(serverName) ?? serverName;
-      // Resolved requester URLs are credentials and never enter catalog text.
-      const launchDescription = override
-        ? `${serverName}: requester-scoped connection`
-        : resolved.description;
+      const launchDescription = resolved.description;
       failIfDisposed();
 
       let session = currentSession;
@@ -846,9 +832,7 @@ function createServerMcpRuntime(
       }
     },
     // Provenance travels with the transport; a later explicit definition cannot relabel it.
-    pluginOwned:
-      !Object.hasOwn(params.cfg?.mcp?.servers ?? {}, serverName) ||
-      params.connectionOverrides?.has(serverName) === true,
+    pluginOwned: !Object.hasOwn(params.cfg?.mcp?.servers ?? {}, serverName),
     sessionId: params.sessionId,
     sessionKey: params.sessionKey,
     workspaceDir: params.workspaceDir,

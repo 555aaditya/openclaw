@@ -49,12 +49,9 @@ function registerCanvas(config: OpenClawPluginApi["config"] = {}) {
   const registrations = {
     registerHttpRoute: vi.fn<OpenClawPluginApi["registerHttpRoute"]>(),
     registerService: vi.fn<OpenClawPluginApi["registerService"]>(),
-    registerHostedMediaResolver: vi.fn<OpenClawPluginApi["registerHostedMediaResolver"]>(),
-    registerWidgetPresenter: vi.fn<OpenClawPluginApi["registerWidgetPresenter"]>(),
     registerTool: vi.fn<OpenClawPluginApi["registerTool"]>(),
     registerCli: vi.fn<OpenClawPluginApi["registerCli"]>(),
     registerNodeInvokePolicy: vi.fn<OpenClawPluginApi["registerNodeInvokePolicy"]>(),
-    registerBoardWidgetContentKind: vi.fn<OpenClawPluginApi["registerBoardWidgetContentKind"]>(),
   };
   canvasPlugin.register?.(
     createTestPluginApi({ id: "canvas", name: "Canvas", config, ...registrations }),
@@ -62,59 +59,18 @@ function registerCanvas(config: OpenClawPluginApi["config"] = {}) {
   return {
     routes: registrations.registerHttpRoute.mock.calls.map(([route]) => route),
     services: registrations.registerService.mock.calls,
-    resolvers: registrations.registerHostedMediaResolver.mock.calls,
-    widgetPresenters: registrations.registerWidgetPresenter.mock.calls.map(
-      ([presenter]) => presenter,
-    ),
     tools: registrations.registerTool.mock.calls.map(([tool, opts]) => ({ tool, opts })),
     cliFeatures: registrations.registerCli.mock.calls.map(([registrar, opts]) => ({
       registrar,
       opts,
     })),
     nodeInvokePolicies: registrations.registerNodeInvokePolicy.mock.calls.map(([policy]) => policy),
-    boardWidgetContentKinds: registrations.registerBoardWidgetContentKind.mock.calls.map(
-      ([kind]) => kind,
-    ),
   };
 }
 
 describe("Canvas plugin entry", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-  });
-
-  it("registers the macOS-only presenter surface and command policy", () => {
-    const { boardWidgetContentKinds, nodeInvokePolicies, routes, widgetPresenters } =
-      registerCanvas();
-
-    expect(nodeInvokePolicies[0]).toMatchObject({
-      commands: ["canvas.present", "canvas.hide", "canvas.navigate"],
-      defaultPlatforms: ["macos"],
-    });
-    expect(routes).toEqual([
-      expect.objectContaining({ path: "/__openclaw__/a2ui", match: "prefix" }),
-    ]);
-    expect(boardWidgetContentKinds).toEqual([
-      expect.objectContaining({ kind: "a2ui", label: "A2UI" }),
-    ]);
-    expect(widgetPresenters).toEqual([
-      expect.objectContaining({
-        target: "node_panel",
-        description: "Show on a connected device panel",
-        availability: expect.any(Function),
-        present: expect.any(Function),
-      }),
-    ]);
-  });
-
-  it("uses host.enabled as the single presenter and hosted-resource gate", () => {
-    const { boardWidgetContentKinds, routes, widgetPresenters } = registerCanvas({
-      plugins: { entries: { canvas: { config: { host: { enabled: false } } } } },
-    });
-
-    expect(boardWidgetContentKinds).toEqual([]);
-    expect(routes).toEqual([]);
-    expect(widgetPresenters).toEqual([]);
   });
 
   it("defers A2UI asset implementation until the route is used", async () => {

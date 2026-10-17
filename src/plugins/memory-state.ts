@@ -14,10 +14,8 @@ import type {
   MemoryProviderFlushPlanResolver,
   MemoryPluginPublicArtifact,
   MemoryPluginRuntime,
-  MemoryPromptPreparationRegistration,
   MemoryPromptSectionBuilder,
   MemoryPromptSectionParams,
-  MemoryPromptSectionPreparer,
   PreparedMemoryPromptSection,
 } from "./registry-contribution-types.js";
 import type { PluginRegistry } from "./registry-types.js";
@@ -225,24 +223,18 @@ export function adoptRuntimeMemoryRegistrations(
     runtimeRegistry.memoryCorpusSupplements,
     canAdopt,
   );
-  const memoryPromptPreparations = adoptEligibleRuntimeMemoryRegistrations(
-    targetRegistry.memoryPromptPreparations,
-    runtimeRegistry.memoryPromptPreparations,
-    canAdopt,
-  );
+
   const memoryPromptSupplements = adoptEligibleRuntimeMemoryRegistrations(
     targetRegistry.memoryPromptSupplements,
     runtimeRegistry.memoryPromptSupplements,
     canAdopt,
   );
   return memoryCorpusSupplements === targetRegistry.memoryCorpusSupplements &&
-    memoryPromptPreparations === targetRegistry.memoryPromptPreparations &&
     memoryPromptSupplements === targetRegistry.memoryPromptSupplements
     ? targetRegistry
     : {
         ...targetRegistry,
         memoryCorpusSupplements,
-        memoryPromptPreparations,
         memoryPromptSupplements,
       };
 }
@@ -255,17 +247,6 @@ export function registerMemoryPromptSupplement(
   registry.memoryPromptSupplements = registry.memoryPromptSupplements
     .filter((registration) => registration.pluginId !== pluginId)
     .concat({ pluginId, builder: wrapCurrentPluginInstance(builder) });
-}
-
-export function registerMemoryPromptPreparation(
-  requestedPluginId: string,
-  prepare: MemoryPromptSectionPreparer,
-): void {
-  const pluginId = resolveDirectPluginRegistrationOwner(requestedPluginId) ?? requestedPluginId;
-  const registry = requireActivePluginRegistry();
-  registry.memoryPromptPreparations = registry.memoryPromptPreparations
-    .filter((registration) => registration.pluginId !== pluginId)
-    .concat({ pluginId, prepare: wrapCurrentPluginInstance(prepare) });
 }
 
 function buildSynchronousMemoryPromptSection(params: MemoryPromptSectionParams): {
@@ -339,18 +320,10 @@ export async function prepareMemoryPromptSection(
   const synchronous = buildSynchronousMemoryPromptSection(
     cloneMemoryPromptSectionParams(runParams),
   );
-  const preparationRegistrations = [...requireActivePluginRegistry().memoryPromptPreparations];
-  const preparedSupplements = await Promise.all(
-    preparationRegistrations.map(async (registration) => ({
-      pluginId: registration.pluginId,
-      lines: filterStringEntries(
-        await registration.prepare(cloneMemoryPromptSectionParams(runParams)),
-      ),
-    })),
-  );
+
   const lines = Object.freeze([
     ...synchronous.primary,
-    ...[...synchronous.supplements, ...preparedSupplements]
+    ...synchronous.supplements
       .toSorted((left, right) => left.pluginId.localeCompare(right.pluginId))
       .flatMap((registration) => registration.lines),
   ]);
@@ -393,9 +366,6 @@ export function buildMemoryPromptSection(
   return [...synchronous.primary, ...synchronous.supplements.flatMap((entry) => entry.lines)];
 }
 
-export function listMemoryPromptPreparations(): MemoryPromptPreparationRegistration[] {
-  return [...requireActivePluginRegistry().memoryPromptPreparations];
-}
 export function resolveMemoryFlushPlan(params: {
   cfg?: OpenClawConfig;
   nowMs?: number;
@@ -561,6 +531,5 @@ export function clearMemoryPluginState(): void {
   const registry = requireActivePluginRegistry();
   registry.memoryCapabilities = [];
   registry.memoryCorpusSupplements = [];
-  registry.memoryPromptPreparations = [];
   registry.memoryPromptSupplements = [];
 }

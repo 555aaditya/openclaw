@@ -1,9 +1,6 @@
 import { createEffect, createMemo, onCleanup } from "solid-js";
 import { handleMarkdownCodeBlockClick } from "../../../components/markdown-code-blocks.ts";
-import {
-  linkReaderPrefetchRef as createLinkReaderPrefetchRef,
-  markdownBlocksRef as createMarkdownBlocksRef,
-} from "../../../components/markdown-element-refs-solid.ts";
+import { markdownBlocksRef as createMarkdownBlocksRef } from "../../../components/markdown-element-refs-solid.ts";
 import {
   markdownFileLinkFromEvent,
   markdownFileLinkFromKeyboardEvent,
@@ -74,11 +71,6 @@ export function ChatThread(input: { props: ChatThreadProps; transcript: ChatTran
   const routeLoading = createMemo(() => input.props.routeLoadingSkeleton && showLoadingSkeleton());
   const commentPins = () =>
     input.props.commentAttachments?.some((attachment) => attachment.selectionAnnotation);
-  const prefetchRef = createLinkReaderPrefetchRef(() => [
-    input.props.sessionKey,
-    current().projection.showLoadingSkeleton ? false : (input.props.transcriptVisible ?? true),
-    Boolean(input.props.gatewayClient?.connected),
-  ]);
   const markdownRef = createMarkdownBlocksRef(() => input.props.transcriptVisible ?? true);
   // Hydrate favicon images inserted by the markdown DOM owner.
   createEffect(
@@ -134,7 +126,6 @@ export function ChatThread(input: { props: ChatThreadProps; transcript: ChatTran
         ref={(element) => {
           root = element;
           markdownRef(element);
-          prefetchRef(element);
           stopHistory = ["wheel", "touchstart", "touchmove"].map((type) =>
             listen(element, type, historyIntent, { passive: true }),
           );

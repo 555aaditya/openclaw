@@ -274,7 +274,6 @@ describe("production lint suppressions", () => {
         // Admission records original factory identities; executable views bind their receivers.
         "src/plugins/registry-registrars.ts|typescript/unbound-method|1",
         "src/plugins/runtime/runtime-plugin-boundary.ts|typescript/no-unnecessary-type-parameters|1",
-        "src/plugins/trusted-tool-policy.ts|typescript/no-unnecessary-type-parameters|1",
         // Basic credentials must reject C0 controls and DEL before sentinel substitution.
         "src/secrets/egress-proxy/proxy-server.ts|no-control-regex|1",
         "src/secrets/egress-proxy/proxy-server.ts|no-warning-comments|1",

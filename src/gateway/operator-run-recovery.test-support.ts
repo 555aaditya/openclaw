@@ -9,9 +9,9 @@ import { resolveAuthenticatedDeviceTokenIdentity } from "../infra/device-pairing
 import { loadPairedDevicePairingStoreRecordReadOnly } from "../infra/device-pairing-store-readonly.js";
 import { persistDevicePairingStoreState } from "../infra/device-pairing-store.js";
 import type { PairedDevice } from "../infra/device-pairing.types.js";
-import type { GatewayAccessGrantRef } from "../plugins/gateway-access-policy.types.js";
 import { captureAgentTurnPrincipal } from "./agent-turn/principal.js";
 import { captureGatewayAuthPolicy } from "./auth-policy.js";
+import type { GatewayAccessGrantRef } from "./operator-access-policy.types.js";
 import { captureGatewayOperatorRunAuthority } from "./operator-run-authority.js";
 import { restoreGatewayOperatorRecovery } from "./operator-run-recovery.js";
 import type { GatewayRequestContext } from "./server-methods/types.js";

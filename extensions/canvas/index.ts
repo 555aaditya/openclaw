@@ -1,10 +1,8 @@
 import { createLazyRuntimeModule } from "openclaw/plugin-sdk/lazy-runtime";
 import { definePluginEntry, type AnyAgentTool } from "openclaw/plugin-sdk/plugin-entry";
-import { canvasA2UIBoardWidgetKind } from "./src/board-widget.js";
 import { canvasConfigSchema, isCanvasHostEnabled } from "./src/config.js";
 import { A2UI_PATH } from "./src/host/a2ui-shared.js";
 import { canvasToolDefinition } from "./src/tool-schema.js";
-import { createCanvasWidgetPresenter } from "./src/widget-presenter.js";
 
 const CANVAS_NODE_COMMANDS = ["canvas.present", "canvas.hide", "canvas.navigate"];
 
@@ -26,7 +24,6 @@ export default definePluginEntry({
   configSchema: canvasConfigSchema,
   register(api) {
     if (isCanvasHostEnabled(api.config)) {
-      api.registerBoardWidgetContentKind(canvasA2UIBoardWidgetKind);
       const loadRenderer = createLazyRuntimeModule(() => import("./src/host/a2ui.js"));
       api.registerHttpRoute({
         path: A2UI_PATH,
@@ -35,7 +32,6 @@ export default definePluginEntry({
         nodeCapability: { surface: "canvas" },
         handler: async (req, res) => await (await loadRenderer()).handleA2uiHttpRequest(req, res),
       });
-      api.registerWidgetPresenter(createCanvasWidgetPresenter(api.runtime.nodes));
     }
     api.registerNodeInvokePolicy({
       commands: CANVAS_NODE_COMMANDS,

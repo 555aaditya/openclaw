@@ -51,7 +51,6 @@ describe("OpenClaw assistant", () => {
     expect(systemPrompt).toContain("call configure_skills");
     expect(systemPrompt).toContain("call configure_search");
     expect(systemPrompt).toContain("call configure_gateway");
-    expect(systemPrompt).toContain("call import_memory");
     expect(systemPrompt).toContain("default agent's existing workspace");
   });
 

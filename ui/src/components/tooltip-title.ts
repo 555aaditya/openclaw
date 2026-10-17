@@ -2,10 +2,6 @@ import "./tooltip.ts";
 import { formatUiError } from "../lib/format-error.ts";
 import { anchorFromNavigationEvent } from "../lib/navigation-click.ts";
 import { showToast } from "../lib/toast.ts";
-import {
-  HOVER_PREVIEW_UNAVAILABLE_EVENT,
-  ownsHoverPreview,
-} from "./link-reader-hovercard-registration.ts";
 import { collectTooltipNameText, isTooltipTriggerElement } from "./tooltip-content.ts";
 import { resolveTransientContainer } from "./transient-container.ts";
 
@@ -37,7 +33,6 @@ export function installTitleTooltips(ownerDocument: Document) {
   let active: {
     anchor: HTMLElement | SVGElement;
     link: HTMLAnchorElement | null;
-    previewOwned: boolean;
     filePath: string | null;
     disposeFileContent?: () => void;
     title: string | null;
@@ -69,16 +64,9 @@ export function installTitleTooltips(ownerDocument: Document) {
     }
   };
 
-  // Preview eligibility owns the hint before its lazy runtime or request settles.
-  // Title suppression and accessible naming still use the normal restoration lifecycle.
-  const ownsPreview = (link: HTMLAnchorElement | null | undefined) =>
-    Boolean(link && ownsHoverPreview(link));
   const dialogExpanded = () =>
     active?.anchor.matches('[aria-haspopup="dialog"][aria-expanded="true"]') === true;
   const content = () => {
-    if (ownsPreview(active?.link)) {
-      return "";
-    }
     return dialogExpanded()
       ? ""
       : (active?.anchor.getAttribute("data-tooltip") ?? active?.title ?? "");
@@ -93,13 +81,6 @@ export function installTitleTooltips(ownerDocument: Document) {
     ) {
       restore();
       return;
-    }
-    // Reparenting changes eligibility even when mutation targets are ancestors.
-    if (ownsPreview(active.link)) {
-      active.previewOwned = true;
-      if (tooltip) {
-        tooltip.content = "";
-      }
     }
     if (
       !records.some(
@@ -187,15 +168,8 @@ export function installTitleTooltips(ownerDocument: Document) {
         break;
       }
     }
-    const input =
-      event.type === "focusin" ||
-      (event.type === HOVER_PREVIEW_UNAVAILABLE_EVENT &&
-        event instanceof CustomEvent &&
-        event.detail === "focus")
-        ? "focus"
-        : "pointer";
-    const previewOwned = ownsPreview(link);
-    if (anchor === active?.anchor && previewOwned === active?.previewOwned) {
+    const input = event.type === "focusin" ? "focus" : "pointer";
+    if (anchor === active?.anchor) {
       if (active) {
         active.link = link;
         active[input] = true;
@@ -217,7 +191,6 @@ export function installTitleTooltips(ownerDocument: Document) {
     active = {
       anchor,
       link,
-      previewOwned,
       filePath: anchor.getAttribute("data-file-path"),
       title,
       label,
@@ -295,11 +268,9 @@ export function installTitleTooltips(ownerDocument: Document) {
   };
   ownerDocument.addEventListener("pointerover", discover, true);
   ownerDocument.addEventListener("focusin", discover, true);
-  ownerDocument.addEventListener(HOVER_PREVIEW_UNAVAILABLE_EVENT, discover, true);
   return () => {
     ownerDocument.removeEventListener("pointerover", discover, true);
     ownerDocument.removeEventListener("focusin", discover, true);
-    ownerDocument.removeEventListener(HOVER_PREVIEW_UNAVAILABLE_EVENT, discover, true);
     restore();
   };
 }

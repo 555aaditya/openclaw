@@ -38,13 +38,7 @@ const mocks = vi.hoisted(() => ({
   registerCuaDriverDoctorChecks: vi.fn(),
   registerMemoryCoreDoctorChecks: vi.fn(),
   registerPolicyDoctorChecks: vi.fn(),
-  registerWorkerProviderDoctorChecks: vi.fn(),
-  loadBundledPluginPublicArtifactModuleFromCandidatesSync: vi.fn(
-    ({ dirName }: { dirName: string }) =>
-      dirName === "crabbox"
-        ? { registerWorkerProviderDoctorChecks: mocks.registerWorkerProviderDoctorChecks }
-        : null,
-  ),
+  loadBundledPluginPublicArtifactModuleFromCandidatesSync: vi.fn(() => null),
   loadBundledPluginPublicArtifactModuleSync: vi.fn(({ dirName }: { dirName: string }) =>
     dirName === "memory-core"
       ? {
@@ -233,43 +227,6 @@ describe("registerBundledHealthChecks", () => {
     });
     expect(mocks.registerCuaDriverDoctorChecks).toHaveBeenCalledWith({
       registerHealthCheck: expect.any(Function),
-    });
-  });
-
-  it("loads configured worker-provider health through its bundled manifest owner", () => {
-    mocks.loadBundledPluginManifestRegistry.mockReturnValueOnce({
-      plugins: [
-        {
-          id: "crabbox",
-          origin: "bundled",
-          contracts: { workerProviders: ["crabbox"] },
-          channels: [],
-          providers: [],
-          cliBackends: [],
-          skills: [],
-          hooks: [],
-          rootDir: "/bundled/crabbox",
-          source: "/bundled/crabbox/index.js",
-          manifestPath: "/bundled/crabbox/openclaw.plugin.json",
-        },
-      ],
-      diagnostics: [],
-    });
-
-    registerBundledHealthChecks({
-      cfg: { cloudWorkers: { profiles: { aws: { provider: "crabbox" } } } },
-      cwd: workspaceDir,
-    });
-
-    expect(mocks.loadBundledPluginPublicArtifactModuleFromCandidatesSync).toHaveBeenCalledWith({
-      dirName: "crabbox",
-      artifactCandidates: ["doctor-health-api.js"],
-    });
-    expect(mocks.registerWorkerProviderDoctorChecks).toHaveBeenCalledWith({
-      getHealthCheck: expect.any(Function),
-      registerHealthCheck: expect.any(Function),
-      inspectSetupSecrets: expect.any(Function),
-      listPluginStateEntries: expect.any(Function),
     });
   });
 

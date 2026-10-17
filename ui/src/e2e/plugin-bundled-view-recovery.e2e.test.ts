@@ -27,7 +27,6 @@ suite.define(() => {
   it("stops automatic reloads after one failed recovery and keeps manual Reload", async () => {
     await suite.withPage(createControlUiE2eContextOptions(), async ({ page }) => {
       const gateway = await installMockGateway(page, {
-        controlUiTabs: [{ group: "control", id: "logbook", label: "Logbook", pluginId: "logbook" }],
         methodResponses: {
           "logbook.days": { days: [] },
           "logbook.status": {

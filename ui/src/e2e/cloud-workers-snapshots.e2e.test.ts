@@ -39,12 +39,7 @@ suite.define(() => {
       viewport: { width: 1440, height: 1100 },
     });
     const page = await context.newPage();
-    const coreMethods = [
-      "config.get",
-      "config.patch",
-      "plugins.uiDescriptors",
-      "environments.list",
-    ];
+    const coreMethods = ["config.get", "config.patch", "environments.list"];
     const gateway = await installMockGateway(page, {
       featureMethods: coreMethods,
       methodResponses: {
@@ -58,16 +53,6 @@ suite.define(() => {
         },
         "environments.list": { environments: [], profiles: [] },
         "crabbox.images.list": snapshot(),
-        "plugins.uiDescriptors": {
-          ok: true,
-          generation: 1,
-          descriptors: [],
-          methods: [...coreMethods, ...methods],
-          controlUiTabs: [],
-          controlUiWidgetKinds: [],
-          controlUiLinkReaders: [],
-          pluginSurfaceUrls: {},
-        },
       },
     });
     try {

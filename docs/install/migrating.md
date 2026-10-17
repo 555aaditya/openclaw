@@ -1,28 +1,12 @@
 ---
-summary: "Migration hub: cross-system imports, machine-to-machine moves, and plugin upgrades"
+summary: "Moving between machines and upgrading plugins"
 read_when:
   - You are moving OpenClaw to a new laptop or server
-  - You are coming from another agent system and want to keep state
   - You are upgrading an in-place plugin
 title: "Migration guide"
 ---
 
-OpenClaw supports three migration paths: importing from another agent system, moving an existing install to a new machine, and upgrading a plugin in place.
-
-## Import from another agent system
-
-Bundled migration providers bring instructions, MCP servers, skills, model config, and (opt-in) API keys into OpenClaw. Plans are previewed before any change and secrets are redacted in reports. Standalone `openclaw migrate` is backed by a verified backup; fresh onboarding imports instead stage and verify local artifacts before publishing them with configuration committed before any irreversible external activation.
-
-<CardGroup cols={2}>
-  <Card title="Migrating from Claude" href="/install/migrating-claude" icon="brain">
-    Import Claude Code and Claude Desktop state, including `CLAUDE.md`, MCP servers, skills, and project commands.
-  </Card>
-  <Card title="Migrating from Hermes" href="/install/migrating-hermes" icon="feather">
-    Import Hermes config, providers, MCP servers, memory, skills, and supported `.env` keys.
-  </Card>
-</CardGroup>
-
-The CLI entry point is [`openclaw migrate`](/cli/migrate). Onboarding can also offer migration when it detects a known source (`openclaw onboard --flow import`).
+Move an existing OpenClaw install to a new machine or upgrade a plugin in place while preserving your state.
 
 ## Move OpenClaw to a new machine
 
@@ -151,7 +135,6 @@ In-place plugin upgrades preserve the same plugin id and config keys but may mov
 
 ## Related
 
-- [`openclaw migrate`](/cli/migrate): CLI reference for cross-system imports.
 - [Install overview](/install): all installation methods.
 - [Doctor](/gateway/doctor): post-migration health check.
 - [Updating](/install/updating): updating an existing install in place, plus rollback strategy.

@@ -1321,6 +1321,22 @@
     {
       "source": "/plugins/webhooks",
       "destination": "/automation#background-execution-and-workflows"
+    },
+    {
+      "source": "/cli/migrate",
+      "destination": "/plugins/sdk-migration/removed-surfaces"
+    },
+    {
+      "source": "/install/migrating-claude",
+      "destination": "/plugins/sdk-migration/removed-surfaces"
+    },
+    {
+      "source": "/install/migrating-hermes",
+      "destination": "/plugins/sdk-migration/removed-surfaces"
+    },
+    {
+      "source": "/plugins/cloudflare",
+      "destination": "/plugins/sdk-migration/removed-surfaces"
     }
   ],
   "navigation": {
@@ -1407,8 +1423,6 @@
                     "group": "Migrating",
                     "pages": [
                       "install/migrating",
-                      "install/migrating-claude",
-                      "install/migrating-hermes",
                       "prose"
                     ]
                   },
@@ -1505,8 +1519,7 @@
                       "channels/discord/voice-channels",
                       "channels/discord/voice-transcripts",
                       "channels/discord/voice-follow",
-                      "channels/discord/troubleshooting",
-                      "channels/discord-activities"
+                      "channels/discord/troubleshooting"
                     ]
                   },
                   "channels/googlechat",
@@ -1854,7 +1867,6 @@
                     "pages": [
                       "plugins/admin-http-rpc",
                       "plugins/beam",
-                      "plugins/cloudflare",
                       "plugins/geolocation",
                       "plugins/logbook",
                       "plugins/mcp-relay",
@@ -2782,7 +2794,6 @@
                     "group": "Setup and maintenance",
                     "pages": [
                       "cli/backup",
-                      "cli/migrate",
                       "cli/onboard",
                       "cli/openclaw",
                       "cli/reset",

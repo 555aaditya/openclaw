@@ -82,9 +82,7 @@ export async function reloadGatewayPlugins(
     pluginWorkspaceDir,
     runtimeState,
     ambientEnvTriggers,
-    workerEnvironmentStartup,
     coreGatewayMethodNames,
-    pluginHostServices,
     baseMethods,
     resolvePluginGatewayContext,
     channelManager,
@@ -101,7 +99,6 @@ export async function reloadGatewayPlugins(
     workspaceDir: pluginWorkspaceDir,
     log,
     coreGatewayMethodNames,
-    hostServices: pluginHostServices,
     baseMethods,
     ambientEnvTriggers,
     resolveGatewayContext: resolvePluginGatewayContext,
@@ -223,7 +220,6 @@ export async function reloadGatewayPlugins(
         env: params.env,
         activationSourceConfig: params.sourceConfig,
         metadataSnapshot: nextMetadata,
-        workerProviderIds: workerEnvironmentStartup?.listDurableProviderIds() ?? [],
         ambientEnvTriggers,
       }),
     );
@@ -287,11 +283,6 @@ export async function reloadGatewayPlugins(
       await sidecar.drain();
     }
     await drainMemory(memoryReplacement.drain);
-    await runtimeState.discovery?.update({
-      gatewayDiscoveryServices: previousRegistry.gatewayDiscoveryServices.filter(
-        (entry) => !changedPluginIds.has(entry.pluginId),
-      ),
-    });
     await drainBeforeReplacement(
       resourceHandoffIds,
       drainSignal,
@@ -432,12 +423,6 @@ export async function reloadGatewayPlugins(
       for (const sidecar of sidecarReplacements) {
         await attempt(activationErrors, () => sidecar.resume(params.nextConfig));
       }
-      await attempt(activationErrors, () =>
-        runtimeState.discovery?.update(
-          { gatewayDiscoveryServices: nextRegistry.gatewayDiscoveryServices },
-          replacement.claim,
-        ),
-      );
     }
     await attempt(activationErrors, () => runLifecycleHooks(nextRegistry, true, params.nextConfig));
     await attempt(activationErrors, () =>
@@ -603,12 +588,6 @@ export async function reloadGatewayPlugins(
           for (const sidecar of sidecarReplacements) {
             await attempt(recoveryErrors, () => sidecar.resume(previousConfig));
           }
-          await attempt(recoveryErrors, () =>
-            runtimeState.discovery?.update(
-              { gatewayDiscoveryServices: restoredRegistry.gatewayDiscoveryServices },
-              kernel.pluginRuntimeGeneration.currentClaim(),
-            ),
-          );
           // Early drain failures restore pauses without restarting hooks that never stopped.
           if (previousStopStarted) {
             await attempt(recoveryErrors, () =>

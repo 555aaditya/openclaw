@@ -19,7 +19,6 @@ import {
 } from "../../config/sessions/session-accessor.js";
 import { resolveSqliteTargetFromSessionStorePath } from "../../config/sessions/session-sqlite-target.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import * as pluginHostState from "../../plugins/host-hook-state.js";
 import { recordAgentProvenance } from "../../state/agent-provenance.js";
 import {
   listOpenClawRegisteredAgentDatabases,
@@ -544,7 +543,6 @@ test("sessions.describe retains full target and child metadata without decoding 
     }
     return parse(value, reviver);
   });
-  const projected = vi.spyOn(pluginHostState, "projectPluginSessionExtensionsSync");
   try {
     const described = await directSessionReq("sessions.describe", { key: sessionKey });
     expect(described).toMatchObject({
@@ -558,10 +556,8 @@ test("sessions.describe retains full target and child metadata without decoding 
         },
       },
     });
-    expect(projected).not.toHaveBeenCalled();
     expect(unrelatedDecodes).toBe(0);
   } finally {
-    projected.mockRestore();
     parsed.mockRestore();
   }
 });

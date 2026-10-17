@@ -417,10 +417,10 @@ OpenClaw also filters returned identities to that scope. An absent scope
 means the caller requested the full catalog.
 
 If the upstream provider uses different control tokens than OpenClaw, add a
-small bidirectional text transform instead of replacing the stream path:
+bidirectional `textTransforms` property to that provider descriptor:
 
 ```typescript
-api.registerTextTransforms({
+const textTransforms = {
   input: [
     { from: /red basket/g, to: "blue basket" },
     { from: /paper ticket/g, to: "digital ticket" },
@@ -431,7 +431,8 @@ api.registerTextTransforms({
     { from: /digital ticket/g, to: "paper ticket" },
     { from: /right shelf/g, to: "left shelf" },
   ],
-});
+};
+// Include textTransforms in the descriptor passed to api.registerProvider(...).
 ```
 
 `input` rewrites the final system prompt and text message content before

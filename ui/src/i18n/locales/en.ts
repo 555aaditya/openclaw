@@ -5,7 +5,6 @@ import * as agentEn from "./en-agents.ts";
 
 export const en: TranslationMap & {
   mcpApp: TranslationMap;
-  linkReader: TranslationMap;
   agentTools: TranslationMap;
   githubPublication: TranslationMap & Record<"newAction" | "capacity", string>;
   githubConnections: TranslationMap &
@@ -1802,7 +1801,7 @@ export const en: TranslationMap & {
     about: "About",
     aiAgents: "Agent Defaults",
     modelSetup: "Model Setup",
-    memoryImport: "Import Memory",
+    memoryImport: "Backfill session memory",
     security: "Privacy & Security",
     secrets: "Secrets",
     debug: "Debug",
@@ -1853,7 +1852,7 @@ export const en: TranslationMap & {
     aiAgents: "Global agent defaults: skills, tools, and session.",
     modelSetup: "Connect a verified AI model",
     modelProviders: "Default models, behavior, provider access, usage, and cost.",
-    memoryImport: "Bring Codex and Claude Code memory into an agent workspace.",
+    memoryImport: "Choose an agent and review memories from its earlier sessions.",
     notifications: "Browser push notifications from your gateway.",
     security: "Gateway auth, exec policy, tool profile, and approvals.",
     advanced: "Every remaining config section, plus the raw file editor.",
@@ -2011,27 +2010,6 @@ export const en: TranslationMap & {
     },
   },
   memoryImport: {},
-  onboarding: {
-    memoryImport: {
-      title: "Bring your assistant memory with you",
-      body: "OpenClaw found memory from other coding assistants. Import it into your agent workspace?",
-      plannedCount: "{count} ready to import",
-      alreadyImported: "Already imported: {count}",
-      sourceUnavailable: "Source path unavailable",
-      import: "Import",
-      skip: "Skip",
-      reviewDetails: "Review details",
-      importingProvider: "Importing…",
-      providerResult: "Migrated {migrated}, skipped {skipped}",
-      providerIncomplete:
-        "Migrated {migrated}, skipped {skipped}, {errors} failed, {conflicts} conflicts",
-      providerError: "Import failed: {error}",
-      connectionChanged: "Skipped: the Gateway connection changed during the import",
-      unknownError: "Request failed",
-      doneTitle: "Memory import finished",
-      doneBody: "Migrated {migrated}, skipped {skipped}. You can continue setting up OpenClaw.",
-    },
-  },
   assistantPanel: {
     title: "Assistant sidebar",
     home: "Home",
@@ -4681,11 +4659,5 @@ export const en: TranslationMap & {
       agentMessageRequiredShort: "Agent message required.",
       nameRequiredShort: "Name required.",
     },
-  },
-
-  linkReader: {
-    loadingPreview: "Loading preview…",
-    title: "Link reader",
-    urlPlaceholder: "Supported link URL",
   },
 };

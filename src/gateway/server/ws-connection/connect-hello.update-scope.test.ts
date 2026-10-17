@@ -16,12 +16,10 @@ const {
   buildGatewaySnapshotMock,
   emitGatewayAuthSecurityEventMock,
   getSessionRowProjectionMock,
-  listControlUiPluginTabsMock,
   listControlUiPluginWidgetKindsMock,
 } = vi.hoisted(() => ({
   emitGatewayAuthSecurityEventMock: vi.fn(),
   getSessionRowProjectionMock: vi.fn(),
-  listControlUiPluginTabsMock: vi.fn((_scopes: readonly string[]) => []),
   listControlUiPluginWidgetKindsMock: vi.fn((_scopes: readonly string[]) => []),
   buildGatewaySnapshotMock: vi.fn((opts?: { includeUpdateDetails?: boolean }) => {
     const updateAvailable = {
@@ -79,9 +77,8 @@ vi.mock("../../../state/user-profile-list.js", async (importOriginal) => ({
   hasMultipleResidentSessionSharingIdentities: vi.fn(() => false),
 }));
 
-vi.mock("../../control-ui-plugin-tabs.js", () => ({
-  listControlUiLinkReaders: vi.fn(() => []),
-  listControlUiPluginTabs: listControlUiPluginTabsMock,
+vi.mock("../../control-ui-plugin-tabs.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../control-ui-plugin-tabs.js")>()),
   listControlUiPluginWidgetKinds: listControlUiPluginWidgetKindsMock,
 }));
 
@@ -598,9 +595,6 @@ describe("sendGatewayHello update detail scope", () => {
       recoveryScope: expect.stringMatching(/^[A-Za-z0-9_-]+$/u),
       deviceToken: "paired-token",
       issuedAtMs: 1,
-    });
-    expect(listControlUiPluginTabsMock).toHaveBeenCalledWith(["operator.pairing"], {
-      requireGatewayAuthGrant: false,
     });
     expect(listControlUiPluginWidgetKindsMock).toHaveBeenCalledWith(["operator.pairing"]);
     expect(emitGatewayAuthSecurityEventMock).toHaveBeenCalledWith(

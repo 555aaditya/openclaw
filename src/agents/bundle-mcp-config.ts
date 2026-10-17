@@ -16,7 +16,8 @@ import type {
   EnabledBundleMcpConfigResult,
 } from "../plugins/bundle-mcp.types.js";
 import type { PluginManifestRegistry } from "../plugins/manifest-registry.js";
-import { partitionMcpServersByConnectionScope } from "./mcp-connection-resolver.js";
+import { getPluginRegistryForContext } from "../plugins/runtime/gateway-request-scope.js";
+import { partitionMcpServersByConnectionScope } from "./mcp-requester-scope.js";
 
 type MergedBundleMcpConfig = {
   config: BundleMcpConfig;
@@ -102,6 +103,26 @@ export function loadMergedBundleMcpConfig(params: {
   manifestRegistry?: Pick<PluginManifestRegistry, "plugins">;
   toolOverrides?: Pick<SessionToolOverrides, "mcpServers">;
 }): MergedBundleMcpConfig {
+  // A failed native plugin may have owned requester credentials for either a
+  // bundle or an operator-configured server. Do not reinterpret that server as
+  // a shared/static connection after its registration failed.
+  const registry = getPluginRegistryForContext();
+  const failures = new Set([
+    ...(registry?.plugins
+      .filter((plugin) => plugin.enabled && plugin.format !== "bundle" && plugin.status === "error")
+      .map((plugin) => plugin.id) ?? []),
+    ...(registry?.diagnostics
+      .filter(
+        (diagnostic) => diagnostic.level === "error" && diagnostic.enabledNativePlugin === true,
+      )
+      .map((diagnostic) => diagnostic.pluginId ?? diagnostic.source ?? "unknown native plugin") ??
+      []),
+  ]);
+  if (failures.size > 0) {
+    throw new Error(
+      `MCP activation blocked because enabled native plugins failed to load: ${[...failures].join(", ")}. Update or explicitly disable those plugins before retrying MCP.`,
+    );
+  }
   const bundleMcp = loadEnabledBundleMcpConfig({
     workspaceDir: params.workspaceDir,
     cfg: params.cfg,

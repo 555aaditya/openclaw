@@ -4,10 +4,6 @@ import type { SessionMcpRequesterScope } from "./agent-bundle-mcp-types.js";
 import { resolveMcpAuthProfileId } from "./mcp-auth-profile.js";
 import { McpConnectionAuthorityError } from "./mcp-connection-authority-error.js";
 import type { McpConnectionAuthority } from "./mcp-connection-authority.types.js";
-import {
-  applyMcpConnectionOverride,
-  resolveRequesterScopedMcpConnections,
-} from "./mcp-connection-resolver.js";
 import { operatorMcpOAuthIdentity, requesterMcpOAuthIdentity } from "./mcp-oauth-identity.js";
 import { resolveMcpTransportConfig } from "./mcp-transport-config.js";
 
@@ -18,7 +14,6 @@ export type McpEventConnectionSelector = {
   cfg: OpenClawConfig;
   agentDir: string;
   requesterScope?: SessionMcpRequesterScope;
-  requesterResolver: boolean;
 };
 
 /** Adapter only: credential state, refresh, and revocation remain with their existing owners. */
@@ -28,7 +23,7 @@ export async function prepareMcpEventCredentialConnection(
 ) {
   let authority: McpConnectionAuthority | undefined;
   let disposed = false;
-  let kind: "configured" | "resolver" | "oauth" | "auth-profile" = "configured";
+  let kind: "configured" | "oauth" | "auth-profile" = "configured";
   const assertActive = () => {
     if (disposed) {
       throw new McpConnectionAuthorityError("retired");
@@ -47,27 +42,7 @@ export async function prepareMcpEventCredentialConnection(
   };
   try {
     assertActive();
-    let server = selector.server;
-    if (selector.requesterResolver) {
-      if (!selector.requesterScope) {
-        throw new McpConnectionAuthorityError("retired");
-      }
-      const resolved = (
-        await resolveRequesterScopedMcpConnections({
-          serverNames: [selector.serverName],
-          ...selector.requesterScope,
-          retainAuthority: true,
-        })
-      ).get(selector.serverName);
-      // Take cleanup ownership before checking a caller that may have retired during resolution.
-      authority = resolved?.authority;
-      assertCurrent();
-      if (!resolved || !authority) {
-        throw new McpConnectionAuthorityError("unavailable");
-      }
-      kind = "resolver";
-      server = applyMcpConnectionOverride(server, resolved);
-    }
+    const server = selector.server;
     const transport = resolveMcpTransportConfig(selector.serverName, server, {
       logWarnings: false,
     });

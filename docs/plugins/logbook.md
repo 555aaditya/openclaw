@@ -1,7 +1,7 @@
 ---
 summary: "Optional automatic work journal built from periodic screen snapshots"
 read_when:
-  - You want a Dayflow-style timeline of your day in the Control UI
+  - You want an automatic timeline of your screen activity
   - You are enabling or configuring the bundled Logbook plugin
   - You want standup summaries or day recall grounded in screen activity
 title: "Logbook plugin"
@@ -9,8 +9,8 @@ title: "Logbook plugin"
 
 The Logbook plugin turns screen activity into an automatic work journal. It
 captures periodic screen snapshots from a paired node, summarizes them into
-timestamped observations, and builds timeline cards in the
-[Control UI](/web/control-ui). It can also generate daily standup notes and
+timestamped observations, and builds timeline cards available through Gateway
+methods. It can also generate daily standup notes and
 answer questions about a tracked day.
 
 OpenClaw-owned state stays on the Gateway under `<state-dir>/logbook/`, but
@@ -69,23 +69,20 @@ Configure an explicit vision model to make startup predictable:
 If you use `plugins.allow`, include both `codex` and `logbook`. Plugin configuration
 changes apply automatically with the default hybrid reload mode (see
 [Hot reload](/gateway/configuration/hot-reload)). If the Gateway is offline,
-start it, then inspect the registrations and open the dashboard:
+start it, then inspect the registrations and node:
 
 ```bash
 openclaw plugins inspect logbook --runtime --json
 openclaw nodes status --connected
 openclaw nodes describe --node <idOrNameOrIp>
-openclaw dashboard
 ```
 
 The node description must include `screen.snapshot` or `logbook.snapshot`.
 Headless nodes advertise `logbook.snapshot` only after the plugin is active.
 See [Node troubleshooting](/nodes/troubleshooting) if the command is missing.
 
-The Logbook tab appears only for an enabled plugin and an `operator.write`
-Control UI session. The status row should show **Capturing** without an error.
-A timeline card appears when the analysis window closes, or you can select
-**Analyze now** after activity has been captured.
+Read `logbook.status` to check capture and analysis. Timeline cards appear after
+an analysis window closes; `logbook.analyze.now` starts pending analysis immediately.
 
 ## How it works
 
@@ -172,7 +169,7 @@ and clamped to the supported range.
 Without `nodeId`, Logbook prefers a connected app node exposing
 `screen.snapshot`, then falls back to a headless node exposing
 `logbook.snapshot`. In an unpinned setup, a failed node rotates behind other
-eligible nodes. The dashboard pause toggle is session-only and resets when the
+eligible nodes. The `logbook.capture.set` pause is session-only and resets when the
 plugin reloads or the Gateway restarts; use `captureEnabled: false` for a persistent stop.
 
 ### Vision model selection
@@ -186,17 +183,6 @@ Other media providers are skipped because they do not expose the
 structured extraction contract Logbook requires. Setting
 `tools.media.image.enabled: false` disables borrowed media defaults, but an
 explicit Logbook `visionModel` still applies.
-
-## Dashboard tab
-
-- **Timeline**: expandable cards per activity with category colors, the main
-  app, distraction chips, and a snapshot keyframe.
-- **Day at a glance**: focus ratio, category breakdown, top apps.
-- **Daily standup**: turns yesterday plus today into a ready-to-paste update.
-- **Ask your day**: natural-language questions answered from the tracked
-  timeline ("when did I review the gateway PR?").
-- **Analyze now**: closes the current capture window immediately instead of
-  waiting for the analysis interval.
 
 ## Gateway methods
 
@@ -216,9 +202,7 @@ Logbook registers these Gateway RPC methods:
 
 The read methods return operational state or derived text. Raw screenshot
 pixels, model-spending actions, and runtime mutations require
-`operator.write`. The Control UI tab also requires `operator.write` because it
-exposes those actions and raw frame previews; a read-only client can still call
-the derived-text methods directly.
+`operator.write`. Read-only clients can call the derived-text methods.
 
 ## Privacy notes
 
@@ -240,19 +224,6 @@ the derived-text methods directly.
   plugin config is used then.
 
 ## Troubleshooting
-
-### The Logbook tab is missing
-
-Check all three gates:
-
-1. `openclaw plugins list --enabled` includes `logbook`.
-2. The plugin or allowlist change applied successfully; see
-   [Apply changes and inspect](/plugins/manage-plugins#apply-changes-and-inspect).
-3. The Control UI connection has `operator.write`; read-only sessions do not
-   receive the interactive tab descriptor.
-
-If `plugins.allow` is set, it must include both `logbook` and `codex` for the
-recommended configuration.
 
 ### Capture reports an error
 

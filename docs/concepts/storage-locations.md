@@ -15,13 +15,7 @@ each consumer decides what to store and retain. Configuring a location does not
 schedule a backup or move existing data.
 
 The built-in `filesystem` provider supports an existing directory, including an
-external disk or a mounted network filesystem. Additional providers come from
-plugins. Referencing a bundled provider in config enables its owner plugin through
-the normal plugin policy; an explicit disable still applies.
-
-For Cloudflare R2 object storage, follow the
-[Cloudflare plugin setup](/plugins/cloudflare) to create a bucket, configure
-SecretRefs, and initialize an `r2` location.
+external disk or a mounted network filesystem.
 
 ## Configure and initialize a directory
 

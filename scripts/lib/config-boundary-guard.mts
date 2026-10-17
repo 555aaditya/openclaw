@@ -45,8 +45,6 @@ const PROCESS_BOUNDARY_DIRECT_CONFIG_LOAD_FILES = new Set([
   "src/cli/local-state-owner.ts",
   // Doctor's one-shot maintenance runner resolves this synchronous config helper under its lock.
   "src/commands/doctor-session-sqlite-targets.ts",
-  // One-shot migration plan/apply/import contexts retain their immediate object contract.
-  "src/commands/migrate/context.ts",
 ]);
 
 const BROAD_CONFIG_RUNTIME_COMPAT_FILES = new Set([

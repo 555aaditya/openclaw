@@ -26,7 +26,6 @@ import {
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import type { ChannelRouteRef } from "../plugin-sdk/channel-route.js";
 import { isPluginJsonValue, type PluginJsonValue } from "../plugins/host-hook-json.js";
-import { normalizeSessionEntrySlotKey } from "../plugins/session-entry-slot-keys.js";
 import {
   isValidAgentHarnessSessionStoreEntry,
   resolveAgentHarnessSessionStoreError,
@@ -113,7 +112,7 @@ function normalizeRestartRecoveryFields(entry: SessionEntry): SessionEntry {
 
 function normalizeLegacyPluginState(
   entry: SessionEntry,
-  key: "pluginExtensions" | "pluginExtensionSlotKeys",
+  key: "pluginExtensions",
   normalizeValue: (value: unknown) => PluginJsonValue | undefined,
 ): SessionEntry {
   const state = entry[key];
@@ -187,10 +186,6 @@ function normalizeLegacySessionStore(store: Record<string, SessionEntry>): void 
     normalized = normalizeLegacyPluginState(normalized, "pluginExtensions", (value) =>
       isPluginJsonValue(value) ? value : undefined,
     );
-    normalized = normalizeLegacyPluginState(normalized, "pluginExtensionSlotKeys", (value) => {
-      const slotKey = normalizeSessionEntrySlotKey(value);
-      return slotKey.ok ? slotKey.key : undefined;
-    });
     store[key] = stripRuntimeOnlySessionSkillsFields(normalized);
   }
   const harnessError = resolveAgentHarnessSessionStoreError(store);

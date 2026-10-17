@@ -77,47 +77,12 @@ export default defineFeaturePlugin({
 });
 `,
     "src/control-ui.ts": `import { defineControlUiPlugin } from "openclaw/plugin-sdk/control-ui";
-import { createFeatureClient } from "openclaw/plugin-sdk/feature-contract";
 import { contract } from "./contract.js";
 import "./control-ui.css";
 
 export default defineControlUiPlugin({
   id: contract.pluginId,
   activate(host) {
-    host.ui.registerNavigation({ id: "drafts", label: ${literal(params.name)}, page: { id: "drafts" }, icon: "fileText" });
-    host.ui.registerPage({
-      id: "drafts", label: ${literal(params.name)},
-      mount(container, context) {
-        const feature = createFeatureClient(contract, context.host);
-        const section = document.createElement("section");
-        section.className = "feature-draft-page";
-        const heading = document.createElement("h1");
-        heading.textContent = ${literal(params.name)};
-        const input = document.createElement("textarea");
-        input.placeholder = "Paste a draft to analyze";
-        input.setAttribute("aria-label", "Draft to analyze");
-        const button = document.createElement("button");
-        button.textContent = "Analyze draft";
-        const result = document.createElement("output");
-        result.setAttribute("aria-live", "polite");
-        button.onclick = async () => {
-          button.disabled = true;
-          try {
-            const report = await feature.invoke("analyze", { text: input.value });
-            if (!context.signal.aborted) {
-              result.textContent = report.words + " words · " + report.lines + " lines\\n" + report.headings.join("\\n");
-            }
-          } catch (error) {
-            if (!context.signal.aborted) result.textContent = String(error);
-          } finally {
-            if (!context.signal.aborted) button.disabled = false;
-          }
-        };
-        section.append(heading, input, button, result);
-        container.append(section);
-        return { dispose: () => section.remove() };
-      },
-    });
     host.ui.registerReplacement({
       id: "draft-composer", surface: "composer", label: "Draft composer",
       mount(container, context) {
@@ -156,10 +121,9 @@ export default defineControlUiPlugin({
   },
 });
 `,
-    "src/control-ui.css": `.feature-draft-page, .feature-draft-composer { display: grid; gap: 16px; padding: 24px; color: var(--text); }
-.feature-draft-page textarea, .feature-draft-composer textarea { min-height: 140px; padding: 12px; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 8px; font: inherit; }
-.feature-draft-page button, .feature-draft-composer button { justify-self: start; padding: 8px 14px; border-radius: 6px; color: var(--accent-foreground, var(--text)); background: var(--accent); border: 0; font: inherit; }
-.feature-draft-page output { white-space: pre-wrap; }
+    "src/control-ui.css": `.feature-draft-composer { display: grid; gap: 16px; padding: 24px; color: var(--text); }
+.feature-draft-composer textarea { min-height: 140px; padding: 12px; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 8px; font: inherit; }
+.feature-draft-composer button { justify-self: start; padding: 8px 14px; border-radius: 6px; color: var(--accent-foreground, var(--text)); background: var(--accent); border: 0; font: inherit; }
 `,
     "openclaw.plugin.json": JSON.stringify(
       {
@@ -176,7 +140,7 @@ export default defineControlUiPlugin({
     ),
     "README.md": `# ${params.name}
 
-This OpenClaw feature plugin includes a typed draft-analysis operation, a model tool, a native page, and a composer replacement. The browser entry owns its DOM and uses the host's standard draft and send operations.
+This OpenClaw feature plugin includes a typed draft-analysis operation, a model tool and a composer replacement. The browser entry owns its DOM and uses the host's standard draft and send operations.
 
 ## Build and install
 
@@ -191,7 +155,7 @@ Installation applies the plugin in the running local Gateway. If the Gateway is 
 
 For native UI, enable **Settings > Labs > Custom plugin UI** (\`gateway.controlUi.experimental.customPlugins: true\`), then restart the Gateway and reload the browser tab. This setting is off by default; backend installation does not require it.
 
-Select ${params.name} in the Control UI sidebar. Open **Plugins > Customize UI** and choose Draft composer to try the replacement; choose Built-in to restore it.
+Open **Plugins > Customize UI** and choose Draft composer to try the replacement; choose Built-in to restore it.
 
 For agent-requested activation, run \`npm run pack\`. The receipt contains the exact archive path and SHA-256 digest for \`plugin_activate_artifact\`. Approval applies to those bundled bytes and does not enable Custom plugin UI. The archive has no install scripts or package dependencies; backend activation applies through the running Gateway.
 

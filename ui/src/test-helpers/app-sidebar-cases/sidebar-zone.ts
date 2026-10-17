@@ -8,7 +8,6 @@ import type { SolidBridgeElement } from "../../lib/solid-bridge.ts";
 import { selectSidebarView } from "../app-sidebar-setup.ts";
 import {
   createGateway,
-  createGatewayHarness,
   createSessionsHarness,
   mountSidebar,
   type SidebarLifecycleState,
@@ -114,79 +113,6 @@ describe("AppSidebar interleaved zone", () => {
       expect(row?.querySelector(".session-row-state")).toBeNull();
       expect(row?.querySelector(".nav-item__state")).toBeNull();
     }
-  });
-
-  it.each([
-    { slug: undefined, href: "/plugin?plugin=logbook&id=logbook" },
-    { slug: "reports", href: "/reports" },
-  ])("renders plugin tabs as sidebar entries at $href", async ({ slug, href }) => {
-    const gateway = createGatewayHarness({} as GatewayBrowserClient);
-    const sessions = createSessionsHarness("main", ["agent:main:main"]);
-    const { sidebar } = await mountSidebar(gateway.gateway, sessions.sessions);
-    const navigate = vi.fn();
-    sidebar.onNavigate = navigate;
-
-    gateway.publish({
-      hello: {
-        type: "hello-ok",
-        protocol: 1,
-        auth: { role: "operator", scopes: ["operator.read"] },
-        controlUiTabs: [
-          { group: "control", id: "logbook", label: "Logbook", pluginId: "logbook", slug },
-        ],
-      },
-    });
-    sidebar.sidebarEntries = ["route:cron"];
-    await selectSidebarView(sidebar, "pages");
-
-    const entry = sidebar.querySelector<HTMLAnchorElement>(
-      '.sidebar-pages [data-sidebar-entry="plugin:logbook/logbook"] > .nav-item',
-    );
-    expect(entry?.textContent).toContain("Logbook");
-    expect(entry?.getAttribute("href")).toBe(href);
-    const pluginEntry = sidebar.querySelector<HTMLElement>(
-      '.sidebar-pages [data-sidebar-entry="plugin:logbook/logbook"]',
-    )!;
-    expect(pluginEntry.draggable).toBe(true);
-    const onUpdate = vi.fn((entries: string[]) => {
-      sidebar.sidebarEntries = entries;
-    });
-    sidebar.onUpdateSidebarEntries = onUpdate;
-    const target = zoneEntry(sidebar, "route:cron");
-    vi.spyOn(target, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 10, 200, 30));
-    const dataTransfer = createDataTransferStub();
-    dispatchDragEvent(pluginEntry, "dragstart", dataTransfer);
-    dispatchDragEvent(target, "dragover", dataTransfer);
-    dispatchDragEvent(target, "drop", dataTransfer);
-    await sidebar.updateComplete;
-    expect(onUpdate).toHaveBeenCalled();
-    const ordered = [
-      ...sidebar.querySelectorAll<HTMLElement>(".sidebar-rail [data-sidebar-entry]"),
-    ].map((row) => row.dataset.sidebarEntry);
-    expect(ordered.indexOf("plugin:logbook/logbook")).toBeLessThan(ordered.indexOf("route:cron"));
-    zoneEntry(sidebar, "plugin:logbook/logbook").querySelector<HTMLAnchorElement>("a")?.click();
-    const location = new URL(href, window.location.origin);
-    expect(navigate).toHaveBeenCalledWith("plugin", {
-      pathname: location.pathname,
-      search: location.search,
-      hash: "",
-    });
-
-    gateway.publish({
-      hello: {
-        type: "hello-ok",
-        protocol: 1,
-        auth: { role: "operator", scopes: ["operator.read"] },
-        controlUiTabs: [],
-      },
-    });
-    await sidebar.updateComplete;
-    expect(
-      sidebar.querySelector('.sidebar-pages [data-sidebar-entry="plugin:logbook/logbook"]'),
-    ).toBeNull();
-    expect(
-      sidebar.querySelector('.sidebar-rail [data-sidebar-entry="plugin:logbook/logbook"] a'),
-    ).toBeNull();
   });
 
   it("keeps plugin destinations flat in Pages and separate from ordered rail pins", async () => {

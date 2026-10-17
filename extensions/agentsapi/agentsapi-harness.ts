@@ -1,7 +1,5 @@
 import {
   abortAndDrainAgentHarnessRun,
-  embeddedAgentLog,
-  resolveAgentExecutorController,
   AgentHarnessPreflightError,
   AgentHarnessSessionCleanupError,
   AgentHarnessSessionSupersededError,
@@ -25,7 +23,6 @@ import { migrateAgentsApiBinding } from "./agentsapi-binding-migration.js";
 import type { AgentsApiCleanupBinding } from "./agentsapi-binding-record.js";
 import { createAgentsApiBindings } from "./agentsapi-bindings.js";
 import { AgentsApiClient } from "./agentsapi-client.js";
-import { retireAgentsApiExecutor } from "./agentsapi-environment.js";
 import { runAgentsApiIsolatedCompletion } from "./agentsapi-isolated-completion.js";
 import { requireAgentsApiSessionTarget } from "./agentsapi-target.js";
 
@@ -101,9 +98,6 @@ export function createAgentsApiHarness(runtime: PluginRuntime): AgentHarnessV2 {
           preparedNativeCleanup.delete(localSessionId);
           throw error;
         }
-      },
-      retire: async (_localSessionId, binding, assertCleanupCurrent) => {
-        await retireExecutor(binding, assertCleanupCurrent);
       },
     }));
   const assertCurrent = () => {
@@ -219,11 +213,6 @@ export function createAgentsApiHarness(runtime: PluginRuntime): AgentHarnessV2 {
               promptHistories,
               (nativeBinding, apiKey) =>
                 prepareNativeCleanup(params.sessionId, nativeBinding, apiKey),
-              (failedBinding) =>
-                retireExecutor(failedBinding, () => {
-                  assertCurrent();
-                  assertLeaseCurrent();
-                }),
             );
           },
           (binding, assertMigrationCurrent) =>
@@ -251,7 +240,7 @@ export function createAgentsApiHarness(runtime: PluginRuntime): AgentHarnessV2 {
             runningSessions.has(params.sessionId) ||
             preparedNativeCleanup.has(params.sessionId)
           ) {
-            await drainForExecutorCleanup(params.sessionId);
+            await drainForNativeCleanup(params.sessionId);
             assertCurrent();
           }
           await getBindings().reset(params.sessionId, assertCurrent, params.agentId);
@@ -272,7 +261,7 @@ export function createAgentsApiHarness(runtime: PluginRuntime): AgentHarnessV2 {
       );
       params.assertCurrent();
       assertCurrent();
-      return withSessionDeletion({ ...params, sessionId }, run, true);
+      return withSessionDeletion({ ...params, sessionId }, run);
     },
     dispose: async () => {
       closing = true;
@@ -301,12 +290,11 @@ export function createAgentsApiHarness(runtime: PluginRuntime): AgentHarnessV2 {
   async function withSessionDeletion<T>(
     params: AgentHarnessSessionDeletionParams,
     run: (mutation: AgentHarnessSessionDeletionMutation) => Promise<T>,
-    retireAfterCommit = false,
   ): Promise<T> {
     params.assertCurrent();
     assertCurrent();
     if (runningSessions.has(params.sessionId) || preparedNativeCleanup.has(params.sessionId)) {
-      await drainForExecutorCleanup(params.sessionId);
+      await drainForNativeCleanup(params.sessionId);
       params.assertCurrent();
       assertCurrent();
     }
@@ -335,7 +323,6 @@ export function createAgentsApiHarness(runtime: PluginRuntime): AgentHarnessV2 {
               },
             }),
           ),
-        retireAfterCommit,
       );
     } finally {
       if (committed) {
@@ -344,42 +331,7 @@ export function createAgentsApiHarness(runtime: PluginRuntime): AgentHarnessV2 {
     }
   }
 
-  async function retireExecutor(
-    binding: AgentsApiCleanupBinding,
-    assertCleanupCurrent: () => void,
-  ) {
-    const executor = binding.executor;
-    if (!executor) {
-      return;
-    }
-    await attemptExecutorCleanup(
-      () =>
-        retireAgentsApiExecutor(
-          resolveAgentExecutorController(binding.executorControllerPluginId!),
-          executor,
-          assertCleanupCurrent,
-        ),
-      assertCleanupCurrent,
-    );
-  }
-
-  async function attemptExecutorCleanup(
-    run: () => Promise<void>,
-    assertCleanupCurrent: () => void,
-  ) {
-    try {
-      assertCleanupCurrent();
-      await run();
-      assertCleanupCurrent();
-    } catch (error) {
-      // Lost authority still stops mutation; an unused remote child must not
-      // prevent the user from resetting or deleting the conversation.
-      assertCleanupCurrent();
-      embeddedAgentLog.warn("Agents API executor cleanup was not acknowledged", { error });
-    }
-  }
-
-  async function drainForExecutorCleanup(sessionId: string) {
+  async function drainForNativeCleanup(sessionId: string) {
     const result = await abortAndDrainAgentHarnessRun({ sessionId, settleMs: 95_000 });
     assertCurrent();
     if ((result.aborted && !result.drained) || runningSessions.has(sessionId)) {

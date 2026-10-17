@@ -3,12 +3,7 @@ import type { OpenClawPluginToolContext } from "openclaw/plugin-sdk/plugin-entry
 import { createTestPluginApi } from "openclaw/plugin-sdk/plugin-test-api";
 import { createPluginRecord, createPluginRegistry } from "openclaw/plugin-sdk/plugin-test-runtime";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  browserPluginNodeHostCommands,
-  browserPluginReload,
-  browserSecurityAuditCollectors,
-  registerBrowserPlugin,
-} from "./plugin-registration.js";
+import { registerBrowserPlugin } from "./plugin-registration.js";
 import type { OpenClawPluginApi } from "./runtime-api.js";
 import setupPlugin from "./setup-api.js";
 import { BrowserToolOutputSchema } from "./src/browser-tool.schema.js";
@@ -23,7 +18,6 @@ const runtimeApiMocks = vi.hoisted(() => ({
     parameters: { type: "object", properties: {} },
     execute: vi.fn(async () => ({ type: "json", value: { ok: true } })),
   })),
-  collectBrowserSecurityAuditFindings: vi.fn(() => []),
   handleBrowserGatewayRequest: vi.fn(),
   registerBrowserCli: vi.fn(),
   runBrowserProxyCommand: vi.fn(async () => "ok"),
@@ -35,7 +29,6 @@ vi.mock("./register.runtime.js", async () => {
     await vi.importActual<typeof import("./register.runtime.js")>("./register.runtime.js");
   return {
     ...actual,
-    collectBrowserSecurityAuditFindings: runtimeApiMocks.collectBrowserSecurityAuditFindings,
     createBrowserPluginService: runtimeApiMocks.createBrowserPluginService,
     createBrowserTool: runtimeApiMocks.createBrowserTool,
     handleBrowserGatewayRequest: runtimeApiMocks.handleBrowserGatewayRequest,
@@ -158,48 +151,6 @@ describe("browser plugin", () => {
       expect(store.value.entries).not.toHaveBeenCalled();
     }
     expect(runtimeApiMocks.createBrowserPluginService).not.toHaveBeenCalled();
-  });
-
-  it("exposes static browser metadata on the plugin definition", () => {
-    expect(browserPluginReload).toEqual({
-      restartPrefixes: ["browser"],
-      hotPrefixes: [
-        "browser.profiles",
-        "browser.defaultProfile",
-        "browser.headless",
-        "browser.executablePath",
-        "browser.attachOnly",
-        "browser.cdpUrl",
-        "browser.noSandbox",
-        "browser.extraArgs",
-        "browser.snapshotDefaults",
-        "browser.tabCleanup",
-        "browser.allowSystemProfileImport",
-      ],
-    });
-    expect(browserPluginNodeHostCommands.map((entry) => entry.command)).toEqual([
-      "browser.proxy",
-      "browser.proxy.upload.v1",
-    ]);
-    expect(browserPluginNodeHostCommands[0]?.cap).toBe("browser");
-    expect(browserPluginNodeHostCommands[1]?.cap).toBe("browser");
-    expect(browserPluginNodeHostCommands[0]?.isAvailable?.({ config: {}, env: {} })).toBe(true);
-    expect(
-      browserPluginNodeHostCommands[0]?.isAvailable?.({
-        config: { browser: { enabled: false } },
-        env: {},
-      }),
-    ).toBe(false);
-    expect(
-      browserPluginNodeHostCommands[0]?.isAvailable?.({
-        config: { nodeHost: { browserProxy: { enabled: false } } },
-        env: {},
-      }),
-    ).toBe(false);
-    expect(typeof browserPluginNodeHostCommands[0]?.handle).toBe("function");
-    expect(typeof browserPluginNodeHostCommands[1]?.handle).toBe("function");
-    expect(typeof browserPluginNodeHostCommands[1]?.watchAvailability).toBe("function");
-    expect(browserSecurityAuditCollectors).toHaveLength(1);
   });
 
   it("keeps browser tool registration synchronous while loading runtime on execute", async () => {
@@ -449,32 +400,6 @@ describe("browser plugin", () => {
     expect(runtimeApiMocks.handleBrowserGatewayRequest).toHaveBeenCalledWith({
       method: "browser.request",
     });
-  });
-
-  it("lazy-loads node host and audit runtime handlers", async () => {
-    const abortController = new AbortController();
-    await expect(browserPluginNodeHostCommands[0]?.handle("{}")).resolves.toBe("ok");
-    await expect(
-      browserPluginNodeHostCommands[1]?.handle("{}", undefined, {
-        sendNodeEvent: vi.fn(),
-        signal: abortController.signal,
-      }),
-    ).resolves.toBe("ok");
-    expect(runtimeApiMocks.runBrowserProxyCommand).toHaveBeenNthCalledWith(
-      1,
-      "{}",
-      "browser.proxy",
-      undefined,
-    );
-    expect(runtimeApiMocks.runBrowserProxyCommand).toHaveBeenNthCalledWith(
-      2,
-      "{}",
-      "browser.proxy.upload.v1",
-      abortController.signal,
-    );
-
-    await expect(browserSecurityAuditCollectors[0]?.({} as never)).resolves.toStrictEqual([]);
-    expect(runtimeApiMocks.collectBrowserSecurityAuditFindings).toHaveBeenCalled();
   });
 
   it("registers a lazy browser control service", async () => {

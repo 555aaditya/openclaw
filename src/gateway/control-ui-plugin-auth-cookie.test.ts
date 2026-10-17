@@ -1,14 +1,11 @@
 import { ServerResponse, type IncomingMessage } from "node:http";
-import {
-  createPluginRegistryFixture,
-  registerVirtualTestPlugin,
-} from "openclaw/plugin-sdk/plugin-test-contracts";
 import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { observeHostDataSql } from "../../test/helpers/sqlite-statement-execution-counter.js";
 import { getRuntimeConfig } from "../config/io.js";
 import { setRuntimeConfigSnapshot } from "../config/runtime-snapshot.js";
 import { createEmptyPluginRegistry } from "../plugins/registry-empty.js";
 import { resetPluginRuntimeStateForTest, setActivePluginRegistry } from "../plugins/runtime.js";
+import { createPluginRecord } from "../plugins/status.test-helpers.js";
 import * as stateReads from "../state/openclaw-state-db-readonly.js";
 import {
   isUserProfileCatalogReady,
@@ -29,7 +26,6 @@ import {
 } from "./http-auth-plugin-cookie.js";
 import {
   authorizePluginGatewayHttpRequestOrReply,
-  resolveSharedSecretHttpOperatorScopes,
   setControlUiPluginAuthCookieForRequest,
 } from "./http-auth-utils.js";
 import { markGatewayIngressTransport } from "./ingress-attribution.js";
@@ -245,87 +241,19 @@ describe("Control UI plugin auth cookie profile binding", () => {
     });
   });
 
-  it("uses an explicit owner credential independently of a revoked ambient visitor cookie", async () => {
-    await withRoleConfig(async () => {
-      const profile = ensureProfileForEmail("visitor@example.test");
-      const { config, registry } = createPluginRegistryFixture();
-      registerVirtualTestPlugin({
-        registry,
-        config,
-        id: "person-access",
-        name: "Person access",
-        register(api) {
-          api.registerGatewayAccessPolicy({
-            authorize() {
-              throw new Error("Visitor grant ended");
-            },
-          });
-        },
-      });
-      setActivePluginRegistry(registry.registry);
-      const auth = { mode: "token", token: "independent-owner", allowTailscale: false } as const;
-      const cookie = issueCookie(profile.id, {
-        generation: resolveControlUiPluginAuthCookieGeneration(
-          resolveSharedGatewaySessionGeneration(auth),
-          getRuntimeConfig(),
-        ),
-      });
-      const catalog = await prepareUserProfileCatalog();
-      try {
-        for (const authorization of [undefined, "Bearer independent-owner"]) {
-          const { res } = makeMockHttpResponse();
-          const result = await authorizePluginGatewayHttpRequestOrReply({
-            req: createGatewayRequest({
-              path: "/plugins/example/session",
-              headers: { cookie },
-              authorization,
-            }),
-            res,
-            auth,
-            requestPath: "/plugins/example/session",
-            resolveOperatorScopes: resolveSharedSecretHttpOperatorScopes,
-          });
-          if (authorization) {
-            expect(result?.requestAuth.operatorRoleActor).toEqual({ kind: "system" });
-            expect(result?.operatorScopes).toContain("operator.admin");
-            expect(res.writableEnded).toBe(false);
-          } else {
-            expect(result).toBeNull();
-            expect(res.statusCode).toBe(403);
-          }
-          res.destroy();
-        }
-      } finally {
-        catalog.release();
-      }
-    });
-  });
-
   it("revokes issued Tailscale cookies on policy changes without rotating shared credentials", async () => {
     await withOpenClawTestState({ scenario: "minimal" }, async () => {
       await withTempConfig({
         cfg: { gateway: { auth: { allowTailscale: true } } },
         run: async () => {
           const registry = createEmptyPluginRegistry();
-          registry.controlUiDescriptors.push({
-            pluginId: "example",
-            source: "example",
-            descriptor: {
-              id: "panel",
-              surface: "tab",
-              label: "Panel",
-              path: "/plugins/example",
-              requiredScopes: ["operator.admin"],
-            },
-          });
-          registry.httpRoutes.push({
-            pluginId: "example",
-            source: "example",
-            path: "/plugins/example",
-            match: "prefix",
-            auth: "gateway",
-            handler: async () => true,
-          });
+          registry.plugins.push(
+            createPluginRecord({
+              id: "example",
+              origin: "bundled",
+              controlUi: { entry: "dist/control-ui/index.js" },
+            }),
+          );
           setActivePluginRegistry(registry);
           const auth = { mode: "token" as const, token: "shared-secret", allowTailscale: true };
           const generation = resolveSharedGatewaySessionGeneration(auth);
@@ -343,14 +271,16 @@ describe("Control UI plugin auth cookie profile binding", () => {
           ).toEqual([
             {
               pluginId: "example",
-              path: "/plugins/example",
+              path: "/__openclaw__/plugins/control-ui/example/",
               match: "prefix",
               scopes: ["operator.read"],
             },
           ]);
           expect(issued.setHeader).toHaveBeenCalledWith(
             "Set-Cookie",
-            expect.arrayContaining([expect.stringContaining("Path=/plugins/example")]),
+            expect.arrayContaining([
+              expect.stringContaining("Path=/__openclaw__/plugins/control-ui/example/"),
+            ]),
           );
           const value = issued.setHeader.mock.calls.find(([name]) => name === "Set-Cookie")?.[1];
           const header = Array.isArray(value) ? value[0] : value;
@@ -363,7 +293,7 @@ describe("Control UI plugin auth cookie profile binding", () => {
               res: response.res,
               auth: { ...auth, allowTailscale },
               cfg: getRuntimeConfig(),
-              requestPath: "/plugins/example/view",
+              requestPath: "/__openclaw__/plugins/control-ui/example/view",
               resolveOperatorScopes: () => [],
             });
             return { result, response };

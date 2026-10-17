@@ -376,7 +376,6 @@ function formatPluginInspection(
   appendSection("Commands", inspect.commands);
   appendSection("CLI commands", inspect.cliCommands);
   appendSection("Services", inspect.services);
-  appendSection("Gateway discovery", inspect.gatewayDiscoveryServices);
   appendSection("Gateway methods", inspect.gatewayMethods ?? []);
   appendSection(
     "MCP servers",

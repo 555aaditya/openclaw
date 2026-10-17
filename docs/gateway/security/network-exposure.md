@@ -52,32 +52,11 @@ nmap -sT -p 1-65535 <public-ip> --open
 
 Expected external ports should be only what you intentionally expose (for most setups: SSH + reverse proxy ports).
 
-### mDNS/Bonjour discovery
+### DNS-SD discovery
 
-When the bundled `bonjour` plugin is enabled, the Gateway broadcasts presence via mDNS (`_openclaw-gw._tcp`, port 5353) for local device discovery. Full mode includes TXT records that expose operational details: `cliPath` (filesystem path revealing username and install location), `sshPort` (advertises SSH availability), `displayName`/`lanHost` (hostname info). Broadcasting infrastructure details makes LAN reconnaissance easier.
+Configured wide-area DNS-SD zones expose Gateway addresses and metadata to their DNS readers. `discovery.mdns.mode="full"` also publishes `cliPath` and `sshPort`; keep the default minimal metadata when those fields are unnecessary. Local multicast advertising is no longer provided.
 
-- Keep Bonjour disabled unless LAN discovery is needed - it auto-starts on macOS hosts and is opt-in elsewhere; direct Gateway URLs, Tailnet, SSH, or wide-area DNS-SD avoid local multicast.
-- **Minimal mode** (default when Bonjour is enabled, recommended for exposed gateways) omits sensitive fields:
-
-  ```json5
-  { discovery: { mdns: { mode: "minimal" } } }
-  ```
-
-- **Off** suppresses local discovery while keeping the plugin enabled:
-
-  ```json5
-  { discovery: { mdns: { mode: "off" } } }
-  ```
-
-- **Full mode** (opt-in) includes `cliPath` + `sshPort`:
-
-  ```json5
-  { discovery: { mdns: { mode: "full" } } }
-  ```
-
-- Or set `OPENCLAW_DISABLE_BONJOUR=1` to disable mDNS without config changes.
-
-In minimal mode the Gateway broadcasts `role`, `gatewayPort`, `transport` but omits `cliPath`/`sshPort`; apps that need the CLI path can fetch it over the authenticated WebSocket connection instead.
+Discovery records are routing hints, not authentication. Retain pairing and TLS verification for the advertised endpoint.
 
 ### Gateway WebSocket auth
 

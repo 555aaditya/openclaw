@@ -1,8 +1,7 @@
 import type { JSX } from "@solidjs/web";
 import { createMemo, Show } from "solid-js";
-import type { GatewayControlUiPluginTab } from "../api/gateway.ts";
 import { serializeSidebarEntry, type SidebarZoneEntry } from "../app-navigation.ts";
-import { isRouteId, pluginTabLocation } from "../app-route-paths.ts";
+import { pluginPageLocation } from "../app-route-paths.ts";
 import { gatewayPresentationScope } from "../app/gateway-presentation-scope.ts";
 import { isMobileNavLayout } from "../app/mobile-nav-layout.ts";
 import type { NativeGateway, NativeGatewaysSnapshot } from "../app/native-gateways.runtime.ts";
@@ -27,6 +26,7 @@ import { HOME_PANEL_TOGGLE_EVENT } from "./panel-toggle-contract.ts";
 import { SidebarAgentCard } from "./sidebar-agent-card.tsx";
 import { SidebarAttention } from "./sidebar-attention.tsx";
 import { formatSidebarBuildSubtitle } from "./sidebar-build-chip-format.ts";
+import type { SidebarSnapshotModel } from "./sidebar-snapshot-model.ts";
 import { renderGatewayStatus } from "./solid/gateway-status.tsx";
 import { Icon } from "./solid/icon.tsx";
 import { ShortcutHint } from "./solid/kbd.tsx";
@@ -389,13 +389,13 @@ export function renderAppSidebarPageEntry(
   host: AppSidebarRenderHost,
   entry: SidebarZoneEntry,
   sessionRows: () => ReadonlyMap<string, SidebarRecentSession>,
-  pluginTabs: () => ReadonlyMap<string, GatewayControlUiPluginTab>,
+  pluginSnapshots: () => ReadonlyMap<string, Omit<SidebarSnapshotModel["plugins"][number], "key">>,
 ): JSX.Element {
   if (entry.type === "person") {
     return undefined;
   }
   const serialized = serializeSidebarEntry(entry);
-  const pluginTab = () => (entry.type === "plugin" ? pluginTabs().get(entry.key) : undefined);
+  const pluginTab = () => (entry.type === "plugin" ? pluginSnapshots().get(entry.key) : undefined);
   const pinnedSession = () => (entry.type === "session" ? sessionRows().get(entry.key) : undefined);
   const content =
     entry.type === "route" ? (
@@ -412,7 +412,7 @@ export function renderAppSidebarPageEntry(
           />
         }
       >
-        {(tab) => renderAppSidebarPluginTab(host, tab)}
+        {(tab) => renderAppSidebarPluginSnapshot(host, tab)}
       </Show>
     ) : (
       <Show when={pinnedSession()}>{(session) => host.renderPinnedSidebarSession(session)}</Show>
@@ -447,21 +447,13 @@ export function renderAppSidebarPageEntry(
   );
 }
 
-export function renderAppSidebarPluginTab(
+export function renderAppSidebarPluginSnapshot(
   host: AppSidebarRenderHost,
-  tab: () => GatewayControlUiPluginTab,
+  tab: () => Omit<SidebarSnapshotModel["plugins"][number], "key">,
 ): JSX.Element {
   const ref = () => ({ pluginId: tab().pluginId, id: tab().id });
   const key = () => pluginTabKey(ref());
-  const routePlacement = () => {
-    const placement = tab().placement;
-    return placement?.startsWith("route:") ? placement.slice("route:".length) : "";
-  };
-  const routeId = createMemo(() => {
-    const route = routePlacement();
-    return isRouteId(route) ? route : null;
-  });
-  const location = createMemo(() => pluginTabLocation(tab(), host.basePath));
+  const location = createMemo(() => pluginPageLocation(tab(), host.basePath));
   const iconName = createMemo(() => {
     const icon = tab().icon;
     return icon && Object.hasOwn(iconData, icon)
@@ -477,9 +469,5 @@ export function renderAppSidebarPluginTab(
       onNavigate={() => host.onNavigate?.("plugin", location())}
     />
   );
-  return (
-    <Show when={routeId()} fallback={link}>
-      {(route) => host.sidebarMenus.renderRoute(route())}
-    </Show>
-  );
+  return link;
 }

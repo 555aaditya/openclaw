@@ -112,9 +112,6 @@ Use `setup --team` for the same small-team onboarding as `onboard --team`.
 | `--flow <flow>`                | Onboard flow: `quickstart`, `advanced`, `manual`, or `import`.                                       |
 | `--reset`                      | Reset config + credentials + sessions before onboarding (workspace only with `--reset-scope full`).  |
 | `--reset-scope <scope>`        | Reset scope: `config`, `config+creds+sessions`, or `full`.                                           |
-| `--import-from <provider>`     | Migration provider to run during onboarding.                                                         |
-| `--import-source <path>`       | Source agent home for `--import-from`.                                                               |
-| `--import-secrets`             | Import supported secrets during onboarding migration.                                                |
 | `--remote-url <url>`           | Remote Gateway WebSocket URL.                                                                        |
 | `--remote-token <token>`       | Remote Gateway token (optional).                                                                     |
 | `--remote-password <password>` | Remote Gateway password (optional).                                                                  |
@@ -163,7 +160,6 @@ openclaw setup --json
 openclaw setup --wizard
 openclaw setup --baseline
 openclaw setup --workspace ~/.openclaw/workspace
-openclaw setup --import-from hermes --import-source ~/.hermes
 openclaw setup --non-interactive --accept-risk --mode remote --remote-url wss://gateway-host:18789 --remote-token <token>
 openclaw setup --non-interactive --accept-risk --mode remote --remote-url wss://gateway-host:18789 --remote-password <password>
 ```
@@ -173,7 +169,6 @@ openclaw setup --non-interactive --accept-risk --mode remote --remote-url wss://
 - Inside the interactive OpenClaw chat, `configure skills`, `configure web search`, and `configure gateway` run hosted setup flows. `open search wizard` and `open gateway wizard` hand credential entry to masked terminal wizards. Gateway setup is local-only and config-only; restart afterward with `restart gateway` in chat or `openclaw gateway restart` in the terminal. See [`openclaw setup` operations](/cli/openclaw#operations-and-approval).
 - `import memory` copies detected local memory into the existing default agent workspace without importing config, credentials, or skills. Finish onboarding first; the chat reports partial and failed copies instead of assuming success.
 - After baseline setup, run `openclaw onboard` for the full guided journey, `openclaw configure` for targeted changes, or `openclaw channels add` to add channel accounts.
-- If Hermes state is detected, interactive onboarding can offer migration automatically. Import onboarding requires a fresh setup; use [Migrate](/cli/migrate) for dry-run plans, backups, and overwrite mode outside onboarding.
 
 ## Related
 

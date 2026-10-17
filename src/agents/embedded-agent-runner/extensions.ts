@@ -39,7 +39,6 @@ export function buildEmbeddedExtensionFactories(params: {
       recentTurnsPreserve: compactionCfg?.recentTurnsPreserve,
       workspaceDir: params.workspaceDir,
       postCompactionSections: compactionCfg?.postCompactionSections,
-      provider: compactionCfg?.provider,
     });
     factories.push(compactionSafeguardExtension);
   }

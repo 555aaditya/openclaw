@@ -147,13 +147,6 @@ vi.mock("../commands/runtime-plugin-install.js", () => ({
   ensureModelSelectionRuntimePlugins,
 }));
 
-const offerPostInstallMigrations = vi.hoisted(() =>
-  vi.fn(async ({ config }: { config: ApplyAuthChoiceParams["config"] }) => ({ config })),
-);
-vi.mock("../wizard/setup.post-install-migration.js", () => ({
-  offerPostInstallMigrations,
-}));
-
 const EXISTING_DEFAULT_MODEL = "amazon-bedrock/anthropic.claude-3-5-sonnet-20241022-v2:0";
 
 function expectPersistedProfile(profileId: string, credential: AuthProfileCredential): void {
@@ -264,7 +257,6 @@ describe("applyAuthChoiceLoadedPluginProvider", () => {
       cfg,
       codexInstalled: false,
     }));
-    offerPostInstallMigrations.mockImplementation(async ({ config }) => ({ config }));
   });
 
   it("offers only the selected provider's saved profiles during onboarding", async () => {
@@ -333,47 +325,6 @@ describe("applyAuthChoiceLoadedPluginProvider", () => {
       provider: LOCAL_PROVIDER_ID,
       key: "test-key",
     });
-  });
-
-  it("restores the exact entry config after provider install and auth staging", async () => {
-    const provider = buildProvider();
-    const entryConfig = {
-      agents: { defaults: { model: { primary: EXISTING_DEFAULT_MODEL } } },
-      wizard: { lastRunVersion: "entry-version" },
-    };
-    resolveProviderInstallCatalogEntry.mockReturnValue(buildLocalProviderInstallCatalogEntry());
-    ensureOnboardingPluginInstalled.mockResolvedValue({
-      ...buildInstalledLocalProviderPluginResult(),
-      cfg: {
-        ...entryConfig,
-        plugins: { entries: { "local-provider-plugin": { enabled: true } } },
-      },
-    });
-    resolvePluginProviders.mockReturnValue([provider]);
-    resolveProviderPluginChoice.mockReturnValueOnce(null).mockReturnValueOnce({
-      provider,
-      method: expectDefined(provider.auth[0], "provider.auth[0] test invariant"),
-    });
-    const note = vi.fn(async () => {});
-    ensureModelSelectionRuntimePlugins.mockResolvedValue({
-      ok: false,
-      message: "GitHub Copilot agent runtime is required but unavailable.",
-    });
-
-    const result = await applyAuthChoiceLoadedPluginProvider(
-      buildParams({
-        config: entryConfig,
-        prompter: { note } as unknown as ApplyAuthChoiceParams["prompter"],
-      }),
-    );
-
-    expect(result).toEqual({ config: entryConfig, retrySelection: true });
-    expect(result?.config).toBe(entryConfig);
-    expect(ensureOnboardingPluginInstalled).toHaveBeenCalledOnce();
-    expect(note).toHaveBeenCalledOnce();
-    expect(runProviderModelSelectedHook).not.toHaveBeenCalled();
-    expect(offerPostInstallMigrations).not.toHaveBeenCalled();
-    expect(persistAuthProfileBatch).not.toHaveBeenCalled();
   });
 
   it("keeps an existing default when provider auth patches its own primary model", async () => {

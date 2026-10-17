@@ -78,10 +78,19 @@ function readStoredBoard(database: BoardDatabaseHandle, sessionKey: string): Sto
     const queries = getBoardReadQueries(database.db);
     const tabRows = queries.tabs(sessionKey).rows;
     const selectedWidgetRows = queries.widgets(sessionKey).rows;
-    const parsedWidgetRows = selectedWidgetRows.map((row) => ({
-      row,
-      manifest: parseManifest(row.manifest),
-    }));
+    const parsedWidgetRows = selectedWidgetRows.flatMap((row) => {
+      try {
+        const manifest = parseManifest(row.manifest);
+        return [{ row, manifest, widget: rowToWidget(row, manifest) }];
+      } catch (error) {
+        if (error instanceof BoardValidationError) {
+          // Unsupported persisted content has no runtime authority. Leave the
+          // stored row intact; never reinterpret it as another widget kind.
+          return [];
+        }
+        throw error;
+      }
+    });
     // Rows without the canonical authority snapshot predate this unreleased contract.
     // Keep them out of runtime state so they can never mint an interactive lease.
     const admittedWidgetRows = parsedWidgetRows.filter(({ row, manifest }) => {
@@ -99,7 +108,7 @@ function readStoredBoard(database: BoardDatabaseHandle, sessionKey: string): Sto
     }
     const layout = normalizeBoardLayout({
       tabs: tabRows.map(rowToTab),
-      widgets: admittedWidgetRows.map(({ row, manifest }) => rowToWidget(row, manifest)),
+      widgets: admittedWidgetRows.map(({ widget }) => widget),
     });
     return {
       snapshot: {
@@ -401,8 +410,7 @@ export function putBoardWidgetInDatabase(
           parseDescriptor(existing.descriptor_json).serverName ===
             canonicalParams.content.descriptor.serverName
         : existing.descriptor_json !== null &&
-          (canonicalParams.content.kind === "plugin" ||
-            canonicalParams.content.kind === "registered") &&
+          canonicalParams.content.kind === "plugin" &&
           parsePluginContent(existing.descriptor_json).pluginKind ===
             canonicalParams.content.pluginKind
     : true;
@@ -493,9 +501,6 @@ export function grantBoardWidgetInDatabase(
         manifest: serializeManifest(
           {
             contentOwner: widget.contentOwner,
-            ...(widget.registeredContentKind
-              ? { registeredContentKind: widget.registeredContentKind }
-              : {}),
           },
           declared,
           decision,
@@ -505,9 +510,7 @@ export function grantBoardWidgetInDatabase(
                 interactive: manifest.mcpAppInteractive,
                 instanceId: manifest.mcpAppInstanceId,
               }
-            : manifest.registeredInstanceId
-              ? { kind: "registered" as const, instanceId: manifest.registeredInstanceId }
-              : undefined,
+            : undefined,
           {
             presentation: manifest.presentation,
             heightMode: manifest.heightMode,

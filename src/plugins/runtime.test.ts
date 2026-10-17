@@ -7,7 +7,6 @@ import { runGatewayCloseSteps } from "../gateway/server-shutdown.js";
 import { trackAsyncWork } from "../shared/async-work-scope.js";
 import { createDeferredCore } from "../shared/deferred.js";
 import { resolveGlobalSingleton } from "../shared/global-singleton.js";
-import { getPluginRunContext, setPluginRunContext } from "./host-hook-runtime.js";
 import { PluginInstance } from "./plugin-instance.js";
 import { createEmptyPluginRegistry } from "./registry-empty.js";
 import {
@@ -538,20 +537,4 @@ describe("setActivePluginRegistry", () => {
       expect(nativeState.resets).toBe(1);
     },
   );
-
-  it("clears plugin host run contexts with the active registry", async () => {
-    setPluginRunContext({
-      pluginId: "runtime-test",
-      patch: { runId: "run-1", namespace: "state", value: { ready: true } },
-    });
-
-    await clearActivePluginRegistry();
-
-    expect(
-      getPluginRunContext({
-        pluginId: "runtime-test",
-        get: { runId: "run-1", namespace: "state" },
-      }),
-    ).toBeUndefined();
-  });
 });

@@ -20,7 +20,7 @@ import {
 } from "../codex-mcp-config.js";
 import { prepareConversationCapabilityProfile } from "../conversation-capability-profile.js";
 import { requiresMcpBearerProjection, resolveMcpBearerBundleConfig } from "../mcp-auth-profile.js";
-import { partitionMcpServersByConnectionScope } from "../mcp-connection-resolver.js";
+import { partitionMcpServersByConnectionScope } from "../mcp-requester-scope.js";
 import { applyPreparedNativeMcpPolicy, prepareNativeMcpPolicy } from "../native-mcp-policy.js";
 import { resolveSandboxRuntimeStatusAsync } from "../sandbox/runtime-status.js";
 import { projectNativeMcpRunContext } from "./native-mcp-context.js";

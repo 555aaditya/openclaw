@@ -35,9 +35,7 @@ function isGenericOfficialPluginEntry(entry: { source?: string; kind?: string })
     Boolean(manifest?.plugin?.id) &&
     !manifest?.channel &&
     (manifest?.providers?.length ?? 0) === 0 &&
-    (manifest?.webSearchProviders?.length ?? 0) === 0 &&
-    // Migration owners have their own setup flow; listing them here duplicates install prompts.
-    (manifest?.contracts?.migrationProviders?.length ?? 0) === 0
+    (manifest?.webSearchProviders?.length ?? 0) === 0
   );
 }
 

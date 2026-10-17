@@ -190,7 +190,7 @@ export function MemorySettingsPage(props: MemorySettingsPageProps) {
     const { client } = snapshot;
     const connected = snapshot.phase === "connected";
     const bootId = snapshot.hello?.server?.bootId;
-    const generation = snapshot.pluginCapabilities?.generation;
+    const generation = snapshot.pluginGeneration ?? undefined;
     const pluginsChanged = generation !== pagePluginGeneration;
     pagePluginGeneration = generation;
     if (

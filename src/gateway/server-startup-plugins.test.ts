@@ -243,7 +243,6 @@ async function prepareBootstrapWithRuntimeConfig(
   options: {
     minimalTestGateway?: boolean;
     pluginMetadataSnapshot?: PluginMetadataSnapshot;
-    workerProviderIds?: readonly string[];
   } = {},
 ) {
   const log = createLog();
@@ -509,17 +508,6 @@ describe("prepareGatewayPluginBootstrap startup plugins", () => {
     },
   );
 
-  it("threads durable worker provider ids into startup lookup planning", async () => {
-    await prepareBootstrapWithRuntimeConfig({ channels: {} } as OpenClawConfig, {
-      workerProviderIds: ["static-ssh"],
-    });
-
-    const lookupInput = firstCallArg<{ workerProviderIds?: readonly string[] }>(
-      loadPluginLookUpTable,
-    );
-    expect(lookupInput.workerProviderIds).toEqual(["static-ssh"]);
-  });
-
   it("preserves an explicitly empty manifest snapshot for ambient channel planning", async () => {
     const emptyManifestRegistry: PluginManifestRegistry = { plugins: [], diagnostics: [] };
     loadPluginLookUpTable.mockReturnValueOnce({
@@ -567,7 +555,6 @@ describe("prepareGatewayPluginBootstrap startup plugins", () => {
 
     const result = await prepareBootstrapWithRuntimeConfig(cfg, {
       pluginMetadataSnapshot,
-      workerProviderIds: ["static-ssh"],
     });
     expect(result.startupPluginIds).toEqual([]);
     expect(result.pluginMetadataSnapshot).toBe(pluginMetadataSnapshot);
@@ -853,7 +840,7 @@ describe("loadGatewayStartupPluginRuntime", () => {
         startupPluginIds: ["llama-cpp"],
         pluginLookUpTable: {
           ...loadPluginLookUpTable({}),
-          workerProviderIds: [],
+
           manifestRegistry: { plugins: [disabledOwner, registeredOwner], diagnostics: [] },
         },
       }).then((result) => {

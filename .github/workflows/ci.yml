@@ -2567,7 +2567,7 @@ jobs:
         run: pnpm build
 
       - name: Prove desktop resize over node and SSH
-        if: ${{ !cancelled() && steps.real_gateway_build.outcome == 'success' && matrix.run_desktop }}
+        if: ${{ !cancelled() && steps.real_gateway_build.outcome == 'success' && needs.preflight.outputs.frozen_target == 'true' && matrix.run_desktop }}
         env:
           FROZEN_TARGET: *frozen_target
           DESKTOP_PROOF_CHECKOUT_SHA: *checkout_sha
@@ -2577,12 +2577,8 @@ jobs:
         run: |
           bootstrap=scripts/test-desktop-resize-real.mts
           if [[ ! -f "$bootstrap" ]]; then
-            if [[ "$FROZEN_TARGET" == "true" ]]; then
-              echo "::notice::Frozen target has no desktop resize fixture bootstrap; no desktop resize proof produced"
-              exit 0
-            fi
-            echo "::error::Current target is missing $bootstrap" >&2
-            exit 1
+            echo "::notice::Frozen target has no desktop resize fixture bootstrap; no desktop resize proof produced"
+            exit 0
           fi
           node --import tsx "$bootstrap"
 
@@ -2627,12 +2623,16 @@ jobs:
             reporter_args=(--reporter verbose --reporter github-actions --reporter default --reporter ./scripts/lib/vitest-resource-reporter.mts)
           fi
           if [[ "$config" == test/vitest/vitest.ui-e2e-prebuilt.config.ts ]]; then
-            # The canonical config owns this inventory; desktop transport proof runs above.
+            # Only older frozen targets have a separate desktop transport proof.
+            frozen_exclude_args=()
+            if [[ "$FROZEN_TARGET" == "true" ]]; then
+              frozen_exclude_args=(--exclude ui/src/e2e/desktop-resize.real-gateway.e2e.test.ts)
+            fi
             node scripts/run-vitest.mjs run \
               --config "$config" \
               --configLoader runner \
               "${reporter_args[@]}" \
-              --exclude ui/src/e2e/desktop-resize.real-gateway.e2e.test.ts
+              "${frozen_exclude_args[@]}"
             exit 0
           fi
           node scripts/run-vitest.mjs run \
@@ -2696,7 +2696,7 @@ jobs:
           retention-days: 7
 
       - name: Upload sanitized desktop resize proof
-        if: always() && matrix.run_desktop
+        if: always() && needs.preflight.outputs.frozen_target == 'true' && matrix.run_desktop
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: desktop-resize-proof-${{ github.run_id }}-${{ github.run_attempt }}

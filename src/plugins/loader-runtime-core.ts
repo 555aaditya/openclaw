@@ -274,7 +274,6 @@ export function* loadOpenClawPluginsSteps(
       ...(options.coreGatewayMethodNames !== undefined && {
         coreGatewayMethodNames: options.coreGatewayMethodNames,
       }),
-      ...(options.hostServices !== undefined && { hostServices: options.hostServices }),
       activateGlobalSideEffects: context.runtimeSideEffects,
     });
     const builder = registryBuilder;
@@ -307,7 +306,14 @@ export function* loadOpenClawPluginsSteps(
         installRecords:
           Object.keys(context.installRecords).length > 0 ? context.installRecords : undefined,
       });
-    registry.diagnostics.push(...manifestRegistry.diagnostics);
+    registry.diagnostics.push(
+      ...manifestRegistry.diagnostics.filter(
+        (diagnostic) =>
+          !onlyPluginIdSet ||
+          !diagnostic.pluginId ||
+          onlyPluginIdSet.has(normalizePluginPolicyId(diagnostic.pluginId)),
+      ),
+    );
     warnWhenAllowlistIsOpen({
       emitWarning: context.shouldActivate,
       logger,

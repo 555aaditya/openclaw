@@ -7,7 +7,6 @@ const hoisted = vi.hoisted(() => ({
   getActivePluginRegistryWorkspaceDir: vi.fn(),
   loadPluginRegistryHandle: vi.fn(),
   adoptRuntimeContextEngineRegistrations: vi.fn((target: unknown) => target),
-  adoptRuntimeWidgetPresenterRegistrations: vi.fn((target: unknown) => target),
   resolveAgentRuntimePluginLoadPlan: vi.fn(),
   resolveAgentRuntimePluginSelections: vi.fn(
     (_config: unknown, selections: readonly unknown[]) => selections,
@@ -22,10 +21,6 @@ vi.mock("../context-engine/registry.js", () => ({
 vi.mock("../plugins/runtime.js", () => ({
   getActivePluginRegistry: hoisted.getActivePluginRegistry,
   getActivePluginRegistryWorkspaceDir: hoisted.getActivePluginRegistryWorkspaceDir,
-}));
-
-vi.mock("../plugins/widget-presenters.js", () => ({
-  adoptRuntimeWidgetPresenterRegistrations: hoisted.adoptRuntimeWidgetPresenterRegistrations,
 }));
 
 vi.mock("../plugins/plugin-metadata-snapshot.js", () => ({
@@ -171,9 +166,6 @@ describe("agent runtime plugin registries", () => {
     hoisted.adoptRuntimeContextEngineRegistrations
       .mockReset()
       .mockImplementation((target) => target);
-    hoisted.adoptRuntimeWidgetPresenterRegistrations
-      .mockReset()
-      .mockImplementation((target) => target);
     hoisted.resolveAgentRuntimePluginLoadPlan.mockReset().mockImplementation(({ config }) => ({
       config,
       pluginIds: ["codex", "memory-core"],
@@ -304,7 +296,6 @@ describe("agent runtime plugin registries", () => {
       expect(registry).toBe(broader ? primaryRegistry : reusableRegistry);
       expect(hoisted.loadPluginRegistryHandle).toHaveBeenCalledTimes(broader ? 1 : 0);
       expect(hoisted.adoptRuntimeContextEngineRegistrations).not.toHaveBeenCalled();
-      expect(hoisted.adoptRuntimeWidgetPresenterRegistrations).not.toHaveBeenCalled();
     },
   );
 

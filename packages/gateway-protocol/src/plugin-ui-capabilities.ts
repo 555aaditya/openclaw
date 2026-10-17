@@ -7,7 +7,6 @@ export const PLUGIN_UI_CAPABILITIES = [
   "accessory",
   "widget",
   "replacement",
-  "link-reader",
 ] as const;
 
 export type PluginUiCapability = (typeof PLUGIN_UI_CAPABILITIES)[number];

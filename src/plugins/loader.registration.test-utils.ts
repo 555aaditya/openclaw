@@ -51,10 +51,8 @@ import {
   getMemoryRuntime,
   listActiveMemoryPublicArtifacts,
   listMemoryCorpusSupplements,
-  listMemoryPromptPreparations,
   registerMemoryCapability,
   registerMemoryCorpusSupplement,
-  registerMemoryPromptPreparation,
   registerMemoryPromptSupplement,
   resolveMemoryFlushPlan,
 } from "./memory-state.test-fixtures.js";
@@ -278,10 +276,6 @@ describe("loadOpenClawPlugins", () => {
         commands: ["failme.node"],
         handle: async () => ({ ok: true }),
       });
-      api.registerSecurityAuditCollector({
-        id: "failme",
-        collect: async () => [],
-      });
       api.registerInteractiveHandler({
         channel: "slack",
         namespace: "failme",
@@ -321,7 +315,6 @@ describe("loadOpenClawPlugins", () => {
     expect(registry.reloads).toStrictEqual([]);
     expect(registry.nodeHostCommands).toStrictEqual([]);
     expect(registry.nodeInvokePolicies).toStrictEqual([]);
-    expect(registry.securityAuditCollectors).toStrictEqual([]);
     expect(registry.interactiveHandlers).toStrictEqual([]);
     expect(
       resolvePluginInteractiveRegistrationsMatch(
@@ -645,7 +638,6 @@ describe("loadOpenClawPlugins", () => {
       get: async () => null,
     });
     registerMemoryPromptSupplement("memory-wiki", () => ["active wiki supplement"]);
-    registerMemoryPromptPreparation("memory-wiki", async () => ["active prepared wiki"]);
     const activeRuntime = {
       async getMemorySearchManager() {
         return { manager: null, error: "active" };
@@ -710,7 +702,6 @@ describe("loadOpenClawPlugins", () => {
     expect(listMemoryCorpusSupplements()).toHaveLength(1);
     expect(resolveMemoryFlushPlan({})?.plan).toMatchObject({ relativePath: "memory/active.md" });
     expect(getMemoryRuntime()).toBe(activeRuntime);
-    expect(listMemoryPromptPreparations()).toHaveLength(1);
   });
 
   it("does not replace active embedding providers during non-activating loads", () => {
@@ -841,7 +832,6 @@ describe("loadOpenClawPlugins", () => {
               },
             });
             api.registerMemoryPromptSupplement(() => ["stale failure supplement"]);
-            api.registerMemoryPromptPreparation(async () => ["stale prepared supplement"]);
             api.registerMemoryCorpusSupplement({
               search: async () => [],
               get: async () => null,
@@ -860,7 +850,6 @@ describe("loadOpenClawPlugins", () => {
     expect(registry.plugins.find((entry) => entry.id === "failing-memory")?.status).toBe("error");
     expect(buildMemoryPromptSection({ availableTools: new Set() })).toStrictEqual([]);
     expect(listMemoryCorpusSupplements()).toStrictEqual([]);
-    expect(listMemoryPromptPreparations()).toStrictEqual([]);
     expect(resolveMemoryFlushPlan({})).toBeNull();
     expect(getMemoryRuntime()).toBeUndefined();
   });

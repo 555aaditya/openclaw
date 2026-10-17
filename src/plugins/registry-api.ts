@@ -1,27 +1,11 @@
 import path from "node:path";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { formatErrorMessage } from "../infra/errors.js";
 import { createLazyRuntimeModule } from "../shared/lazy-runtime.js";
 import { resolveUserPath } from "../utils.js";
-import { emitPluginAgentEvent } from "./agent-event-emission.js";
 import { buildPluginApi, createUnavailableRuntime } from "./api-builder.js";
 import { resolveCapabilityProviderRegistration } from "./capability-catalog.js";
-import { resolvePromptInjectionAllowed } from "./hook-policy-decisions.js";
-import {
-  clearPluginRunContext,
-  getPluginRunContext,
-  setPluginRunContext,
-} from "./host-hook-runtime.js";
-import {
-  schedulePluginSessionTurn,
-  unschedulePluginSessionTurnsByTag,
-} from "./host-hook-scheduled-turns.js";
 import { getPluginRuntimeEntrySource } from "./plugin-runtime-artifact-binding.js";
-import {
-  capturePluginLifecycleAuthority,
-  getPluginRecordRegistry,
-  isPluginRecordActive,
-} from "./registry-lifecycle.js";
+import { capturePluginLifecycleAuthority, getPluginRecordRegistry } from "./registry-lifecycle.js";
 import type { PluginRegistrars } from "./registry-registrars.js";
 import type { PluginRuntimeResolver } from "./registry-runtime.js";
 import {
@@ -42,9 +26,7 @@ type BoundRegistrars = {
 };
 
 // Registration exposes these async operations without loading session storage or delivery.
-const loadAttachments = createLazyRuntimeModule(() => import("./host-hook-attachments.js"));
 const loadHookState = createLazyRuntimeModule(() => import("./host-hook-state.js"));
-const loadSteering = createLazyRuntimeModule(() => import("./host-hook-steering.js"));
 
 function resolvePluginPath(input: string, rootDir: string | undefined): string {
   const trimmed = input.trim();
@@ -59,7 +41,7 @@ export function createPluginApiFactory(
   registrars: PluginRegistrars,
   runtimeResolver: PluginRuntimeResolver,
 ) {
-  const { registry, registryParams, getHostCronService, pushDiagnostic } = state;
+  const { registry, registryParams, pushDiagnostic } = state;
   const { resolvePluginRuntime, resolveRegisteredChannelRuntime } = runtimeResolver;
 
   return (
@@ -76,13 +58,6 @@ export function createPluginApiFactory(
     const shouldCommitWorkflowSideEffect = () =>
       capturePluginLifecycleAuthority(getPluginRecordRegistry(registry, record), record, {
         registration: true,
-      })?.() === true;
-    // Run-local scratch state bridges admitted hooks and services without
-    // granting a scoped registration process-global workflow side effects.
-    const shouldAccessRunContext = () =>
-      capturePluginLifecycleAuthority(getPluginRecordRegistry(registry, record), record, {
-        registration: true,
-        admittedRuntime: true,
       })?.() === true;
     const boundRegistrars = Object.fromEntries(
       Object.entries(registrars).map(([name, register]) => [
@@ -140,7 +115,6 @@ export function createPluginApiFactory(
               ),
               registerNodeInvokePolicy: (policy) =>
                 bound.registerNodeInvokePolicy(policy, params.pluginConfig),
-              onConversationBindingResolved: bound.registerConversationBindingResolvedHandler,
               registerContextEngine: (id, factory) =>
                 bound.registerContextEngine(id, factory, registrationMode),
               registerAgentToolResultMiddleware: (handler, options) => {
@@ -173,125 +147,6 @@ export function createPluginApiFactory(
                   pluginId: record.id,
                   pluginName: record.name,
                   injection,
-                });
-              },
-              steerActiveRun: async (input) => {
-                if (!resolvePromptInjectionAllowed(params.hookPolicy)) {
-                  return {
-                    steered: false,
-                    reason: `blocked by plugins.entries.${record.id}.hooks.allowPromptInjection=false`,
-                  };
-                }
-                if (registryParams.activateGlobalSideEffects === false) {
-                  return { steered: false, reason: "global side effects disabled" };
-                }
-                const isCurrent = capturePluginLifecycleAuthority(
-                  getPluginRecordRegistry(registry, record),
-                  record,
-                  { registration: true },
-                );
-                const assertCurrent = () => {
-                  if (!isCurrent?.()) {
-                    throw new Error(`Plugin "${record.id}" is no longer loaded`);
-                  }
-                };
-                assertCurrent();
-                const { steerPluginActiveRun } = await loadSteering();
-                assertCurrent();
-                return steerPluginActiveRun({
-                  // SAFETY: The host helper reads the SDK's readonly view of the same config data.
-                  cfg: registryParams.runtime.config.current() as OpenClawConfig,
-                  pluginId: record.id,
-                  pluginName: record.name,
-                  input,
-                  assertCurrent,
-                });
-              },
-              emitAgentEvent: (event) => {
-                if (registryParams.activateGlobalSideEffects === false) {
-                  return { emitted: false, reason: "global side effects disabled" };
-                }
-                if (!shouldCommitWorkflowSideEffect()) {
-                  return { emitted: false, reason: "plugin is not loaded" };
-                }
-                return emitPluginAgentEvent({
-                  pluginId: record.id,
-                  pluginName: record.name,
-                  origin: record.origin,
-                  event,
-                });
-              },
-              setRunContext: (patch) =>
-                shouldAccessRunContext()
-                  ? setPluginRunContext({ pluginId: record.id, patch })
-                  : false,
-              getRunContext: (get) =>
-                shouldAccessRunContext()
-                  ? getPluginRunContext({ pluginId: record.id, get })
-                  : undefined,
-              clearRunContext: (paramsLocal) => {
-                if (!shouldAccessRunContext()) {
-                  return;
-                }
-                clearPluginRunContext({
-                  pluginId: record.id,
-                  runId: paramsLocal.runId,
-                  namespace: paramsLocal.namespace,
-                });
-              },
-              sendSessionAttachment: async (attachment) => {
-                if (registryParams.activateGlobalSideEffects === false) {
-                  return { ok: false, error: "global side effects disabled" };
-                }
-                try {
-                  const { sendPluginSessionAttachment } = await loadAttachments();
-                  if (!isPluginRecordActive(registry, record)) {
-                    return { ok: false, error: "plugin is not loaded" };
-                  }
-                  const runtimeConfig =
-                    // SAFETY: Attachment setup reads the published config without mutating it.
-                    (registryParams.runtime.config?.current?.() as OpenClawConfig | undefined) ??
-                    params.config;
-                  return await sendPluginSessionAttachment({
-                    ...attachment,
-                    config: runtimeConfig,
-                    origin: record.origin,
-                  });
-                } catch (error) {
-                  return {
-                    ok: false,
-                    error: `attachment delivery setup failed: ${formatErrorMessage(error)}`,
-                  };
-                }
-              },
-              scheduleSessionTurn: async (schedule) => {
-                if (registryParams.activateGlobalSideEffects === false) {
-                  return undefined;
-                }
-                await Promise.resolve();
-                return schedulePluginSessionTurn({
-                  pluginId: record.id,
-                  pluginName: record.name,
-                  origin: record.origin,
-                  schedule,
-                  cron: getHostCronService(),
-                  shouldCommit: shouldCommitWorkflowSideEffect,
-                  ownerRegistry: getPluginRecordRegistry(registry, record),
-                });
-              },
-              unscheduleSessionTurnsByTag: async (request) => {
-                if (registryParams.activateGlobalSideEffects === false) {
-                  return { removed: 0, failed: 0 };
-                }
-                await Promise.resolve();
-                if (!shouldCommitWorkflowSideEffect()) {
-                  return { removed: 0, failed: 0 };
-                }
-                return unschedulePluginSessionTurnsByTag({
-                  pluginId: record.id,
-                  origin: record.origin,
-                  cron: getHostCronService(),
-                  request,
                 });
               },
               on: (hookName, handler, opts) =>

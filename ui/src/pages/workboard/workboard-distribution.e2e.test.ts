@@ -16,7 +16,6 @@ import {
   startBuiltControlUiE2eServer,
   waitForConfirmModal,
 } from "../../test-helpers/control-ui-e2e.ts";
-import { workboardUi } from "../../test-helpers/control-ui-workboard-fixture.ts";
 
 const repoRoot = path.resolve(import.meta.dirname, "../../../..");
 const suite = createControlUiE2eSuite({
@@ -74,7 +73,6 @@ suite.define(() => {
       const gateway = await installMockGateway(page, {
         serverBuildId: buildInfo.buildId,
         serverVersion: buildInfo.version ?? undefined,
-        controlUiTabs: workboardUi.controlUiTabs,
         pluginAssetsRequireAuth: true,
         featureMethods: [
           ...defaultControlUiFeatureMethods,

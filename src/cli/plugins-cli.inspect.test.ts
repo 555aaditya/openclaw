@@ -48,7 +48,6 @@ function createInspectReport(
     commands: [],
     cliCommands: [],
     services: [],
-    gatewayDiscoveryServices: [],
     gatewayMethods: [],
     mcpServers: [],
     lspServers: [],
@@ -304,7 +303,6 @@ describe("plugins cli inspect", () => {
       capabilityCount: 1,
       typedHooks: [{ name: "agent_end" }],
       services: ["mem0-background"],
-      gatewayDiscoveryServices: ["mem0-discovery", "mem0-discovery-secondary"],
       mcpServers: [
         { name: "local", hasStdioTransport: true },
         { name: "remote", hasStdioTransport: false },
@@ -321,7 +319,6 @@ describe("plugins cli inspect", () => {
     expect(output).toContain("Policy");
     expect(output).toContain("allowConversationAccess: true");
     expect(output).toContain("Services:\nmem0-background");
-    expect(output).toContain("Gateway discovery:\nmem0-discovery\nmem0-discovery-secondary");
     expect(output).toContain("ClawHub package: openclaw-mem0");
     expect(output).toContain("Artifact kind: npm-pack");
     expect(output).toContain("Npm integrity: sha512-clawpack");
@@ -335,7 +332,6 @@ describe("plugins cli inspect", () => {
     await plugins("inspect", pluginId, "--json");
     expect(JSON.parse(logs.at(-1) ?? "null")).toMatchObject({
       services: ["mem0-background"],
-      gatewayDiscoveryServices: ["mem0-discovery", "mem0-discovery-secondary"],
     });
 
     for (const { id, status, detail, label } of [
@@ -379,7 +375,7 @@ describe("plugins cli inspect", () => {
     mockInspection(
       plugin,
       {
-        gatewayDiscoveryServices: ["mem0-runtime-discovery"],
+        services: ["mem0-runtime-service"],
       },
       [createPluginRecord({ id: "unrelated-plugin", name: "openclaw-mem0" }), plugin],
     );
@@ -394,7 +390,7 @@ describe("plugins cli inspect", () => {
         }),
         expect.any(Function),
       );
-      expect(logs.at(-1)).toContain("Gateway discovery:\nmem0-runtime-discovery");
+      expect(logs.at(-1)).toContain("Services:\nmem0-runtime-service");
     }
   });
 

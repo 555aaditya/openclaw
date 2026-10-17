@@ -19,7 +19,6 @@ const UNGUARDED_RUNTIME_API_PLUGIN_IDS = [
   "browser",
   "canvas",
   "clickclack",
-  "cloudflare",
   "copilot-proxy",
   "feishu",
   "google",

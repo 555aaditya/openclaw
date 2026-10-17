@@ -205,13 +205,6 @@ const DiscordAccountSchemaBase = z
     commands: ProviderCommandsSchema,
     token: registerSensitiveConfigSchema(SecretInputSchema.optional()),
     applicationId: DiscordIdSchema.optional(),
-    activities: z
-      .object({
-        clientSecret: registerSensitiveConfigSchema(z.string().min(1).optional()),
-        applicationId: DiscordSnowflakeStringSchema.optional(),
-      })
-      .strict()
-      .optional(),
     proxy: z.string().optional(),
     allowBots: buildChannelAllowBotsSchema({ allowMentions: true }),
     botLoopProtection: ChannelBotLoopProtectionSchema.optional(),

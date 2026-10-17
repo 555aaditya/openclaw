@@ -228,12 +228,6 @@
       "openclaw/plugin-sdk/time-runtime": [
         "../packages/plugin-sdk/dist/src/plugin-sdk/time-runtime.d.ts"
       ],
-      "openclaw/plugin-sdk/migration": [
-        "../packages/plugin-sdk/dist/src/plugin-sdk/migration.d.ts"
-      ],
-      "openclaw/plugin-sdk/migration-runtime": [
-        "../packages/plugin-sdk/dist/src/plugin-sdk/migration-runtime.d.ts"
-      ],
       "openclaw/plugin-sdk/plugin-state-runtime": [
         "../packages/plugin-sdk/dist/src/plugin-sdk/plugin-state-runtime.d.ts"
       ],

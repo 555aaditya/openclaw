@@ -84,7 +84,7 @@ export function captureSidebarSnapshotModel(
     return null;
   }
   const online = sidebarOnlineOrder(host);
-  const plugins = [...zone.pluginTabs].map(([key, tab]) => ({
+  const plugins = [...zone.pluginSnapshots].map(([key, tab]) => ({
     key,
     pluginId: tab.pluginId,
     id: tab.id,

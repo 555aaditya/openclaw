@@ -236,32 +236,13 @@ function createManifestRegistryFixture(): PluginManifestRegistry {
       activation: { onCapabilities: ["hook"] },
     },
     { id: "external-hook-policy", origin: "global" },
-    {
-      id: "external-trusted-policy",
-      origin: "global",
-      contracts: { trustedToolPolicies: ["workflow-budget"] },
-    },
+
     // Keep the legacy installed-index origin: #76576 must exercise the original
     // context-engine regression even though current manifest origins are narrower.
     {
       id: "lossless-claw",
       kind: "context-engine",
       origin: "installed" as PluginManifestRecord["origin"],
-    },
-    {
-      id: "qa-lab",
-      activation: { onStartup: false },
-      contracts: { workerProviders: ["static-ssh"] },
-    },
-    {
-      id: "external-worker-provider",
-      origin: "global",
-      contracts: { workerProviders: ["external-ssh"] },
-    },
-    {
-      id: "storage-fixture",
-      activation: { onStartup: false },
-      contracts: { storageProviders: ["archive-objects"] },
     },
   ] satisfies Array<Pick<PluginManifestRecord, "id"> & Partial<PluginManifestRecord>>;
 
@@ -314,7 +295,7 @@ function expectStartupPluginIds(params: {
   config: OpenClawConfig;
   activationSourceConfig?: OpenClawConfig;
   env?: NodeJS.ProcessEnv;
-  workerProviderIds?: readonly string[];
+
   expected: readonly string[];
 }) {
   const { expected, ...options } = params;
@@ -875,96 +856,6 @@ describe("resolveGatewayStartupPluginPlanFromRegistry", () => {
     ).toContain("openclaw-qqbot");
   });
 
-  it("keeps an auto-enabled worker provider in a restrictive reload plan", () => {
-    const authoredConfig = {
-      channels: {},
-      cloudWorkers: { profiles: { development: { provider: "static-ssh" } } },
-      plugins: { allow: ["browser"] },
-    } as OpenClawConfig;
-    const effectiveConfig = applyPluginAutoEnable({
-      config: authoredConfig,
-      env: {},
-      manifestRegistry: createManifestRegistryFixture(),
-    }).config;
-
-    expectStartupPluginIds({
-      config: effectiveConfig,
-      activationSourceConfig: authoredConfig,
-      expected: ["browser", "qa-lab"],
-    });
-  });
-
-  it("keeps a configured storage provider in restrictive startup and metadata plans", () => {
-    const authoredConfig: OpenClawConfig = {
-      channels: {},
-      storage: {
-        locations: { archive: { provider: "archive-objects", settings: {}, encryption: "none" } },
-      },
-      plugins: { allow: ["browser"], slots: { memory: "none" } },
-    };
-    const registry = createManifestRegistryFixture();
-    const effectiveConfig = applyPluginAutoEnable({
-      config: authoredConfig,
-      env: {},
-      manifestRegistry: registry,
-    }).config;
-    expectStartupPluginIds({
-      config: effectiveConfig,
-      activationSourceConfig: authoredConfig,
-      expected: ["browser", "storage-fixture"],
-    });
-    expect(
-      resolveGatewayStartupMetadataPluginIds({
-        config: effectiveConfig,
-        activationSourceConfig: authoredConfig,
-        env: {},
-        index: createInstalledPluginIndexFixture(registry),
-      }),
-    ).toEqual(["browser", "storage-fixture"]);
-  });
-
-  it("keeps durable external worker-provider owners behind explicit enablement", () => {
-    expectStartupPluginIds({
-      config: { channels: {} } as OpenClawConfig,
-      workerProviderIds: ["external-ssh"],
-      expected: ["browser", "memory-core"],
-    });
-    expectStartupPluginIds({
-      config: {
-        channels: {},
-        plugins: { entries: { "external-worker-provider": { enabled: true } } },
-      } as OpenClawConfig,
-      workerProviderIds: ["external-ssh"],
-      expected: ["browser", "memory-core", "external-worker-provider"],
-    });
-  });
-
-  it("keeps durable worker-provider owners behind disable and allowlist gates", () => {
-    expectStartupPluginIds({
-      config: { channels: {}, plugins: { enabled: false } } as OpenClawConfig,
-      workerProviderIds: ["static-ssh"],
-      expected: [],
-    });
-    expectStartupPluginIds({
-      config: {
-        channels: {},
-        plugins: { entries: { "qa-lab": { enabled: false } } },
-      } as OpenClawConfig,
-      workerProviderIds: ["static-ssh"],
-      expected: ["browser", "memory-core"],
-    });
-    expectStartupPluginIds({
-      config: { channels: {}, plugins: { deny: ["qa-lab"] } } as OpenClawConfig,
-      workerProviderIds: ["static-ssh"],
-      expected: ["browser", "memory-core"],
-    });
-    expectStartupPluginIds({
-      config: { channels: {}, plugins: { allow: ["browser"] } } as OpenClawConfig,
-      workerProviderIds: ["static-ssh"],
-      expected: ["browser"],
-    });
-  });
-
   it("keeps effective-only bundled sidecars behind restrictive allowlists", () => {
     const rawConfig = createStartupConfig({ allowPluginIds: ["browser"] });
     const effectiveConfig = {
@@ -1218,11 +1109,11 @@ describe("resolveGatewayStartupPluginPlanFromRegistry", () => {
     const config: OpenClawConfig = {
       agents: { defaults: { model: "openai/gpt-test" } },
       channels: { "demo-other-channel": { token: "configured" } },
-      plugins: { allow: ["browser"], deny: ["qa-lab"], slots: { memory: "none" } },
+      plugins: { allow: ["browser"], slots: { memory: "none" } },
     };
     const activationSourceConfig: OpenClawConfig = {
       channels: { "demo-channel": { token: "configured" } },
-      cloudWorkers: { profiles: { development: { provider: "static-ssh" } } },
+
       plugins: {
         allow: ["demo-channel"],
         entries: { openai: { enabled: false } },

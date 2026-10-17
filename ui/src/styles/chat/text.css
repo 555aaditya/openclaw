@@ -721,22 +721,6 @@
   line-break: auto;
 }
 
-.chat-text a.markdown-github-item[data-link-reader-tone="positive"] {
-  --github-item-tone: var(--ok);
-}
-
-.chat-text a.markdown-github-item[data-link-reader-tone="accent"] {
-  --github-item-tone: var(--pr-merged);
-}
-
-.chat-text a.markdown-github-item[data-link-reader-tone="negative"] {
-  --github-item-tone: var(--danger);
-}
-
-.chat-text a.markdown-github-item[data-link-reader-tone="attention"] {
-  --github-item-tone: var(--warn);
-}
-
 .chat-text a.markdown-github-item:hover,
 .chat-text a.markdown-github-item:focus-visible {
   background: var(--github-item-hover-bg);

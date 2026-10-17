@@ -9,6 +9,7 @@ import {
   UserChannelIdentitySchema,
 } from "../../packages/gateway-protocol/src/schema/users.js";
 import type { GatewayConfig } from "../config/types.gateway.js";
+import type { GatewayAccessGrantRef } from "../gateway/operator-access-policy.types.js";
 import { sha256Base64Url } from "../infra/crypto-digest.js";
 import { executeSqliteQuerySync, executeSqliteQueryTakeFirstSync } from "../infra/kysely-sync.js";
 import { generateSecureUuid } from "../infra/secure-random.js";
@@ -16,7 +17,6 @@ import type { EngineConnection } from "../infra/sql-connection.js";
 import { deferSqlitePostCommitPublication } from "../infra/sqlite-post-commit.js";
 import { getAdmittedSqliteSchemaFacts } from "../infra/sqlite-schema-facts.js";
 import { runSqliteDeferredTransactionSync } from "../infra/sqlite-transaction.js";
-import type { GatewayAccessGrantRef } from "../plugins/gateway-access-policy.types.js";
 import { updateConfigMachineStateInDatabase } from "./config-machine-state-write.js";
 import { readConfigMachineStateRowInDatabase } from "./config-machine-state.js";
 import { withExistingOpenClawStateDatabaseReadOnly } from "./openclaw-state-db-readonly.js";

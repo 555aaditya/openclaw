@@ -18,7 +18,6 @@ on:
       - ".github/codeql/**"
       - ".github/workflows/**"
       - "extensions/acpx/src/**"
-      - "extensions/bonjour/src/advertiser.ts"
       - "extensions/browser/src/browser/chrome-mcp.ts"
       - "extensions/browser/src/browser/chrome.executables.ts"
       - "extensions/browser/src/browser/chrome.ts"

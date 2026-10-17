@@ -49,8 +49,6 @@ Capabilities are the public **native plugin** model inside OpenClaw. Native plug
 | Web fetch              | `api.registerWebFetchProvider(...)`              | `firecrawl`                                                 |
 | Web search             | `api.registerWebSearchProvider(...)`             | `brave`, `firecrawl`, `google`                              |
 | Channel / messaging    | `api.registerChannel(...)`                       | `matrix`, `msteams`                                         |
-| Gateway discovery      | `api.registerGatewayDiscoveryService(...)`       | `bonjour`                                                   |
-| Migration              | `api.registerMigrationProvider(...)`             | `migrate-claude`, `migrate-hermes`                          |
 
 <Note>
 A plugin that registers only hooks is **hook-only**. Plugins with tools, commands, background services, or routes but no capabilities are **non-capability** plugins. Both patterns remain supported; gateway discovery is an explicit capability listed above.

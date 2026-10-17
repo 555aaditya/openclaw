@@ -209,10 +209,10 @@ boundary. Migrate now:
 - **`onResolution` in `before_tool_call`** now uses the typed
   `PluginApprovalResolution` union (`allow-once` / `allow-always` / `deny` /
   `timeout` / `cancelled`) instead of a free-form `string`.
-- **`api.registerSessionExtension` / `api.enqueueNextTurnInjection`** remain
-  as top-level compatibility aliases. New plugins should use
-  `api.session.state.registerSessionExtension(...)` and
-  `api.session.workflow.enqueueNextTurnInjection(...)`.
+- **`api.enqueueNextTurnInjection`** remains a top-level compatibility alias.
+  New plugins should use `api.session.workflow.enqueueNextTurnInjection(...)`.
+  Session extension registration and its grouped API have been removed; see
+  [Retired plugin capabilities](/plugins/sdk-migration/removed-surfaces#retired-plugin-capabilities).
 
 For the full list - memory capability registration, provider thinking
 profile, external auth providers, provider discovery types, task runtime

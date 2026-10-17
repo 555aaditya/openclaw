@@ -1342,10 +1342,7 @@ const policyTestWatches: readonly PolicyTestWatch[] = [
       "extensions/browser/chrome-extension/modules/relay-command-handler.js",
     ],
   },
-  {
-    testFile: "extensions/crabbox/src/crabbox-worker-desktop-windows.test.ts",
-    watchGlobs: ["extensions/crabbox/src/crabbox-worker-provider.ts"],
-  },
+
   {
     testFile: "extensions/imessage/src/send.sqlite.test.ts",
     watchGlobs: ["extensions/imessage/src/chat-db.worker.ts"],
@@ -1734,16 +1731,7 @@ const policyTestWatches: readonly PolicyTestWatch[] = [
       "src/gateway/worker-environments/store.kernel.ts",
     ],
   })),
-  {
-    testFile: "src/gateway/worker-environments/provider-crabbox-runtime-preflight.test.ts",
-    watchGlobs: [
-      "extensions/crabbox/src/crabbox-worker-provider.ts",
-      "extensions/crabbox/src/crabbox-worker-preflight.ts",
-      "extensions/crabbox/src/crabbox-worker-provision-commands.ts",
-      "src/gateway/worker-environments/store.worker.ts",
-      "src/gateway/worker-environments/store.kernel.ts",
-    ],
-  },
+
   {
     testFile: "src/gateway/worker-environments/repository-workspace-startup.test.ts",
     watchGlobs: ["src/node-host/node-worker-journal.worker.ts"],

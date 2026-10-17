@@ -507,9 +507,7 @@ export class ChatTurnRouter {
     if (recordedOperation.kind === "gateway-config-setup") {
       return await this.startWizard(this.wizard.startSetup("gateway"));
     }
-    if (recordedOperation.kind === "memory-import") {
-      return await this.startWizard(this.wizard.startMemoryImport());
-    }
+
     if (recordedOperation.kind === "model-setup") {
       return this.startModelSetup();
     }

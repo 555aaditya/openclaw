@@ -125,10 +125,8 @@ local proof.
 
     Host-trusted plugin surfaces are manifest-gated too and require explicit
     declaration for installed plugins: `api.registerAgentToolResultMiddleware(...)`
-    needs each target runtime listed in `contracts.agentToolResultMiddleware`,
-    and `api.registerTrustedToolPolicy(...)` needs each policy id in
-    `contracts.trustedToolPolicies`. These declarations keep install-time
-    inspection and runtime registration aligned.
+    needs each target runtime listed in `contracts.agentToolResultMiddleware`.
+    These declarations keep install-time inspection and runtime registration aligned.
 
     For every manifest field, see [Plugin manifest](/plugins/manifest).
 

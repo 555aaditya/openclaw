@@ -231,64 +231,54 @@ describe("SQLite session entry cache", () => {
     },
   );
 
-  it.each(["plugin-owned-state", "promoted-slots"] as const)(
-    "cleans selected plugin metadata without materializing siblings or saved prompts (%s)",
-    async (mode) => {
-      const scope = createSessionScope("plugin-cleanup");
-      vi.stubEnv("OPENCLAW_STATE_DIR", scope.env.OPENCLAW_STATE_DIR);
-      const siblingScope = { ...scope, sessionKey: "agent:main:plugin-cleanup-sibling" };
-      const { skillsSnapshot, systemPromptReport } = savedPrompts(
-        "unneeded cleanup prompt".repeat(4096),
-      );
-      const entry = {
-        sessionId: "plugin-cleanup",
-        updatedAt: 1,
-        skillsSnapshot,
-        systemPromptReport,
-        pluginExtensions: { fixture: { state: { active: true } } },
-        pluginExtensionSlotKeys: { fixture: { state: "fixtureState" } },
-        fixtureState: { active: true },
-      };
-      await upsertSessionEntryCore(scope, entry);
-      await upsertSessionEntryCore(siblingScope, { ...entry, sessionId: "plugin-cleanup-sibling" });
-      const siblingBefore = loadSessionEntry(siblingScope);
-      expect(siblingBefore).toBeDefined();
-      const database = openOpenClawAgentDatabase(scope);
+  it("cleans selected plugin metadata without materializing siblings or saved prompts", async () => {
+    const scope = createSessionScope("plugin-cleanup");
+    vi.stubEnv("OPENCLAW_STATE_DIR", scope.env.OPENCLAW_STATE_DIR);
+    const siblingScope = { ...scope, sessionKey: "agent:main:plugin-cleanup-sibling" };
+    const { skillsSnapshot, systemPromptReport } = savedPrompts(
+      "unneeded cleanup prompt".repeat(4096),
+    );
+    const entry = {
+      sessionId: "plugin-cleanup",
+      updatedAt: 1,
+      skillsSnapshot,
+      systemPromptReport,
+      pluginExtensions: { fixture: { state: { active: true } } },
+    };
+    await upsertSessionEntryCore(scope, entry);
+    await upsertSessionEntryCore(siblingScope, { ...entry, sessionId: "plugin-cleanup-sibling" });
+    const siblingBefore = loadSessionEntry(siblingScope);
+    expect(siblingBefore).toBeDefined();
+    const database = openOpenClawAgentDatabase(scope);
 
-      parseSessionEntryCalls.mockClear();
-      const clone = vi.spyOn(globalThis, "structuredClone");
-      try {
-        expect(
-          await cleanupPluginHostSessionStore({
-            agentId: scope.agentId,
-            storePath: database.path,
-            sessionKey: scope.sessionKey,
-            pluginId: "fixture",
-            sessionEntrySlotKeys: new Set(["fixtureState"]),
-            mode,
-          }),
-        ).toBe(1);
-        expect(
-          clone.mock.calls.some(
-            ([value]) => isRecord(value) && value.sessionId === "plugin-cleanup-sibling",
-          ),
-        ).toBe(false);
-      } finally {
-        clone.mockRestore();
-      }
+    parseSessionEntryCalls.mockClear();
+    const clone = vi.spyOn(globalThis, "structuredClone");
+    try {
       expect(
-        parseSessionEntryCalls.mock.calls.every(([json]) => Buffer.byteLength(json) < 1024),
-      ).toBe(true);
-      const cleaned = loadSessionEntry(scope);
-      expect(cleaned?.skillsSnapshot).toEqual(skillsSnapshot);
-      expect(cleaned?.systemPromptReport).toEqual(systemPromptReport);
-      expect(cleaned).not.toHaveProperty("fixtureState");
-      expect(cleaned?.pluginExtensions).toEqual(
-        mode === "promoted-slots" ? entry.pluginExtensions : undefined,
-      );
-      expect(loadSessionEntry(siblingScope)).toEqual(siblingBefore);
-    },
-  );
+        await cleanupPluginHostSessionStore({
+          agentId: scope.agentId,
+          storePath: database.path,
+          sessionKey: scope.sessionKey,
+          pluginId: "fixture",
+        }),
+      ).toBe(1);
+      expect(
+        clone.mock.calls.some(
+          ([value]) => isRecord(value) && value.sessionId === "plugin-cleanup-sibling",
+        ),
+      ).toBe(false);
+    } finally {
+      clone.mockRestore();
+    }
+    expect(
+      parseSessionEntryCalls.mock.calls.every(([json]) => Buffer.byteLength(json) < 1024),
+    ).toBe(true);
+    const cleaned = loadSessionEntry(scope);
+    expect(cleaned?.skillsSnapshot).toEqual(skillsSnapshot);
+    expect(cleaned?.systemPromptReport).toEqual(systemPromptReport);
+    expect(cleaned?.pluginExtensions).toBeUndefined();
+    expect(loadSessionEntry(siblingScope)).toEqual(siblingBefore);
+  });
 
   it("omits saved prompts from usage inventory while preserving full transcript reads", async () => {
     const scope = createSessionScope("usage-inventory");

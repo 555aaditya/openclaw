@@ -1,4 +1,4 @@
-// Control UI plugin-tab cookie auth lets an authenticated UI open gateway-auth plugin iframes.
+// Read-scoped cookie auth lets an authenticated Control UI load native plugin browser assets.
 import { createHash, createHmac, randomBytes } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { TLSSocket } from "node:tls";
@@ -7,12 +7,7 @@ import { containsAsciiControlCharacter } from "@openclaw/normalization-core/stri
 import type { GatewayPluginReadCookieV1 } from "../plugins/gateway-ingress.types.js";
 import { safeEqualSecret } from "../security/secret-equal.js";
 import { intersectOperatorScopes } from "../shared/operator-scope-compat.js";
-import {
-  CONTROL_UI_PLUGIN_AUTH_GRANT_TTL_MS,
-  CONTROL_UI_PLUGIN_AUTH_PROBE_MESSAGE,
-  CONTROL_UI_PLUGIN_AUTH_PROBE_ORIGIN_QUERY,
-  CONTROL_UI_PLUGIN_AUTH_PROBE_QUERY,
-} from "./control-ui-contract.js";
+import { CONTROL_UI_PLUGIN_AUTH_GRANT_TTL_MS } from "./control-ui-contract.js";
 import { controlUiPluginAssetPrefix } from "./control-ui-plugin-assets-contract.js";
 import type { ControlUiPluginTabAuthGrant } from "./control-ui-plugin-tabs.js";
 import {
@@ -332,48 +327,4 @@ export function resolveControlUiPluginAuthCookieGrants(
     }
   }
   return grants.toSorted((left, right) => right.path.length - left.path.length);
-}
-
-/**
- * Confirms that the browser actually sent a grant from inside the opaque
- * sandbox. Secure contexts can still block third-party cookies, so bootstrap
- * acknowledgement alone is not enough to mount the plugin frame.
- */
-export function respondControlUiPluginAuthCookieProbe(
-  req: IncomingMessage,
-  res: ServerResponse,
-): boolean {
-  const ingress = getRemoteControlUiIngressContext(req);
-  assertRemoteControlUiIngressCurrent(ingress);
-  const url = new URL(req.url ?? "/", "http://localhost");
-  const nonce = url.searchParams.get(CONTROL_UI_PLUGIN_AUTH_PROBE_QUERY);
-  if (nonce === null) {
-    return false;
-  }
-  const targetOrigin = url.searchParams.get(CONTROL_UI_PLUGIN_AUTH_PROBE_ORIGIN_QUERY);
-  const parsedOrigin = targetOrigin ? URL.parse(targetOrigin) : null;
-  const validTargetOrigin =
-    parsedOrigin?.origin === targetOrigin &&
-    (parsedOrigin?.protocol === "https:" || parsedOrigin?.protocol === "http:");
-  if (!/^[a-zA-Z0-9_-]{16,128}$/.test(nonce) || !validTargetOrigin) {
-    res.statusCode = 400;
-    res.setHeader("Cache-Control", "no-store");
-    res.setHeader("Content-Type", "text/plain; charset=utf-8");
-    res.end("Invalid plugin frame auth check");
-    return true;
-  }
-  res.statusCode = 200;
-  res.setHeader("Cache-Control", "no-store");
-  res.setHeader("Content-Type", "text/html; charset=utf-8");
-  res.setHeader(
-    "Content-Security-Policy",
-    `default-src 'none'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors ${ingress ? [ingress.publicOrigin, ...ingress.frameAncestors].join(" ") : "'self'"}`,
-  );
-  res.setHeader("Referrer-Policy", "no-referrer");
-  res.setHeader("X-Content-Type-Options", "nosniff");
-  const message = JSON.stringify({ type: CONTROL_UI_PLUGIN_AUTH_PROBE_MESSAGE, nonce });
-  res.end(
-    `<!doctype html><script>parent.postMessage(${message}, ${JSON.stringify(targetOrigin)})</script>`,
-  );
-  return true;
 }

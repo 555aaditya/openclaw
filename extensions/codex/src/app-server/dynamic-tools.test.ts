@@ -242,13 +242,6 @@ function specNames(specs: readonly CodexDynamicToolSpec[]): string[] {
   return flattenSpecsWithNamespace(specs).map((tool) => tool.name);
 }
 
-function expectContextFields(context: unknown, fields: Record<string, unknown>) {
-  const record = requireRecord(context, "hook context");
-  for (const [key, value] of Object.entries(fields)) {
-    expect(record[key]).toEqual(value);
-  }
-}
-
 function expectToolResult(value: unknown, expected: AgentToolResult<unknown>) {
   const result = requireRecord(value, "tool result");
   expect(result.content).toEqual(expected.content);
@@ -1258,37 +1251,16 @@ describe("createCodexDynamicToolBridge", () => {
     const config = { session: { store: "/tmp/openclaw-session-store.json" } };
     const registry = createEmptyPluginRegistry();
     const middlewareContexts: Record<string, unknown>[] = [];
-    const legacyContexts: Record<string, unknown>[] = [];
     const middleware = vi.fn(async (eventValue: unknown, ctx: Record<string, unknown>) => {
       middlewareContexts.push(ctx);
       return undefined;
     });
-    const factory = async (codex: {
-      on: (
-        event: "tool_result",
-        handler: (
-          event: unknown,
-          ctx: Record<string, unknown>,
-        ) => Promise<{ result: AgentToolResult<unknown> } | void>,
-      ) => void;
-    }) => {
-      codex.on("tool_result", async (eventValue, ctx) => {
-        legacyContexts.push(ctx);
-      });
-    };
     registry.agentToolResultMiddlewares.push({
       pluginId: "tokenjuice",
       pluginName: "Tokenjuice",
       rawHandler: middleware,
       handler: middleware,
       runtimes: ["codex"],
-      source: "test",
-    });
-    registry.codexAppServerExtensionFactories.push({
-      pluginId: "legacy",
-      pluginName: "Legacy",
-      rawFactory: factory,
-      factory,
       source: "test",
     });
     setActivePluginRegistry(registry);
@@ -1308,7 +1280,7 @@ describe("createCodexDynamicToolBridge", () => {
 
     expectExecuteCall(execute, { callId: "call-1", args: { command: "pwd" } });
     expect(middlewareContexts).toHaveLength(1);
-    expectContextFields(middlewareContexts[0], {
+    expect(middlewareContexts[0]).toMatchObject({
       runtime: "codex",
       agentId: "agent-1",
       sessionId: "session-1",
@@ -1316,14 +1288,6 @@ describe("createCodexDynamicToolBridge", () => {
       runId: "run-1",
     });
     expect(middlewareContexts[0]).not.toHaveProperty("config");
-    expect(legacyContexts).toHaveLength(1);
-    expectContextFields(legacyContexts[0], {
-      agentId: "agent-1",
-      sessionId: "session-1",
-      sessionKey: "agent:agent-1:session-1",
-      runId: "run-1",
-    });
-    expect(legacyContexts[0]).not.toHaveProperty("config");
   });
 
   it.each([false, true])(

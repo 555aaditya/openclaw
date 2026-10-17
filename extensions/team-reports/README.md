@@ -1,8 +1,8 @@
 # Team Reports
 
 Official external OpenClaw plugin for daily, weekly, and monthly GitHub activity reports
-with optional Discord discussion, model-written summaries, and a **Reports**
-tab in the Control UI. Installed on demand (`openclaw plugins install @openclaw/team-reports`);
+with optional Discord discussion, model-written summaries, and authenticated
+report pages. Installed on demand (`openclaw plugins install @openclaw/team-reports`);
 source checkouts load it from `extensions/team-reports`. Disabled by default.
 
 Configure `plugins.entries.team-reports.config` with a GitHub token or
@@ -38,7 +38,6 @@ after service start, and intraday runs keep their aligned UTC boundaries.
 Set `schedule.enabled: false` to stop automatic collection and catch-up while keeping
 stored reports, work sessions, and explicit `generate` commands available. Status
 then reports `scheduleEnabled: false` with no scheduled runs. The default is `true`.
-The Control UI tab opens at `/reports` (prefixed by the Control UI base path).
 Model summary calls are optional; set `summaries.enabled: false` for text without a model.
 
 Failed activity collection preserves the previous daily report, per-person

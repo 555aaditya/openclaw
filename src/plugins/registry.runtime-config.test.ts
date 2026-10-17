@@ -1,4 +1,3 @@
-import { AsyncResource } from "node:async_hooks";
 import os from "node:os";
 import path from "node:path";
 import { setImmediate } from "node:timers/promises";
@@ -378,52 +377,6 @@ describe("plugin registry runtime config scope", () => {
       intercept.mockRestore();
       await instance.dispose();
       markPluginRegistryRetired(successor);
-    }
-  });
-
-  it("keeps adopted hosted-media resolution scoped without changing pure media helpers", async () => {
-    class RetiredRegistry {
-      readonly fixtureLabel = "RetiredRegistry";
-    }
-    const runtime = createPluginRuntime();
-    const { builder, record, api } = registered("hosted-media", {}, runtime);
-    const instance = expectDefined(getPluginInstance(record), "media instance");
-    api.registerHostedMediaResolver((url) =>
-      url === "hosted:fixture" ? "/synthetic/resolved.txt" : undefined,
-    );
-    builder.registry.plugins.push(record);
-    const media = api.runtime.media;
-    expect(media.detectMime).toBe(runtime.media.detectMime);
-    const current = { ...builder.registry };
-    const resource = (() => {
-      const previous = Object.assign(new RetiredRegistry(), builder.registry);
-      markPluginRegistryActive(previous);
-      const captured = instance.run(() => new AsyncResource("hosted-media-retention"));
-      markPluginRegistryActive(current);
-      markPluginRegistryRetired(previous);
-      return captured;
-    })();
-    const readFile = vi.fn(async (_filePath: string) => Buffer.from("synthetic media"));
-    const load = () =>
-      media.loadWebMedia("hosted:fixture", {
-        localRoots: "any",
-        optimizeImages: false,
-        readFile,
-      });
-    try {
-      await setImmediate();
-      expect(queryObjects(RetiredRegistry)).toBe(0);
-      await expect(resource.runInAsyncScope(load)).resolves.toMatchObject({
-        buffer: Buffer.from("synthetic media"),
-        fileName: "resolved.txt",
-      });
-      expect(readFile.mock.calls[0]?.[0]).toBe("/synthetic/resolved.txt");
-      await withPluginRuntimeRegistryScope(createEmptyPluginRegistry(), load);
-      expect(readFile.mock.calls[1]?.[0]).toBe("hosted:fixture");
-    } finally {
-      resource.emitDestroy();
-      await instance.dispose();
-      markPluginRegistryRetired(current);
     }
   });
 

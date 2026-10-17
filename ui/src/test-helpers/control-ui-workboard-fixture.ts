@@ -12,14 +12,4 @@ const workboardNativePlugins: NativeControlUiPluginFixture[] = [
 
 export const workboardUi = {
   nativePlugins: workboardNativePlugins,
-  controlUiTabs: [
-    {
-      pluginId: "workboard",
-      id: "workboard",
-      label: "Workboard",
-      placement: "route:workboard",
-      icon: "kanban",
-      group: "control",
-    },
-  ],
-} satisfies Pick<ControlUiMockGatewayScenario, "nativePlugins" | "controlUiTabs">;
+} satisfies Pick<ControlUiMockGatewayScenario, "nativePlugins">;

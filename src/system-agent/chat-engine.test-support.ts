@@ -10,7 +10,6 @@ import {
 } from "../agents/execution-auth-binding.js";
 import { committedConfigFiles as hostedConfigFiles } from "../commands/committed-config.test-support.js";
 import type { ConfigFileSnapshot, OpenClawConfig } from "../config/types.openclaw.js";
-import type { runSetupMemoryImportStep } from "../wizard/setup.memory-import.js";
 import { runSystemAgentTurnWithDeps as runSystemAgentTurnWithDepsImpl } from "./agent-turn.test-support.js";
 import {
   SystemAgentChatEngine as RuntimeSystemAgentChatEngine,
@@ -47,12 +46,9 @@ const mocks = vi.hoisted(() => ({
   setupChannels: vi.fn(),
   setupSkills: vi.fn(),
   runSearchSetupFlow: vi.fn(),
-  runSetupMemoryImportStep: vi.fn(),
   writeWizardConfigFile: vi.fn(),
   sharedVerifiedInference: undefined as SystemAgentVerifiedInferenceBinding | undefined,
 }));
-
-export type MemoryImportStepParams = Parameters<typeof runSetupMemoryImportStep>[0];
 
 vi.mock("../config/config.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../config/config.js")>()),
@@ -78,10 +74,6 @@ vi.mock("../commands/onboard-skills.js", async (importOriginal) => ({
 vi.mock("../flows/search-setup.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../flows/search-setup.js")>()),
   runSearchSetupFlow: mocks.runSearchSetupFlow,
-}));
-
-vi.mock("../wizard/setup.memory-import.js", () => ({
-  runSetupMemoryImportStep: mocks.runSetupMemoryImportStep,
 }));
 
 vi.mock("./verified-inference.js", async (importOriginal) => {
@@ -340,7 +332,6 @@ export class SystemAgentChatEngine extends RuntimeSystemAgentChatEngine {
       runSkillsSetupWizard,
       runSearchSetupWizard,
       runGatewaySetupWizard,
-      runMemoryImportWizard,
       appendAuditEntry,
       executeOperation,
       ...engineOptions
@@ -372,7 +363,6 @@ export class SystemAgentChatEngine extends RuntimeSystemAgentChatEngine {
           ...(runSkillsSetupWizard ? { runSkillsSetupWizard } : {}),
           ...(runSearchSetupWizard ? { runSearchSetupWizard } : {}),
           ...(runGatewaySetupWizard ? { runGatewaySetupWizard } : {}),
-          ...(runMemoryImportWizard ? { runMemoryImportWizard } : {}),
           ...(appendAuditEntry ? { appendAuditEntry } : {}),
         },
         ...(executeOperation ? { executeOperation } : {}),
@@ -418,7 +408,6 @@ afterEach(() => {
   mocks.setupChannels.mockReset();
   mocks.setupSkills.mockReset();
   mocks.runSearchSetupFlow.mockReset();
-  mocks.runSetupMemoryImportStep.mockReset();
   mocks.writeWizardConfigFile.mockReset();
   for (const dir of tempDirs.splice(0)) {
     fs.rmSync(dir, { recursive: true, force: true });

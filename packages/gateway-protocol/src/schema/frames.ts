@@ -1,11 +1,7 @@
 import type { Static } from "typebox";
 import { Type } from "typebox";
 import { closedObject } from "./closed-object.js";
-import {
-  ControlUiLinkReaderDescriptorSchema,
-  ControlUiPluginTabSchema,
-  ControlUiPluginWidgetKindSchema,
-} from "./plugins.js";
+import { ControlUiPluginWidgetKindSchema } from "./plugins.js";
 import {
   GatewayClientIdSchema,
   GatewayClientModeSchema,
@@ -111,10 +107,8 @@ export const HelloOkSchema = closedObject({
   // Public Control UI origin and mount path, independent of local SSH tunnels.
   controlUiUrl: Type.Optional(NonEmptyString),
   // Additive: plugin-declared Control UI tabs (surface "tab" descriptors).
-  controlUiTabs: Type.Optional(Type.Array(ControlUiPluginTabSchema)),
   // Additive: active plugin widget kinds whose renderers ship in the trusted UI bundle.
   controlUiWidgetKinds: Type.Optional(Type.Array(ControlUiPluginWidgetKindSchema)),
-  controlUiLinkReaders: Type.Optional(Type.Array(ControlUiLinkReaderDescriptorSchema)),
   pluginSurfaceUrls: Type.Optional(Type.Record(NonEmptyString, NonEmptyString)),
   auth: closedObject({
     method: Type.Optional(

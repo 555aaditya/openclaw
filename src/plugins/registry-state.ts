@@ -202,7 +202,6 @@ export function createPluginRegistryState(registryParams: PluginRegistryParams) 
     getNativeCatalogGate,
     allowProcessHomeSessionCatalogs: registryParams.allowProcessHomeSessionCatalogs ?? true,
     coreGatewayMethods,
-    getHostCronService: () => registryParams.hostServices?.cron,
     pluginsWithChannelRegistrationConflict: new Set<string>(),
     createRegistration,
     createIdentityRegistration: <T extends object>(record: PluginRecord, contribution: T) =>

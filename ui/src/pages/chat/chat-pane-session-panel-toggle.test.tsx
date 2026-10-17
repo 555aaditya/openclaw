@@ -2,17 +2,13 @@ import { createMemo, createRoot, createSignal } from "solid-js";
 import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import "./components/chat-sidebar-region.runtime.tsx";
 import "../../components/browser/browser-panel.ts";
-import type { ControlUiLinkReaderDescriptor } from "../../../../src/shared/control-ui-link-reader.js";
 import { createDeferred } from "../../../../test/helpers/promise.js";
 import {
   createBrowserClient,
   stubScreenshotMedia,
   createBrowserPanelTestMetrics,
 } from "../../components/browser/browser-panel-controller-test-support.ts";
-import {
-  LINK_READER_PANEL_TOGGLE_EVENT,
-  PLUGIN_PANEL_TOGGLE_EVENT,
-} from "../../components/panel-toggle-contract.ts";
+import { PLUGIN_PANEL_TOGGLE_EVENT } from "../../components/panel-toggle-contract.ts";
 import {
   rememberSessionPanelToggle,
   type SessionPanelToggleSlot,
@@ -33,17 +29,6 @@ import {
 import type { ChatPageHost } from "./chat-state-host.ts";
 import { createPageState } from "./chat-state-page.ts";
 import { isSidebarSlotVisible } from "./sidebar-layout.ts";
-
-const reader: ControlUiLinkReaderDescriptor = {
-  pluginId: "forge",
-  id: "items",
-  label: "Forge",
-  linkReader: {
-    hosts: ["forge.example"],
-    pathPattern: "^/items/[0-9]+$",
-    detailMethod: "forge.item",
-  },
-};
 
 function fixture() {
   const definitions = createDeferred<CustomElementConstructor>();
@@ -67,7 +52,6 @@ function fixture() {
   const owner = {
     renderRoot: root,
     state,
-    linkReaders: [reader],
     pluginPanels: ["review/document"] as const,
     updateComplete: Promise.resolve(),
   };
@@ -88,18 +72,12 @@ function fixture() {
   });
   onTestFinished(dispose);
 
-  const event = (url = "https://forge.example/items/1") =>
-    new CustomEvent(LINK_READER_PANEL_TOGGLE_EVENT, {
-      cancelable: true,
-      detail: { url, open: true },
-    });
   return {
     flush,
     dispose,
     definitions,
     commit,
     deliverPanelEvent,
-    event,
     owner,
     root,
     pending,
@@ -152,123 +130,6 @@ describe("plugin panel intent delivery", () => {
   );
 });
 
-describe("session link-reader intent delivery", () => {
-  it.each(["ready", "closed", "session"] as const)(
-    "waits for the recipient commit before delivering an intent (%s)",
-    async (outcome) => {
-      vi.useFakeTimers();
-      const f = fixture();
-      const recipientCommit = createDeferred<boolean>();
-      const recipient = document.createElement("openclaw-link-reader-panel");
-      Object.defineProperty(recipient, "updateComplete", { value: recipientCommit.promise });
-      f.root.append(recipient);
-      const event = f.event();
-      window.dispatchEvent(event);
-      f.definitions.resolve(HTMLElement);
-      f.commit.resolve(true);
-      await vi.advanceTimersByTimeAsync(0);
-      expect(f.deliverPanelEvent).not.toHaveBeenCalled();
-      if (outcome === "closed") {
-        window.dispatchEvent(
-          new CustomEvent(LINK_READER_PANEL_TOGGLE_EVENT, { detail: { open: false } }),
-        );
-      } else if (outcome === "session") {
-        f.state.sessionKey = "session-b";
-      }
-      recipientCommit.resolve(true);
-      await vi.advanceTimersByTimeAsync(0);
-      expect(f.pending.size).toBe(0);
-      if (outcome === "ready") {
-        expect(f.deliverPanelEvent).toHaveBeenCalledExactlyOnceWith("link-reader", event);
-      } else {
-        expect(f.deliverPanelEvent).not.toHaveBeenCalled();
-      }
-    },
-  );
-
-  it("delivers every buffered reader intent in order after the lazy commit", async () => {
-    const f = fixture();
-    const first = f.event();
-    const second = f.event("https://forge.example/items/2");
-    rememberSessionPanelToggle("link-reader", first);
-    rememberSessionPanelToggle("link-reader", second);
-    f.flush();
-    expect(first.defaultPrevented).toBe(true);
-    expect(second.defaultPrevented).toBe(true);
-    expect(f.state.sidebarLayout.columns[0]?.panels).toEqual([
-      { id: "link-reader", slot: "link-reader" },
-    ]);
-    expect(f.deliverPanelEvent).not.toHaveBeenCalled();
-    f.definitions.resolve(HTMLElement);
-    await Promise.resolve();
-    expect(f.deliverPanelEvent).not.toHaveBeenCalled();
-    f.commit.resolve(true);
-    await vi.waitFor(() => expect(f.deliverPanelEvent).toHaveBeenCalledTimes(2));
-    expect(f.deliverPanelEvent.mock.calls).toEqual([
-      ["link-reader", first],
-      ["link-reader", second],
-    ]);
-    expect(f.pending.size).toBe(0);
-  });
-
-  it("does not append a new session intent to a retired pending batch", async () => {
-    const f = fixture();
-    const old = f.event();
-    window.dispatchEvent(old);
-    f.state.sessionKey = "session-b";
-    const current = f.event("https://forge.example/items/2");
-    window.dispatchEvent(current);
-    f.definitions.resolve(HTMLElement);
-    f.commit.resolve(true);
-    await vi.waitFor(() => expect(f.deliverPanelEvent).toHaveBeenCalledTimes(1));
-    expect(f.deliverPanelEvent).toHaveBeenCalledWith("link-reader", current);
-    expect(f.pending.size).toBe(0);
-  });
-
-  it.each([
-    { change: "close", ready: false },
-    { change: "close", ready: true },
-    { change: "session", ready: true },
-    { change: "capability", ready: true },
-  ])(
-    "retires a pending batch after $change (definitions ready=$ready)",
-    async ({ change, ready }) => {
-      const f = fixture();
-      window.dispatchEvent(f.event());
-      window.dispatchEvent(f.event("https://forge.example/items/2"));
-      if (ready) {
-        f.definitions.resolve(HTMLElement);
-        await Promise.resolve();
-        await Promise.resolve();
-      }
-      if (change === "close") {
-        window.dispatchEvent(
-          new CustomEvent(LINK_READER_PANEL_TOGGLE_EVENT, { detail: { open: false } }),
-        );
-        expect(f.pending.size).toBe(0);
-      } else if (change === "session") {
-        f.state.sessionKey = "session-b";
-      } else {
-        f.owner.linkReaders = [];
-      }
-      f.definitions.resolve(HTMLElement);
-      f.commit.resolve(true);
-      await f.commit.promise;
-      await Promise.resolve();
-      await Promise.resolve();
-      expect(f.deliverPanelEvent).not.toHaveBeenCalled();
-    },
-  );
-
-  it("keeps unsupported URLs unaccepted and leaves the layout alone", () => {
-    const f = fixture();
-    const event = f.event("https://example.com/ordinary-link");
-    window.dispatchEvent(event);
-    expect(event.defaultPrevented).toBe(false);
-    expect(f.updateSidebarLayout).not.toHaveBeenCalled();
-  });
-});
-
 it("delivers a browser card after the pane's scheduled render commits", async () => {
   vi.useFakeTimers();
   stubScreenshotMedia();
@@ -308,7 +169,6 @@ it("delivers a browser card after the pane's scheduled render commits", async ()
       current: () => ({
         renderRoot: pane,
         state,
-        linkReaders: [],
         pluginPanels: [],
         updateComplete: pendingUpdate ?? Promise.resolve(),
       }),

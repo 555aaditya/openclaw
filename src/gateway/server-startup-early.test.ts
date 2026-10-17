@@ -433,47 +433,4 @@ describe("startGatewayEarlyRuntime", () => {
       }
     },
   );
-
-  it("starts discovery with the current plugin registry services", async () => {
-    const stop = vi.fn(async () => {});
-    const discovery = { update: async () => {}, stop };
-    mocks.startGatewayDiscovery.mockResolvedValueOnce(discovery);
-    const swapDiscovery = vi.fn(() => null);
-    const service = {
-      pluginId: "bonjour",
-      service: { id: "bonjour", advertise: vi.fn() },
-    };
-
-    const input = earlyRuntimeInput({
-      minimalTestGateway: false,
-      swapDiscovery,
-      cfgAtStart: { discovery: { mdns: { mode: "full" } } } as never,
-      port: 19_001,
-      gatewayTls: { enabled: true, fingerprintSha256: "abc123" },
-      gatewayDirectReachable: true,
-      tailscaleMode: "serve" as never,
-      logDiscovery: {
-        info: () => {},
-        warn: () => {},
-      },
-      pluginRegistry: {
-        gatewayDiscoveryServices: [service],
-      } as never,
-    });
-    await startGatewayEarlyRuntime(input);
-    expect(swapDiscovery).toHaveBeenCalledWith(discovery);
-
-    const [discoveryParams] = mocks.startGatewayDiscovery.mock.calls.at(-1) ?? [];
-    if (discoveryParams === undefined) {
-      throw new Error("Expected gateway discovery to start");
-    }
-    expect(discoveryParams.machineDisplayName).toBe("Test Machine");
-    expect(discoveryParams.port).toBe(19_001);
-    expect(discoveryParams.gatewayTls).toEqual({ enabled: true, fingerprintSha256: "abc123" });
-    expect(discoveryParams.gatewayDirectReachable).toBe(true);
-    expect(discoveryParams.tailscaleMode).toBe("serve");
-    expect(discoveryParams.discovery?.mdns?.mode).toBe("full");
-    expect(discoveryParams.gatewayDiscoveryServices).toEqual([service]);
-    expect(discoveryParams.pluginRuntimeClaim).toBe(input.pluginRuntimeClaim);
-  });
 });

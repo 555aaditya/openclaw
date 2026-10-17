@@ -599,11 +599,8 @@ describe("Control UI theme contrast", () => {
         "--github-item-tone",
         declaration(base, "--github-item-tone"),
       );
-      for (const tone of ["unknown", "neutral", "positive", "negative", "accent", "attention"]) {
-        const rule =
-          tone === "unknown" || tone === "neutral"
-            ? base
-            : readRuleBody(css, selector + '[data-link-reader-tone="' + tone + '"]');
+      for (const tone of ["neutral"]) {
+        const rule = base;
         const tokens = new Map(palette).set(
           "--github-item-tone",
           declaration(rule, "--github-item-tone"),

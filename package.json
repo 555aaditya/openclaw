@@ -7,7 +7,13 @@
       "sqlite",
       "postgres"
     ],
-    "postgresFamilies": ["state", "agent", "workboard", "logbook", "team-reports"],
+    "postgresFamilies": [
+      "state",
+      "agent",
+      "workboard",
+      "logbook",
+      "team-reports"
+    ],
     "schemaVersions": {
       "state": 26,
       "agent": 28
@@ -163,8 +169,6 @@
     "!dist/plugin-sdk/memory-host-events.d.ts",
     "!dist/plugin-sdk/memory-host-markdown.d.ts",
     "!dist/plugin-sdk/message-tool-delivery-hints.d.ts",
-    "!dist/plugin-sdk/migration.d.ts",
-    "!dist/plugin-sdk/migration-runtime.d.ts",
     "!dist/plugin-sdk/music-generation.d.ts",
     "!dist/plugin-sdk/native-hook-relay-runtime.d.ts",
     "!dist/plugin-sdk/node-host.d.ts",
@@ -379,7 +383,6 @@
     "!dist/extensions/typesafe/**",
     "!dist/extensions/venice/**",
     "!dist/extensions/vercel-ai-gateway/**",
-    "!dist/extensions/visitor-access/**",
     "!dist/extensions/voice-call/**",
     "!dist/extensions/volcengine/**",
     "!dist/extensions/voyage/**",
@@ -1007,12 +1010,6 @@
     "./plugin-sdk/logging-core": {
       "types": "./dist/plugin-sdk/logging-core.d.ts",
       "default": "./dist/plugin-sdk/logging-core.js"
-    },
-    "./plugin-sdk/migration": {
-      "default": "./dist/plugin-sdk/migration.js"
-    },
-    "./plugin-sdk/migration-runtime": {
-      "default": "./dist/plugin-sdk/migration-runtime.js"
     },
     "./plugin-sdk/plugin-state-runtime": {
       "default": "./dist/plugin-sdk/plugin-state-runtime.js"
@@ -2302,7 +2299,6 @@
     "@earendil-works/pi-tui": "1.1.0",
     "@google/genai": "2.28.0",
     "@grammyjs/transformer-throttler": "1.2.1",
-    "@homebridge/ciao": "1.3.12",
     "@lydell/node-pty": "1.2.0-beta.15",
     "@mistralai/mistralai": "2.7.0",
     "@modelcontextprotocol/sdk": "1.32.1",

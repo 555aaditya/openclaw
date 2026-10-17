@@ -25,15 +25,7 @@ import { drainPendingDeliveriesCore } from "../../infra/outbound/delivery-queue-
 import { loadUnfinishedDeliveries as loadPendingDeliveries } from "../../infra/outbound/delivery-queue-storage.js";
 import { createRecoveryLog } from "../../infra/outbound/delivery-queue.test-helpers.js";
 import { resolveManagedUpdateLeaseDatabasePath } from "../../infra/update-managed-service-handoff-lease.js";
-import {
-  createPluginRegistryFixture,
-  registerVirtualTestPlugin,
-} from "../../plugin-sdk/test-helpers/contracts-testkit.js";
-import {
-  stageActivePluginRegistry,
-  resetPluginRuntimeStateForTest,
-  setActivePluginRegistry,
-} from "../../plugins/runtime.js";
+import { resetPluginRuntimeStateForTest, setActivePluginRegistry } from "../../plugins/runtime.js";
 import { resolveOpenClawAgentSqlitePath } from "../../state/openclaw-agent-db.paths.js";
 import {
   closeOpenClawStateDatabaseAsync,
@@ -130,7 +122,6 @@ it.each(
         "revoked",
         "source-unavailable",
         "restart-retained-owner-revoked",
-        "restart-retained-grant-handoff-replaced",
         "restart-retained-lifecycle",
         "restart-retained-missing-reference",
         "restart-retained-recovered-handoff-revoked",
@@ -163,39 +154,6 @@ it.each(
           selectEntry: () => ({ match: true, bypassBackoff: true }),
         });
       const admin = admins[0]!;
-      let grantId = "86633673-b1dd-4500-85e2-b6e6e490810f";
-      const grantLifetime = new AbortController();
-      const grantFixture = boundary.includes("grant-")
-        ? createPluginRegistryFixture(cfg)
-        : undefined;
-      const replaceGrant = () => {
-        grantLifetime.abort();
-        grantId = "78a7c3d0-c3a6-49a5-91e7-02c153e39ab5";
-      };
-      if (grantFixture) {
-        const { registry, config } = grantFixture;
-        registerVirtualTestPlugin({
-          registry,
-          config,
-          id: "final-owner-policy",
-          name: "Final owner policy",
-          register(api) {
-            const current = () => ({
-              grantId,
-              signal: grantLifetime.signal,
-              assertCurrent: () => grantLifetime.signal.throwIfAborted(),
-            });
-            api.registerGatewayAccessPolicy({
-              authorize: current,
-              resume: ({ grantId: original }) => (original === grantId ? current() : undefined),
-            });
-          },
-        });
-        stageActivePluginRegistry(registry.registry, null, "default");
-        const roles = structuredClone(cfg.gateway!.roles!);
-        roles.definitions.admin!.accessPolicyPlugin = "final-owner-policy";
-        await activatePolicy({ roles });
-      }
       const configured = boundary.startsWith("restart-configured-");
       if (configured) {
         cfg.commands!.ownerAllowFrom = [admin.identity.senderId, admins[1]!.identity.senderId];
@@ -268,8 +226,6 @@ it.each(
           await release.promise;
         } else if (boundary === "restart-retained-recovered-handoff-revoked") {
           setUserProfileRole(admin.profile.id, "member");
-        } else if (boundary === "restart-retained-grant-handoff-replaced") {
-          replaceGrant();
         } else if (boundary === "restart-configured-handoff-removed") {
           cfg.commands!.ownerAllowFrom = [];
           await activatePolicy({});
@@ -321,12 +277,7 @@ it.each(
           },
         },
       ]);
-      if (grantFixture) {
-        grantFixture.registry.registry.channels.push(...channelRegistry.channels);
-        setActivePluginRegistry(grantFixture.registry.registry);
-      } else {
-        setActivePluginRegistry(channelRegistry);
-      }
+      setActivePluginRegistry(channelRegistry);
       const controller = new AbortController();
       let custodyError: Error | undefined;
       const delivery = deliverAgentCommandResult({

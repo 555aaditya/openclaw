@@ -39,9 +39,8 @@ vi.mock("../../../state/user-profile-list.js", async (importOriginal) => ({
   hasMultipleResidentSessionSharingIdentities: vi.fn(() => false),
 }));
 
-vi.mock("../../control-ui-plugin-tabs.js", () => ({
-  listControlUiLinkReaders: vi.fn(() => []),
-  listControlUiPluginTabs: vi.fn(() => []),
+vi.mock("../../control-ui-plugin-tabs.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../control-ui-plugin-tabs.js")>()),
   listControlUiPluginWidgetKinds: vi.fn(() => []),
 }));
 

@@ -36,14 +36,12 @@ extensions/codex/src/app-server/thread-lifecycle.test.ts
 extensions/codex/src/app-server/transcript-mirror.test.ts
 extensions/codex/src/commands.test.ts
 extensions/codex/src/conversation-binding.test.ts
-extensions/codex/src/migration/provider.test.ts
 extensions/codex/src/migration/session-binding-sidecars.ts
 extensions/codex/src/supervision-tools.ts
 extensions/comfy/workflow-runtime.ts
 extensions/copilot/harness.test.ts
 extensions/copilot/harness.ts
 extensions/copilot/src/attempt.test.ts
-extensions/crabbox/src/crabbox-worker-provider.test.ts
 extensions/diagnostics-otel/src/service.test.ts
 extensions/discord/src/actions/runtime.test.ts
 extensions/discord/src/monitor/message-handler.preflight.test.ts
@@ -452,7 +450,6 @@ src/plugins/clawhub.ts
 src/plugins/commands.test.ts
 src/plugins/contracts/host-hooks.contract.test.ts
 src/plugins/contracts/plugin-sdk-subpaths.test.ts
-src/plugins/contracts/scheduled-turns.contract.test.ts
 src/plugins/contracts/tts-contract-suites.ts
 src/plugins/discovery.test.ts
 src/plugins/discovery.ts

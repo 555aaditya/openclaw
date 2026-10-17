@@ -6,10 +6,8 @@ import { PassThrough, Readable } from "node:stream";
 // Covers native hook relay registration, bridge invocation, and approval state.
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { createRequireRecord } from "openclaw/plugin-sdk/test-fixtures";
-import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { runNativeHookRelayCliFromArgvForTest } from "../../cli/native-hook-relay-cli.test-support.js";
-import type { SessionEntry } from "../../config/sessions.js";
-import { replaceSessionEntry } from "../../config/sessions/session-accessor.js";
 import { createAgentRuntimeApprovalAuthorityValidator } from "../../gateway/agent-runtime-approval-authority.js";
 import { mintAgentRuntimeIdentityToken } from "../../gateway/agent-runtime-identity-token.js";
 import { nativeHookRelayHandlers } from "../../gateway/server-methods/native-hook-relay.js";
@@ -19,12 +17,10 @@ import {
   resetGlobalHookRunner,
 } from "../../plugins/hook-runner-global.js";
 import { createMockPluginRegistry } from "../../plugins/hooks.test-fixtures.js";
-import { patchPluginSessionExtension } from "../../plugins/host-hook-state.js";
 import { createEmptyPluginRegistry } from "../../plugins/registry-empty.js";
 import { setActivePluginRegistry } from "../../plugins/runtime.js";
 import { createDeferredCore } from "../../shared/deferred.js";
 import { resolveOpenClawStateSqlitePath } from "../../state/openclaw-state-db.paths.js";
-import { useSessionStoreTempDirs } from "../../test-utils/session-state-cleanup.js";
 import { splitShellArgs } from "../../utils/shell-argv.js";
 import {
   closeAdmittedRunDelegatedAuthority,
@@ -48,8 +44,6 @@ import {
   clearNativeHookRelaysForTests,
   createNativeHookRelayPermissionRequestFixture as createPermissionRequestFixture,
 } from "./native-hook-relay.test-support.js";
-
-const sessionDirs = useSessionStoreTempDirs(afterAll, "openclaw-native-relay-policy-");
 
 const NATIVE_HOOK_RELAY_EXEC_PREFIX = process.platform === "win32" ? "" : "exec ";
 
@@ -1098,35 +1092,6 @@ describe("native hook relay registry", () => {
     },
   );
 
-  it("unions hook and trusted-policy matcher scopes for pre-tool relays", () => {
-    const hookRegistry = createMockPluginRegistry([
-      { hookName: "before_tool_call", handler: vi.fn(), matcher: ["exec"] },
-    ]);
-    const policyRegistry = createMockPluginRegistry([]);
-    policyRegistry.trustedToolPolicies = [
-      {
-        pluginId: "policy-plugin",
-        pluginName: "Policy Plugin",
-        source: "test",
-        policy: {
-          id: "patch-policy",
-          description: "Protect patch tools",
-          matcher: ["apply_patch"],
-          evaluate: vi.fn(),
-        },
-      },
-    ];
-    setActivePluginRegistry(policyRegistry);
-    initializeGlobalHookRunner(hookRegistry);
-
-    const relay = registerRelay({
-      preToolUseLoopDetection: false,
-    });
-
-    expect(relay.shouldRelayEvent("pre_tool_use")).toBe(true);
-    expect(relay.toolMatcherForEvent("pre_tool_use")).toEqual(["apply_patch", "exec"]);
-  });
-
   it("rejects a retired direct bridge with an already connected request", async () => {
     const first = registerRelay({ allowedEvents: ["pre_tool_use"] });
     const firstRecord = await waitForNativeHookRelayBridgeRecord(first.relayId);
@@ -1812,83 +1777,6 @@ describe("native hook relay registry", () => {
       }
     },
   );
-
-  it("passes config to trusted policies for native pre-tool session extension reads", async () => {
-    const stateDir = sessionDirs.make();
-    const storePath = path.join(stateDir, "sessions.json");
-    const config = { session: { store: storePath } };
-    const seen: unknown[] = [];
-    const registry = createEmptyPluginRegistry();
-    registry.sessionExtensions = [
-      {
-        pluginId: "policy-plugin",
-        pluginName: "Policy Plugin",
-        source: "test",
-        extension: {
-          namespace: "policy",
-          description: "policy state",
-        },
-      },
-    ];
-    registry.trustedToolPolicies = [
-      {
-        pluginId: "policy-plugin",
-        pluginName: "Policy Plugin",
-        source: "test",
-        policy: {
-          id: "session-extension-policy",
-          description: "session extension policy",
-          evaluate(eventValue, ctx) {
-            const policyState = ctx.getSessionExtension?.("policy");
-            seen.push(policyState);
-            if ((policyState as { block?: boolean } | undefined)?.block) {
-              return { block: true, blockReason: "blocked by session extension" };
-            }
-            return undefined;
-          },
-        },
-      },
-    ];
-    setActivePluginRegistry(registry);
-    await replaceSessionEntry({ sessionKey: "agent:main:session-1", storePath }, {
-      sessionId: "session-1",
-      updatedAt: Date.now(),
-    } as SessionEntry);
-    const patchResult = await patchPluginSessionExtension({
-      cfg: config as never,
-      sessionKey: "agent:main:session-1",
-      pluginId: "policy-plugin",
-      namespace: "policy",
-      value: { block: true },
-    });
-    expect(patchResult.ok).toBe(true);
-
-    const relay = registerRelay({
-      agentId: "main",
-      sessionKey: "agent:main:session-1",
-      config: config as never,
-      allowedEvents: ["pre_tool_use"],
-      preToolUseLoopDetection: false,
-    });
-
-    expect(relay.shouldRelayEvent("pre_tool_use")).toBe(true);
-
-    const response = await invokeRelay(relay.relayId, "pre_tool_use", {
-      hook_event_name: "PreToolUse",
-      tool_name: "Bash",
-      tool_use_id: "native-policy-call-1",
-      tool_input: { command: "rm -rf dist" },
-    });
-
-    expect(JSON.parse(response.stdout)).toEqual({
-      hookSpecificOutput: {
-        hookEventName: "PreToolUse",
-        permissionDecision: "deny",
-        permissionDecisionReason: "blocked by session extension",
-      },
-    });
-    expect(seen).toEqual([{ block: true }]);
-  });
 
   it("uses the Codex cwd when deriving apply_patch paths for PreToolUse", async () => {
     const beforeToolCall = vi.fn();

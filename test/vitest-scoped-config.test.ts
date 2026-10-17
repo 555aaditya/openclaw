@@ -36,7 +36,6 @@ import { toolingIsolatedTestFiles } from "./vitest/vitest.tooling-isolated-paths
 import { createToolingIsolatedVitestConfig } from "./vitest/vitest.tooling-isolated.config.ts";
 import { createUiVitestConfig } from "./vitest/vitest.ui.config.ts";
 import { isUnitFastTestFile } from "./vitest/vitest.unit-fast-paths.mjs";
-import { createWizardVitestConfig } from "./vitest/vitest.wizard.config.ts";
 
 function matchingExcludePatterns(patterns: string[], file: string): string[] {
   return patterns.filter((pattern) => path.matchesGlob(file, pattern));
@@ -226,7 +225,6 @@ describe("scoped vitest configs", () => {
     createAgentsSpawnProductionBoundaryVitestConfig({});
   const defaultPluginsConfig = createPluginsVitestConfig({});
   const defaultUiConfig = createUiVitestConfig({});
-  const defaultWizardConfig = createWizardVitestConfig({});
 
   it("keeps source-child process tests in the isolated process project", () => {
     const cliProcessFiles = cliProcessTestFiles.filter((file) => file.startsWith("src/cli/"));
@@ -312,11 +310,6 @@ describe("scoped vitest configs", () => {
     const imageAuthFile = "src/agents/tools/image-generate-tool.auth.test.ts";
     expect(testConfig.include).toContain(imageAuthFile);
     expect(agentVitestProjectOwners.tools.exclude).toContain(imageAuthFile);
-    const recoveryFile = "src/wizard/setup.inference-recovery.integration.test.ts";
-    expect(testConfig.include?.filter((file) => file === recoveryFile)).toEqual([recoveryFile]);
-    expect(requireTestConfig(defaultWizardConfig).exclude).toContain(
-      "wizard/setup.inference-recovery.integration.test.ts",
-    );
     for (const file of databaseWorkerCoreTestFiles) {
       expect(matchingExcludePatterns(testConfig.exclude ?? [], file), file).toEqual([]);
     }

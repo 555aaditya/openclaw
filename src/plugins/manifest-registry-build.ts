@@ -12,6 +12,7 @@ import {
   resolvePluginCandidateInstallOwner,
 } from "./candidate-install-owner.js";
 import { normalizePluginsConfigWithResolver } from "./config-policy.js";
+import { resolveEffectivePluginActivationState } from "./config-state.js";
 import { isBundledPluginInsideDevSourceRoot } from "./dev-source-root.js";
 import {
   discoverOpenClawPlugins,
@@ -341,9 +342,26 @@ export function buildPluginManifestRegistry(
               }
             : loadPluginManifest(candidate.rootDir, rejectHardlinks);
     if (!manifestRes.ok) {
+      const pluginId =
+        candidate.effectivePluginId ??
+        ("manifestId" in manifestRes ? manifestRes.manifestId : undefined) ??
+        candidate.diagnosticIdHint ??
+        candidate.idHint;
       diagnostics.push({
         level: "error",
-        pluginId: candidate.diagnosticIdHint ?? candidate.idHint,
+        pluginId,
+        // Invalid manifests never become runtime records. Preserve admission here so
+        // consumers cannot treat a missing native resolver owner as a shared connection.
+        ...(!isBundleRecord
+          ? {
+              enabledNativePlugin: resolveEffectivePluginActivationState({
+                id: pluginId,
+                origin: candidate.origin,
+                config: normalized,
+                rootConfig: config,
+              }).enabled,
+            }
+          : {}),
         message: manifestRes.error,
         source: manifestRes.manifestPath,
         ...("diagnosticCode" in manifestRes && manifestRes.diagnosticCode

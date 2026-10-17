@@ -1,15 +1,6 @@
-/**
- * End-to-end coverage for before_tool_call hook integration.
- * Exercises runtime wrapping, client-tool adaptation, code-mode params, and
- * adjusted parameter handoff across the tool boundary.
- */
-import path from "node:path";
 import { expectDefined } from "@openclaw/normalization-core";
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDeferred, withTestTimeout } from "../../test/helpers/promise.js";
-import type { OpenClawConfig } from "../config/config.js";
-import type { SessionEntry } from "../config/sessions.js";
-import { replaceSessionEntry } from "../config/sessions/session-accessor.js";
 import { resetDiagnosticEventsForTest } from "../infra/diagnostic-events.js";
 import {
   getDiagnosticSessionState,
@@ -20,12 +11,10 @@ import {
   resetGlobalHookRunner,
 } from "../plugins/hook-runner-global.js";
 import { addTestHook, createMockPluginRegistry } from "../plugins/hooks.test-fixtures.js";
-import { patchPluginSessionExtension } from "../plugins/host-hook-state.js";
 import { createEmptyPluginRegistry } from "../plugins/registry.js";
 import { setActivePluginRegistry } from "../plugins/runtime.js";
 import { setPluginToolMeta } from "../plugins/tool-metadata.js";
 import type { PluginHookRegistration } from "../plugins/types.js";
-import { useSessionStoreTempDirs } from "../test-utils/session-state-cleanup.js";
 import { toClientToolDefinitions, toToolDefinitions } from "./agent-tool-definition-adapter.js";
 import { bindAgentToolSourceExecutionGuard } from "./agent-tool-source-execution-guard.js";
 import { wrapToolWithAbortSignal } from "./agent-tools.abort.js";
@@ -51,11 +40,9 @@ import { getInternalToolExecutionPreparer } from "./runtime/internal-hooks.js";
 import type { ExtensionContext } from "./sessions/index.js";
 import { wrapToolDefinition } from "./sessions/tools/tool-definition-wrapper.js";
 import { hashToolCall, recordToolCall } from "./tool-loop-detection.js";
-import { createToolSearchCatalogRef, registerHeadlessToolSearchCatalog } from "./tool-search.js";
 import { setToolTerminalPresentation } from "./tool-terminal-presentation.js";
 
 type BeforeToolCallHandlerMock = ReturnType<typeof vi.fn>;
-const sessionDirs = useSessionStoreTempDirs(afterAll, "openclaw-client-tool-policy-");
 
 const beforeToolCallTesting = {
   adjustedParamsByToolCallId,
@@ -964,98 +951,6 @@ describe("before_tool_call hook deduplication (#15502)", () => {
     );
   });
 
-  it.each([
-    { alias: "command", replacement: null },
-    { alias: "code", replacement: "return 3;" },
-    { alias: "command", replacement: "return 3;" },
-  ])(
-    "handles a hook after a trusted rewrite changing the $alias code-mode exec alias to $replacement",
-    async ({ alias, replacement }) => {
-      resetGlobalHookRunner();
-      const registry = createEmptyPluginRegistry();
-      registry.trustedToolPolicies = [
-        {
-          pluginId: "trusted-plugin",
-          pluginName: "Trusted Plugin",
-          source: "test",
-          policy: {
-            id: "code-mode-rewrite-policy",
-            description: "rewrite both code-mode exec aliases",
-            evaluate: () => ({ params: { code: "return 2;", command: "return 2;" } }),
-          },
-        },
-      ];
-      addTestHook({
-        registry,
-        pluginId: "normal-plugin",
-        hookName: "before_tool_call",
-        handler: (async () => ({
-          params: { [alias]: replacement },
-        })) as PluginHookRegistration["handler"],
-      });
-      setActivePluginRegistry(registry);
-      initializeGlobalHookRunner(registry);
-      try {
-        const codeModeConfig: OpenClawConfig = { tools: { codeMode: true } };
-        const catalogRef = createToolSearchCatalogRef();
-        registerHeadlessToolSearchCatalog({ catalogRef, tools: [] });
-        const execTool = createCodeModeTools({
-          config: codeModeConfig,
-          runtimeConfig: codeModeConfig,
-          agentId: "main",
-          sessionKey: "agent:main:main",
-          sessionId: "session-main",
-          runId: "run-main",
-          abortSignal: new AbortController().signal,
-          catalogRef,
-          executeTool: async () => {
-            throw new Error("catalog tool execution should not be reached");
-          },
-        }).find((tool) => tool.name === CODE_MODE_EXEC_TOOL_NAME);
-        if (!execTool) {
-          throw new Error("missing code-mode exec tool");
-        }
-        const [def] = toToolDefinitions(
-          [execTool],
-          {
-            agentId: "main",
-            sessionKey: "agent:main:main",
-            sessionId: "session-main",
-            runId: "run-main",
-          },
-          undefined,
-        );
-        if (!def) {
-          throw new Error("missing custom tool definition");
-        }
-
-        const result = await def.execute(
-          `call-code-mode-${alias}-${replacement === "return 3;" ? "rewrite" : "invalidate"}`,
-          { code: "return 1;", command: "return 1;" },
-          undefined,
-          undefined,
-          {} as Parameters<typeof def.execute>[4],
-        );
-
-        if (replacement === "return 3;") {
-          expect(result.details, JSON.stringify(result.details)).toMatchObject({
-            status: "completed",
-            value: 3,
-          });
-        } else {
-          expect(result.details).toEqual({
-            status: "error",
-            tool: "exec",
-            error: "code or command must be a non-empty string.",
-          });
-        }
-      } finally {
-        setActivePluginRegistry(createEmptyPluginRegistry());
-        resetGlobalHookRunner();
-      }
-    },
-  );
-
   it("isolates terminal presentation arguments while using the final middleware result", async () => {
     const onToolOutcome = vi.fn();
     let executedParams: { request: { url: string } } | undefined;
@@ -1523,88 +1418,6 @@ describe("before_tool_call adapter and client tool integration", () => {
       { value: "first", marker: "first_tool" },
       { value: "second", marker: "second_tool" },
     ]);
-  });
-
-  it("lets trusted policies read session extensions for client tools when config is provided", async () => {
-    resetGlobalHookRunner();
-    const stateDir = sessionDirs.make();
-    const storePath = path.join(stateDir, "sessions.json");
-    const config = { session: { store: storePath } };
-    const seen: unknown[] = [];
-    const registry = createEmptyPluginRegistry();
-    registry.sessionExtensions = [
-      {
-        pluginId: "policy-plugin",
-        pluginName: "Policy Plugin",
-        source: "test",
-        extension: {
-          namespace: "policy",
-          description: "policy state",
-        },
-      },
-    ];
-    registry.trustedToolPolicies = [
-      {
-        pluginId: "policy-plugin",
-        pluginName: "Policy Plugin",
-        source: "test",
-        policy: {
-          id: "client-tool-session-extension-policy",
-          description: "client tool session extension policy",
-          evaluate(eventValue, ctx) {
-            seen.push(ctx.getSessionExtension?.("policy"));
-            return undefined;
-          },
-        },
-      },
-    ];
-    setActivePluginRegistry(registry);
-    try {
-      await replaceSessionEntry({ sessionKey: "agent:main:client", storePath }, {
-        sessionId: "session-client",
-        updatedAt: Date.now(),
-      } as SessionEntry);
-      await expect(
-        patchPluginSessionExtension({
-          cfg: config as never,
-          sessionKey: "agent:main:client",
-          pluginId: "policy-plugin",
-          namespace: "policy",
-          value: { gate: "client" },
-        }),
-      ).resolves.toEqual({
-        ok: true,
-        key: "agent:main:client",
-        value: { gate: "client" },
-      });
-
-      const clientTools = toClientToolDefinitions(
-        [
-          {
-            type: "function",
-            function: {
-              name: "client_tool",
-              description: "Client tool",
-              parameters: { type: "object", properties: {} },
-            },
-          },
-        ],
-        undefined,
-        {
-          agentId: "main",
-          sessionKey: "agent:main:client",
-          sessionId: "session-client",
-          config: config as never,
-        },
-      );
-      const tool = expectDefined(clientTools[0], "client tool definition");
-      const extensionContext = {} as Parameters<typeof tool.execute>[4];
-      await tool.execute("client-call-policy", {}, undefined, undefined, extensionContext);
-
-      expect(seen).toEqual([{ gate: "client" }]);
-    } finally {
-      setActivePluginRegistry(createEmptyPluginRegistry());
-    }
   });
 });
 /* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */

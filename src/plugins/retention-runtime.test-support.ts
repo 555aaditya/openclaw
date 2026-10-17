@@ -9,9 +9,4 @@ export const pluginRetentionEntrypoints = {
     sourceWorkerName: "plugin-cache.retention.test-support",
     distWorkerPath: "plugins/plugin-cache.retention.test-support.js",
   },
-  accessPolicy: {
-    currentModuleUrl: import.meta.url,
-    sourceWorkerName: "gateway-access-policy-registration.test-support",
-    distWorkerPath: "plugins/gateway-access-policy-registration.test-support.js",
-  },
 } as const;

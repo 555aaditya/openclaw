@@ -1,11 +1,9 @@
-import { isDeepStrictEqual } from "node:util";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { formatCliCommand } from "../cli/command-format.js";
 import { resolveOnboardingSetupTarget } from "../commands/onboard-agent-target.js";
 import * as firstAgentOnboarding from "../commands/onboard-first-agent.js";
 import type { OnboardMode, OnboardOptions } from "../commands/onboard-types.js";
 import { hasResolvedRosterBeforeMigrations } from "../config/agent-roster-provenance.js";
-import { ConfigMutationConflictError } from "../config/config.js";
 import { resolveAgentModelPrimaryValue } from "../config/model-input.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { resolveGatewayProbeAuthSafeWithSecretInputs } from "../gateway/probe-auth.js";
@@ -21,22 +19,12 @@ import { t } from "./i18n/index.js";
 import { runWizardWithPromptNavigation } from "./navigation-prompter.js";
 import type { WizardPrompter } from "./prompts.js";
 import { completeSetupModelAuth } from "./setup.inference-verification.js";
-import {
-  detectSetupMigrationSources,
-  listSetupMigrationOptions,
-  runSetupMigrationImport,
-} from "./setup.migration-import.js";
-import {
-  SetupMigrationFreshnessError,
-  SetupMigrationTargetChangedError,
-} from "./setup.migration-snapshot.js";
 import { runSetupModelAuthStep, type SetupModelAuthCandidate } from "./setup.model-auth.js";
 import { resolveSetupSecretInputString } from "./setup.secret-input.js";
 import {
   hasQuickstartGatewayOverrides,
   formatQuickstartGatewaySummary,
   readSetupConfigFileSnapshot,
-  readValidSetupConfigFile,
   requireRiskAcknowledgement,
   requestTelemetryConsent,
   resolveQuickstartGatewayDefaults,
@@ -47,7 +35,7 @@ import {
 import type { QuickstartGatewayDefaults, WizardFlow } from "./setup.types.js";
 import { resolveSetupWorkspaceSelection, validateSetupWorkspacePath } from "./setup.workspace.js";
 
-type SetupFlowChoice = WizardFlow | "import" | "keep-model";
+type SetupFlowChoice = WizardFlow | "keep-model";
 
 export async function runSetupWizard(
   opts: OnboardOptions,
@@ -72,14 +60,14 @@ async function runSetupWizardOnce(
   await prompter.intro(t("wizard.setup.intro"));
 
   const snapshot = await readSetupConfigFileSnapshot();
-  let currentSetupSnapshot = snapshot;
+  const currentSetupSnapshot = snapshot;
   let baseConfig: OpenClawConfig = snapshot.valid
     ? (snapshot.runtimeConfig ?? snapshot.config)
     : {};
   let setupConfigMergeBase = structuredClone(baseConfig);
   baseConfig = await requireRiskAcknowledgement({ opts, prompter, config: baseConfig });
   // Ordinary onboard reruns must preserve existing agents.entries / bindings. Only
-  // explicit reset or import flows are allowed to shrink the config — see issue
+  // explicit reset flows are allowed to shrink the config — see issue
   // openclaw#84692.
   const commitSetupConfigFile = async (
     config: OpenClawConfig,
@@ -144,29 +132,22 @@ async function runSetupWizardOnce(
   const manualHint = t("wizard.setup.flowAdvancedHint");
   const hasExistingModelConfig =
     resolveAgentModelPrimaryValue(baseConfig.agents?.defaults?.model) !== undefined;
-  const migrationDiscovery = await detectSetupMigrationSources({ config: baseConfig, runtime });
-  const migrationOptions = await listSetupMigrationOptions({
-    baseConfig,
-    ...migrationDiscovery,
-  });
+
   const explicitFlowRaw = opts.flow?.trim();
   const normalizedExplicitFlow = explicitFlowRaw === "manual" ? "advanced" : explicitFlowRaw;
   if (
     normalizedExplicitFlow &&
     normalizedExplicitFlow !== "quickstart" &&
-    normalizedExplicitFlow !== "advanced" &&
-    normalizedExplicitFlow !== "import"
+    normalizedExplicitFlow !== "advanced"
   ) {
     runtime.error(
-      "Invalid --flow. Use quickstart, manual, advanced, or import. Example: openclaw onboard --flow quickstart",
+      "Invalid --flow. Use quickstart, manual, or advanced. Example: openclaw onboard --flow quickstart",
     );
     runtime.exit(1);
     return;
   }
   const explicitFlow: SetupFlowChoice | undefined =
-    normalizedExplicitFlow === "quickstart" ||
-    normalizedExplicitFlow === "advanced" ||
-    normalizedExplicitFlow === "import"
+    normalizedExplicitFlow === "quickstart" || normalizedExplicitFlow === "advanced"
       ? normalizedExplicitFlow
       : undefined;
   const keepModelOption = hasExistingModelConfig
@@ -179,9 +160,7 @@ async function runSetupWizardOnce(
   // Import flags are import intent. Non-interactive setup already routes them
   // to the migration import; showing the mode prompt here would let the answer
   // silently drop the requested import.
-  const importIntent = Boolean(
-    opts.importFrom?.trim() || opts.importSource?.trim() || opts.importSecrets,
-  );
+
   const promptSetupFlow = async (): Promise<SetupFlowChoice> =>
     await prompter.select({
       message: t("wizard.setup.setupMode"),
@@ -189,9 +168,6 @@ async function runSetupWizardOnce(
         ...(keepModelOption ? [keepModelOption] : []),
         { value: "quickstart", label: t("wizard.setup.flowQuickstart"), hint: quickstartHint },
         { value: "advanced", label: t("wizard.setup.flowAdvanced"), hint: manualHint },
-        ...(migrationOptions.length > 0
-          ? [{ value: "import" as const, label: t("wizard.migration.importFromAnotherAgent") }]
-          : []),
       ],
       initialValue: hasExistingModelConfig ? "keep-model" : "quickstart",
     });
@@ -204,9 +180,9 @@ async function runSetupWizardOnce(
     }
     return { flow, keepExistingModelConfig };
   };
-  const flowFromPrompt = explicitFlow === undefined && !importIntent;
-  let { flow, keepExistingModelConfig } = await normalizeSetupFlow(
-    explicitFlow ?? (importIntent ? "import" : await promptSetupFlow()),
+
+  const { flow, keepExistingModelConfig } = await normalizeSetupFlow(
+    explicitFlow ?? (await promptSetupFlow()),
   );
 
   if (snapshot.exists && !keepExistingModelConfig) {
@@ -216,83 +192,8 @@ async function runSetupWizardOnce(
     );
   }
 
-  let usedImportFlow = false;
-  let acknowledgeMigrationPromotion: (() => Promise<void>) | undefined;
-  let importedInferenceVerified = false;
-  while (opts.importFrom || flow === "import") {
-    let migrationOutcome: Awaited<ReturnType<typeof runSetupMigrationImport>>;
-    try {
-      migrationOutcome = await runSetupMigrationImport({
-        opts: { ...opts },
-        baseConfig,
-        ...migrationDiscovery,
-        prompter,
-        runtime,
-        readConfigFile: readValidSetupConfigFile,
-        async commitConfigFile(cfg, expectedConfig) {
-          const latest = await readSetupConfigFileSnapshot();
-          if (!latest.valid) {
-            throw new Error(
-              "Migration target config became invalid. Run `openclaw doctor --fix` to apply supported repairs.",
-            );
-          }
-          const latestConfig = latest.exists ? (latest.sourceConfig ?? latest.config) : {};
-          if (!isDeepStrictEqual(latestConfig, expectedConfig)) {
-            throw new ConfigMutationConflictError("config changed during migration promotion");
-          }
-          return (
-            await writeWizardConfigFile(cfg, {
-              allowConfigSizeDrop: true,
-              baseSnapshot: latest,
-              ...(latest.hash !== undefined ? { baseHash: latest.hash } : {}),
-            })
-          ).nextConfig;
-        },
-        allowProviderBack: flowFromPrompt,
-        continueOnboarding: true,
-      });
-      if (migrationOutcome.kind === "back") {
-        ({ flow, keepExistingModelConfig } = await normalizeSetupFlow(await promptSetupFlow()));
-        continue;
-      }
-    } catch (error) {
-      const canReturnToSetupMode =
-        error instanceof SetupMigrationFreshnessError ||
-        error instanceof SetupMigrationTargetChangedError;
-      if (!canReturnToSetupMode || !flowFromPrompt) {
-        throw error;
-      }
-      await prompter.note(formatErrorMessage(error), t("wizard.setup.existingConfigTitle"));
-      ({ flow, keepExistingModelConfig } = await normalizeSetupFlow(await promptSetupFlow()));
-      continue;
-    }
-    usedImportFlow = true;
-    acknowledgeMigrationPromotion = migrationOutcome.acknowledgePromotion;
-    const migratedSnapshot = await readSetupConfigFileSnapshot();
-    if (!migratedSnapshot.valid) {
-      throw new Error(
-        "Migration produced an invalid OpenClaw config. Run `openclaw doctor --fix` to apply supported repairs.",
-      );
-    }
-    currentSetupSnapshot = migratedSnapshot;
-    baseConfig = migratedSnapshot.runtimeConfig ?? migratedSnapshot.config;
-    setupConfigMergeBase = structuredClone(baseConfig);
-    const importedModelRef = resolveAgentModelPrimaryValue(baseConfig.agents?.defaults?.model);
-    importedInferenceVerified =
-      migrationOutcome.kind === "verified-inference" &&
-      importedModelRef === migrationOutcome.modelRef;
-    keepExistingModelConfig = importedInferenceVerified;
-    flow = "quickstart";
-    break;
-  }
   const hasAuthoredRoster = hasResolvedRosterBeforeMigrations(currentSetupSnapshot);
-  if (usedImportFlow && hasAuthoredRoster && opts.agentName !== undefined) {
-    runtime.error(
-      "--agent-name cannot be combined with an import that supplies an agent roster. Remove --agent-name or choose an import without agents.",
-    );
-    runtime.exit(1);
-    return;
-  }
+
   const wizardFlow: WizardFlow = flow === "advanced" ? "advanced" : "quickstart";
   const hasExplicitQuickstartGatewayOverrides =
     wizardFlow === "quickstart" && hasQuickstartGatewayOverrides(opts);
@@ -536,7 +437,7 @@ async function runSetupWizardOnce(
   const onboardingAgent = await ensureOnboardingAgent({
     config: gateway.nextConfig,
     workspace: workspaceDir,
-    preserveCandidateRoster: usedImportFlow && hasAuthoredRoster,
+    preserveCandidateRoster: false,
     // Pending setup choices must remain changes relative to the saved snapshot.
     baseConfig: setupConfigMergeBase,
     ...(firstAgent ? { firstAgent } : {}),
@@ -553,9 +454,7 @@ async function runSetupWizardOnce(
     opts,
     prompter,
     runtime,
-    usedImportFlow,
     keepExistingModelConfig,
-    importedInferenceVerified,
     configTarget: createWizardInferenceConfigTarget(commitSetupConfigFile),
   });
   nextConfig = modelAuth.config;
@@ -612,11 +511,6 @@ async function runSetupWizardOnce(
     skipOptionalBootstrapFiles: nextConfig.agents?.defaults?.skipOptionalBootstrapFiles,
     agentId: onboardingTarget.agentId,
   });
-
-  if (!usedImportFlow) {
-    const { runSetupMemoryImportStep } = await import("./setup.memory-import.js");
-    await runSetupMemoryImportStep({ config: nextConfig, prompter, runtime });
-  }
 
   if (!opts.nonInteractive) {
     const { runMemorySetupFlow } = await import("../flows/memory-setup.js");
@@ -698,7 +592,6 @@ async function runSetupWizardOnce(
     prompter,
     runtime,
   });
-  await acknowledgeMigrationPromotion?.();
   if (finalizeResult.launchedTui) {
     runtime.exit(0);
   }

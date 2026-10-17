@@ -2,7 +2,6 @@ import { buildControlUiFocusPath } from "@openclaw/session-url-contract";
 import type { SessionObserverDigest } from "../../../../packages/gateway-protocol/src/index.js";
 import "./components/chat-details.tsx";
 import type { GatewaySessionRow } from "../../api/types.ts";
-import { availableLinkReaders } from "../../app/link-reader-routing.ts";
 import { isDesktopPanelAvailable } from "../../app/panel-availability.ts";
 import { latestBrowserTabCards } from "../../lib/chat/browser-tab-preview.ts";
 import { storedChatOutboxScopeKey } from "../../lib/chat/outbox-store.ts";
@@ -264,10 +263,6 @@ export abstract class ChatPaneLayoutRender extends ChatPaneBrowserAnnotationRend
       agentId: currentAgentId,
       browserPresented: slotPresentation("browser", "active"),
       browserTabsInHeader: sidebarMainPanel(sidebarLayout)?.slot !== "browser",
-      linkReaders: availableLinkReaders(this.context.gateway.snapshot),
-      linkReaderPresented: slotPresentation("link-reader"),
-      linkReaderTabsInHeader: sidebarMainPanel(sidebarLayout)?.slot !== "link-reader",
-      onCloseLinkReader: () => closePanelSlot("link-reader"),
       terminalTabsInHeader: sidebarMainPanel(sidebarLayout)?.slot !== "terminal",
       onCloseTerminal: () => closePanelSlot("terminal"),
       browserRefreshOnPresentation: !this.pendingPanelToggleRequests.has("browser"),

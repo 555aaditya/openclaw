@@ -122,7 +122,6 @@ describe("Control UI release-only inventories", () => {
   const releaseOnlyRealGateway = new Set([
     "ui/src/e2e/activity-run-inspector.real-gateway.e2e.test.ts",
     "ui/src/e2e/cron-duration-save.real-gateway.e2e.test.ts",
-    "ui/src/e2e/desktop-resize.real-gateway.e2e.test.ts",
     automationManagement,
     "ui/src/e2e/quota-reset-status.real-gateway.e2e.test.ts",
     "ui/src/e2e/session-pr-reader-lifetime.real-gateway.e2e.test.ts",
@@ -138,31 +137,22 @@ describe("Control UI release-only inventories", () => {
     e2eGroups: Parameters<typeof createUiRealGatewayTestShards>[0],
     expectedFiles: readonly string[],
   ) {
-    const desktop = "ui/src/e2e/desktop-resize.real-gateway.e2e.test.ts";
     const shards = createUiRealGatewayTestShards(e2eGroups);
-    expect(
-      shards.map(({ shard, shard_count, run_desktop }) => ({
-        shard,
-        shard_count,
-        run_desktop,
-      })),
-    ).toEqual([
-      { shard: 1, shard_count: 2, run_desktop: expectedFiles.includes(desktop) },
-      { shard: 2, shard_count: 2, run_desktop: false },
+    expect(shards.map(({ shard, shard_count }) => ({ shard, shard_count }))).toEqual([
+      { shard: 1, shard_count: 2 },
+      { shard: 2, shard_count: 2 },
     ]);
+    expect(shards.every((shard) => !("run_desktop" in shard))).toBe(true);
     const files = shards.flatMap((shard) =>
-      shard.groups
-        .flatMap((group) => {
-          expect(group.configs).toEqual(["test/vitest/vitest.ui-e2e-prebuilt.config.ts"]);
-          expect(group.includePatterns.length).toBeGreaterThan(0);
-          expect(group.includePatterns).not.toContain(desktop);
-          return group.includePatterns;
-        })
-        .concat(shard.run_desktop ? [desktop] : []),
+      shard.groups.flatMap((group) => {
+        expect(group.configs).toEqual(["test/vitest/vitest.ui-e2e-prebuilt.config.ts"]);
+        expect(group.includePatterns.length).toBeGreaterThan(0);
+        return group.includePatterns;
+      }),
     );
-    // Array equality also catches duplicate ownership between jobs or desktop proof.
+    // Array equality also catches duplicate ownership between jobs.
     expect(files.toSorted()).toEqual(expectedFiles.toSorted());
-    // Desktop and serial proof must not acquire a second parallel-fixture phase.
+    // Serial proof must not acquire a second parallel-fixture phase.
     expect(shards[1]?.groups[0]?.includePatterns.toSorted()).toEqual(
       expectedFiles.filter((file) => uiE2ePrebuiltParallelTestFiles.includes(file)).toSorted(),
     );
@@ -1510,7 +1500,8 @@ describe("scripts/lib/ci-node-test-plan.mts", () => {
         "test/vitest/vitest.gateway-methods-isolated.config.ts",
       ]);
       const restore = selectFixtureProjects((config) => configs.has(config));
-      const timings: Record<string, number> = { [owner]: 120 };
+      // Force splitting so the worker policy and exact file ownership are exercised.
+      const timings: Record<string, number> = { [owner]: 200 };
       vi.spyOn(testTimings, "readCompactGroupTimings").mockReturnValue(timings);
       vi.spyOn(testTimings, "readRuntimePlacementTimings").mockReturnValue([]);
       try {
@@ -4125,9 +4116,6 @@ describe("scripts/lib/ci-node-test-plan.mts", () => {
     expect(infraPlanFiles.filter((file) => gatewayWorkerFiles.includes(file)).toSorted()).toEqual(
       gatewayWorkerFiles.toSorted(),
     );
-    const recoveryTest = "src/wizard/setup.inference-recovery.integration.test.ts";
-    expect(admitted.has(recoveryTest), recoveryTest).toBe(true);
-    expect(former.has(recoveryTest), recoveryTest).toBe(false);
     const selected = [
       "src/plugin-state/plugin-state-store.test.ts",
       "test/plugins/beam-http-identity.test.ts",

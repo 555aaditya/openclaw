@@ -248,7 +248,6 @@ describe("channel entry authentication audit", () => {
         sourceConfig: auditConfig,
         includeFilesystem: false,
         includeChannelSecurity: true,
-        loadPluginSecurityCollectors: false,
         plugins: [whatsappSetupPlugin, slackPlugin],
       });
       const doctorFindings = await collectSecurityWarnings(auditConfig);

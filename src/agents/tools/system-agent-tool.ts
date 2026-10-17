@@ -159,7 +159,6 @@ const SYSTEM_AGENT_TOOL_ACTIONS = [
   "configure_skills",
   "configure_search",
   "configure_gateway",
-  "import_memory",
   "configure_model_provider",
   "manage_model_accounts",
   "open_agent",
@@ -286,7 +285,6 @@ const SIMPLE_ACTIONS = new Map<string, SystemAgentOperation>([
   ["configure_skills", { kind: "skills-setup" }],
   ["configure_search", { kind: "search-setup" }],
   ["configure_gateway", { kind: "gateway-config-setup" }],
-  ["import_memory", { kind: "memory-import" }],
   ["manage_model_accounts", { kind: "model-accounts" }],
   ["gateway_start", { kind: "gateway-start" }],
   ["gateway_stop", { kind: "gateway-stop" }],
@@ -439,7 +437,7 @@ export function createSystemAgentTool(options: SystemAgentToolOptions): AnyAgent
     description: [
       "System agent. Setup, config, channels, plugins, agents, repair.",
       "Read now: status, models, agents, channels, channel_info, config_get, config_schema, gateway_status, plugin_list, plugin_search, validate_config, doctor, audit.",
-      "Handoff: connect_channel, configure_skills, configure_search (web search), configure_gateway, import_memory; open_setup target=channels|search|gateway; open_agent. These open interactive setup flows.",
+      "Handoff: connect_channel, configure_skills, configure_search (web search), configure_gateway; open_setup target=channels|search|gateway; open_agent. These open interactive setup flows.",
       "Model providers: configure_model_provider returns Settings → Models sign-in guidance for provider accounts and OAuth. Personal accounts: manage_model_accounts opens the account controls.",
       "Write: setup, set_default_model (agentId optional; live-tested), config_set, config_unset, config_set_ref, create_agent (optional role), create_team, gateway_*, plugin_install, plugin_activate_artifact, plugin_uninstall. Submit the exact proposal first. Direct chat: exact user approval, then approved=true. Delegated requests: host applies session permission policy and returns the final outcome. Host applies after turn; rechecks inference owner.",
       "plugin_install: ClawHub/bundled/official only. Arbitrary source: exit, trusted shell.",
@@ -476,19 +474,17 @@ export function createSystemAgentTool(options: SystemAgentToolOptions): AnyAgent
                 ? `${SYSTEM_AGENT_DIRECTIVE_PREFIX} the host chat now starts guided web search provider setup with the user. Tell the user the provider setup questions come next; never ask for or repeat a credential yourself.`
                 : directive.kind === "gateway-config-setup"
                   ? `${SYSTEM_AGENT_DIRECTIVE_PREFIX} the host chat now starts guided local Gateway configuration with the user. Tell the user the Gateway setup questions come next; never ask for or repeat a credential yourself.`
-                  : directive.kind === "memory-import"
-                    ? `${SYSTEM_AGENT_DIRECTIVE_PREFIX} the host chat now starts guided copy-only memory import with the user. Tell the user the detected local-agent memory choices come next; do not describe steps yourself.`
-                    : directive.kind === "model-setup"
-                      ? `${SYSTEM_AGENT_DIRECTIVE_PREFIX} the host returns protected Models sign-in guidance next. Nothing has changed; do not ask for provider credentials or describe steps yourself.`
-                      : directive.kind === "open-tui"
-                        ? `${SYSTEM_AGENT_DIRECTIVE_PREFIX} the host now hands the user over to their normal agent. Say goodbye briefly.`
-                        : directive.target === "channels"
-                          ? `${SYSTEM_AGENT_DIRECTIVE_PREFIX} the host now opens channel setup${directive.channel ? ` for ${directive.channel}` : ""}. Tell the user the channel setup questions come next.`
-                          : directive.target === "search"
-                            ? `${SYSTEM_AGENT_DIRECTIVE_PREFIX} the host now opens masked terminal web search setup. Tell the user the terminal wizard comes next.`
-                            : directive.target === "gateway"
-                              ? `${SYSTEM_AGENT_DIRECTIVE_PREFIX} the host now opens masked terminal Gateway setup. Tell the user the terminal wizard comes next.`
-                              : `${SYSTEM_AGENT_DIRECTIVE_PREFIX} ${directive.target} setup cannot run inside OpenClaw because it may change the active inference route. Tell the user to exit OpenClaw and run \`openclaw onboard\`.`,
+                  : directive.kind === "model-setup"
+                    ? `${SYSTEM_AGENT_DIRECTIVE_PREFIX} the host returns protected Models sign-in guidance next. Nothing has changed; do not ask for provider credentials or describe steps yourself.`
+                    : directive.kind === "open-tui"
+                      ? `${SYSTEM_AGENT_DIRECTIVE_PREFIX} the host now hands the user over to their normal agent. Say goodbye briefly.`
+                      : directive.target === "channels"
+                        ? `${SYSTEM_AGENT_DIRECTIVE_PREFIX} the host now opens channel setup${directive.channel ? ` for ${directive.channel}` : ""}. Tell the user the channel setup questions come next.`
+                        : directive.target === "search"
+                          ? `${SYSTEM_AGENT_DIRECTIVE_PREFIX} the host now opens masked terminal web search setup. Tell the user the terminal wizard comes next.`
+                          : directive.target === "gateway"
+                            ? `${SYSTEM_AGENT_DIRECTIVE_PREFIX} the host now opens masked terminal Gateway setup. Tell the user the terminal wizard comes next.`
+                            : `${SYSTEM_AGENT_DIRECTIVE_PREFIX} ${directive.target} setup cannot run inside OpenClaw because it may change the active inference route. Tell the user to exit OpenClaw and run \`openclaw onboard\`.`,
           {},
         );
       }

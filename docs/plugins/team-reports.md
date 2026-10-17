@@ -2,14 +2,14 @@
 summary: "Daily, weekly, and monthly team reports from GitHub activity and Discord discussion"
 read_when:
   - You are installing, enabling, or configuring the Team Reports plugin
-  - You want team activity reports in the Control UI
+  - You want team activity reports served by the Gateway
   - You need to generate, export, or troubleshoot stored team reports
 title: "Team Reports plugin"
 ---
 
 Team Reports collects GitHub organization activity and optional Discord
 discussion into daily, weekly, and monthly reports. It keeps report history on
-the Gateway and adds a **Reports** tab to the [Control UI](/web/control-ui).
+the Gateway and serves authenticated report pages.
 Reports include activity counts, per-person history, source warnings, and
 optional model-written summaries.
 
@@ -109,28 +109,14 @@ openclaw team-reports generate --intraday
 ```
 
 Generation returns a run ID after recording the run, before collection and summarization finish. Check
-`status` for the result, then open **Reports** in the Control UI.
+`status` for the result, then read the report through the CLI or authenticated report route.
 
-## Read reports in the Control UI
+## Read reports
 
-The **Reports** tab appears for an enabled plugin and a Control UI connection
-with `operator.read`. It embeds the report page in a sandboxed frame. The
-Gateway supplies and renews a scoped authentication cookie; no Gateway token
-is added to report URLs.
-
-Every report route requires `operator.read`; `operator.write` and `operator.admin`
-also satisfy that requirement. The Control UI tab grants `operator.read` through
-its scoped cookie. The CLI's Gateway RPC methods already declare their required
-read or generation scopes.
-
-Use HTTPS, [Tailscale Serve](/gateway/tailscale), or a browser-trusted loopback
-origin. Plain HTTP on a LAN hostname cannot authenticate the frame. Browsers
-that block all third-party cookies can also make the tab unavailable.
-
-GitHub and other external links may not open inside the sandboxed frame. Each
-page includes **Open in a new window** with that page's own URL. If the browser
-blocks that action too, copy the link into a new tab. Gateway authentication
-still applies there.
+The plugin serves reports at `/plugins/team-reports/` by default. Every report
+route requires Gateway authentication and `operator.read`; `operator.write`
+and `operator.admin` also satisfy that requirement. CLI Gateway RPC methods
+declare their required read or generation scopes.
 
 ### Work sessions
 
@@ -158,10 +144,8 @@ This is a current-work view, not a historical contribution count: it does not
 change daily totals, model summaries, Markdown or JSON exports, or stored report
 history. Session transcripts are not copied into the reports database.
 
-Inside the Control UI, selecting a session opens its chat through the host
-navigation. Outside the embedded tab, session links are ordinary Control UI
-links. If session discovery fails, the page shows **Work sessions unavailable**
-while stored reports remain usable.
+Session links open ordinary Control UI addresses. If session discovery fails,
+the page shows **Work sessions unavailable** while stored reports remain usable.
 
 Pages mirror the maintainer report site layout: a banner and activity dateline,
 latest-period quick cards, day/week/month history, people timelines, and a
@@ -169,12 +153,8 @@ per-person calendar. The generation panel shows scheduler and source health.
 Closed and partial periods remain distinct, with coverage and summary warnings
 alongside the report.
 
-The theme choice follows you through in-tab navigation via the page fragment
-(`#theme=light` or `#theme=dark`). Inside the sandboxed Reports tab, it lasts for
-that visit. It persists per browser only where storage is available, such as in
-a separate window. Pages choose the theme from the fragment first, then browser
-storage when available, then the operating system's light or dark preference,
-independently of the Control UI theme.
+Pages choose the theme from the URL fragment (`#theme=light` or `#theme=dark`),
+then browser storage when available, then the operating system's preference.
 
 Relative times and open-day countdowns refresh with a small
 inline script that the Content Security Policy allows by nonce. The same script

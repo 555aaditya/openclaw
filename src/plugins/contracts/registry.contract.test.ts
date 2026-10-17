@@ -29,20 +29,12 @@ describe("plugin contract registry", () => {
       ids: () => pluginRegistrationContractRegistry.flatMap((entry) => entry.providerIds),
     },
     {
-      name: "does not duplicate bundled worker provider ids",
-      ids: () => pluginRegistrationContractRegistry.flatMap((entry) => entry.workerProviderIds),
-    },
-    {
       name: "does not duplicate bundled web fetch provider ids",
       ids: () => pluginRegistrationContractRegistry.flatMap((entry) => entry.webFetchProviderIds),
     },
     {
       name: "does not duplicate bundled web search provider ids",
       ids: () => pluginRegistrationContractRegistry.flatMap((entry) => entry.webSearchProviderIds),
-    },
-    {
-      name: "does not duplicate bundled migration provider ids",
-      ids: () => pluginRegistrationContractRegistry.flatMap((entry) => entry.migrationProviderIds),
     },
     {
       name: "does not duplicate bundled media provider ids",

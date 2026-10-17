@@ -47,12 +47,7 @@ vi.mock("./setup.gateway-config.js", () => ({
     };
   },
 }));
-vi.mock("./setup.migration-import.js", () => ({
-  detectSetupMigrationSources: async () => ({ detections: [], providerDescriptors: [] }),
-  listSetupMigrationOptions: async () => [],
-  runSetupMigrationImport: vi.fn(),
-}));
-vi.mock("./setup.memory-import.js", () => ({ runSetupMemoryImportStep: vi.fn() }));
+
 vi.mock("./setup.finalize.js", () => ({
   finalizeSetupWizard: async () => ({ launchedTui: false }),
 }));

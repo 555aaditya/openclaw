@@ -10,10 +10,7 @@ import {
   NODE_WORKER_SUPERVISOR_PROTOCOL_FEATURE,
 } from "../infra/node-runner-inventory.js";
 import * as workspaceCommands from "../node-host/node-worker-workspace-commands.js";
-import { createPluginRecord } from "../plugins/loader-records.js";
 import { createEmptyPluginRegistry } from "../plugins/registry-empty.js";
-import { markPluginRegistryActive } from "../plugins/registry-lifecycle.js";
-import type { WorkerProvider } from "../plugins/types.js";
 import { createDeferredCore } from "../shared/deferred.js";
 import {
   closeOpenClawStateDatabaseAsync,
@@ -151,88 +148,6 @@ describe("gateway worker environment startup", () => {
         await service.stop();
       }
       await expect(fs.stat(transferRoot)).rejects.toMatchObject({ code: "ENOENT" });
-    });
-  });
-
-  it("composes idle provider maintenance and drains it during shutdown", async () => {
-    const stateDir = tempDirs.make("openclaw-worker-maintenance-startup-");
-    await withGatewayWorkerEnvironmentStartupState(stateDir, async () => {
-      type MaintenanceContext = Parameters<NonNullable<WorkerProvider["maintain"]>>[0];
-      const entered = createDeferredCore<MaintenanceContext>();
-      const aborted = createDeferredCore();
-      const finish = createDeferredCore();
-      const maintain = vi.fn(async (context: MaintenanceContext) => {
-        context.assertCurrent();
-        context.signal.addEventListener("abort", () => aborted.resolve(), { once: true });
-        entered.resolve(context);
-        await finish.promise;
-      });
-      const registry = createEmptyPluginRegistry();
-      const owner = createPluginRecord({
-        id: "maintenance-owner",
-        source: "/synthetic/maintenance-owner/index.js",
-        origin: "bundled",
-        enabled: true,
-        configSchema: false,
-        contracts: { workerProviders: ["maintenance-provider"] },
-      });
-      registry.plugins.push(owner);
-      registry.workerProviders.set("maintenance-provider", {
-        pluginId: owner.id,
-        source: owner.source,
-        provider: {
-          id: "maintenance-provider",
-          maintain,
-          resolveAllocation: async () => ({ leaseId: "unused", sharedHost: false }),
-          provision: async () => {
-            throw new Error("unused");
-          },
-          inspect: async () => ({ status: "unknown" }),
-          destroy: async () => {},
-        },
-      });
-      markPluginRegistryActive(registry);
-      setRuntimeConfigSnapshot({
-        cloudWorkers: {
-          profiles: {
-            project: { provider: "maintenance-provider", settings: { location: "one" } },
-          },
-        },
-      });
-      const startup = await loadGatewayWorkerEnvironmentStartupState();
-      const runtime = await createGatewayWorkerEnvironmentRuntime({
-        scheduler: createTestGatewayScheduler(),
-        getPluginRegistry: () => registry,
-        getPortalRuntime: () => undefined,
-        resolveGatewayContext: () => undefined,
-        desktopSessionRegistry: createDesktopSessionRegistry({ lingerMs: 1 }),
-        startup,
-        log: { child: () => ({ info: () => {}, warn: () => {} }) },
-      });
-      const service = runtime.workerEnvironmentService;
-      if (!service) {
-        throw new Error("worker environment service was not created");
-      }
-      let stopping: Promise<void> | undefined;
-      let stopped = false;
-      try {
-        expect(startup.store.list()).toEqual([]);
-        const reconciliation = service.reconcileOnce();
-        const context = await entered.promise;
-        await reconciliation;
-        expect(maintain).toHaveBeenCalledOnce();
-        expect(context.profiles).toEqual([{ location: "one" }]);
-        stopping = service.stop().then(() => {
-          stopped = true;
-        });
-        await aborted.promise;
-        expect(stopped).toBe(false);
-        expect(() => context.assertCurrent()).toThrow();
-      } finally {
-        finish.resolve();
-        await (stopping ?? service.stop());
-      }
-      expect(stopped).toBe(true);
     });
   });
 

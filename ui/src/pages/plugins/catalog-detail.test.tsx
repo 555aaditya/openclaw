@@ -110,7 +110,7 @@ it.each([false, true])(
       gatewayMethodDispatch: ["internal-dispatch"],
       ...(mixed ? { tools: ["render_status"] } : {}),
     };
-    result.detail.uiCapabilities = ["link-reader", "widget"];
+    result.detail.uiCapabilities = ["widget"];
     result.detail.providers = ["model-provider"];
     result.detail.channels = ["messaging-channel"];
     result.detail.skills = mixed ? [{ name: "video-guide" }] : [];
@@ -119,7 +119,7 @@ it.each([false, true])(
     const sections = [...container.querySelectorAll(".plugin-capabilities")];
     expect(container.querySelector(".plugin-capabilities button")).toBeNull();
     expect(sections.map((section) => section.querySelector("h2")?.textContent)).toEqual([
-      "Capabilities3",
+      "Capabilities2",
       ...(mixed ? ["Skills1", "Tools1", "MCP Server1"] : []),
     ]);
     expect(
@@ -129,7 +129,6 @@ it.each([false, true])(
     ).toEqual([
       "Video generation",
       "Dashboard widgets",
-      "Link previews",
       ...(mixed ? ["video-guide", "render_status", "media-server"] : []),
     ]);
     expect(container.textContent).not.toContain("internal-dispatch");

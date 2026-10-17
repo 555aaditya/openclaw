@@ -400,7 +400,6 @@ it("keeps quiet members' owned-session links inside their filterable section wit
   expect(html.split("data-maintainer-quiet")[1]?.split("</li>")[0]).toContain(
     "Quiet member current work",
   );
-  expect(html).toContain('data-work-session-key="agent:main:quiet-work"');
   expect(html).toContain("Visible to you now, not activity from this report period.");
   expect(JSON.stringify(report)).toBe(before);
 });

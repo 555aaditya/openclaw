@@ -141,15 +141,7 @@ function validatePreflightOptions(opts: OnboardOptions, runtime: RuntimeEnv): bo
       return reject(remoteUrlError);
     }
   }
-  if (
-    opts.nonInteractive &&
-    (opts.flow === "import" || opts.importSource || opts.importSecrets) &&
-    !opts.importFrom?.trim()
-  ) {
-    return reject(
-      `--import-from is required for non-interactive migration import. Run ${formatCliCommand("openclaw migrate list")} to choose a provider.`,
-    );
-  }
+
   return true;
 }
 
@@ -501,13 +493,10 @@ export async function setupWizardCommand(
   if (
     normalizedOpts.team &&
     (normalizedOpts.mode === "remote" ||
-      normalizedOpts.importFrom ||
-      normalizedOpts.importSource ||
-      normalizedOpts.flow === "import" ||
       (!normalizedOpts.nonInteractive && wantsClassicInteractiveSetup(normalizedOpts)))
   ) {
     reject(
-      "--team supports local guided or non-interactive onboarding. Remove classic, remote, or import options.",
+      "--team supports local guided or non-interactive onboarding. Remove classic or remote options.",
     );
     return;
   }
@@ -651,17 +640,7 @@ export async function setupWizardCommand(
       ) {
         return;
       }
-      if (
-        normalizedOpts.importFrom ||
-        normalizedOpts.importSource ||
-        normalizedOpts.importSecrets ||
-        normalizedOpts.flow === "import"
-      ) {
-        reject(
-          "Migration import cannot be combined with --reset because provider input must be planned before any state is removed. Run the import without --reset.",
-        );
-        return;
-      }
+
       // Reset is deliberately the final pre-dispatch step: no rejectable option
       // checks may run after user state has moved to Trash.
       await handleReset(resetScope, workspaceDir, runtime);

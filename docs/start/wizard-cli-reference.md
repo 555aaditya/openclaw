@@ -21,7 +21,7 @@ Fresh local guided onboarding shows a one-line pointer to the
 shows the full security note and asks for confirmation. Quick start reuses
 detected AI access, verifies it, saves config, and opens the web
 dashboard with a foreground Gateway. It uses agent name `main` and full access,
-leaves telemetry consent unset, and skips route confirmation, memory import,
+leaves telemetry consent unset, and skips route confirmation,
 and app recommendations. **Ctrl+C** stops the Gateway without removing config;
 `openclaw gateway install` enables background operation later.
 
@@ -61,13 +61,6 @@ described [above](/start/wizard-cli-reference#what-the-wizard-does).
       flag still configures that provider without changing the existing default
       model, unless the provider requires you to select a model. Multiple
       provider flags require an explicit `--auth-choice`.
-    - When a migration provider is available, **Import from another agent**
-      appears after those setup choices. Selecting it opens a provider list
-      with entries such as **Import from Claude**, **Import from Codex**, and
-      **Import from Hermes**. Detected sources appear first with their paths;
-      other available providers ask for a source path. Explicit import flags
-      dispatch the import directly and skip this menu. Use Back from the
-      provider list to return to **Setup mode** before an import begins.
     - Re-running the wizard does not wipe anything unless you pass `--reset`.
       Reset is a command flag, not a setup-mode choice.
     - `--reset-scope` accepts `config` (config only),
@@ -77,9 +70,6 @@ described [above](/start/wizard-cli-reference#what-the-wizard-does).
       setup also requires `--accept-risk` before reset. Interactive classic
       setup performs reset before showing its risk acknowledgement; declining
       that prompt does not undo the reset.
-    - Migration import options (`--flow import`, `--import-from`,
-      `--import-source`, and `--import-secrets`) cannot be combined with
-      `--reset`; run the import without `--reset`.
     - Without `--reset`, invalid config or legacy keys stop the wizard and ask
       you to run `openclaw doctor` before continuing.
 

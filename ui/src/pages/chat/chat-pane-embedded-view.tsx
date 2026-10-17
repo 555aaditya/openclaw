@@ -2,7 +2,6 @@ import { dynamic, type JSX as SolidJSX } from "@solidjs/web";
 import { Match, Show, Switch } from "solid-js";
 import { resolveControlUiAuthToken } from "../../app/control-ui-auth.ts";
 import { isBrowserPanelAvailable } from "../../app/panel-availability.ts";
-import { EMPTY_LINK_READERS } from "../../components/link-reader-target.ts";
 import { Icon } from "../../components/solid/icon.tsx";
 import { LazyViewError } from "../../components/solid/lazy-view-error.tsx";
 import { PanelLoadingSkeleton } from "../../components/solid/panel-loading-skeleton.tsx";
@@ -191,25 +190,6 @@ function ProcessesPanel(props: Props) {
   );
 }
 
-function LinkReaderPanel(props: Props) {
-  const presented = usePanePresentation(() => props.linkReaderPresented ?? false);
-  return (
-    <openclaw-link-reader-panel
-      data-sidebar-panel-host
-      prop:embedded={true}
-      data-chat-autotype-exempt
-      prop:client={props.state.connected ? props.state.client : null}
-      prop:available={props.state.connected}
-      prop:readers={props.linkReaders ?? EMPTY_LINK_READERS}
-      prop:agentId={props.agentId ?? undefined}
-      prop:sessionKey={props.state.sessionKey}
-      prop:presented={presented()}
-      prop:tabsInHeader={props.linkReaderTabsInHeader ?? true}
-      prop:onClose={props.onCloseLinkReader}
-    />
-  );
-}
-
 export function ExternalPanelLink(props: { href: string; label: string }) {
   return (
     <a
@@ -267,7 +247,6 @@ const embeddedPanels: Partial<
   portal: PortalPanel,
   subagents: SubagentsPanel,
   processes: ProcessesPanel,
-  "link-reader": LinkReaderPanel,
   workspace: WorkspacePanel,
   detail: DetailPanel,
   dashboard: DashboardPanel,

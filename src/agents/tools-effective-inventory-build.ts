@@ -3,9 +3,8 @@
  * runtime-compatible tools plus warnings for tools quarantined by schema
  * policy, with plugin/channel ownership preserved.
  */
-import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import { getActivePluginRegistry } from "../plugins/runtime.js";
-import { buildPluginToolMetadataKey, getPluginToolMeta } from "../plugins/tool-metadata.js";
+
+import { getPluginToolMeta } from "../plugins/tool-metadata.js";
 import { getChannelAgentToolMeta } from "./channel-tools.js";
 import type { RuntimeToolSchemaDiagnostic } from "./tool-schema-projection.js";
 import {
@@ -78,31 +77,8 @@ export function buildReadableToolsByName(
 export function buildRuntimeCompatibleToolInventory(params: RuntimeCompatibleToolInventoryParams) {
   const rawToolsByName = buildReadableToolsByName(params.tools);
   return buildEffectiveToolInventory(params, {
-    createToolProjection: () => {
-      // Provider normalization can publish registry metadata; read it afterward,
-      // keyed by ownership so one plugin cannot relabel another plugin's tool.
-      const pluginToolMetadata = new Map(
-        (getActivePluginRegistry()?.toolMetadata ?? []).map((entry) => [
-          buildPluginToolMetadataKey(entry.pluginId, entry.metadata.toolName),
-          entry.metadata,
-        ]),
-      );
-      return (tool) => {
-        const source = resolveEffectiveToolSource(tool, rawToolsByName.get(tool.name));
-        const metadata = source.pluginId
-          ? pluginToolMetadata.get(buildPluginToolMetadataKey(source.pluginId, tool.name))
-          : undefined;
-        const label = normalizeOptionalString(metadata?.displayName);
-        const description = normalizeOptionalString(metadata?.description);
-        return {
-          ...source,
-          ...(label ? { label } : {}),
-          ...(description ? { description, rawDescription: description } : {}),
-          ...(metadata?.risk ? { risk: metadata.risk } : {}),
-          ...(metadata?.tags ? { tags: metadata.tags } : {}),
-        };
-      };
-    },
+    createToolProjection: () => (tool) =>
+      resolveEffectiveToolSource(tool, rawToolsByName.get(tool.name)),
     diagnosticOwner: (diagnostic, tools) => {
       const fallbackTool = rawToolsByName.get(diagnostic.toolName);
       const tool = readMatchingTool(tools, diagnostic) ?? fallbackTool;

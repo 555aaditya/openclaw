@@ -87,12 +87,6 @@ Omitting `runtimes` uses every supported runtime declared in the plugin's
 Supply `runtimes` only to select a subset of that declaration. Registration
 rejects an empty runtime list or any targeted runtime missing from the manifest.
 
-Legacy bundled plugins can still use
-`api.registerCodexAppServerExtensionFactory(...)` for Codex app-server-only
-middleware, but new result transforms should use the runtime-neutral API. The
-embedded-runner-only `api.registerEmbeddedExtensionFactory(...)` hook has been
-removed; embedded tool-result transforms must use runtime-neutral middleware.
-
 Retain `details.messageDelivery.sourceReplyDelivered` from the host message tool
 before middleware transforms its result, and carry it into the attempt result.
 This confirms a final external source reply and does not depend on destination

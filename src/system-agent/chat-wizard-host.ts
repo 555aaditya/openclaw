@@ -12,15 +12,12 @@ import {
   wizardStepAwaitsInput,
   type WizardStep,
 } from "../wizard/session.js";
-import type { MemoryImportProviderOutcome } from "../wizard/setup.memory-import.js";
 import type { SystemAgentOperation } from "./operations.js";
 import { classifySystemAgentApprovalText } from "./operator-approval.js";
 
 type WizardPrompter = import("../wizard/prompts.js").WizardPrompter;
-type HostedRuntime = typeof import("./hosted-setup.runtime.js");
 type HostedSetupCompletion = import("./hosted-setup.runtime.js").HostedSetupCompletion;
-type HostedMemoryImportOutcome = import("./hosted-setup.runtime.js").HostedMemoryImportOutcome;
-type HostedWizardRunResult = void | HostedSetupCompletion | HostedMemoryImportOutcome;
+type HostedWizardRunResult = void | HostedSetupCompletion;
 
 type SystemAgentChatReplyAction = "none" | "exit" | "open-tui" | "open-setup";
 
@@ -61,19 +58,16 @@ export type ChatWizardHostDependencies = {
   runSkillsSetupWizard?: HostedSetupWizard;
   runSearchSetupWizard?: HostedSetupWizard;
   runGatewaySetupWizard?: HostedSetupWizard;
-  runMemoryImportWizard?: HostedRuntime["runHostedMemoryImport"];
   appendAuditEntry?: typeof import("./audit.js").appendSystemAgentAuditEntry;
 };
 
 type ActiveWizardBridge = {
   session: WizardSession;
   step: WizardStep | null;
-  kind: "channel" | "skills" | "search" | "gateway" | "memory-import";
+  kind: "channel" | "skills" | "search" | "gateway";
   label: string;
   completion: {
     status: HostedSetupCompletion;
-    memoryImport?: HostedMemoryImportOutcome;
-    memoryImportProviders?: MemoryImportProviderOutcome[];
   };
   autoSelectChannel?: string;
 };
@@ -424,27 +418,10 @@ export class ChatWizardHost {
     return { ...result, text: [warning, result.text].filter(Boolean).join("\n\n") };
   }
 
-  async startMemoryImport(): Promise<ChatWizardResult> {
-    const run = this.options.dependencies?.runMemoryImportWizard;
-    const providers: MemoryImportProviderOutcome[] = [];
-    return await this.start({
-      kind: "memory-import",
-      label: "memory import",
-      memoryImportProviders: providers,
-      run: async (prompter) =>
-        await (run ?? (await import("./hosted-setup.runtime.js")).runHostedMemoryImport)(
-          prompter,
-          this.options.beforePersistentApply,
-          (value) => providers.push(value),
-        ),
-    });
-  }
-
   private async start(params: {
     kind: ActiveWizardBridge["kind"];
     label: string;
     autoSelectChannel?: string;
-    memoryImportProviders?: MemoryImportProviderOutcome[];
     run: (
       prompter: WizardPrompter,
       assertPersistentEffectCurrent: () => void,
@@ -452,9 +429,6 @@ export class ChatWizardHost {
   }): Promise<ChatWizardResult> {
     const completion: ActiveWizardBridge["completion"] = {
       status: "applied",
-      ...(params.memoryImportProviders
-        ? { memoryImportProviders: params.memoryImportProviders }
-        : {}),
     };
     const session = new WizardSession(async (prompter, _signal, owner) => {
       // Publish the bridge before a setup callback can use its retained authority.
@@ -468,8 +442,6 @@ export class ChatWizardHost {
       const result = await params.run(prompter, assertPersistentEffectCurrent);
       if (typeof result === "string") {
         completion.status = result;
-      } else if (result) {
-        completion.memoryImport = result;
       }
     });
     this.bridge = {
@@ -509,17 +481,6 @@ export class ChatWizardHost {
       this.bridge = null;
       const label = bridge.label;
       if (result.status === "done") {
-        if (bridge.kind === "memory-import") {
-          return {
-            text: await (
-              await import("./hosted-setup.runtime.js")
-            ).renderMemoryImport(
-              bridge.completion.memoryImport,
-              this.options.dependencies?.appendAuditEntry,
-            ),
-            configWritten: false,
-          };
-        }
         if (bridge.completion.status === "kept-current") {
           return {
             text: `${label[0]?.toUpperCase() ?? "S"}${label.slice(1)} setup kept the current configuration. Nothing was changed.`,
@@ -536,14 +497,7 @@ export class ChatWizardHost {
             : HOSTED_SETUP[bridge.kind].success;
         return { text: success.join("\n"), configWritten: true };
       }
-      if (bridge.kind === "memory-import") {
-        await (
-          await import("./hosted-setup.runtime.js")
-        ).auditMemoryImport(
-          bridge.completion.memoryImportProviders ?? [],
-          this.options.dependencies?.appendAuditEntry,
-        );
-      }
+
       if (result.status === "cancelled") {
         return {
           text: `${label[0]?.toUpperCase() ?? "S"}${label.slice(1)} setup cancelled. Nothing was changed beyond completed steps.`,
@@ -590,10 +544,7 @@ export class ChatWizardHost {
     return { text: bridge.step ? renderWizardStep(bridge.step) : "", configWritten: false };
   }
 
-  private async auditSetup(
-    kind: Exclude<ActiveWizardBridge["kind"], "memory-import">,
-    label: string,
-  ): Promise<void> {
+  private async auditSetup(kind: ActiveWizardBridge["kind"], label: string): Promise<void> {
     const setup = kind === "channel" ? undefined : HOSTED_SETUP[kind];
     const entry = !setup
       ? {

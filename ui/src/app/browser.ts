@@ -1,10 +1,6 @@
 import type { RouteLocation, RouterHistory } from "@openclaw/uirouter";
 import { CONTROL_UI_BASE_PATH_ATTRIBUTE } from "../../../src/gateway/control-ui-bootstrap-contract.js";
-import {
-  inferBasePathFromPathname,
-  normalizeBasePath,
-  pluginSlugCandidate,
-} from "../app-route-paths.ts";
+import { inferBasePathFromPathname, normalizeBasePath } from "../app-route-paths.ts";
 import { uiDevGatewayResourceBasePath } from "../dev-gateway.ts";
 import { isNativeEmbedHost } from "./native-web-chrome.ts";
 
@@ -29,11 +25,7 @@ function readControlUiResourceBasePath(): string | null {
 
 export function resolveControlUiPaths(pathname: string) {
   const resourceBasePath = readControlUiResourceBasePath();
-  // Cold slug links use the declared root; known route namespaces can still use root resources.
-  const basePath =
-    resourceBasePath === "" && pluginSlugCandidate(pathname)
-      ? ""
-      : resourceBasePath || inferBasePathFromPathname(pathname);
+  const basePath = resourceBasePath ?? inferBasePathFromPathname(pathname);
   return [basePath, uiDevGatewayResourceBasePath() ?? resourceBasePath ?? basePath] as const;
 }
 

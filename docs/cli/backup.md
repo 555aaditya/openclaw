@@ -111,8 +111,7 @@ openclaw backup create --to offsite
 ```
 
 The built-in `filesystem` provider supports an existing disk or mounted directory.
-The [Cloudflare plugin](/plugins/cloudflare) provides R2 object storage. Storage
-configuration owns encryption and credentials; backup commands use the configured
+Storage configuration owns encryption; backup commands use the configured
 location without provider-specific flags. See [Storage CLI](/cli/storage).
 
 `create --to` opens and checks the location before archiving, creates the archive

@@ -1,14 +1,11 @@
 import { createEffect, createMemo, For, Show, untrack } from "solid-js";
 import type { ControlUiSessionPullRequest } from "../../../../src/gateway/control-ui-contract.js";
-import type { ControlUiLinkReaderPreview } from "../../../../src/shared/control-ui-link-reader.js";
 import type { ApplicationContext } from "../../app/context.ts";
-import { availableLinkPreviewReaders } from "../../app/link-reader-routing.ts";
 import { SessionGitDiff } from "../../components/session-git-diff.tsx";
 import { Icon } from "../../components/solid/icon.tsx";
 import { registerActivityEnglish } from "../../i18n/locales/en-activity.ts";
 import { projectGateway } from "../../lib/reactive/application.ts";
 import { registerEnglishCatalog, t } from "../../lib/reactive/i18n.ts";
-import "../../components/link-reader-hovercard-registration.ts";
 import { projectSource } from "../../lib/reactive/projection.ts";
 import {
   orderSessionPullRequests,
@@ -17,37 +14,6 @@ import {
 import { sessionPullRequestsForGateway } from "../../lib/session-pull-requests.ts";
 
 registerEnglishCatalog(registerActivityEnglish);
-
-function pullRequestPreview(pr: ControlUiSessionPullRequest): ControlUiLinkReaderPreview {
-  return {
-    url: pr.url,
-    title: pr.title,
-    subtitle: pr.owner + "/" + pr.repo + " #" + pr.number,
-    badge: {
-      label: t("activity.git." + pr.state),
-      tone:
-        pr.state === "merged"
-          ? "accent"
-          : pr.state === "open"
-            ? "positive"
-            : pr.state === "closed"
-              ? "negative"
-              : "neutral",
-    },
-    author: pr.author?.login,
-    authorUrl: pr.author?.login
-      ? "https://github.com/" + encodeURIComponent(pr.author.login)
-      : undefined,
-    metadata: [
-      ...(pr.additions === undefined
-        ? []
-        : [{ label: "", value: "+" + pr.additions, tone: "positive" as const }]),
-      ...(pr.deletions === undefined
-        ? []
-        : [{ label: "", value: "−" + pr.deletions, tone: "negative" as const }]),
-    ],
-  };
-}
 
 function PullRequest(props: { value: ControlUiSessionPullRequest }) {
   return (
@@ -116,13 +82,7 @@ export function ActivitySessionGit(props: ActivitySessionGitProps) {
   return (
     <openclaw-activity-session-git>
       <Show when={visible()}>
-        <openclaw-link-reader-hovercard-provider
-          prop:client={connection().phase === "connected" ? connection().client : null}
-          prop:readers={availableLinkPreviewReaders(connection())}
-          prop:agentId={props.agentId ?? ""}
-          prop:sessionKey={props.sessionKey}
-          prop:previewSeeds={pullRequests().map(pullRequestPreview)}
-        >
+        <>
           <div class="activity-feed__git">
             <Show when={branch()}>
               {(current) => (
@@ -152,7 +112,7 @@ export function ActivitySessionGit(props: ActivitySessionGitProps) {
               </span>
             </Show>
           </div>
-        </openclaw-link-reader-hovercard-provider>
+        </>
       </Show>
     </openclaw-activity-session-git>
   );

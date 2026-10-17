@@ -3,27 +3,18 @@ import { pluginInstanceState, type PluginInstanceHandle } from "./plugin-instanc
 import type { OpenClawPluginCliRegistrar } from "./plugin-registration.types.js";
 import type { OpenClawPluginApi } from "./types.js";
 
-type PluginApiFacadeFields = Pick<
-  OpenClawPluginApi,
-  "agent" | "lifecycle" | "runContext" | "session"
->;
+type PluginApiFacadeFields = Pick<OpenClawPluginApi, "agent" | "lifecycle" | "session">;
 /** Plugin API shape without nested facade namespaces attached. */
 export type OpenClawPluginApiWithoutFacades = Omit<OpenClawPluginApi, keyof PluginApiFacadeFields>;
-type PluginApiFacadeSource = OpenClawPluginApi["session"]["state"] &
-  Omit<OpenClawPluginApi["session"]["workflow"], "steerActiveRun"> &
-  OpenClawPluginApi["session"]["controls"] &
+type PluginApiFacadeSource = OpenClawPluginApi["session"]["workflow"] &
   OpenClawPluginApi["agent"]["events"] &
-  OpenClawPluginApi["runContext"] &
   Pick<OpenClawPluginApi["lifecycle"], "registerRuntimeLifecycle">;
 
 const identitySensitiveRegistrations = new Set([
-  "registerCompactionProvider",
   "registerDecisionProvider",
-  "registerGatewayAccessPolicy",
   "registerHttpRoute",
   "registerImageGenerationProvider",
   "registerMediaUnderstandingProvider",
-  "registerMigrationProvider",
   "registerMusicGenerationProvider",
   "registerRealtimeTranscriptionProvider",
   "registerRealtimeVoiceProvider",
@@ -37,36 +28,16 @@ const identitySensitiveRegistrations = new Set([
 /** Attaches nested facade namespaces to the flat plugin API implementation. */
 export function attachPluginApiFacades<T extends object>(
   api: T & PluginApiFacadeSource & Partial<PluginApiFacadeFields>,
-  steerActiveRun: OpenClawPluginApi["session"]["workflow"]["steerActiveRun"],
 ): T & PluginApiFacadeFields {
   api.session = {
-    state: {
-      registerSessionExtension: (...args) => api.registerSessionExtension(...args),
-    },
     workflow: {
       enqueueNextTurnInjection: (...args) => api.enqueueNextTurnInjection(...args),
-      // Steering is runtime-only; retain its owner-bound handler across facade reattachment.
-      steerActiveRun,
-      registerSessionSchedulerJob: (...args) => api.registerSessionSchedulerJob(...args),
-      sendSessionAttachment: (...args) => api.sendSessionAttachment(...args),
-      scheduleSessionTurn: (...args) => api.scheduleSessionTurn(...args),
-      unscheduleSessionTurnsByTag: (...args) => api.unscheduleSessionTurnsByTag(...args),
-    },
-    controls: {
-      registerSessionAction: (...args) => api.registerSessionAction(...args),
-      registerControlUiDescriptor: (...args) => api.registerControlUiDescriptor(...args),
     },
   };
   api.agent = {
     events: {
       registerAgentEventSubscription: (...args) => api.registerAgentEventSubscription(...args),
-      emitAgentEvent: (...args) => api.emitAgentEvent(...args),
     },
-  };
-  api.runContext = {
-    setRunContext: (...args) => api.setRunContext(...args),
-    getRunContext: (...args) => api.getRunContext(...args),
-    clearRunContext: (...args) => api.clearRunContext(...args),
   };
   api.lifecycle = {
     ...api.lifecycle,
@@ -91,11 +62,11 @@ export function instrumentPluginInstanceApi(
         if (
           typeof value !== "function" ||
           typeof key !== "string" ||
-          (!key.startsWith("register") && key !== "on" && key !== "onConversationBindingResolved")
+          (!key.startsWith("register") && key !== "on")
         ) {
           return value;
         }
-        if (key === "registerCli" || key === "registerNodeCliFeature") {
+        if (key === "registerCli") {
           return (registrar: OpenClawPluginCliRegistrar, ...options: unknown[]) =>
             instance.run(() =>
               Reflect.apply(value, target, [
@@ -128,7 +99,6 @@ export function instrumentPluginInstanceApi(
           );
       },
     }),
-    api.session.workflow.steerActiveRun,
   );
   pluginInstanceState.values.setHost(instrumented, instance);
   return instrumented;

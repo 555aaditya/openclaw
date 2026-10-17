@@ -127,16 +127,9 @@ Primary reference: [Configuration reference - Discord](/gateway/config-channels#
 - media: `mediaMaxMb` (caps outbound Discord uploads, default `100`)
 - actions: `actions.*`
 - presence: `activity`, `status`, `activityType`, `activityUrl`, `autoPresence.*`
-- features: `threadBindings`, top-level `bindings[]` (`type: "acp"`), `pluralkit`, `execApprovals`, `intents`, `agentComponents.enabled`, `agentComponents.ttlMs`, `activities`, `heartbeatVisibility`, `responsePrefix`
+- features: `threadBindings`, top-level `bindings[]` (`type: "acp"`), `pluralkit`, `execApprovals`, `intents`, `agentComponents.enabled`, `agentComponents.ttlMs`, `heartbeatVisibility`, `responsePrefix`
 
 </Accordion>
-
-### Discord Activities
-
-Set `channels.discord.activities` to let the core `show_widget` tool post self-contained HTML widgets that open inside Discord. The block is opt-in. Discord registers the Activity plumbing statically, but the current-channel presenter stays unavailable and `/discord/activity` remains externally hidden behind the normal 404 until an enabled account has an available bot token, resolved client secret, and application ID. See [Discord Activities](/channels/discord-activities) for the Developer Portal, tunnel, security, and troubleshooting setup.
-
-- `activities.clientSecret`: OAuth2 client secret for the Discord application; falls back to `DISCORD_CLIENT_SECRET`
-- `activities.applicationId`: optional Activity application ID; defaults to the bot application ID learned at gateway startup
 
 ## Safety and operations
 
@@ -161,9 +154,6 @@ July SQLite state and the July command-deployment cache remain supported.
 ## Related
 
 <CardGroup cols={2}>
-  <Card title="Discord Activities" icon="window" href="/channels/discord-activities">
-    Launch interactive HTML widgets inside Discord.
-  </Card>
   <Card title="Pairing" icon="link" href="/channels/pairing">
     Pair a Discord user to the gateway.
   </Card>

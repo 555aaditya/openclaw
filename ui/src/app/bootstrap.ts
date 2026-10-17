@@ -64,7 +64,6 @@ import { createScopeUpgradeCapability } from "./device-scope-upgrade.ts";
 import { startGatewayPageActivation } from "./gateway-page-activation.ts";
 import { startGatewayPresenceActivity } from "./gateway-presence-activity.ts";
 import { createApplicationGateway } from "./gateway-store.ts";
-import { startLinkReaderRouting } from "./link-reader-routing.ts";
 import { startMcpAppRouting } from "./mcp-app-link-routing.ts";
 import { createNativeChatDrafts } from "./native-bridge.ts";
 import type { NativeConversationBridge } from "./native-conversation-types.ts";
@@ -385,9 +384,7 @@ export function bootstrapApplication(): ApplicationRuntime {
   const mcpAppRouting = startMcpAppRouting({
     navigate: (route, options) => context.navigate(route, options),
   });
-  const linkReaderRouting = startLinkReaderRouting(() => gateway.snapshot, {
-    shouldOpenExternally,
-  });
+
   const nativeLinkRouting = startNativeLinkRouting({
     shouldOpenExternally,
     signal: startupLifecycle.signal,
@@ -750,7 +747,6 @@ export function bootstrapApplication(): ApplicationRuntime {
       overlays.dispose();
       theme.dispose();
       nativeChatDrafts.dispose();
-      linkReaderRouting.dispose();
       mcpAppRouting.dispose();
       nativeLinkRouting.dispose();
       webPush.dispose();

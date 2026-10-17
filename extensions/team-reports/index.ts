@@ -139,17 +139,6 @@ export default definePluginEntry({
         people: () => scheduler?.people() ?? initial.people ?? [],
       }),
     });
-    api.session.controls.registerControlUiDescriptor({
-      surface: "tab",
-      id: "team-reports",
-      label: "Reports",
-      slug: "reports",
-      description: "Team activity reports from GitHub and Discord.",
-      icon: "chart",
-      group: "control",
-      requiredScopes: ["operator.read"],
-      path: `${initial.basePath}/`,
-    });
     registerTeamReportsGatewayMethods(api, { scheduler: requireScheduler, store: requireStore });
     api.registerCli(
       async ({ program }) => {

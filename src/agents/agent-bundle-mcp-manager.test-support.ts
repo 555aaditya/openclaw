@@ -33,7 +33,6 @@ export function getBookkeepingSizes(manager: RuntimeManager) {
   const store = expectDefined(managerStores.get(manager), "fixture-owned MCP manager store");
   return {
     runtimes: store.runtimesBySessionId.size,
-    connectionMeta: store.connectionMetaByRuntimeKey.size,
     runtimeWorkChains: store.runtimeWorkChains.size,
     sessionKeys: store.sessionIdBySessionKey.size,
     deferredRetirement: store.deferredRetirementSessionIds.size,

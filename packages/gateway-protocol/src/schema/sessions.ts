@@ -5,7 +5,6 @@ import { closedObject } from "./closed-object.js";
 import { ErrorShapeSchema } from "./frames.js";
 import { HumanMentionsSchema } from "./human-mentions.js";
 import { ChatAttachmentsSchema } from "./logs-chat.js";
-import { PluginJsonValueSchema } from "./plugins.js";
 import { NonEmptyString, SessionLabelString } from "./primitives.js";
 import { SessionsRecoverParamsSchema, SessionsRecoverResultSchema } from "./sessions-recover.js";
 import { SessionOwnerSchema } from "./sessions-row.js";
@@ -478,22 +477,6 @@ export const SessionsAbortParamsSchema = closedObject({
   clearQueued: Type.Optional(Type.Boolean()),
 });
 
-/** Updates or clears one plugin namespace value on a session record. */
-export const SessionsPluginPatchParamsSchema = closedObject({
-  key: NonEmptyString,
-  agentId: Type.Optional(NonEmptyString),
-  pluginId: NonEmptyString,
-  namespace: NonEmptyString,
-  value: Type.Optional(PluginJsonValueSchema),
-  unset: Type.Optional(Type.Boolean()),
-});
-
-export const SessionsPluginPatchResultSchema = closedObject({
-  ok: Type.Literal(true),
-  key: NonEmptyString,
-  value: Type.Optional(PluginJsonValueSchema),
-});
-
 export const SessionsResetParamsSchema = closedObject({
   key: NonEmptyString,
   agentId: Type.Optional(NonEmptyString),
@@ -736,8 +719,6 @@ export type SessionsMessagesUnsubscribeParams = Static<
   typeof SessionsMessagesUnsubscribeParamsSchema
 >;
 export type SessionsAbortParams = Static<typeof SessionsAbortParamsSchema>;
-export type SessionsPluginPatchParams = Static<typeof SessionsPluginPatchParamsSchema>;
-export type SessionsPluginPatchResult = Static<typeof SessionsPluginPatchResultSchema>;
 export type SessionsResetParams = Static<typeof SessionsResetParamsSchema>;
 export type SessionsAssignOwnerParams = Static<typeof SessionsAssignOwnerParamsSchema>;
 export type SessionsAssignOwnerResult = Static<typeof SessionsAssignOwnerResultSchema>;

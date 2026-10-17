@@ -1588,17 +1588,14 @@ export function createUiRealGatewayTestShards(
     e2eGroups.flatMap((group) => group.includePatterns ?? uiE2eRealGatewayTestFiles),
   );
   const parallelFiles = new Set(uiE2ePrebuiltParallelTestFiles);
-  const desktop = resolveUiTypeScriptPath("ui/src/e2e/desktop-resize.real-gateway.e2e.test.ts");
-  const files = uiE2eRealGatewayTestFiles.filter((file) => selected.has(file) && file !== desktop);
-  // Desktop transport proof owns its file separately, alongside the serial phase.
+  const files = uiE2eRealGatewayTestFiles.filter((file) => selected.has(file));
   return ([1, 2] as const).map((shard) => ({
     shard,
     shard_count: 2 as const,
-    run_desktop: shard === 1 && selected.has(desktop),
     groups: [
       {
         configs: ["test/vitest/vitest.ui-e2e-prebuilt.config.ts"],
-        shard_name: `ui-e2e-real-gateway-${shard === 1 ? "desktop" : "parallel"}`,
+        shard_name: `ui-e2e-real-gateway-${shard === 1 ? "serial" : "parallel"}`,
         includePatterns: files.filter((file) => parallelFiles.has(file) === (shard === 2)),
       },
     ],

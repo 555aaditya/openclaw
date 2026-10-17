@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { upsertAuthProfile } from "../agents/auth-profiles/profiles.js";
 import { resolveOpenClawPluginToolsForOptions } from "../agents/openclaw-plugin-tools.js";
@@ -50,7 +49,6 @@ import { createDeferredCore } from "../shared/deferred.js";
 import { createTestGatewayScheduler } from "../test-utils/gateway-scheduler-clock.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import { buildGatewayReloadPlan } from "./config-reload-plan.js";
-import { createAccessPolicyTransport } from "./server-methods/agent.visitor-access.test-support.js";
 import type { GatewayRequestHandler } from "./server-methods/types.js";
 import * as bootstrap from "./server-plugin-bootstrap.js";
 import { withOperatorToolGatewayAuthority } from "./server-plugin-in-process-dispatch.js";
@@ -563,17 +561,46 @@ describe("prepared Gateway plugin borrowing", () => {
 
 describe("published Gateway plugin services", () => {
   // Protect the service-to-agent-tool contract through the actual replacement loader.
-  // Existing visitor tests only start an already-enabled plugin; registry recovery
-  // fixtures substitute their own candidate loader and do not resolve agent tools.
+  // Registry recovery fixtures substitute their own candidate loader and do not resolve agent tools.
   it.for(["cold start", "hot enable"] as const)(
-    "%s lets a published agent runtime use the visitor service",
+    "%s lets a published agent runtime use its plugin service",
     async (mode, { signal }) => {
       await withOpenClawTestState({ label: "plugin-hot-runtime-store" }, async (state) => {
-        const pluginId = "visitor-access";
-        const toolName = "visitor_revoke";
-        const bundledDir = fileURLToPath(new URL("../../extensions/", import.meta.url));
-        const provider = createAccessPolicyTransport();
-        vi.stubGlobal("fetch", provider.fetcher);
+        const pluginId = "service-probe";
+        const toolName = "service_probe";
+        const bundledDir = state.path("bundled");
+        const pluginDir = path.join(bundledDir, pluginId);
+        fs.mkdirSync(pluginDir, { recursive: true });
+        fs.writeFileSync(
+          path.join(pluginDir, "package.json"),
+          JSON.stringify({
+            name: "@fixture/service-probe",
+            version: "1.0.0",
+            openclaw: { extensions: ["./index.cjs"] },
+          }),
+        );
+        fs.writeFileSync(
+          path.join(pluginDir, "openclaw.plugin.json"),
+          JSON.stringify({
+            id: pluginId,
+            contracts: { tools: [toolName] },
+            configSchema: { type: "object", additionalProperties: false },
+          }),
+        );
+        fs.writeFileSync(
+          path.join(pluginDir, "index.cjs"),
+          `module.exports = { id: "service-probe", register(api) {
+          const open = () => api.runtime.state.openKeyedStore({ namespace: "service-state", maxEntries: 4 });
+          api.registerTool({ contextVersion: 2, create(ctx) {
+            const store = open();
+            return { name: "service_probe", label: "Service probe", description: "Read started plugin service state", parameters: { type: "object", properties: {} },
+              async execute() { ctx.assertInvocationCurrent(); const ready = await store.lookup("ready"); if (!ready) throw new Error("Plugin service is not started"); return { content: [{ type: "text", text: ready }], details: {} }; }
+            };
+          } }, { name: "service_probe" });
+          if (api.registrationMode !== "full") return;
+          api.registerService({ id: "service-probe", async start() { await open().register("ready", "Plugin service is ready"); }, async stop() { await open().delete("ready"); } });
+        } };`,
+        );
         vi.stubEnv("OPENCLAW_BUNDLED_PLUGINS_DIR", bundledDir);
         vi.stubEnv("OPENCLAW_TEST_TRUST_BUNDLED_PLUGINS_DIR", "1");
         vi.stubEnv("OPENCLAW_DISABLE_BUNDLED_PLUGINS", undefined);
@@ -586,11 +613,6 @@ describe("published Gateway plugin services", () => {
             entries: {
               [pluginId]: {
                 enabled,
-                config: {
-                  accountId: "test-account",
-                  appId: "test-app",
-                  apiToken: "synthetic-visitor-token",
-                },
               },
             },
           },
@@ -691,16 +713,9 @@ describe("published Gateway plugin services", () => {
             .tools(toolName, runLease, config)
             .find(({ name }) => name === toolName);
           assert(tool, "enabled tool must resolve for the owner agent");
-          const result = await tool.execute("visitor-revoke-call", {
-            email: "absent@example.test",
-          });
+          const result = await tool.execute("service-probe-call", {});
           expect(result).toMatchObject({
-            content: [
-              {
-                type: "text",
-                text: "No visitor grant found for absent@example.test; nothing to revoke.",
-              },
-            ],
+            content: [{ type: "text", text: "Plugin service is ready" }],
             details: {},
           });
           expect(gatewayInstance.retainedWorkCount).toBeGreaterThan(retainedBeforeRun);

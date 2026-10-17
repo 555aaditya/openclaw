@@ -1,6 +1,6 @@
 import http from "node:http";
 import { expectDefined } from "@openclaw/normalization-core";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../../test/helpers/temp-dir.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { withPluginRuntimeRegistryScope } from "../../plugins/runtime/gateway-request-scope.js";
@@ -13,10 +13,24 @@ import {
   setSessionMcpRuntimeScheduler,
 } from "../agent-bundle-mcp-manager-api.js";
 import { getSessionMcpRuntimeTestManager } from "../agent-bundle-mcp-manager.test-support.js";
-import { createMcpProofPluginRegistry } from "../mcp-connection-resolver.test-fixtures.js";
+import { createMcpProofPluginRegistry } from "../mcp-plugin-registry.test-support.js";
 import { AuthStorage } from "../sessions/auth-storage.js";
 import { ModelRegistry } from "../sessions/model-registry.js";
 import { buildCodexUserMcpServersThreadConfigPatchForRun } from "./bundle-mcp-codex.js";
+
+// Keep this transport-lifetime regression independent of external OAuth credentials.
+vi.mock(import("../mcp-oauth.js"), async (importOriginal) => ({
+  ...(await importOriginal()),
+  readMcpOAuthCredentialsStatuses: async (identities) =>
+    identities.map(() => ({ state: "authorized" as const })),
+  startMcpOAuthAuthorization: vi.fn(async () => {
+    throw new Error("Unexpected OAuth authorization in the authorized transport fixture");
+  }),
+}));
+// mock-isolation: The fixture HTTP server owns authentication and never reads host tokens.
+vi.mock("../mcp-oauth-fetch.js", () => ({
+  withMcpOAuthBearer: ({ fetchFn }: { fetchFn: typeof fetch }) => fetchFn,
+}));
 
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
 
@@ -80,10 +94,6 @@ it("keeps requester tools callable across static native preflight until session 
   }
   const url = `http://127.0.0.1:${address.port}`;
   const registry = createMcpProofPluginRegistry();
-  registry.apiFor("test-plugin").registerMcpServerConnectionResolver({
-    serverName: "requester",
-    resolve: async () => ({ url: `${url}/requester` }),
-  });
   const sessionId = "mixed-native-discovery";
   const sessionKey = `agent:main:${sessionId}`;
   const scheduler = createTestGatewayScheduler();
@@ -98,7 +108,12 @@ it("keeps requester tools callable across static native preflight until session 
           mcp: {
             servers: {
               static: { transport: "streamable-http", url: `${url}/static` },
-              requester: { transport: "streamable-http" },
+              requester: {
+                transport: "streamable-http",
+                url: `${url}/requester`,
+                auth: "oauth",
+                oauth: { identity: "per-requester" },
+              },
             },
           },
         };

@@ -418,15 +418,6 @@ describe("personal navigation rail", () => {
       gateway.publish({
         hello: {
           ...gatewayHelloForMethods(["chat.history", "chat.send"]),
-          controlUiTabs: [
-            {
-              group: "control",
-              id: "logbook",
-              label: "Logbook",
-              pluginId: "logbook",
-              slug: "logbook",
-            },
-          ],
         },
       });
       sidebar.sidebarEntries = [

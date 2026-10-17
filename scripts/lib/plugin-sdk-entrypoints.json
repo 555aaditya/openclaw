@@ -169,8 +169,6 @@
   "temp-path",
   "time-runtime",
   "logging-core",
-  "migration",
-  "migration-runtime",
   "plugin-state-runtime",
   "plugin-state-test-runtime",
   "markdown-table-runtime",

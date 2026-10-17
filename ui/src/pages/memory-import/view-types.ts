@@ -1,7 +1,3 @@
-import type {
-  MigrationsMemoryApplyResult,
-  MigrationsMemoryPlanResult,
-} from "../../../../packages/gateway-protocol/src/schema/migrations.js";
 import type { GatewayAgentRow } from "../../../../src/shared/session-types.js";
 
 export type SessionBackfillGatewayResult = {
@@ -30,15 +26,6 @@ export type MemoryImportViewProps = {
   canAdmin: boolean;
   agents: GatewayAgentRow[];
   selectedAgentId: string | null;
-  plan: MigrationsMemoryPlanResult | null;
-  loading: boolean;
-  error: string | null;
-  applyError: string | null;
-  replaceExisting: boolean;
-  selectedByProvider: Record<string, string[]>;
-  applyingProviderId: string | null;
-  pendingProviderId: string | null;
-  lastResults: Record<string, MigrationsMemoryApplyResult>;
   backfillAvailable: boolean;
   backfillFrom: string;
   backfillTo: string;
@@ -49,12 +36,6 @@ export type MemoryImportViewProps = {
   backfillRollbackResult: SessionBackfillRollbackResult | null;
   backfillRollbackPending: boolean;
   onSelectAgent: (agentId: string) => void;
-  onReplaceExisting: (enabled: boolean) => void;
-  onRefresh: () => void;
-  onToggleCollection: (providerId: string, itemIds: readonly string[], selected: boolean) => void;
-  onRequestImport: (providerId: string) => void;
-  onConfirmImport: () => void;
-  onCancelImport: () => void;
   onBackfillFromChange: (value: string) => void;
   onBackfillToChange: (value: string) => void;
   onBackfillPreview: () => void;

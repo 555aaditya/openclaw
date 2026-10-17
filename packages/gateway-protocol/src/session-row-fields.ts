@@ -15,7 +15,6 @@ export const SESSION_ROW_DETAIL_FIELDS = [
   "nativeRuntimeConsent",
   "contextBudgetStatus",
   "agentRuntime",
-  "pluginExtensions",
 ] as const;
 
 /** Gallery presentation and the facts needed to reconcile its held membership. */

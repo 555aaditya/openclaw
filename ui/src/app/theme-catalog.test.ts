@@ -176,9 +176,6 @@ it("applies routed profile updates and plugin hot reloads, restoring an unavaila
     if (method === "themes.list") {
       return response;
     }
-    if (method === "plugins.uiDescriptors") {
-      return { ok: true, generation: 1, descriptors: [], methods: [] };
-    }
     throw new Error(`Unexpected request ${method}`);
   });
   current().opts.onHello?.({
@@ -421,9 +418,6 @@ it("keeps a local palette selected during catalog refresh and reloads later vers
     if (method === "themes.get") {
       paletteReads += 1;
       return paletteResponse ?? Promise.resolve({ ...catalog(palette), current: response.current });
-    }
-    if (method === "plugins.uiDescriptors") {
-      return Promise.resolve({ ok: true, generation: 1, descriptors: [], methods: [] });
     }
     return Promise.reject(new Error(`Unexpected request ${method}`));
   });

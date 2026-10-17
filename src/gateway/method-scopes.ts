@@ -1,5 +1,4 @@
 import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
-import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import {
   isAdminOnlyNodeInvokeCommand,
   isBrowserProxyNodeInvokeCommand,
@@ -74,57 +73,12 @@ export function isApprovalMethod(method: string): boolean {
   return resolveScopedMethod(method) === APPROVALS_SCOPE;
 }
 
-function resolveSessionActionRegisteredScopes(params: unknown): OperatorScope[] | undefined {
-  const record = asOptionalRecord(params);
-  if (!record) {
-    return undefined;
-  }
-  const pluginId = normalizeOptionalString(record.pluginId);
-  const actionId = normalizeOptionalString(record.actionId);
-  if (!pluginId || !actionId) {
-    return undefined;
-  }
-  const registration = getPluginRegistryForContext()?.sessionActions?.find(
-    (entry) => entry.pluginId === pluginId && entry.action.id === actionId,
-  );
-  if (!registration) {
-    return undefined;
-  }
-  const requiredScopes = registration.action.requiredScopes;
-  // Registered session actions default to write scope when they omit a custom
-  // requirement; this preserves the historical mutation boundary.
-  return requiredScopes && requiredScopes.length > 0 ? [...requiredScopes] : [WRITE_SCOPE];
-}
-
-function resolveSessionActionLeastPrivilegeScopes(params: unknown): OperatorScope[] {
-  const registeredScopes = resolveSessionActionRegisteredScopes(params);
-  if (registeredScopes) {
-    return registeredScopes;
-  }
-  const record = asOptionalRecord(params);
-  if (record) {
-    const pluginId = normalizeOptionalString(record.pluginId);
-    const actionId = normalizeOptionalString(record.actionId);
-    if (pluginId && actionId) {
-      // A standalone CLI/tool caller may be talking to a gateway whose live
-      // plugin registry is not present in this local process. Avoid under-scoping
-      // valid dynamic actions when we cannot determine the exact requirement
-      // locally.
-      return [...CLI_DEFAULT_OPERATOR_SCOPES];
-    }
-  }
-  return [WRITE_SCOPE];
-}
-
 function resolveDynamicLeastPrivilegeOperatorScopesForMethod(
   method: string,
   params: unknown,
 ): OperatorScope[] {
   // Dynamic methods derive authorization from params and live plugin registrations instead of
   // a single static method scope.
-  if (method === "plugins.sessionAction") {
-    return resolveSessionActionLeastPrivilegeScopes(params);
-  }
   const record = asOptionalRecord(params);
   if (method === "sessions.github.action") {
     return [record?.action === "refresh_base" ? SESSION_WRITE_SCOPE : WRITE_SCOPE];
@@ -246,23 +200,6 @@ export function authorizeOperatorScopesForMethod(
     return { allowed: true };
   }
   if (isDynamicOperatorGatewayMethod(method)) {
-    if (method === "plugins.sessionAction") {
-      const registeredScopes = resolveSessionActionRegisteredScopes(params);
-      const record = asOptionalRecord(params);
-      if (!registeredScopes && record) {
-        const pluginId = normalizeOptionalString(record.pluginId);
-        const actionId = normalizeOptionalString(record.actionId);
-        if (!pluginId || !actionId) {
-          // Malformed dynamic params cannot be matched to a plugin action. Any valid operator scope
-          // may proceed so the handler can return the precise validation error.
-          return scopes.some((scope) => isOperatorScope(scope))
-            ? { allowed: true }
-            : { allowed: false, missingScope: WRITE_SCOPE };
-        }
-      }
-      const missingScope = findMissingOperatorScope(registeredScopes ?? [WRITE_SCOPE], scopes);
-      return missingScope ? { allowed: false, missingScope } : { allowed: true };
-    }
     const missingScope = findMissingOperatorScope(
       resolveDynamicLeastPrivilegeOperatorScopesForMethod(method, params),
       scopes,

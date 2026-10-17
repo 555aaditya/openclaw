@@ -1,7 +1,6 @@
 import type { JSX } from "@solidjs/web";
 import { createUniqueId, onCleanup } from "solid-js";
 import type { ControlUiNavigationItem } from "../../../src/plugin-sdk/control-ui.js";
-import type { GatewayControlUiPluginTab } from "../api/gateway.ts";
 import {
   isPluginsHubRoute,
   isSessionsHubRoute,
@@ -123,15 +122,6 @@ export function isSidebarRouteActive(
     return isSessionsHubRoute(activeRouteId);
   }
   return activeRouteId === routeId;
-}
-
-export function sidebarPluginTabs(
-  tabs: readonly GatewayControlUiPluginTab[] | undefined,
-): GatewayControlUiPluginTab[] {
-  const known = tabs ?? [];
-  return ["chat", "control", "agent", "settings"].flatMap((group) =>
-    known.filter((tab) => (tab.group ?? "control") === group),
-  );
 }
 
 export function renderSidebarNavLink(params: {

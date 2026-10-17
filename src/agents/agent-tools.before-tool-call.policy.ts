@@ -2,21 +2,13 @@
  * Ordered before_tool_call policy chain.
  *
  * Ordering is behavior: loop admission, owner probes,
- * trusted policies, approvals, normal hooks, and final owner approval must
+ * approvals, normal hooks, and final owner approval must
  * remain in this sequence.
  */
-import { isDeepStrictEqual } from "node:util";
 import type { ToolLoopWarning } from "@openclaw/agent-core";
 import { freezeDiagnosticTraceContext } from "../infra/diagnostic-trace-context.js";
-import { cloneHookIsolationValue } from "../plugins/hook-isolation.js";
-import { getGlobalHookRunnerRegistry } from "../plugins/hook-runner-global-state.js";
 import { getGlobalHookRunner } from "../plugins/hook-runner-global.js";
 import { deriveToolParams } from "../plugins/host-tool-param-parsers.js";
-import {
-  getTrustedToolPolicyDiagnosticEntries,
-  hasTrustedToolPolicies,
-  runTrustedToolPolicies,
-} from "../plugins/trusted-tool-policy.js";
 import type {
   PluginApprovalResolution,
   PluginHookToolInputKind,
@@ -59,16 +51,14 @@ function markPrivateDecision(
 }
 
 export function getBeforeToolCallPolicyDiagnosticState(): BeforeToolCallPolicyDiagnosticState {
-  const policyRegistry = getGlobalHookRunnerRegistry() ?? undefined;
   return {
     hasBeforeToolCallHook: getGlobalHookRunner()?.hasHooks("before_tool_call") === true,
-    trustedToolPolicies: getTrustedToolPolicyDiagnosticEntries(policyRegistry),
   };
 }
 
 export function hasBeforeToolCallPolicy(): boolean {
   const state = getBeforeToolCallPolicyDiagnosticState();
-  return state.hasBeforeToolCallHook || state.trustedToolPolicies.length > 0;
+  return state.hasBeforeToolCallHook;
 }
 
 export async function runBeforeToolCallHook(args: {
@@ -144,10 +134,8 @@ export async function runBeforeToolCallHook(args: {
 
     const hookRunner = getGlobalHookRunner();
     const hasBeforeToolCallHooks = hookRunner?.hasHooks("before_tool_call") === true;
-    const policyRegistry = getGlobalHookRunnerRegistry() ?? undefined;
-    const shouldRunTrustedPolicies = hasTrustedToolPolicies(policyRegistry);
     const normalizedParams = isPlainObject(params) ? params : {};
-    if (!shouldRunTrustedPolicies && !hasBeforeToolCallHooks) {
+    if (!hasBeforeToolCallHooks) {
       return withLoopWarning({ blocked: false, params });
     }
     const deriveOptions =
@@ -159,10 +147,6 @@ export async function runBeforeToolCallHook(args: {
           }
         : undefined;
     const derivedToolParams = await deriveToolParams(toolName, normalizedParams, deriveOptions);
-    const deriveToolEventParams = async (candidateParams: Record<string, unknown>) => {
-      const derived = await deriveToolParams(toolName, candidateParams, deriveOptions);
-      return derived.derivedPaths ? { derivedPaths: derived.derivedPaths } : {};
-    };
     const toolIdentity = {
       ...(args.toolKind && { toolKind: args.toolKind }),
       ...(args.toolInputKind && { toolInputKind: args.toolInputKind }),
@@ -180,111 +164,17 @@ export async function runBeforeToolCallHook(args: {
       ...(args.ctx?.channelId && { channelId: args.ctx.channelId }),
       ...(args.ctx?.requester ? { requester: args.ctx.requester } : {}),
     });
-    const toolContext = buildToolContext(toolIdentity);
-    // Policies form a mutation chain. Reconcile each decision against the prior
-    // alias pair so an explicit blank rewrite remains fail-closed.
-    let trustedPolicyParams = normalizedParams;
-    const trustedPolicyResult = shouldRunTrustedPolicies
-      ? await runTrustedToolPolicies(
-          {
-            toolName,
-            params: normalizedParams,
-            ...toolIdentity,
-            ...(args.ctx?.runId && { runId: args.ctx.runId }),
-            ...(args.toolCallId && { toolCallId: args.toolCallId }),
-            ...(derivedToolParams.derivedPaths
-              ? { derivedPaths: derivedToolParams.derivedPaths }
-              : {}),
-          },
-          toolContext,
-          {
-            ...(policyRegistry ? { registry: policyRegistry } : {}),
-            ...(args.ctx?.config ? { config: args.ctx.config } : {}),
-            deriveEvent: deriveToolEventParams,
-            normalizeEvent(eventValue) {
-              const normalizedEventParams = reconcileCodeModeExecBeforeHookParams({
-                owner: { toolKind: eventValue.toolKind },
-                originalParams: trustedPolicyParams,
-                hookParams: trustedPolicyParams,
-                adjustedParams: eventValue.params,
-              });
-              if (!isPlainObject(normalizedEventParams)) {
-                return undefined;
-              }
-              trustedPolicyParams = normalizedEventParams;
-              const normalizedEventIdentity = getCodeModeExecBeforeHookMetadataForToolKind({
-                toolKind: eventValue.toolKind,
-                params: normalizedEventParams,
-              });
-              return {
-                params: normalizedEventParams,
-                ...(normalizedEventIdentity
-                  ? { event: normalizedEventIdentity, ctx: normalizedEventIdentity }
-                  : {}),
-              };
-            },
-          },
-        )
-      : undefined;
-    if (trustedPolicyResult?.block) {
-      const outcome: HookOutcome = {
-        blocked: true,
-        kind: "veto",
-        deniedReason: "plugin-before-tool-call",
-        reason: trustedPolicyResult.blockReason || "Tool call blocked by trusted plugin policy",
-        params,
-      };
-      markPrivateDecision(outcome, "genericDecision");
-      return outcome;
-    }
-    let trustedApprovalParams: unknown;
-    let trustedApprovalResolution: PluginApprovalResolution | undefined;
-    let trustedApprovalGranted = false;
-    if (trustedPolicyResult?.requireApproval) {
-      const approvalOutcome = await resolveBeforeToolCallApprovalOutcome({
-        result: trustedPolicyResult,
-        approvalMode: args.approvalMode,
-        toolName,
-        ...(args.toolCallId ? { toolCallId: args.toolCallId } : {}),
-        ...(args.ctx ? { ctx: args.ctx } : {}),
-        signal: args.signal,
-        baseParams: params,
-      });
-      if (approvalOutcome) {
-        if (approvalOutcome.blocked) {
-          return approvalOutcome;
-        }
-        if (approvalOutcome.deferredApproval) {
-          return withLoopWarning(approvalOutcome);
-        }
-        trustedApprovalParams = approvalOutcome.params;
-        trustedApprovalResolution = approvalOutcome.approvalResolution;
-        trustedApprovalGranted = true;
-      }
-    }
-    const policyAdjustedParams = trustedApprovalParams ?? trustedPolicyResult?.params ?? params;
-    const trustedApprovalBoundary = trustedApprovalGranted;
     const policyAdjustedToolIdentity =
       getCodeModeExecBeforeHookMetadataForToolKind({
         toolKind: args.toolKind,
-        params: policyAdjustedParams,
+        params,
       }) ?? toolIdentity;
     const policyAdjustedToolContext = buildToolContext(policyAdjustedToolIdentity);
-    const policyAdjustedDerivedToolParams =
-      trustedPolicyResult?.params && isPlainObject(policyAdjustedParams)
-        ? await deriveToolParams(toolName, policyAdjustedParams, deriveOptions)
-        : derivedToolParams;
-    const approvedParamsSnapshot =
-      trustedApprovalBoundary && hasBeforeToolCallHooks
-        ? cloneHookIsolationValue("before_tool_call", policyAdjustedParams)
-        : undefined;
-    let finalParams = approvedParamsSnapshot ?? policyAdjustedParams;
-    let finalApprovalResolution = trustedApprovalResolution;
+    let finalParams = params;
+    let finalApprovalResolution: PluginApprovalResolution | undefined;
     let ownerDecisionMarked = false;
     if (hasBeforeToolCallHooks) {
-      const hookParamsValue = trustedApprovalBoundary
-        ? cloneHookIsolationValue("before_tool_call", approvedParamsSnapshot)
-        : policyAdjustedParams;
+      const hookParamsValue = params;
       const hookEventParams = isPlainObject(hookParamsValue) ? hookParamsValue : {};
       const callerIdentity = getGatewayToolCallerIdentity();
       const receipt =
@@ -304,8 +194,8 @@ export async function runBeforeToolCallHook(args: {
           ...policyAdjustedToolIdentity,
           ...(args.ctx?.runId && { runId: args.ctx.runId }),
           ...(args.toolCallId && { toolCallId: args.toolCallId }),
-          ...(policyAdjustedDerivedToolParams.derivedPaths
-            ? { derivedPaths: policyAdjustedDerivedToolParams.derivedPaths }
+          ...(derivedToolParams.derivedPaths
+            ? { derivedPaths: derivedToolParams.derivedPaths }
             : {}),
         },
         policyAdjustedToolContext,
@@ -318,34 +208,19 @@ export async function runBeforeToolCallHook(args: {
           kind: "veto",
           deniedReason: "plugin-before-tool-call",
           reason: hookResult.blockReason || "Tool call blocked by plugin hook",
-          params: policyAdjustedParams,
+          params,
         };
       }
 
-      const rawHookCandidateParams =
-        hookResult?.params === undefined
-          ? isPlainObject(hookParamsValue)
-            ? hookEventParams
-            : approvedParamsSnapshot
-          : mergeParamsWithApprovalOverrides(hookEventParams, hookResult.params);
-      const hookCandidateParams =
-        hookResult?.params === undefined
-          ? rawHookCandidateParams
-          : reconcileCodeModeExecBeforeHookParams({
-              owner: { toolKind: args.toolKind },
-              originalParams: hookEventParams,
-              hookParams: hookEventParams,
-              adjustedParams: rawHookCandidateParams,
-            });
       if (hookResult?.requireApproval) {
         const approvalOutcome = await resolveBeforeToolCallApprovalOutcome({
-          result: trustedApprovalBoundary ? { ...hookResult, params: undefined } : hookResult,
+          result: hookResult,
           approvalMode: args.approvalMode,
           toolName,
           ...(args.toolCallId ? { toolCallId: args.toolCallId } : {}),
           ...(args.ctx ? { ctx: args.ctx } : {}),
           signal: args.signal,
-          baseParams: trustedApprovalBoundary ? hookCandidateParams : policyAdjustedParams,
+          baseParams: params,
         });
         if (approvalOutcome) {
           if (approvalOutcome.blocked) {
@@ -357,25 +232,13 @@ export async function runBeforeToolCallHook(args: {
           finalParams = approvalOutcome.params;
           finalApprovalResolution = approvalOutcome.approvalResolution ?? finalApprovalResolution;
         }
-      } else if (
-        trustedApprovalBoundary &&
-        !isDeepStrictEqual(approvedParamsSnapshot, hookCandidateParams)
-      ) {
-        return {
-          blocked: true,
-          kind: "failure",
-          disposition: "blocked",
-          deniedReason: "plugin-approval",
-          reason: "Tool call parameters changed after trusted approval",
-          params: approvedParamsSnapshot,
-        };
       }
 
-      if (!trustedApprovalBoundary && hookResult?.params) {
+      if (hookResult?.params) {
         finalParams = reconcileCodeModeExecBeforeHookParams({
           owner: { toolKind: args.toolKind },
-          originalParams: policyAdjustedParams,
-          hookParams: policyAdjustedParams,
+          originalParams: params,
+          hookParams: params,
           adjustedParams: mergeParamsWithApprovalOverrides(finalParams, hookResult.params),
         });
       }

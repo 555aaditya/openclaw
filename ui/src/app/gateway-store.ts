@@ -53,7 +53,6 @@ import { createAvailabilityIndicators } from "./gateway-store.availability.ts";
 import { createGatewayCredentials } from "./gateway-store.credentials.ts";
 import { createDeviceCredentialMethods } from "./gateway-store.device-credential.ts";
 import { createGatewaySelfProfile } from "./gateway-store.self-profile.ts";
-import { readHelloPluginCapabilities } from "./plugin-capabilities.ts";
 import {
   loadGatewaySessionSelection,
   loadSettings,
@@ -107,7 +106,7 @@ export function createApplicationGateway(
     phase: "stopped",
     offlineStable: false,
     hello: null,
-    pluginCapabilities: null,
+    pluginGeneration: null,
     canvasPluginSurfaceUrl: null,
     assistantAgentId: null,
     sessionKey: settings.sessionKey,
@@ -182,7 +181,7 @@ export function createApplicationGateway(
       snapshot.suspensionPhase = availability.hasSuspensionDeadline()
         ? snapshot.suspensionPhase
         : undefined;
-      snapshot.pluginCapabilities = null;
+      snapshot.pluginGeneration = null;
       snapshot.usagePublications = undefined;
       scheduleOfflineIndicator();
     }
@@ -219,24 +218,11 @@ export function createApplicationGateway(
   };
   const recordGatewayEvent = (event: Parameters<GatewayEventListener>[0]) => {
     const eventClient = client;
-    if (
-      (event.event === "plugins.changed" || event.event === "plugins.controlUi.changed") &&
-      eventClient
-    ) {
-      // Capability updates keep hello identity; reconnects replace it.
-      const eventHello = snapshot.hello;
-      const readCurrent = () => (isCurrentHello(eventClient, eventHello) ? snapshot : null);
-      void import("./plugin-capabilities.runtime.ts")
-        .then(({ refreshPluginCapabilities }) =>
-          refreshPluginCapabilities(event, eventClient, readCurrent, setSnapshot, (url) =>
-            canvasSurface.start(eventClient, canvasSurface.generation, url),
-          ),
-        )
-        .catch((error: unknown) => {
-          if (readCurrent()) {
-            setSnapshot({ lastError: formatUiError(error) });
-          }
-        });
+    if (event.event === "plugins.changed") {
+      const generation = asOptionalRecord(event.payload)?.generation;
+      if (typeof generation === "number" && Number.isSafeInteger(generation) && generation >= 0) {
+        setSnapshot({ pluginGeneration: generation });
+      }
     } else if (event.event === "chat.metadata.changed") {
       const publication = asOptionalRecord(event.payload);
       const agentId = publication?.agentId;
@@ -489,7 +475,7 @@ export function createApplicationGateway(
           restartPending: false,
           suspensionPhase: readSuspensionPhase(asOptionalRecord(hello.snapshot)?.suspension),
           hello,
-          pluginCapabilities: readHelloPluginCapabilities(hello),
+          pluginGeneration: null,
           canvasPluginSurfaceUrl,
           // Trim guards a whitespace-only defaultId from becoming a truthy selection.
           assistantAgentId: sessionDefaults?.defaultAgentId?.trim() || null,

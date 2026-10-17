@@ -11,7 +11,6 @@ import type { SessionObserverDigest } from "../../packages/gateway-protocol/src/
 import type { StickyModelSelectionTarget } from "../agents/sticky-model-selection.js";
 import type { SessionPreviewItem } from "../config/sessions/session-history-read.types.js";
 import type { SessionEntry, SessionGoal, SessionOrigin } from "../config/sessions/types.js";
-import type { PluginSessionExtensionProjection } from "../plugins/host-hooks.js";
 import type { FastModeSource } from "../shared/fast-mode.js";
 import type {
   GatewayAgentRuntime,
@@ -101,7 +100,6 @@ export type GatewaySessionRow = Omit<SessionRow, "archivedBy" | "updatedAt" | "w
   lastTo?: string;
   lastAccountId?: string;
   lastThreadId?: string | number;
-  pluginExtensions?: PluginSessionExtensionProjection[];
 };
 
 /**

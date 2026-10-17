@@ -43,7 +43,6 @@ const mobileViewport = { height: 852, width: 393 };
 const desktopViewport = { height: 1000, width: 1440 };
 const pluginMethods = [
   "plugins.reload",
-  "plugins.uiDescriptors",
   "plugins.controlUi.list",
   "plugins.controlUi.report",
   "plugins.list",
@@ -487,7 +486,6 @@ function readOnlyConnectResponse() {
       scopes: ["operator.read"],
     },
     features: { events: [], methods: pluginMethods },
-    controlUiTabs: [],
     protocol: PROTOCOL_VERSION,
     server: { connId: "plugins-read-only", version: "e2e" },
     snapshot: {
@@ -499,27 +497,6 @@ function readOnlyConnectResponse() {
       },
     },
     type: "hello-ok",
-  };
-}
-
-export function enabledWorkboardCapabilities() {
-  return {
-    ok: true,
-    generation: 1,
-    descriptors: [],
-    methods: pluginMethods,
-    controlUiWidgetKinds: [],
-    pluginSurfaceUrls: {},
-    controlUiTabs: [
-      {
-        group: "control",
-        icon: "kanban",
-        id: "workboard",
-        label: workboardEnabled.name,
-        placement: "route:workboard",
-        pluginId: "workboard",
-      },
-    ],
   };
 }
 

@@ -148,10 +148,6 @@ const enPluginManagement = {
         name: "Interface replacements",
         description: "Replaces supported parts of the interface.",
       },
-      "link-reader": {
-        name: "Link previews",
-        description: "Shows previews and details for supported links.",
-      },
     },
     capabilityFamilies: {
       speechProviders: { name: "Text to speech", description: "Turn text into spoken audio." },

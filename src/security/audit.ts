@@ -98,7 +98,6 @@ type SecurityAuditOptions = {
   /** Dependency injection for tests. */
   plugins?: ChannelPlugin[];
   /** Whether to import plugin modules to discover plugin security audit collectors. */
-  loadPluginSecurityCollectors?: boolean;
   /** Dependency injection for tests (Windows ACL checks). */
   execIcacls?: ExecFn;
   /** Dependency injection for tests (Docker label checks). */
@@ -128,7 +127,6 @@ type AuditExecutionContext = Omit<SecurityAuditOptions, "config"> & {
   deepTimeoutMs: number;
   stateDir: string;
   configPath: string;
-  loadPluginSecurityCollectors: boolean;
   configSnapshot: ConfigFileSnapshot | null;
   codeSafetySummaryCache: import("./audit.deep.runtime.js").CodeSafetySummaryCache;
 };
@@ -395,83 +393,6 @@ async function collectFilesystemFindings(params: {
   }
 
   return findings;
-}
-
-async function collectPluginSecurityAuditFindings(
-  context: AuditExecutionContext,
-): Promise<SecurityAuditFinding[]> {
-  if (!context.loadPluginSecurityCollectors) {
-    return [];
-  }
-  const { getActivePluginRegistry } = await import("../plugins/runtime.js");
-  let collectors = getActivePluginRegistry()?.securityAuditCollectors ?? [];
-  if (collectors.length === 0) {
-    const { applyPluginAutoEnable } = await import("../config/plugin-auto-enable.js");
-    const autoEnabled = applyPluginAutoEnable({
-      config: context.sourceConfig,
-      env: context.env,
-    });
-    const requestedPluginIds = new Set(
-      normalizeStringEntries([
-        ...Object.keys(autoEnabled.autoEnabledReasons),
-        ...(autoEnabled.config.plugins?.allow ?? []).filter((id) => typeof id === "string"),
-        ...Object.entries(autoEnabled.config.plugins?.entries ?? {})
-          .filter(([, entry]) => entry?.enabled !== false)
-          .map(([id]) => id),
-      ]),
-    );
-    if (context.includeChannelSecurity && context.plugins !== undefined) {
-      const { resolveConfiguredChannelPluginIdsAsync } =
-        await import("../plugins/channel-plugin-ids.js");
-      const auditedChannelPluginIds = new Set(context.plugins.map((plugin) => plugin.id));
-      for (const pluginId of await resolveConfiguredChannelPluginIdsAsync({
-        config: autoEnabled.config,
-        activationSourceConfig: context.sourceConfig,
-        workspaceDir: context.workspaceDir,
-        env: context.env,
-      })) {
-        if (auditedChannelPluginIds.has(pluginId)) {
-          requestedPluginIds.delete(pluginId);
-        }
-      }
-    }
-    if (requestedPluginIds.size === 0) {
-      return [];
-    }
-    const snapshot = (
-      await import("../plugins/runtime/metadata-registry-loader.js")
-    ).loadPluginMetadataRegistrySnapshot({
-      config: autoEnabled.config,
-      activationSourceConfig: context.sourceConfig,
-      env: context.env,
-      workspaceDir: context.workspaceDir,
-      onlyPluginIds: [...requestedPluginIds],
-    });
-    collectors = snapshot.securityAuditCollectors ?? [];
-  }
-  const collectorResults = await Promise.all(
-    collectors.map(async (entry) => {
-      try {
-        return await entry.collector({
-          config: context.cfg,
-          sourceConfig: context.sourceConfig,
-          env: context.env,
-          stateDir: context.stateDir,
-          configPath: context.configPath,
-        });
-      } catch (err) {
-        return [
-          {
-            checkId: `plugins.${entry.pluginId}.security_audit_failed`,
-            severity: "warn" as const,
-            title: "Plugin security audit collector failed",
-            detail: `${entry.pluginId}: ${String(err)}`,
-          },
-        ];
-      }
-    }),
-  );
-  return collectorResults.flat();
 }
 
 function collectElevatedFindings(cfg: OpenClawConfig): SecurityAuditFinding[] {
@@ -1065,7 +986,6 @@ async function createAuditExecutionContext(
     execDockerRawFn: opts.execDockerRawFn,
     probeGatewayFn: opts.probeGatewayFn,
     plugins: opts.plugins,
-    loadPluginSecurityCollectors: opts.loadPluginSecurityCollectors ?? deep,
     workspaceDir,
     configSnapshot,
     codeSafetySummaryCache: opts.codeSafetySummaryCache ?? new Map(),
@@ -1093,7 +1013,6 @@ export async function runSecurityAuditCore(
       gatewayAuthOverride: context.auditGatewayAuthOverride,
     }),
   );
-  findings.push(...(await collectPluginSecurityAuditFindings(context)));
   findings.push(...collectElevatedFindings(cfg));
   findings.push(...collectExecRuntimeFindings(cfg));
   findings.push(...(await collectAgentSkillMcpBoundaryFindings({ cfg, stateDir })));

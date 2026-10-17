@@ -51,11 +51,14 @@ The latter retirement received explicit SDK-owner approval on September 30,
   load. Follow the [import path mappings](/plugins/sdk-migration/import-paths) before upgrading.
 </Warning>
 
-OpenClaw does not remove or reinterpret documented plugin behavior in the same
-change that introduces a replacement. Breaking contract changes go through a
-compatibility adapter, diagnostics, docs, and a deprecation window first. That
-applies to SDK imports, manifest fields, setup APIs, hooks, and runtime
-registration behavior.
+The [31 retired plugin capabilities](/plugins/sdk-migration/removed-surfaces#retired-plugin-capabilities)
+are breaking removals of the capabilities themselves, including their grouped
+API forms and dependent bundled features. Review that list before upgrading
+plugins that use these methods.
+
+Ordinary replacement migrations use compatibility adapters, diagnostics,
+documentation, and a deprecation window. The capability retirement above does
+not claim that the old family-wide no-reader condition was satisfied.
 
 `ChatCommandDefinition.category` retains the `"docks"` value accepted by the
 2026.8.1 SDK. Command lists display these legacy definitions under **Tools**.

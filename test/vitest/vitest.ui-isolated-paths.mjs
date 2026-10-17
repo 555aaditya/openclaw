@@ -14,7 +14,6 @@ export const uiIsolatedTestFiles = [
   // The catalog suite exceeds the CI deadline in a shared Bun worker.
   "ui/src/components/app-sidebar.catalog.test.ts",
   "ui/src/components/gateway-url-confirmation.test.ts",
-  "ui/src/components/link-reader-title-tooltip.test.ts",
   "ui/src/components/markdown-tables.test.ts",
   "ui/src/components/mcp-app-bridge.test.ts",
   "ui/src/components/mcp-app-panel.test.tsx",

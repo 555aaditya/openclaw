@@ -20,14 +20,9 @@ import {
   NODE_WORKER_PRIVATE_COMMANDS,
 } from "../infra/node-commands.js";
 import { isReservedCommandName, registerPluginCommandInRegistry } from "./command-registration.js";
-import { bindPluginGatewayAccessPolicy } from "./gateway-access-policy-registration.js";
-import type { PluginGatewayAccessPolicy } from "./gateway-access-policy.types.js";
-import { getPluginInstance } from "./plugin-instance-scope.js";
-import type { WidgetPresenter } from "./plugin-registration.types.js";
 import type { PluginRegistryState } from "./registry-state.js";
 import type { PluginRecord } from "./registry-types.js";
 import type {
-  OpenClawGatewayDiscoveryService,
   OpenClawPluginCliRegistrationOptions,
   OpenClawPluginCliRegistrar,
   OpenClawPluginCliRootCommandDescriptor,
@@ -35,7 +30,6 @@ import type {
   OpenClawPluginNodeHostCommand,
   OpenClawPluginNodeInvokePolicy,
   OpenClawPluginReloadRegistration,
-  OpenClawPluginSecurityAuditCollector,
   OpenClawPluginService,
   OpenClawPluginServiceV2,
 } from "./types.js";
@@ -63,59 +57,8 @@ export function canClaimReservedCommandOwnership(
 }
 
 export function createOperationRegistrars(state: PluginRegistryState) {
-  const {
-    registry,
-    createRegistration,
-    createIdentityRegistration,
-    reportRegistrationError,
-    reportRegistrationWarning,
-  } = state;
-
-  const registerWidgetPresenter = (record: PluginRecord, presenter: WidgetPresenter) => {
-    const description = normalizeOptionalString(presenter.description);
-    const currentCapabilities =
-      presenter.target === "current_channel" ? presenter.capabilities : undefined;
-    const currentChannelValid =
-      presenter.target === "current_channel" &&
-      typeof presenter.match === "function" &&
-      currentCapabilities !== undefined &&
-      Array.isArray(currentCapabilities.sourceKinds) &&
-      currentCapabilities.sourceKinds.length > 0 &&
-      currentCapabilities.sourceKinds.every(
-        (kind) => typeof kind === "string" && kind.trim().length > 0,
-      ) &&
-      (currentCapabilities.maxSourceBytes === undefined ||
-        (Number.isInteger(currentCapabilities.maxSourceBytes) &&
-          currentCapabilities.maxSourceBytes > 0));
-    if (
-      (presenter.target !== "node_panel" && !currentChannelValid) ||
-      !description ||
-      description.length > 160 ||
-      typeof presenter.availability !== "function" ||
-      typeof presenter.present !== "function"
-    ) {
-      reportRegistrationError(record, "invalid widget presenter registration");
-      return;
-    }
-    const existing =
-      presenter.target === "current_channel"
-        ? undefined
-        : registry.widgetPresenters.find(
-            (registration) => registration.presenter.target === presenter.target,
-          );
-    if (existing) {
-      reportRegistrationError(
-        record,
-        `widget presenter already registered for ${presenter.target} (${existing.pluginId})`,
-      );
-      return;
-    }
-    registry.widgetPresenters.push(
-      createRegistration(record, {
-        presenter: { ...presenter, description },
-      }),
-    );
-  };
+  const { registry, createRegistration, reportRegistrationError, reportRegistrationWarning } =
+    state;
 
   const registerCli = (
     record: PluginRecord,
@@ -316,38 +259,10 @@ export function createOperationRegistrars(state: PluginRegistryState) {
     );
   };
 
-  const registerSecurityAuditCollector = (
-    record: PluginRecord,
-    collector: OpenClawPluginSecurityAuditCollector,
-  ) => {
-    registry.securityAuditCollectors.push(
-      createRegistration(record, {
-        collector,
-      }),
-    );
-  };
-
-  const registerGatewayAccessPolicy = (record: PluginRecord, policy: PluginGatewayAccessPolicy) => {
-    if (typeof policy.authorize !== "function") {
-      reportRegistrationError(record, "Gateway access policy requires an authorize handler");
-      return;
-    }
-    registry.gatewayAccessPolicies.push(
-      createIdentityRegistration(record, {
-        policy: bindPluginGatewayAccessPolicy(policy, getPluginInstance(record)),
-      }),
-    );
-  };
-
-  const resolveServiceRegistrationId = (
-    record: PluginRecord,
-    service: { id: string },
-    kind: "service" | "gateway discovery service",
-  ) => {
+  const resolveServiceRegistrationId = (record: PluginRecord, service: { id: string }) => {
     try {
       const id = service.id.trim();
-      const registrations =
-        kind === "service" ? registry.services : registry.gatewayDiscoveryServices;
+      const registrations = registry.services;
       const existing = id ? registrations.find((entry) => entry.id === id) : undefined;
       if (id && !existing) {
         return id;
@@ -357,13 +272,13 @@ export function createOperationRegistrars(state: PluginRegistryState) {
         reportRegistrationError(
           record,
           existing
-            ? `${kind} already registered: ${id} (${existing.pluginId})`
-            : `${kind} registration missing id`,
+            ? `service already registered: ${id} (${existing.pluginId})`
+            : "service registration missing id",
         );
       }
     } catch {
       // Plugin accessors can throw sensitive values; report only the boundary failure.
-      reportRegistrationError(record, `${kind} registration id cannot be normalized`);
+      reportRegistrationError(record, "service registration id cannot be normalized");
     }
     return undefined;
   };
@@ -372,7 +287,7 @@ export function createOperationRegistrars(state: PluginRegistryState) {
     record: PluginRecord,
     service: OpenClawPluginService | OpenClawPluginServiceV2,
   ) => {
-    const id = resolveServiceRegistrationId(record, service, "service");
+    const id = resolveServiceRegistrationId(record, service);
     if (!id) {
       return;
     }
@@ -386,22 +301,6 @@ export function createOperationRegistrars(state: PluginRegistryState) {
       origin: record.origin,
       trustedOfficialInstall: record.trustedOfficialInstall,
       rootDir: record.rootDir,
-    });
-  };
-
-  const registerGatewayDiscoveryService = (
-    record: PluginRecord,
-    service: OpenClawGatewayDiscoveryService,
-  ) => {
-    const id = resolveServiceRegistrationId(record, service, "gateway discovery service");
-    if (!id) {
-      return;
-    }
-    record.gatewayDiscoveryServiceIds.push(id);
-    registry.gatewayDiscoveryServices.push({
-      ...createRegistration(record, { id, service }),
-      // The advertiser can be native data; its registration still owns execution and cleanup.
-      instance: getPluginInstance(record),
     });
   };
 
@@ -461,15 +360,11 @@ export function createOperationRegistrars(state: PluginRegistryState) {
   };
 
   return {
-    registerWidgetPresenter,
     registerCli,
     registerReload,
     registerNodeHostCommand,
     registerNodeInvokePolicy,
-    registerGatewayAccessPolicy,
-    registerSecurityAuditCollector,
     registerService,
-    registerGatewayDiscoveryService,
     registerCommand,
   };
 }

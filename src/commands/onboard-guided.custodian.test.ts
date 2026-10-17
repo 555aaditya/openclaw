@@ -231,7 +231,7 @@ describe("runGuidedOnboarding", () => {
     expect(deps.activate).not.toHaveBeenCalled();
   });
 
-  it("records setup ownership at inference commit and completes before optional imports", async () => {
+  it("records setup ownership at inference commit and completes setup", async () => {
     const prompter = createWizardPrompter();
     const activate = vi.fn<NonNullable<GuidedOnboardingDeps["activate"]>>(async (params) => {
       expect(localOnboarding.begin).not.toHaveBeenCalled();
@@ -244,21 +244,13 @@ describe("runGuidedOnboarding", () => {
         lines: ["Inference verified"],
       };
     });
-    const runSetupMemoryImportStep = vi.fn<
-      NonNullable<GuidedOnboardingDeps["runSetupMemoryImportStep"]>
-    >(async () => {
-      expect(localOnboarding.states.get("/tmp/openclaw.json")?.status).toBe("completed");
-      return { status: "skipped", providers: [] };
-    });
-    const deps = setupDeps({ prompter, activate, runSetupMemoryImportStep });
+    const deps = setupDeps({ prompter, activate });
 
     await runGuidedOnboarding({ acceptRisk: true, workspace: "/tmp/work" }, makeRuntime(), deps);
 
     expect(localOnboarding.begin).toHaveBeenCalledOnce();
     expect(localOnboarding.complete).toHaveBeenCalledOnce();
-    expect(localOnboarding.complete.mock.invocationCallOrder[0]).toBeLessThan(
-      runSetupMemoryImportStep.mock.invocationCallOrder[0]!,
-    );
+    expect(localOnboarding.states.get("/tmp/openclaw.json")?.status).toBe("completed");
   });
 
   it("resumes an interrupted gateway install using its approved workspace", async () => {

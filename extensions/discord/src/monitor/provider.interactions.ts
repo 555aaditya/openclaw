@@ -3,7 +3,6 @@ import type { PluginRuntime } from "openclaw/plugin-sdk/channel-core";
 import { registerChannelRuntimeContext } from "openclaw/plugin-sdk/channel-runtime-context";
 import type { DiscordAccountConfig, OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import type { RuntimeEnv } from "openclaw/plugin-sdk/runtime-env";
-import { createDiscordActivityButton } from "../activities/interaction.js";
 import {
   getDiscordExecApprovalApprovers,
   isDiscordExecApprovalClientEnabled,
@@ -134,16 +133,6 @@ export function createDiscordProviderInteractionSurface(params: {
       createDiscordModelPickerFallbackSelect,
     ].map((create) => create(commandContext)),
   ];
-  const activityButton = createDiscordActivityButton(
-    {
-      ...componentContext,
-      channelRuntime: params.channelRuntime,
-    },
-    params.applicationId,
-  );
-  if (activityButton) {
-    components.push(activityButton);
-  }
   const modals: Modal[] = [];
 
   if (approvalActionsEnabled) {

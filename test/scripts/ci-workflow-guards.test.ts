@@ -5406,7 +5406,7 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
       const rows =
         groups && !frozen && sharded !== false
           ? createUiRealGatewayTestShards(groups)
-          : [{ shard: 1, shard_count: 1, run_desktop: true, groups }];
+          : [{ shard: 1, shard_count: 1, groups }];
       const selectedFiles: string[] = [];
       for (const row of rows) {
         const rowDirectory = path.join(directory, String(row.shard));
@@ -5479,15 +5479,13 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
             ];
         expect(args.slice(6, 6 + reporterArgs.length)).toEqual(reporterArgs);
         expect(args.slice(6 + reporterArgs.length).toSorted()).toEqual(
-          prebuilt ? ["--exclude", desktop] : frozenRealGatewayFiles.toSorted(),
+          prebuilt ? (frozen ? ["--exclude", desktop] : []) : frozenRealGatewayFiles.toSorted(),
         );
         const selectedConfig = createPrebuiltUiE2eVitestConfig(
           { OPENCLAW_VITEST_INCLUDE_FILE: readFileSync(includePath, "utf8") },
           [testNodeExecPath, ...args],
         );
-        selectedFiles.push(
-          ...(selectedConfig.test?.include ?? []).filter((file) => file !== desktop),
-        );
+        selectedFiles.push(...(selectedConfig.test?.include ?? []));
         expect(
           resolveRunVitestSpawnEnv(
             { CI: "true", OPENCLAW_VITEST_NO_OUTPUT_TIMEOUT_MS: "120000" },
@@ -5500,16 +5498,15 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
         (prebuilt ? uiE2eRealGatewayTestFiles : frozenRealGatewayFiles)
           .filter(
             (file) =>
-              file !== desktop &&
-              (!groups ||
-                groups.some(
-                  (group) => !group.includePatterns || group.includePatterns.includes(file),
-                )),
+              !groups ||
+              groups.some(
+                (group) => !group.includePatterns || group.includePatterns.includes(file),
+              ),
           )
           .toSorted(),
       );
       if (releaseTier === false) {
-        expect(selectedFiles).toHaveLength(uiE2eRealGatewayTestFiles.length - 13);
+        expect(selectedFiles).toHaveLength(uiE2eRealGatewayTestFiles.length - 12);
         expectExcludes(selectedFiles, [
           "ui/src/e2e/cron-duration-save.real-gateway.e2e.test.ts",
           "extensions/qa-lab/src/control-ui-automation-management.real-gateway.e2e.test.ts",

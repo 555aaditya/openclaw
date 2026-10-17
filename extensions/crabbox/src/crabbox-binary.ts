@@ -67,3 +67,18 @@ export function findCrabboxBinary(params: CrabboxBinaryOptions): string | undefi
   }
   return undefined;
 }
+
+export function resolveOpenClawRoot(pluginRoot: string | undefined): string {
+  if (!pluginRoot) {
+    return process.cwd();
+  }
+  const extensionsDir = path.dirname(pluginRoot);
+  if (path.basename(extensionsDir) !== "extensions") {
+    return process.cwd();
+  }
+  const extensionParent = path.dirname(extensionsDir);
+  return path.basename(extensionParent) === "dist" ||
+    path.basename(extensionParent) === "dist-runtime"
+    ? path.dirname(extensionParent)
+    : extensionParent;
+}

@@ -77,11 +77,6 @@ function activateFixture(origin: PluginRecord["origin"] = "bundled") {
     }),
   );
   registry.plugins.push(record);
-  registry.controlUiDescriptors.push({
-    pluginId: record.id,
-    source: record.source,
-    descriptor: { id: "summary", surface: "widget", label: "Native summary" },
-  });
   setActivePluginRegistry(registry);
   return { rootDir, directory, registry, record };
 }
@@ -716,7 +711,6 @@ describe("native Control UI browser assets", () => {
     expect(reportControlUiPluginActivation(browser, report)).toBe(true);
     const retained = createEmptyPluginRegistry();
     retained.plugins.push(fixture.record, createPluginRecord({ id: "unrelated" }));
-    retained.controlUiDescriptors.push(...fixture.registry.controlUiDescriptors);
     setActivePluginRegistry(retained);
 
     await withGatewayServer({
@@ -746,7 +740,6 @@ describe("native Control UI browser assets", () => {
 
         const replacement = createEmptyPluginRegistry();
         replacement.plugins.push(createPluginRecord({ ...fixture.record }));
-        replacement.controlUiDescriptors.push(...fixture.registry.controlUiDescriptors);
         setActivePluginRegistry(replacement);
         expect((await read()).res.statusCode).toBe(404);
         expect(listControlUiPluginActivations(browser)).toEqual([]);
@@ -796,7 +789,6 @@ describe("native Control UI browser assets", () => {
         if (version === Math.floor(maxChanges / 2)) {
           const retained = createEmptyPluginRegistry();
           retained.plugins.push(fixture.record, createPluginRecord({ id: "unrelated" }));
-          retained.controlUiDescriptors.push(...fixture.registry.controlUiDescriptors);
           setActivePluginRegistry(retained);
         }
         const source = `export default { version: ${version} };`.padEnd(sourceBytes);

@@ -103,7 +103,6 @@ CLI registration:
   Nested descriptors do not expose `machineOutput`.
 - Use `api.registerCli(registrar, { parentPath: ["nodes"], ...opts })` for
   paired-node feature commands so they land under `openclaw nodes`.
-  The `api.registerNodeCliFeature(...)` shorthand remains supported.
 - For other nested plugin commands, add `parentPath` and register commands
   on the `program` object passed to the registrar; OpenClaw resolves it to
   the parent command before calling the plugin.

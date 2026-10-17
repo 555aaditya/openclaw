@@ -86,7 +86,7 @@ describe("BoardSnapshotSchema", () => {
           },
         ],
       }),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       Value.Check(BoardSnapshotSchema, {
         ...snapshot,

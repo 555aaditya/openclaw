@@ -286,7 +286,6 @@ export function runCiManifestFixture(options: {
           `\nexport const createUiRealGatewayTestShards = (groups) => [1, 2].map((shard) => ({
             shard,
             shard_count: 2,
-            run_desktop: shard === 1,
             groups: groups.map((group) => ({
               ...group,
               configs: ["test/vitest/vitest.ui-e2e-prebuilt.config.ts"],

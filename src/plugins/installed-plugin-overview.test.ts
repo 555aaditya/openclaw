@@ -27,7 +27,7 @@ it("reads the full installed README and package presentation without relying on 
         providers: ["local-model"],
         channels: ["local-channel"],
         contracts: { speechProviders: ["local-speech"] },
-        uiCapabilities: ["link-reader"],
+        uiCapabilities: ["page"],
       }),
     ),
   ).toEqual({
@@ -39,7 +39,7 @@ it("reads the full installed README and package presentation without relying on 
       providers: ["local-model"],
       channels: ["local-channel"],
       contracts: { speechProviders: ["local-speech"] },
-      ui: ["link-reader"],
+      ui: ["page"],
     },
   });
 });

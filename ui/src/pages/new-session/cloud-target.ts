@@ -18,7 +18,6 @@ export async function requestPlaceCatalog(
 ): Promise<{
   profiles: DraftCloudProfile[];
   environments: DraftEnvironment[];
-  suggestedProfile?: EnvironmentsListResult["suggestedProfile"];
 }> {
   const result = await client.request<EnvironmentsListResult>(
     "environments.list",
@@ -26,7 +25,6 @@ export async function requestPlaceCatalog(
   );
   return {
     profiles: (result.profiles ?? []).toSorted((left, right) => left.id.localeCompare(right.id)),
-    suggestedProfile: result.suggestedProfile,
     environments: result.environments
       .filter((environment) => ["local", "node", "worker"].includes(environment.type))
       .toSorted((left, right) => left.id.localeCompare(right.id)),

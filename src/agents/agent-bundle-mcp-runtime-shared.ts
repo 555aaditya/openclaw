@@ -8,7 +8,6 @@ import type {
   SessionMcpRuntime,
   SessionMcpRuntimeManager,
 } from "./agent-bundle-mcp-types.js";
-import type { McpServerConnectionResolved } from "./mcp-connection-resolver.js";
 
 export const SESSION_MCP_RUNTIME_MANAGER_KEY = Symbol.for("openclaw.sessionMcpRuntimeManager");
 export const SESSION_MCP_RUNTIME_SWEEP_INTERVAL_MS = 60 * 1000;
@@ -45,7 +44,6 @@ export type CreateSessionMcpRuntime = (params: {
   includeServerNames?: ReadonlySet<string>;
   excludeServerNames?: ReadonlySet<string>;
   safeServerNamesByServer?: ReadonlyMap<string, string>;
-  connectionOverrides?: ReadonlyMap<string, McpServerConnectionResolved>;
   redactConnectionServerNames?: ReadonlySet<string>;
   requesterScope?: SessionMcpRequesterScope;
   requesterConnect?: RequesterMcpConnect;

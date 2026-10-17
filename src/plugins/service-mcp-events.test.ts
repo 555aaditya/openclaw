@@ -1,6 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
-import { McpConnectionAuthorityError } from "../agents/mcp-connection-authority-error.js";
-import type { McpConnectionAuthority } from "../agents/mcp-connection-authority.types.js";
 import type { SessionEntry } from "../config/sessions/types.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { CronStoredJob } from "../cron/types.js";
@@ -12,14 +10,11 @@ import { createDeferredCore } from "../shared/deferred.js";
 import { createPluginRuntimeCapabilityLease } from "./capability-lease.js";
 import { createPluginServiceMcpEvents } from "./service-mcp-events.js";
 import { createServiceCronHost } from "./services.test-support.js";
-import type { McpServerConnectionResolved } from "./types.mcp-connection.js";
 
 const mocks = vi.hoisted(() => ({
   entry: { sessionId: "creator-session", updatedAt: 1 } as SessionEntry | undefined,
   deny: [] as string[],
   group: vi.fn(),
-  resolver: vi.fn(),
-  useResolver: false,
   request: vi.fn<typeof import("../agents/mcp-event-request.js").requestMcpEvent>(),
 }));
 vi.mock("../agents/agent-scope.js", async (importOriginal) => ({
@@ -46,14 +41,6 @@ vi.mock("./bundle-mcp.js", async (importOriginal) => ({
     diagnostics: [],
     pluginIdsByServer: {},
     prepareDataDirsByServer: {},
-  }),
-}));
-vi.mock("./runtime.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./runtime.js")>()),
-  getActivePluginRegistry: () => ({
-    mcpServerConnectionResolvers: mocks.useResolver
-      ? [{ pluginId: "connector", resolver: { serverName: "calendar", resolve: mocks.resolver } }]
-      : [],
   }),
 }));
 vi.mock("./runtime/gateway-request-scope.js", async (importOriginal) => ({
@@ -84,15 +71,6 @@ vi.mock("../logger.js", async (importOriginal) => ({
   logWarn: vi.fn(),
   logDebug: vi.fn(),
 }));
-
-function resolverAuthority(authorizationId = "grant-one"): McpConnectionAuthority {
-  return {
-    authorizationId,
-    assertCurrent: vi.fn(),
-    revalidate: vi.fn(async () => {}),
-    dispose: vi.fn(),
-  };
-}
 
 const source = { jobId: "event-job", sourceIdentity: "generation-one", serverName: "calendar" };
 const signal = new AbortController().signal;
@@ -176,8 +154,6 @@ function fixture(pluginId = "mcp-events") {
 beforeEach(() => {
   mocks.entry = { sessionId: "creator-session", updatedAt: 1 };
   mocks.deny = [];
-  mocks.useResolver = false;
-  mocks.resolver.mockReset();
   mocks.group.mockReset();
   mocks.request.mockReset();
   mocks.request.mockImplementation(async (input) => {
@@ -208,41 +184,7 @@ describe("native MCP Events source authority", () => {
     f.job.schedule.source = "other-plugin";
     await expect(f.capability.prepareSource(source)).rejects.toThrow("source is no longer current");
   });
-  it("resolves the saved requester without accepting caller-supplied principal fields", async () => {
-    const f = fixture();
-    mocks.useResolver = true;
-    mocks.resolver.mockResolvedValue({
-      url: "https://alice.example/mcp",
-      authority: resolverAuthority(),
-      headers: { Authorization: "Bearer private-fixture" },
-    });
-    const prepared = await f.capability.prepareSource(source);
-    await prepared.request(
-      "events/list",
-      { requesterSenderId: "mallory", agentId: "other" },
-      signal,
-    );
-    expect(mocks.resolver).toHaveBeenCalledWith({
-      requesterSenderId: "alice",
-      agentAccountId: "default",
-      messageChannel: "discord",
-      requireLiveAuthority: true,
-    });
-    expect(mocks.request).toHaveBeenCalledWith(
-      expect.objectContaining({
-        server: expect.objectContaining({ url: "https://alice.example/mcp" }),
-        params: {},
-      }),
-    );
-    expect(mocks.group).toHaveBeenCalledWith(
-      expect.objectContaining({
-        accountId: "default",
-        requireConfiguredAccount: true,
-        senderId: "alice",
-      }),
-    );
-  });
-  it.each(["oauth", "resolver"])(
+  it.each(["oauth"])(
     "never falls back to shared credentials for a requester %s server",
     async (mode) => {
       const f = fixture();
@@ -254,14 +196,11 @@ describe("native MCP Events source authority", () => {
           auth: "oauth",
           oauth: { identity: "per-requester" },
         };
-      } else {
-        mocks.useResolver = true;
       }
       await expect(f.capability.prepareSource(source)).rejects.toThrow(
         "original authenticated requester",
       );
       expect(mocks.request).not.toHaveBeenCalled();
-      expect(mocks.resolver).not.toHaveBeenCalled();
     },
   );
   it.each([
@@ -296,22 +235,6 @@ describe("native MCP Events source authority", () => {
       delete f.job.scheduledToolPolicy;
     }
     await expect(f.capability.prepareSource(source)).rejects.toThrow();
-    expect(mocks.request).not.toHaveBeenCalled();
-  });
-  it("revalidates job ownership after a requester resolver await", async () => {
-    const f = fixture();
-    mocks.useResolver = true;
-    const started = createDeferredCore();
-    const gate = createDeferredCore<McpServerConnectionResolved>();
-    mocks.resolver.mockImplementation(() => {
-      started.resolve();
-      return gate.promise;
-    });
-    const pending = f.capability.prepareSource(source);
-    await started.promise;
-    f.job.enabled = false;
-    gate.resolve({ url: "https://alice.example/mcp", authority: resolverAuthority() });
-    await expect(pending).rejects.toThrow("authority or configuration changed");
     expect(mocks.request).not.toHaveBeenCalled();
   });
   it("retains source authority for callback/commit guards and disposes superseded handles", async () => {
@@ -452,61 +375,6 @@ describe("native MCP Events source authority", () => {
     await cleanup;
     expect(mocks.request.mock.lastCall?.[0].method).toBe("events/unsubscribe");
   });
-  it("does not borrow a replacement grant for cleanup or use revoked credentials at send", async () => {
-    const f = fixture();
-    mocks.useResolver = true;
-    let grant = "one";
-    let revoked = false;
-    mocks.resolver.mockImplementation(() => ({
-      url: "https://alice.example/mcp",
-      authority: {
-        ...resolverAuthority(grant),
-        assertCurrent: () => {
-          if (revoked) {
-            throw new McpConnectionAuthorityError("retired");
-          }
-        },
-      },
-    }));
-    const prepared = await f.capability.prepareSource(source);
-    await prepared.request("events/subscribe", subscription, signal);
-    grant = "two";
-    await expect(prepared.unsubscribe(signal)).rejects.toMatchObject({
-      code: "MCP_AUTHORIZATION_RETIRED",
-    });
-    expect(mocks.request).toHaveBeenCalledTimes(1);
-    grant = "one";
-    mocks.request.mockImplementationOnce(async (input) => {
-      revoked = true;
-      input.assertCurrent();
-      return {};
-    });
-    await expect(prepared.unsubscribe(signal)).rejects.toMatchObject({
-      code: "MCP_AUTHORIZATION_RETIRED",
-    });
-  });
-  it.each(["renew", "unsubscribe"])(
-    "refuses %s at a replacement resolver endpoint under the same grant",
-    async (operation) => {
-      const f = fixture();
-      mocks.useResolver = true;
-      let url = "https://alice.example/mcp";
-      mocks.resolver.mockImplementation(() => ({
-        url,
-        authority: resolverAuthority("same-grant"),
-      }));
-      const prepared = await f.capability.prepareSource(source);
-      await prepared.request("events/subscribe", subscription, signal);
-      url = "https://replacement.example/mcp";
-      const request =
-        operation === "renew"
-          ? prepared.request("events/subscribe", subscription, signal)
-          : prepared.unsubscribe(signal);
-      await expect(request).rejects.toMatchObject({ code: "MCP_AUTHORIZATION_RETIRED" });
-      expect(mocks.request).toHaveBeenCalledTimes(1);
-      prepared.dispose();
-    },
-  );
   it("expires exact cleanup without recreating it from a restored prepared source", async () => {
     const f = fixture();
     const prepared = await f.capability.prepareSource(source);
@@ -521,64 +389,4 @@ describe("native MCP Events source authority", () => {
       clock.mockRestore();
     }
   });
-});
-
-it("binds callback authority to the resolver lifetime, not rotating credentials or the requester alone", async () => {
-  const f = fixture();
-  mocks.useResolver = true;
-  let authorizationId = "grant-one";
-  let credential = "fixture-first";
-  const disposed = vi.fn();
-  const revalidated = vi.fn();
-  mocks.resolver.mockImplementation(() => {
-    const captured = authorizationId;
-    const assertCurrent = () => {
-      if (captured !== authorizationId) {
-        throw new McpConnectionAuthorityError("retired");
-      }
-    };
-    return {
-      url: "https://alice.example/mcp",
-      headers: { Authorization: "Bearer " + credential },
-      authority: {
-        authorizationId: captured,
-        assertCurrent,
-        revalidate: async () => {
-          revalidated();
-          assertCurrent();
-        },
-        dispose: disposed,
-      },
-    };
-  });
-  const first = await f.capability.prepareSource(source);
-  credential = "fixture-rotated";
-  await first.revalidate();
-  await first.request("events/list", {}, signal);
-  expect(mocks.request.mock.lastCall?.[0].server).toMatchObject({
-    headers: { Authorization: "Bearer fixture-rotated" },
-  });
-  expect(revalidated).toHaveBeenCalledOnce();
-  const refreshed = await f.capability.prepareSource(source);
-  expect(refreshed.principalId).toBe(first.principalId);
-  authorizationId = "grant-two";
-  expect(() => first.assertCurrent()).toThrow("disconnected or replaced");
-  await expect(first.revalidate()).rejects.toMatchObject({ code: "MCP_AUTHORIZATION_RETIRED" });
-  const reconnected = await f.capability.prepareSource(source);
-  expect(reconnected.principalId).not.toBe(first.principalId);
-  expect(reconnected.accountId).toBe(first.accountId);
-  first.dispose();
-  refreshed.dispose();
-  reconnected.dispose();
-  expect(disposed).toHaveBeenCalledTimes(4);
-});
-
-it("fails closed for a credential-only resolver that cannot assert live callback authority", async () => {
-  const f = fixture();
-  mocks.useResolver = true;
-  mocks.resolver.mockResolvedValue({ url: "https://alice.example/mcp" });
-  await expect(f.capability.prepareSource(source)).rejects.toMatchObject({
-    code: "MCP_AUTHORIZATION_UNAVAILABLE",
-  });
-  expect(mocks.request).not.toHaveBeenCalled();
 });

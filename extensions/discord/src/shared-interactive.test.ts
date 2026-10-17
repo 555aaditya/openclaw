@@ -2,7 +2,6 @@
 import { buildApprovalResolutionRef } from "openclaw/plugin-sdk/approval-reference-runtime";
 import { describe, expect, it } from "vitest";
 import { parseExecApprovalData } from "./approval-custom-id.js";
-import { buildDiscordActivityCustomId } from "./component-custom-id.js";
 import { buildDiscordComponentMessage } from "./components.js";
 import { parseCustomId } from "./internal/components.base.js";
 import {
@@ -78,38 +77,6 @@ describe("buildDiscordInteractiveComponents", () => {
               label: "Continue",
               callbackData: "/codex permissions yolo",
               callbackDataKind: "callback",
-            },
-          ],
-        },
-      ],
-    });
-  });
-
-  it("renders hosted widget actions as Discord Activity buttons", () => {
-    const widgetId = "AAAAAAAAAAAAAAAAAAAAAA";
-    expect(
-      buildDiscordPresentationComponents({
-        blocks: [
-          {
-            type: "buttons",
-            buttons: [
-              {
-                label: "Open widget",
-                action: { type: "web-app", widgetId },
-              },
-            ],
-          },
-        ],
-      }),
-    ).toEqual({
-      blocks: [
-        {
-          type: "actions",
-          buttons: [
-            {
-              label: "Open widget",
-              style: "secondary",
-              internalCustomId: buildDiscordActivityCustomId(widgetId),
             },
           ],
         },

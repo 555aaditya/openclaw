@@ -25,7 +25,6 @@ type GatewayStartupPluginPlanParams = {
   env: NodeJS.ProcessEnv;
   index?: PluginRegistrySnapshot;
   metadataSnapshot?: PluginMetadataSnapshot;
-  workerProviderIds?: readonly string[];
   platform?: NodeJS.Platform;
   ambientEnvTriggers?: AmbientEnvTriggerPolicy;
 };
@@ -49,7 +48,6 @@ export function loadGatewayStartupPluginPlanWithMetadata(params: GatewayStartupP
         config: params.config,
         activationSourceConfig: params.activationSourceConfig,
         env: params.env,
-        workerProviderIds: params.workerProviderIds ?? [],
         platform: params.platform,
         ambientEnvTriggers: params.ambientEnvTriggers,
       }),
@@ -63,7 +61,6 @@ export function loadGatewayStartupPluginPlanWithMetadata(params: GatewayStartupP
     manifestRegistry: metadataSnapshot.manifestRegistry,
     discovery: metadataSnapshot.discovery,
     normalizePluginId: metadataSnapshot.normalizePluginId,
-    workerProviderIds: params.workerProviderIds ?? [],
     platform: params.platform,
     ambientEnvTriggers: params.ambientEnvTriggers,
   });

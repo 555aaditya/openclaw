@@ -23,6 +23,7 @@ import { resolvePreferredOpenClawTmpDir } from "../infra/tmp-openclaw-dir.js";
 import { createImageProcessor } from "../media/image-processor.js";
 import { createEmptyPluginRegistry } from "../plugins/registry-empty.js";
 import { resetPluginRuntimeStateForTest, setActivePluginRegistry } from "../plugins/runtime.js";
+import { createPluginRecord } from "../plugins/status.test-helpers.js";
 import { AVATAR_MAX_DATA_URL_CHARS } from "../shared/avatar-limits.js";
 import { AVATAR_MAX_BYTES } from "../shared/avatar-policy.js";
 import { createDeferredCore } from "../shared/deferred.js";
@@ -1044,32 +1045,17 @@ describe("handleControlUiHttpRequest", () => {
     },
   );
 
-  it("sets least-privilege route-bound cookies for multiple external plugin tabs", async () => {
+  it("sets least-privilege asset-bound cookies for multiple native plugins", async () => {
     const tmp = await createControlUiRoot();
     const registry = createEmptyPluginRegistry();
-    for (const [pluginId, route, panel, requiredScopes] of [
-      ["demo-plugin", "/secure-hook", "/secure-hook", undefined],
-      ["other-plugin", "/other-hook", "/other-hook/panel", ["operator.read"]],
-    ] as const) {
-      registry.controlUiDescriptors.push({
-        pluginId,
-        source: pluginId,
-        descriptor: {
-          surface: "tab",
+    for (const pluginId of ["demo-plugin", "other-plugin"]) {
+      registry.plugins.push(
+        createPluginRecord({
           id: pluginId,
-          label: pluginId,
-          path: panel,
-          ...(requiredScopes ? { requiredScopes: [...requiredScopes] } : {}),
-        },
-      });
-      registry.httpRoutes.push({
-        pluginId,
-        source: pluginId,
-        path: route,
-        auth: "gateway",
-        match: "prefix",
-        handler: async () => true,
-      });
+          origin: "bundled",
+          controlUi: { entry: "dist/control-ui/index.js" },
+        }),
+      );
     }
     setActivePluginRegistry(registry);
 
@@ -1091,8 +1077,16 @@ describe("handleControlUiHttpRequest", () => {
     const cookies = Array.isArray(setCookie) ? setCookie : [];
     expect(cookies).toHaveLength(2);
     expect(parseBootstrapPayload(end).pluginFrameGrants).toEqual([
-      { pluginId: "demo-plugin", path: "/secure-hook", match: "prefix" },
-      { pluginId: "other-plugin", path: "/other-hook", match: "prefix" },
+      {
+        pluginId: "demo-plugin",
+        path: "/__openclaw__/plugins/control-ui/demo-plugin/",
+        match: "prefix",
+      },
+      {
+        pluginId: "other-plugin",
+        path: "/__openclaw__/plugins/control-ui/other-plugin/",
+        match: "prefix",
+      },
     ]);
     const cookieNames = cookies.map((cookie) => String(cookie).split("=", 1)[0] ?? "");
     expect(new Set(cookieNames).size).toBe(2);
@@ -1102,8 +1096,8 @@ describe("handleControlUiHttpRequest", () => {
       ),
     ).toBe(true);
     expect(cookies.map(String)).toEqual([
-      expect.stringContaining("Path=/secure-hook"),
-      expect.stringContaining("Path=/other-hook"),
+      expect.stringContaining("Path=/__openclaw__/plugins/control-ui/demo-plugin/"),
+      expect.stringContaining("Path=/__openclaw__/plugins/control-ui/other-plugin/"),
     ]);
     expect(cookies.every((cookie) => String(cookie).includes("HttpOnly"))).toBe(true);
     expect(cookies.every((cookie) => String(cookie).includes("Secure"))).toBe(true);
@@ -1115,12 +1109,12 @@ describe("handleControlUiHttpRequest", () => {
     expect(payloads).toMatchObject([
       {
         pluginId: "demo-plugin",
-        path: "/secure-hook",
+        path: "/__openclaw__/plugins/control-ui/demo-plugin/",
         scopes: ["operator.read"],
       },
       {
         pluginId: "other-plugin",
-        path: "/other-hook",
+        path: "/__openclaw__/plugins/control-ui/other-plugin/",
         scopes: ["operator.read"],
       },
     ]);

@@ -65,12 +65,9 @@ export function applyAgentCompactionSettingsFromConfig(params: {
   }
 }
 
-/** Resolve the compaction mode after provider-backed safeguard promotion. */
+/** Resolve the configured compaction mode. */
 export function resolveEffectiveCompactionMode(cfg?: OpenClawConfig): AgentCompactionMode {
   const compaction = cfg?.agents?.defaults?.compaction;
-  if (compaction?.provider) {
-    return "safeguard";
-  }
   return compaction?.mode === "safeguard" ? "safeguard" : "default";
 }
 

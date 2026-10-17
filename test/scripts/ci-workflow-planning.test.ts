@@ -2370,7 +2370,7 @@ describe("ci workflow guards", () => {
         include: Array<{
           shard: number;
           shard_count: number;
-          run_desktop: boolean;
+          run_desktop?: boolean;
           test_groups_gzip_base64: string;
         }>;
       } = JSON.parse(packedMatrix);
@@ -2380,10 +2380,10 @@ describe("ci workflow guards", () => {
           ? []
           : sharded
             ? [
-                { shard: 1, shard_count: 2, run_desktop: true, run_tests: true },
-                { shard: 2, shard_count: 2, run_desktop: false, run_tests: true },
+                { shard: 1, shard_count: 2, run_tests: true },
+                { shard: 2, shard_count: 2, run_tests: true },
               ]
-            : [{ shard: 1, shard_count: 1, run_desktop: true, run_tests: true }],
+            : [{ shard: 1, shard_count: 1, run_tests: true }],
       );
       const job = workflow.jobs["checks-ui-e2e-real-gateway"];
       const step = expectDefined(
@@ -10139,7 +10139,6 @@ describe("ci workflow guards", () => {
     [
       {
         label: "all selected families",
-        emptyDesktopCarrier: true,
         windowsArea: true,
         unitOwner: false,
         ui: [0],
@@ -10262,16 +10261,14 @@ describe("ci workflow guards", () => {
     const realRows = JSON.parse(
       expectDefined(manifest.outputs.ui_real_gateway_matrix, "real-Gateway matrix"),
     ).include as Array<{
-      run_desktop: boolean;
+      run_desktop?: boolean;
       run_tests: boolean;
       test_groups_gzip_base64: string;
     }>;
     expect(
       realRows.flatMap((row) => resolveSelectedUiIncludes(row.test_groups_gzip_base64).flat()),
     ).toEqual(isPr ? [] : selected.real);
-    if ("emptyDesktopCarrier" in scenario) {
-      expect(realRows.some((row) => row.run_desktop && !row.run_tests)).toBe(!isPr);
-    }
+    expect(realRows.every((row) => row.run_tests && !row.run_desktop)).toBe(true);
     const realJob = readCiWorkflow().jobs["checks-ui-e2e-real-gateway"];
     const suiteStep = expectDefined(
       realJob.steps.find(
@@ -10301,10 +10298,7 @@ describe("ci workflow guards", () => {
         },
       };
       expect(evaluateWorkflowCondition(suiteStep.if, context)).toBe(hasSuiteTargets);
-      expect(evaluateWorkflowCondition(desktopStep.if, context)).toBe(row.run_desktop);
-      if (!hasSuiteTargets) {
-        expect(row.run_desktop).toBe(true);
-      }
+      expect(evaluateWorkflowCondition(desktopStep.if, context)).toBe(false);
     }
     const windowsRows = JSON.parse(
       expectDefined(manifest.outputs.checks_windows_matrix, "Windows matrix"),
@@ -10623,8 +10617,8 @@ describe("ci workflow guards", () => {
               : "blacksmith-8vcpu-ubuntu-2404",
         })),
       ...[
-        { shard: 1, shard_count: 2, run_desktop: true },
-        { shard: 2, shard_count: 2, run_desktop: false },
+        { shard: 1, shard_count: 2 },
+        { shard: 2, shard_count: 2 },
         { shard: 1, shard_count: 1, run_desktop: true },
       ].map((matrix) => ({
         job: uiE2eRealGateway,
@@ -10918,7 +10912,7 @@ describe("ci workflow guards", () => {
     );
     expect(desktopProof).toEqual({
       name: "Prove desktop resize over node and SSH",
-      if: "${{ !cancelled() && steps.real_gateway_build.outcome == 'success' && matrix.run_desktop }}",
+      if: "${{ !cancelled() && steps.real_gateway_build.outcome == 'success' && needs.preflight.outputs.frozen_target == 'true' && matrix.run_desktop }}",
       env: {
         FROZEN_TARGET: "${{ needs.preflight.outputs.frozen_target }}",
         DESKTOP_PROOF_CHECKOUT_SHA: "${{ needs.preflight.outputs.checkout_revision }}",
@@ -10938,7 +10932,7 @@ describe("ci workflow guards", () => {
     );
     expect(desktopUpload).toEqual({
       name: "Upload sanitized desktop resize proof",
-      if: "always() && matrix.run_desktop",
+      if: "always() && needs.preflight.outputs.frozen_target == 'true' && matrix.run_desktop",
       uses: UPLOAD_ARTIFACT_V7,
       with: {
         name: "desktop-resize-proof-${{ github.run_id }}-${{ github.run_attempt }}",
@@ -10975,7 +10969,19 @@ describe("ci workflow guards", () => {
             steps: { real_gateway_build: { outputs: {}, outcome: "success" } },
           }),
         ),
-      ).toHaveLength(1);
+      ).toHaveLength(0);
+      for (const frozen of [false, true]) {
+        expect(
+          evaluateWorkflowCondition(step.if, {
+            eventName: "workflow_dispatch",
+            repository: "openclaw/openclaw",
+            runAttempt: 1,
+            matrix: { shard: 1, shard_count: 1, run_desktop: true },
+            preflightOutputs: { frozen_target: String(frozen) },
+            steps: { real_gateway_build: { outputs: {}, outcome: "success" } },
+          }),
+        ).toBe(frozen);
+      }
     }
     for (const step of uiE2eRealGateway.steps.filter(
       (candidate: WorkflowStep) =>

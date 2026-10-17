@@ -1,6 +1,6 @@
 import { GATEWAY_OWNER_PROFILE_ID } from "../../packages/gateway-protocol/src/schema/users.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
-import type { PluginGatewayAccessAuthority } from "../plugins/gateway-access-policy.types.js";
+import type { GatewayOperatorAccessLifetime } from "../gateway/operator-access-policy.types.js";
 import { resolveGlobalSingleton } from "../shared/global-singleton.js";
 import { roleScopesAllow } from "../shared/operator-scope-compat.js";
 import {
@@ -109,7 +109,7 @@ function prepareRequesterPolicy(
   getCommittedRuntimeConfig: () => OpenClawConfig,
   identity: PreparedProfileIdentity | undefined,
   sessionFacts: PreparedPublicationSession | undefined,
-  onPolicy?: (authority: PluginGatewayAccessAuthority | undefined) => void,
+  onPolicy?: (authority: GatewayOperatorAccessLifetime | undefined) => void,
 ) {
   const client = createSyntheticPluginRuntimeClient({
     operatorRoleActor: snapshot.actor,
@@ -285,7 +285,7 @@ export async function prepareGitHubPublicationRequesterV2(
       scopes: Object.freeze([...(source?.authority.scopes ?? options.client.connect.scopes ?? [])]),
       grant,
     });
-    let policyAuthority: PluginGatewayAccessAuthority | undefined;
+    let policyAuthority: GatewayOperatorAccessLifetime | undefined;
     const assertPolicy = prepareRequesterPolicy(
       snapshot,
       session,
@@ -401,7 +401,7 @@ export async function restoreGitHubPublicationRequester(
     identity?.release();
   };
   try {
-    let policyAuthority: PluginGatewayAccessAuthority | undefined;
+    let policyAuthority: GatewayOperatorAccessLifetime | undefined;
     const assertPolicy = prepareRequesterPolicy(
       snapshot,
       session,

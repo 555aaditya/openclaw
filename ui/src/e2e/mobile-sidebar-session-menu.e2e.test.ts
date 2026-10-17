@@ -51,9 +51,6 @@ suite.define(() => {
                 category: "Operations",
               }),
             ],
-            controlUiTabs: [
-              { id: "reports", pluginId: "reports", label: "Reports", icon: "chartBar" },
-            ],
           });
           // This suite serves Vite source; bind it to the same Gateway origin as the seed.
           await page.addInitScript({ content: createControlUiMockSameOriginGatewayScript() });

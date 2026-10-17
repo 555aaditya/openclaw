@@ -590,7 +590,7 @@ export function createGatewayHttpRequestHandler(
       );
       // Core and recovery routes run first, then plugin routes, then read-only Control UI
       // surfaces. Non-GET requests the SPA does not claim reach the startup 503 before final 404.
-      if (handlePluginRequest && (!remoteIngress || remoteRoute === "plugin-panel")) {
+      if (handlePluginRequest && !remoteIngress) {
         let pluginAuthorization: Awaited<
           ReturnType<typeof authorizePluginGatewayHttpRequestOrReply>
         > = null;

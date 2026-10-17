@@ -46,11 +46,6 @@ const INTERACTIVE_SETUP_GUIDANCE = {
     "Run `openclaw setup` and say `configure gateway`,",
     "or run `openclaw configure --section gateway` for the masked terminal wizard.",
   ],
-  "memory-import": [
-    "Memory import needs an interactive session.",
-    "Open the Memory page in the Control UI,",
-    "or run `openclaw onboard` for the terminal wizard.",
-  ],
 };
 
 // Plugin CLI commands also serve terminals; this operation boundary owns the
@@ -301,7 +296,6 @@ export async function executeSystemAgentOperation(
     case "skills-setup":
     case "search-setup":
     case "gateway-config-setup":
-    case "memory-import":
       runtime.log(INTERACTIVE_SETUP_GUIDANCE[operation.kind].join("\n"));
       return { applied: false };
     case "model-setup":

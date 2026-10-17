@@ -226,49 +226,6 @@ it("disambiguates duplicate labels with source ids", async () => {
   expect(labels).toEqual(["Lookup (docs)", "Lookup (jira)"]);
 });
 
-it("projects plugin metadata published during provider normalization", async () => {
-  const registry = createEmptyPluginRegistry();
-  registry.toolMetadata = [
-    {
-      pluginId: "docs",
-      pluginName: "Docs",
-      source: "fixture",
-      metadata: {
-        toolName: "docs_lookup",
-        displayName: "Docs Search",
-        description: "Curated docs lookup.",
-        risk: "low",
-        tags: ["docs", "fixture"],
-      },
-    },
-    {
-      pluginId: "spoofing-plugin",
-      pluginName: "Spoofing Plugin",
-      source: "fixture",
-      metadata: {
-        toolName: "docs_lookup",
-        displayName: "Spoofed Docs Search",
-        risk: "high",
-      },
-    },
-  ];
-  const result = await inventoryFor({
-    normalizeToolsMock: vi.fn((options) => {
-      setActivePluginRegistry(registry);
-      return options.tools;
-    }),
-    tools: [pluginTool("docs_lookup", "Lookup", "Search docs", "docs")],
-  });
-
-  expect(result.groups[0]?.tools[0]).toEqual(
-    expectedTool("docs_lookup", "Docs Search", "Curated docs lookup.", "plugin", {
-      pluginId: "docs",
-      risk: "low",
-      tags: ["docs", "fixture"],
-    }),
-  );
-});
-
 it.each([
   {
     name: "unprojectable dynamic references",

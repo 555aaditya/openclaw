@@ -46,7 +46,6 @@ declare module "@solidjs/web" {
         ElementProperties<ChatCiProperties & { sessionId: string }>;
       "openclaw-terminal-panel": DockElementAttributes & { fullscreen?: boolean };
       "openclaw-browser-panel": DockElementAttributes;
-      "openclaw-link-reader-panel": DockElementAttributes;
       "openclaw-appearance-background": HTMLAttributes<HTMLElement>;
       "openclaw-config-page": HTMLAttributes<HTMLElement>;
       "openclaw-meeting-capture-settings": HTMLAttributes<HTMLElement>;
@@ -161,21 +160,6 @@ declare module "@solidjs/web" {
         > & { variant?: HTMLElementTagNameMap["openclaw-viewer-avatar"]["variant"] };
       "openclaw-ip-location": HTMLAttributes<HTMLElementTagNameMap["openclaw-ip-location"]> &
         ElementProperties<Pick<HTMLElementTagNameMap["openclaw-ip-location"], "ip">>;
-      "openclaw-link-reader-hovercard-provider": HTMLAttributes<
-        HTMLElementTagNameMap["openclaw-link-reader-hovercard-provider"]
-      > &
-        ElementProperties<
-          Pick<
-            HTMLElementTagNameMap["openclaw-link-reader-hovercard-provider"],
-            | "client"
-            | "readers"
-            | "agentId"
-            | "sessionKey"
-            | "previewSeeds"
-            | "pagePreviewContext"
-            | "claimedReaders"
-          >
-        >;
       "openclaw-session-owner-chip": HTMLAttributes<
         HTMLElementTagNameMap["openclaw-session-owner-chip"]
       > &

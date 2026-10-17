@@ -7,10 +7,7 @@ import { normalizeOptionalString } from "@openclaw/normalization-core/string-coe
 import { uniqueStrings } from "@openclaw/normalization-core/string-normalization";
 import { resolveGpt5SystemPromptContribution } from "../agents/gpt5-prompt-overlay.js";
 import { getRegisteredAgentHarness } from "../agents/harness/registry.js";
-import {
-  applyPluginTextReplacements,
-  mergePluginTextTransforms,
-} from "../agents/plugin-text-transforms.js";
+import { applyPluginTextReplacements } from "../agents/plugin-text-transforms.js";
 import type { StreamFn } from "../agents/runtime/index.js";
 import type { ProviderSystemPromptContribution } from "../agents/system-prompt-contribution.js";
 import type { ModelProviderConfig } from "../config/types.js";
@@ -60,7 +57,6 @@ import {
   resolveUsageHookProviderPluginContracts,
 } from "./providers.js";
 import { getActivePluginRegistryWorkspaceDirFromState } from "./runtime-state.js";
-import { resolveRuntimeTextTransforms } from "./text-transforms.runtime.js";
 import type {
   ProviderAugmentModelCatalogContext,
   ProviderDeferSyntheticProfileAuthContext,
@@ -256,10 +252,7 @@ export function transformProviderSystemPrompt(
   },
 ): string {
   const plugin = ensureProviderRuntimePluginHandle(params).plugin;
-  const textTransforms = mergePluginTextTransforms(
-    resolveRuntimeTextTransforms(),
-    plugin?.textTransforms,
-  );
+  const textTransforms = plugin?.textTransforms;
   const transformed =
     plugin?.transformSystemPrompt?.(params.context) ?? params.context.systemPrompt;
   return applyPluginTextReplacements(transformed, textTransforms?.input);
@@ -270,10 +263,7 @@ export function resolveProviderTextTransforms(
     runtimeHandle?: ProviderRuntimePluginHandle;
   },
 ): PluginTextTransforms | undefined {
-  return mergePluginTextTransforms(
-    resolveRuntimeTextTransforms(),
-    ensureProviderRuntimePluginHandle(params).plugin?.textTransforms,
-  );
+  return ensureProviderRuntimePluginHandle(params).plugin?.textTransforms;
 }
 
 export const prepareProviderDynamicModel = asyncRuntimeHook("prepareDynamicModel");

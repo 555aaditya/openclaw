@@ -4,17 +4,6 @@ import { pluginInstanceInvocation } from "./plugin-instance-invocation.js";
 import { getPluginValueInstance } from "./plugin-instance-scope.js";
 import type { OpenClawPluginApi, OpenClawPluginDefinition } from "./types.js";
 
-const LATE_CALLABLE_PLUGIN_API_METHODS: ReadonlySet<string> = new Set<keyof OpenClawPluginApi>([
-  "clearRunContext",
-  "emitAgentEvent",
-  "enqueueNextTurnInjection",
-  "getRunContext",
-  "sendSessionAttachment",
-  "scheduleSessionTurn",
-  "setRunContext",
-  "unscheduleSessionTurnsByTag",
-]);
-
 function createGuardedPluginRegistrationApi(api: OpenClawPluginApi): {
   api: OpenClawPluginApi;
   close: () => void;
@@ -28,7 +17,7 @@ function createGuardedPluginRegistrationApi(api: OpenClawPluginApi): {
         if (typeof value !== "function") {
           return value;
         }
-        if (typeof prop === "string" && LATE_CALLABLE_PLUGIN_API_METHODS.has(prop)) {
+        if (prop === "enqueueNextTurnInjection") {
           return (...args: unknown[]) => Reflect.apply(value, target, args);
         }
         return (...args: unknown[]) => {
@@ -46,7 +35,6 @@ function createGuardedPluginRegistrationApi(api: OpenClawPluginApi): {
         };
       },
     }),
-    api.session.workflow.steerActiveRun,
   );
   return {
     api: guardedApi,

@@ -305,7 +305,6 @@ export async function finishGatewayStartup(params: {
               log,
               baseMethods: runtime.baseMethods,
               coreGatewayMethodNames: runtime.coreGatewayMethodNames,
-              hostServices: runtime.pluginHostServices,
               startupPluginIds: runtime.startupPluginIds,
               pluginLookUpTable: runtime.pluginLookUpTable,
               startupTrace,
@@ -339,10 +338,7 @@ export async function finishGatewayStartup(params: {
               for (const client of clients) {
                 reconcileClientPluginNodeCapabilities(client, nodeCapabilitySurfaces);
               }
-              await runtime.refreshAttachedGatewayDiscovery(
-                loaded.pluginRegistry,
-                startupPluginRuntimeClaim,
-              );
+
               return true;
             } finally {
               await Promise.allSettled(activationCleanup);

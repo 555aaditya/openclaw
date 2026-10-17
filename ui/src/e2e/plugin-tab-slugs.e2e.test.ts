@@ -46,9 +46,6 @@ async function installReports(page: Page, holdHello = false) {
     });
   });
   const gateway = await installMockGateway(page, {
-    controlUiTabs: [
-      { pluginId, id: tabId, label: "Reports", slug: "reports", path: "/plugins/reports-fixture/" },
-    ],
     heldMethods: holdHello ? ["connect"] : [],
   });
   return { gateway, frameRequests };

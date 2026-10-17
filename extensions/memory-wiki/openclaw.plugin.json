@@ -1,11 +1,19 @@
 {
   "id": "memory-wiki",
-  "categories": ["memory"],
+  "categories": [
+    "memory"
+  ],
   "doctorContract": {
     "stateMigrations": [
-      { "id": "memory-wiki-compiled-cache-file-cleanup" },
-      { "id": "memory-wiki-source-sync-json-to-plugin-state" },
-      { "id": "memory-wiki-import-runs-json-to-plugin-state" }
+      {
+        "id": "memory-wiki-compiled-cache-file-cleanup"
+      },
+      {
+        "id": "memory-wiki-source-sync-json-to-plugin-state"
+      },
+      {
+        "id": "memory-wiki-import-runs-json-to-plugin-state"
+      }
     ]
   },
   "activation": {
@@ -20,11 +28,22 @@
       "hasSubcommands": true
     }
   ],
-  "catalog": { "featured": true, "order": 30 },
-  "contracts": {
-    "tools": ["wiki_apply", "wiki_get", "wiki_lint", "wiki_search", "wiki_status"]
+  "catalog": {
+    "featured": true,
+    "order": 30
   },
-  "skills": ["./skills"],
+  "contracts": {
+    "tools": [
+      "wiki_apply",
+      "wiki_get",
+      "wiki_lint",
+      "wiki_search",
+      "wiki_status"
+    ]
+  },
+  "skills": [
+    "./skills"
+  ],
   "uiHints": {
     "vaultMode": {
       "label": "Vault Mode",
@@ -57,10 +76,6 @@
     "unsafeLocal.allowPrivateMemoryCoreAccess": {
       "label": "Allow Private Memory Access",
       "help": "Experimental same-repo escape hatch for reading memory-core private paths."
-    },
-    "context.includeCompiledDigestPrompt": {
-      "label": "Include Compiled Digest In Prompt",
-      "help": "Append a compact compiled wiki digest snapshot to memory prompt sections for context engines and legacy prompt assembly."
     }
   },
   "configGroups": [
@@ -68,37 +83,52 @@
       "id": "wiki-vault",
       "title": "Wiki vault",
       "order": 10,
-      "properties": ["vaultMode", "vault"]
+      "properties": [
+        "vaultMode",
+        "vault"
+      ]
     },
     {
       "id": "obsidian",
       "title": "Obsidian",
       "order": 20,
-      "properties": ["obsidian"]
+      "properties": [
+        "obsidian"
+      ]
     },
     {
       "id": "memory-sources",
       "title": "Memory sources",
       "order": 30,
-      "properties": ["bridge", "unsafeLocal"]
+      "properties": [
+        "bridge",
+        "unsafeLocal"
+      ]
     },
     {
       "id": "ingestion",
       "title": "Ingestion",
       "order": 40,
-      "properties": ["ingest"]
+      "properties": [
+        "ingest"
+      ]
     },
     {
       "id": "search-and-context",
       "title": "Search and context",
       "order": 50,
-      "properties": ["search", "context"]
+      "properties": [
+        "search",
+        "context"
+      ]
     },
     {
       "id": "page-rendering",
       "title": "Page rendering",
       "order": 60,
-      "properties": ["render"]
+      "properties": [
+        "render"
+      ]
     }
   ],
   "configSchema": {
@@ -107,13 +137,18 @@
     "allOf": [
       {
         "not": {
-          "required": ["vaultMode", "vault"],
+          "required": [
+            "vaultMode",
+            "vault"
+          ],
           "properties": {
             "vaultMode": {
               "const": "unsafe-local"
             },
             "vault": {
-              "required": ["scope"],
+              "required": [
+                "scope"
+              ],
               "properties": {
                 "scope": {
                   "const": "agent"
@@ -125,10 +160,15 @@
       },
       {
         "not": {
-          "required": ["vault", "obsidian"],
+          "required": [
+            "vault",
+            "obsidian"
+          ],
           "properties": {
             "vault": {
-              "required": ["scope"],
+              "required": [
+                "scope"
+              ],
               "properties": {
                 "scope": {
                   "const": "agent"
@@ -136,7 +176,9 @@
               }
             },
             "obsidian": {
-              "required": ["useOfficialCli"],
+              "required": [
+                "useOfficialCli"
+              ],
               "properties": {
                 "useOfficialCli": {
                   "const": true
@@ -150,7 +192,11 @@
     "properties": {
       "vaultMode": {
         "type": "string",
-        "enum": ["isolated", "bridge", "unsafe-local"]
+        "enum": [
+          "isolated",
+          "bridge",
+          "unsafe-local"
+        ]
       },
       "vault": {
         "type": "object",
@@ -158,14 +204,20 @@
         "properties": {
           "scope": {
             "type": "string",
-            "enum": ["global", "agent"]
+            "enum": [
+              "global",
+              "agent"
+            ]
           },
           "path": {
             "type": "string"
           },
           "renderMode": {
             "type": "string",
-            "enum": ["native", "obsidian"]
+            "enum": [
+              "native",
+              "obsidian"
+            ]
           }
         }
       },
@@ -248,20 +300,18 @@
         "properties": {
           "backend": {
             "type": "string",
-            "enum": ["shared", "local"]
+            "enum": [
+              "shared",
+              "local"
+            ]
           },
           "corpus": {
             "type": "string",
-            "enum": ["wiki", "memory", "all"]
-          }
-        }
-      },
-      "context": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "includeCompiledDigestPrompt": {
-            "type": "boolean"
+            "enum": [
+              "wiki",
+              "memory",
+              "all"
+            ]
           }
         }
       },
@@ -282,5 +332,9 @@
       }
     }
   },
-  "commandAliases": [{ "name": "wiki" }]
+  "commandAliases": [
+    {
+      "name": "wiki"
+    }
+  ]
 }

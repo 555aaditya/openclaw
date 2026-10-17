@@ -143,8 +143,6 @@ export async function createGatewayWorkerEnvironmentRuntime(params: {
     { createWorkerNodeDesktopCarrier },
     { createWorkerNodePortalCarrier },
     { createWorkerComputerService },
-    { resolveWorkerProvider },
-    { maintainConfiguredWorkerProviders },
     { createWorkerBootstrapArtifactTransferService },
   ] = await Promise.all([
     import("./worker-environments/service.js"),
@@ -162,8 +160,6 @@ export async function createGatewayWorkerEnvironmentRuntime(params: {
     import("./worker-environments/node-desktop-carrier.js"),
     import("./worker-environments/portal-node-carrier.js"),
     import("./worker-environments/computer-service.js"),
-    import("../plugins/worker-provider-registry.js"),
-    import("../plugins/worker-provider-maintenance.js"),
     import("./worker-environments/worker-bootstrap-artifact-transfer-service.js"),
   ]);
   // The Gateway state-directory lock proves that executors from the previous
@@ -433,18 +429,8 @@ export async function createGatewayWorkerEnvironmentRuntime(params: {
       read: readPreparedPoolPresenceDemand,
       write: writePreparedPoolPresenceDemand,
     },
-    maintainProviders: (signal) =>
-      maintainConfiguredWorkerProviders({
-        getRegistry: params.getPluginRegistry,
-        getConfig: getRuntimeConfig,
-        signal,
-        warn: (message) => workerEnvironmentLog.warn(message),
-      }),
-    // Plugin reload replaces the registry object; resolve against the live binding.
     resolveProvider: (providerId) =>
-      providerId === DEVICE_WORKER_PROVIDER_ID
-        ? deviceRuntime.provider
-        : resolveWorkerProvider(params.getPluginRegistry(), providerId),
+      providerId === DEVICE_WORKER_PROVIDER_ID ? deviceRuntime.provider : undefined,
     prepareInstallation,
     ensureNodeWorkerBundle: nodeWorkerBundleInstaller,
     prepareNodeBootstrap: nodeEnrollment.prepare,

@@ -35,7 +35,6 @@ export * from "./schema/gateway-suspend.js";
 export * from "./schema/hooks.js";
 export * from "./schema/human-mentions.js";
 export * from "./schema/logs-chat.js";
-export * from "./schema/migrations.js";
 export * from "./schema/nodes.js";
 export * from "./schema/presence.js";
 export * from "./schema/push.js";

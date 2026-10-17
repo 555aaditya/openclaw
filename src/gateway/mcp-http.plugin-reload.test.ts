@@ -164,11 +164,6 @@ it.for(["plain", "shared"] as const)(
         if (event.result.details.bytes) event.result.details.bytes[0] = 255;
         throw new Error("observer failure must not change the HTTP result");
       }, { matcher: ["generation_probe"] });
-      api.registerWidgetPresenter({
-        target: "node_panel", description: "Synthetic generation presenter",
-        availability: async () => ({ ok: true, value: { available: true } }),
-        present: async () => ({ ok: false, error: { code: "no_eligible_node", message: "No test node" } })
-      });
       api.registerTool({
         name: "generation_probe", label: "Generation probe", description: "Return a generation-owned answer",
         parameters: { type: "object", properties: {} },

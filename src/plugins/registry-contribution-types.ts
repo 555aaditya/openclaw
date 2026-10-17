@@ -47,29 +47,6 @@ export type ContextEngineRegistration = {
   lifecycle: ContextEngineRegistrationLifecycle;
 };
 
-type CompactionProviderSummarizationInstructions = {
-  identifierPolicy?: "strict" | "off" | "custom";
-  identifierInstructions?: string;
-};
-
-export interface CompactionProvider {
-  id: string;
-  label: string;
-  summarize(params: {
-    messages: unknown[];
-    signal?: AbortSignal;
-    compressionRatio?: number;
-    customInstructions?: string;
-    summarizationInstructions?: CompactionProviderSummarizationInstructions;
-    previousSummary?: string;
-  }): Promise<string>;
-}
-
-export type RegisteredCompactionProvider = {
-  provider: CompactionProvider;
-  ownerPluginId?: string;
-};
-
 export type MemoryEmbeddingBatchChunk = EmbeddingBatchChunk & {
   embeddingInput?: EmbeddingInput;
 };
@@ -120,10 +97,6 @@ export type MemoryPromptSectionParams = {
 };
 
 export type MemoryPromptSectionBuilder = (params: MemoryPromptSectionParams) => string[];
-
-export type MemoryPromptSectionPreparer = (
-  params: MemoryPromptSectionParams,
-) => Promise<readonly string[]>;
 
 export type PreparedMemoryPromptSection = Readonly<{
   context: Readonly<{
@@ -196,11 +169,6 @@ export type MemoryCorpusSupplementRegistration = {
 export type MemoryPromptSupplementRegistration = {
   pluginId: string;
   builder: MemoryPromptSectionBuilder;
-};
-
-export type MemoryPromptPreparationRegistration = {
-  pluginId: string;
-  prepare: MemoryPromptSectionPreparer;
 };
 
 /**

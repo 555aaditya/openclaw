@@ -1,8 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Duplex } from "node:stream";
-import type { Result } from "@openclaw/normalization-core/result";
 import type { Command } from "commander";
-import type { MessageReceipt } from "../channels/message/types.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { ApprovalScope } from "../infra/approval-scope.js";
 import type { InternalDiagnosticEventInterest } from "../infra/diagnostic-event-listener-presence.js";
@@ -13,8 +11,6 @@ import type {
   DiagnosticEventPayload,
 } from "../infra/diagnostic-events.js";
 import type { DiagnosticTracePropagationBridge as DiagnosticTracePropagationBridgeContract } from "../infra/diagnostic-trace-propagation.js";
-import type { SecurityAuditFinding } from "../security/audit.types.js";
-import type { DeliveryContext } from "../utils/delivery-context.types.js";
 import type { PluginLogger } from "./logger-types.js";
 import type { PluginManifestCliCommand } from "./manifest-types.js";
 import type { PluginServiceSchedulerV1 } from "./service-scheduler.types.js";
@@ -74,65 +70,6 @@ export type OpenClawPluginHttpRouteParams = {
   replaceExisting?: boolean;
 };
 
-export type OpenClawPluginHostedMediaResolver = (
-  mediaUrl: string,
-) => string | null | undefined | Promise<string | null | undefined>;
-
-export type WidgetPresenterContext = Readonly<{
-  messageChannel?: string;
-  accountId?: string;
-  deliveryContext?: Readonly<DeliveryContext>;
-  nativeChannelId?: string;
-  currentChannelId?: string;
-  currentMessagingTarget?: string;
-  sessionKey?: string;
-}>;
-
-export type WidgetPresenterDocument = Readonly<{
-  kind: "html";
-  html: string;
-  hostedUrl?: string;
-}>;
-
-export type WidgetPresentationError =
-  | { code: "no_eligible_node"; message: string }
-  | { code: "node_error"; message: string; nodeId?: string }
-  | { code: "unavailable"; message: string }
-  | { code: "presentation_error"; message: string };
-
-export type WidgetPresentationSuccess =
-  | { kind: "node"; nodeId: string; nodeName?: string }
-  | { kind: "message"; receipt: MessageReceipt };
-
-type WidgetPresenterBase = {
-  description: string;
-  availability: (
-    context: WidgetPresenterContext,
-  ) => Promise<Result<{ available: true }, WidgetPresentationError>>;
-  present: (params: {
-    document: WidgetPresenterDocument;
-    title: string;
-    context: WidgetPresenterContext;
-  }) => Promise<Result<WidgetPresentationSuccess, WidgetPresentationError>>;
-};
-
-export type WidgetPresenter = WidgetPresenterBase &
-  (
-    | {
-        target: "node_panel";
-        match?: never;
-        capabilities?: never;
-      }
-    | {
-        target: "current_channel";
-        match: (context: WidgetPresenterContext) => boolean;
-        capabilities: Readonly<{
-          sourceKinds: readonly string[];
-          maxSourceBytes?: number;
-        }>;
-      }
-  );
-
 export type OpenClawPluginCliContext = {
   /**
    * Command object where this plugin should register its commands.
@@ -181,18 +118,6 @@ type OpenClawPluginLegacyCliRegistrationOptions = {
 export type OpenClawPluginCliRegistrationOptions =
   | OpenClawPluginRootCliRegistrationOptions
   | OpenClawPluginLegacyCliRegistrationOptions;
-
-export type OpenClawPluginNodeCliFeatureOptions = {
-  /** Explicit node feature command names owned under `openclaw nodes`. */
-  commands?: string[];
-  /**
-   * Parse-time command descriptors for lazy node feature CLI registration.
-   *
-   * Descriptors are registered under `openclaw nodes`, so a descriptor named
-   * `"camera"` exposes `openclaw nodes camera`.
-   */
-  descriptors?: OpenClawPluginCliCommandDescriptor[];
-};
 
 export type OpenClawPluginReloadRegistration = {
   restartPrefixes?: string[];
@@ -321,37 +246,6 @@ export type OpenClawPluginNodeInvokePolicy = {
   handle: (
     ctx: OpenClawPluginNodeInvokePolicyContext,
   ) => Promise<OpenClawPluginNodeInvokePolicyResult> | OpenClawPluginNodeInvokePolicyResult;
-};
-
-export type OpenClawPluginSecurityAuditContext = {
-  config: OpenClawConfig;
-  sourceConfig: OpenClawConfig;
-  env: NodeJS.ProcessEnv;
-  stateDir: string;
-  configPath: string;
-};
-
-export type OpenClawPluginSecurityAuditCollector = (
-  ctx: OpenClawPluginSecurityAuditContext,
-) => SecurityAuditFinding[] | Promise<SecurityAuditFinding[]>;
-
-export type OpenClawGatewayDiscoveryAdvertiseContext = {
-  machineDisplayName: string;
-  gatewayPort: number;
-  gatewayTlsEnabled: boolean;
-  gatewayTlsFingerprintSha256?: string;
-  gatewayDirectReachable: boolean;
-  tailnetDns?: string;
-  sshPort?: number;
-  cliPath?: string;
-  minimal: boolean;
-};
-
-export type OpenClawGatewayDiscoveryService = {
-  id: string;
-  advertise: (
-    ctx: OpenClawGatewayDiscoveryAdvertiseContext,
-  ) => void | Promise<void | { stop?: () => void | Promise<void> }>;
 };
 
 /** Context passed to long-lived plugin services. */

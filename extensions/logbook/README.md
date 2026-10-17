@@ -11,7 +11,7 @@ after reviewing the capture and model setup in the
 
 You need a connected screen-capture node, a compatible structured vision route,
 and a working default agent model. The guide covers node permissions, model
-authentication, configuration, and the Control UI timeline.
+authentication, configuration, and the Gateway timeline methods.
 
 Enabling Logbook opts into screen capture unless `captureEnabled` is set to
 `false`. Screenshots can contain sensitive information: sampled frames go to
@@ -20,5 +20,5 @@ agent model. Storage remains on the Gateway. Frame retention defaults to
 14 days; timeline cards and observations are retained.
 
 Use `openclaw plugins inspect logbook --runtime --json` to inspect registration
-and the dashboard status to check capture and analysis outcomes. Installation
+and `logbook.status` to check capture and analysis outcomes. Installation
 alone does not establish node permissions or model authentication.

@@ -3,7 +3,6 @@ import { expectDefined } from "@openclaw/normalization-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { awaitGateBeforeSettlement, createDeferred } from "../../test/helpers/promise.js";
 import { LegacyPluginSdkResourceHost } from "../plugins/legacy-sdk-resource-host.js";
-import { withPluginRuntimeRegistryScope } from "../plugins/runtime/gateway-request-scope.js";
 import {
   createGatewaySchedulerClock,
   createTestGatewayScheduler,
@@ -19,8 +18,23 @@ import {
   type CreateSessionMcpRuntime,
 } from "./agent-bundle-mcp-runtime-shared.js";
 import type { SessionMcpRuntime } from "./agent-bundle-mcp-types.js";
-import { createMcpProofPluginRegistry } from "./mcp-connection-resolver.test-fixtures.js";
 import { createAgentCleanupScope } from "./run-cleanup-timeout.js";
+
+// mock-isolation: Lifecycle ownership must not read real requester OAuth credentials.
+vi.mock("./agent-bundle-mcp-requester-connect.js", () => ({
+  createRequesterMcpConnect: async ({
+    serverNames,
+    configFingerprint,
+  }: {
+    serverNames: ReadonlySet<string>;
+    configFingerprint: string;
+  }) => ({
+    authorizedServerNames: [...serverNames],
+    configFingerprint,
+    catalog: { version: 1, generatedAt: 0, servers: {}, tools: [] },
+    createExecute: () => undefined,
+  }),
+}));
 
 vi.mock("./agent-bundle-mcp-runtime.js", () => {
   throw new Error("Lifecycle-only MCP work must not import the transport runtime");
@@ -85,19 +99,23 @@ function requesterParams(requesterSenderId: string) {
   return {
     ...params,
     requesterSenderId,
-    cfg: { mcp: { servers: { scoped: { transport: "streamable-http" as const } } } },
+    cfg: {
+      mcp: {
+        servers: {
+          scoped: {
+            transport: "streamable-http" as const,
+            url: "https://mcp.example.test/scoped",
+            auth: "oauth" as const,
+            oauth: { identity: "per-requester" as const },
+          },
+        },
+      },
+    },
   };
 }
 
-function withRequesterResolver(run: () => Promise<void>) {
-  const resolverRegistry = createMcpProofPluginRegistry();
-  return withPluginRuntimeRegistryScope(resolverRegistry.registry, async () => {
-    resolverRegistry.apiFor("test-plugin").registerMcpServerConnectionResolver({
-      serverName: "scoped",
-      resolve: async () => ({ url: "https://mcp.example.test/scoped" }),
-    });
-    await run();
-  });
+function withRequesterOAuth(run: () => Promise<void>) {
+  return run();
 }
 
 function holdFactory() {
@@ -158,7 +176,7 @@ describe("MCP manager creation ownership", () => {
     const manager = createManager(factory);
     const acquire = (sessionId: string) =>
       manager.getOrCreateRequesterScoped({ ...requesterParams("sender"), sessionId });
-    await withRequesterResolver(async () => {
+    await withRequesterOAuth(async () => {
       for (let index = 0; index < 255; index += 1) {
         await acquire(`bounded-${index}`);
       }
@@ -297,7 +315,7 @@ describe("MCP manager creation ownership", () => {
   });
 
   it("expires idle requester runtimes outside requesting turns across scheduler replacement and disposal", async () => {
-    await withRequesterResolver(async () => {
+    await withRequesterOAuth(async () => {
       const turnContext = new AsyncLocalStorage<string>();
       const pendingInputContext = new AsyncLocalStorage<string>();
       const readContext = () => ({
@@ -485,7 +503,7 @@ describe("MCP manager creation ownership", () => {
       ],
     ),
   )("releases queued acquisition after $boundary ($entrypoint)", async ({ boundary, acquire }) => {
-    await withRequesterResolver(async () => {
+    await withRequesterOAuth(async () => {
       const survivorScheduler = createTestGatewayScheduler();
       const originScheduler = createTestGatewayScheduler();
       const survivorHost = new LegacyPluginSdkResourceHost();
@@ -570,7 +588,7 @@ describe("MCP manager creation ownership", () => {
   ] as const)(
     "drains late $kind creation during $scope disposal before admitting a successor",
     async ({ scope, kind }) => {
-      await withRequesterResolver(async () => {
+      await withRequesterOAuth(async () => {
         const first = holdFactory();
         const next = holdFactory();
         const createRuntime = vi
@@ -677,63 +695,9 @@ describe("MCP manager creation ownership", () => {
   );
 
   it.each(["session", "all"] as const)(
-    "drains the requester partition of a pending full acquisition during %s disposal",
-    async (scope) => {
-      const resolverRegistry = createMcpProofPluginRegistry();
-      await withPluginRuntimeRegistryScope(resolverRegistry.registry, async () => {
-        const first = holdFactory();
-        const resolutionStarted = createDeferred();
-        const releaseResolution = createDeferred();
-        releaseHeldWork.push(() => releaseResolution.resolve());
-        const resolverApi = resolverRegistry.apiFor("test-plugin");
-        resolverApi.registerMcpServerConnectionResolver({
-          serverName: "scoped",
-          resolve: async () => {
-            resolutionStarted.resolve();
-            await releaseResolution.promise;
-            return { url: "https://mcp.example.test/scoped" };
-          },
-        });
-        const created: SessionMcpRuntime[] = [];
-        const manager = createManager(async (input) => {
-          const runtime = created.length
-            ? createRuntimeFixture(input)
-            : await first.createRuntime(input);
-          created.push(runtime);
-          return runtime;
-        });
-        const pending = manager.acquire(requesterParams("sender"));
-        await first.started;
-        let drained = false;
-        const disposal = (
-          scope === "session" ? manager.disposeSession(params.sessionId) : manager.disposeAll()
-        ).then(() => {
-          drained = true;
-        });
-        first.release();
-        await resolutionStarted.promise;
-        await new Promise<void>((resolve) => {
-          setImmediate(resolve);
-        });
-        expect(drained).toBe(false);
-        releaseResolution.resolve();
-        const acquired = await pending;
-        acquired.releaseLease();
-        await disposal;
-        expect(created).toHaveLength(2);
-        for (const runtime of created) {
-          expect(runtime.dispose).toHaveBeenCalledOnce();
-        }
-        expect(manager.listRuntimeKeys()).toEqual([]);
-        expect(manager.resolveSessionId(params.sessionKey)).toBeUndefined();
-      });
-    },
-  );
-
-  it.each(["session", "all"] as const)(
     "queues a new requester key behind %s teardown",
     async (scope) => {
-      await withRequesterResolver(async () => {
+      await withRequesterOAuth(async () => {
         const createRuntime = vi.fn<CreateSessionMcpRuntime>(createRuntimeFixture);
         const manager = createManager(createRuntime);
         const old = expectDefined(

@@ -1168,7 +1168,14 @@ const plannedUiRealGatewayShards =
     ? nodeTestPlan.createUiRealGatewayTestShards(uiTestGroups.e2e)
     : selectedTestTargets
       ? []
-      : [{ shard: 1, shard_count: 1, run_desktop: true, groups: uiTestGroups?.e2e }];
+      : [
+          {
+            shard: 1,
+            shard_count: 1,
+            ...(frozenTarget ? { run_desktop: true } : {}),
+            groups: uiTestGroups?.e2e,
+          },
+        ];
 const uiRealGatewayShards =
   ordinaryPullRequest && !fullUiPullRequest
     ? []
@@ -1178,7 +1185,7 @@ const uiRealGatewayShards =
             ...shard,
             groups: shard.groups?.filter((group) => group.includePatterns?.length > 0),
           }))
-          .filter((shard) => shard.run_desktop || shard.groups?.length > 0)
+          .filter((shard) => (frozenTarget && shard.run_desktop) || shard.groups?.length > 0)
       : plannedUiRealGatewayShards;
 const projectNodeTestGroup = ({
   configs,

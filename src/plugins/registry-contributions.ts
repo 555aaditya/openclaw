@@ -70,11 +70,6 @@ export function projectPluginContributions(
   for (const key of pluginMaps) {
     projectMap<string, { pluginId: string }>(source[key], target?.[key], owns);
   }
-  projectArray(
-    source.compactionProviders,
-    target?.compactionProviders,
-    (entry) => entry.ownerPluginId === pluginId,
-  );
   projectMap(
     source.contextEngines,
     target?.contextEngines,

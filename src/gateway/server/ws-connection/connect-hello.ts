@@ -23,11 +23,7 @@ import { hasMultipleResidentSessionSharingIdentities } from "../../../state/user
 import { resolveRuntimeServiceBuildId, resolveRuntimeServiceVersion } from "../../../version.js";
 import { resolveChatAttachmentPolicy } from "../../chat-attachment-policy.js";
 import { resolveControlUiIdentity } from "../../control-ui-identity.js";
-import {
-  listControlUiPluginTabs,
-  listControlUiLinkReaders,
-  listControlUiPluginWidgetKinds,
-} from "../../control-ui-plugin-tabs.js";
+import { listControlUiPluginWidgetKinds } from "../../control-ui-plugin-tabs.js";
 import { normalizeControlUiBasePath } from "../../control-ui-shared.js";
 import {
   broadcastSetupHandoffDeliveryUncertain,
@@ -136,14 +132,7 @@ export async function sendGatewayHello(
     snapshot.health = cachedHealth;
     snapshot.stateVersion.health = getHealthVersion();
   }
-  const controlUiTabs = listControlUiPluginTabs(scopes, {
-    requireGatewayAuthGrant: resolvedAuth.mode !== "none",
-  });
   const controlUiWidgetKinds = listControlUiPluginWidgetKinds(scopes);
-  const controlUiLinkReaders = listControlUiLinkReaders(
-    scopes,
-    buildRequestContext().getGatewayMethodRegistry?.(),
-  );
   const ingress = getRemoteControlUiIngressContext(context.handler.upgradeReq);
   const controlUiLocation = ingress
     ? {
@@ -235,9 +224,7 @@ export async function sendGatewayHello(
     ...(controlUiLocation
       ? { controlUiUrl: `${controlUiLocation.origin}${controlUiLocation.basePath}` }
       : {}),
-    ...(controlUiTabs.length > 0 ? { controlUiTabs } : {}),
     ...(controlUiWidgetKinds.length > 0 ? { controlUiWidgetKinds } : {}),
-    ...(controlUiLinkReaders.length > 0 ? { controlUiLinkReaders } : {}),
     ...(Object.keys(pluginSurfaceUrls).length > 0 ? { pluginSurfaceUrls } : {}),
     auth: {
       method: authMethod,

@@ -14,10 +14,16 @@ const CloudWorkerSettingsSchema = z.record(z.string(), z.unknown()).superRefine(
 
 const CloudWorkerProfileSchema = z
   .strictObject({
-    provider: z.string().trim().min(1).register(configUiMetadata, {
-      label: "Cloud Worker Provider",
-      help: "Worker provider id registered by a plugin. The configured plugin must expose this id before the gateway can provision environments from the profile.",
-    }),
+    provider: z
+      .string()
+      .refine(
+        (provider) => provider === "device",
+        "Only the built-in device worker provider is supported",
+      )
+      .register(configUiMetadata, {
+        label: "Cloud Worker Provider",
+        help: "The built-in paired-device worker provider.",
+      }),
     install: z.enum(["bundle", "npm"]).optional().default("bundle").register(configUiMetadata, {
       label: "Cloud Worker Install Method",
       help: 'Worker installation method: "bundle" (default) transfers the gateway\'s content-hashed installed build and supports released, development, and unreleased versions; "npm" installs the exact gateway version and is available only when that version is released.',
@@ -42,7 +48,7 @@ const CloudWorkerProfileSchema = z
     }),
     settings: CloudWorkerSettingsSchema.optional().register(configUiMetadata, {
       label: "Cloud Worker Provider Settings",
-      help: "Provider-owned settings validated by the selected plugin. Use SecretRef objects for secret-bearing values; opaque settings do not gain automatic secret resolution.",
+      help: "Settings validated by the paired-device worker provider. Use SecretRef objects for secret-bearing values; opaque settings do not gain automatic secret resolution.",
     }),
   })
   .register(configUiMetadata, {
@@ -102,7 +108,7 @@ export const CloudWorkersConfigSchema = z
       .optional()
       .register(configUiMetadata, {
         label: "Cloud Worker Profiles",
-        help: "Named cloud worker profiles. Each profile selects a worker provider registered by a plugin and carries provider-owned settings.",
+        help: "Named cloud worker profiles. Each profile selects the built-in paired-device worker provider.",
       }),
   })
   .optional();

@@ -185,10 +185,7 @@ export function registerOnboardRuntimeOptions(
         ? "Accepted for onboard compatibility; hooks setup is skipped"
         : "Skip hook setup",
     )
-    .option("--node-manager <name>", "Node manager for skills: npm|pnpm|bun")
-    .option("--import-from <provider>", "Migration provider to run during onboarding")
-    .option("--import-source <path>", "Source agent home for --import-from")
-    .option("--import-secrets", "Import supported secrets during onboarding migration", false);
+    .option("--node-manager <name>", "Node manager for skills: npm|pnpm|bun");
 }
 
 export async function resolveOnboardCommandOptions(
@@ -251,9 +248,6 @@ export async function resolveOnboardCommandOptions(
     suppressGatewayTokenOutput: Boolean(opts.suppressGatewayTokenOutput),
     skipHooks: Boolean(opts.skipHooks),
     nodeManager: opts.nodeManager as OnboardOptions["nodeManager"],
-    importFrom: readStringValue(opts.importFrom),
-    importSource: readStringValue(opts.importSource),
-    importSecrets: Boolean(opts.importSecrets),
     json: Boolean(opts.json),
   };
 }
@@ -267,7 +261,7 @@ export function registerOnboardFlowOptions(command: Command): Command {
       "Acknowledge that agents are powerful and full system access is risky (required for --non-interactive)",
       false,
     )
-    .option("--flow <flow>", "Onboard flow: quickstart|advanced|manual|import")
+    .option("--flow <flow>", "Onboard flow: quickstart|advanced|manual")
     .option("--mode <mode>", "Onboard mode: local|remote");
 }
 

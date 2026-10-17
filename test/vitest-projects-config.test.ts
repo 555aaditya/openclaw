@@ -57,7 +57,7 @@ const scopedGatewayMethodsIsolatedTestFiles = [
   "server-methods/chat-metadata-runtime.cache.test.ts",
   "server-methods/agent.test.ts",
   "server-methods/agent.followup-owner.test.ts",
-  "server-methods/agent.visitor-access.test.ts",
+  "server-methods/agent.plugin-tool-authority.test.ts",
   "server-methods/board.runtime-boundaries.test.ts",
   "server-methods/chat.reset-visible-yield.test.ts",
   "server-methods/environments.pairing-snapshot.test.ts",

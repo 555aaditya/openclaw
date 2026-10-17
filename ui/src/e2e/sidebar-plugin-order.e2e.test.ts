@@ -34,11 +34,6 @@ suite.define(() => {
         { key: "agent:main:alpha", label: "Alpha task", category: "Alpha" },
         { key: "agent:main:beta", label: "Beta task", category: "Beta" },
       ],
-      controlUiTabs: [
-        { id: "reports/daily", label: "Reports", pluginId: "reports", icon: "plug" },
-        { id: "birdclaw", label: "Birdclaw", pluginId: "birdclaw", icon: "bird" },
-        { id: "workboard", label: "Workboard", pluginId: "workboard", icon: "kanban" },
-      ],
     });
     try {
       await page.goto(suite.server.baseUrl + "chat");

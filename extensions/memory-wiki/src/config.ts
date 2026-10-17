@@ -77,11 +77,6 @@ export const MemoryWikiConfigSource = z
         corpus: z.enum(WIKI_SEARCH_CORPORA).optional(),
       })
       .optional(),
-    context: z
-      .strictObject({
-        includeCompiledDigestPrompt: z.boolean().optional(),
-      })
-      .optional(),
     render: z
       .strictObject({
         preserveHumanBlocks: z.boolean().optional(),
@@ -165,9 +160,6 @@ export function resolveMemoryWikiConfig(
     search: {
       backend: safeConfig.search?.backend ?? "shared",
       corpus: safeConfig.search?.corpus ?? "wiki",
-    },
-    context: {
-      includeCompiledDigestPrompt: safeConfig.context?.includeCompiledDigestPrompt ?? false,
     },
     render: {
       preserveHumanBlocks: safeConfig.render?.preserveHumanBlocks ?? true,

@@ -110,7 +110,7 @@ function SignIn(props: Pick<WizardStepControlsProps, "step" | "presentation">) {
             <a
               class="btn primary wizard-step__external-link"
               autofocus={props.presentation === "model-setup"}
-              data-link-reader-external
+              data-open-external
               href={props.step.externalUrl}
               target="_blank"
               rel="noreferrer"

@@ -3,7 +3,6 @@ import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { buildDiscordActivitySdk } from "../../scripts/build-discord-activity-sdk.mts";
 import {
   listStaleGeneratedPluginAssets,
   parseBundledPluginAssetArgs,
@@ -148,47 +147,6 @@ describe("bundled plugin assets", () => {
     next.run({}, 1);
   });
 
-  it("creates a missing Discord SDK bundle without rewriting it when unchanged", async () => {
-    const rootDir = tempDirs.make("openclaw-discord-sdk-");
-    const outputPath = path.join(rootDir, "embedded-app-sdk.mjs");
-    const build = vi.fn(async () => ({
-      outputFiles: [{ text: "export const sdk = true;\n" }],
-    }));
-
-    await expect(buildDiscordActivitySdk({ build, outputPath })).resolves.toBe(true);
-    expect(fs.readFileSync(outputPath, "utf8")).toBe("export const sdk = true;\n");
-
-    const initialTime = new Date("2026-07-16T12:00:00.000Z");
-    fs.utimesSync(outputPath, initialTime, initialTime);
-
-    await expect(buildDiscordActivitySdk({ build, outputPath })).resolves.toBe(false);
-    expect(fs.statSync(outputPath).mtimeMs).toBe(initialTime.getTime());
-    expect(build).toHaveBeenCalledWith(
-      expect.objectContaining({
-        absWorkingDir: path.join(process.cwd(), "extensions/discord"),
-        outfile: outputPath,
-        write: false,
-      }),
-    );
-  });
-
-  it("discovers the Discord SDK hook for standalone asset preparation", async () => {
-    const hooks = await readBundledPluginAssetHooks({
-      phase: "build",
-      plugins: ["discord"],
-      rootDir: process.cwd(),
-    });
-
-    expect(hooks).toMatchObject([
-      {
-        command: "node --import ../../scripts/tsx.mjs ../../scripts/build-discord-activity-sdk.mts",
-        packageName: "@openclaw/discord",
-        phase: "build",
-        pluginId: "discord",
-      },
-    ]);
-  });
-
   it("keeps build-generated static assets out of the source watcher", async () => {
     const rootDir = process.cwd();
     const hooks = await readBundledPluginAssetHooks({ phase: "build", rootDir });
@@ -203,12 +161,11 @@ describe("bundled plugin assets", () => {
     }
 
     expect(generatedAssetSources).toContain("extensions/canvas/src/host/a2ui/a2ui.bundle.js");
-    expect(generatedAssetSources).toContain("extensions/discord/assets/embedded-app-sdk.mjs");
     for (const source of generatedAssetSources) {
       expect(isBuildRelevantRunNodePath(source), source).toBe(false);
       expect(isRestartRelevantRunNodePath(source), source).toBe(false);
     }
-    expect(isRestartRelevantRunNodePath("extensions/discord/src/activities/http.ts")).toBe(true);
+    expect(isRestartRelevantRunNodePath("extensions/discord/src/send.ts")).toBe(true);
   });
 
   it.each(["packages/llm-core/src/types.ts"])("rebuilds the root runtime for %s", (source) => {

@@ -43,7 +43,6 @@ export function isChatGPTV2CompactionEligible(params: {
     params.compactionReplayEnabled &&
     !params.contextEngineOwnsCompaction &&
     !params.config?.agents?.defaults?.compaction?.model?.trim() &&
-    !params.config?.agents?.defaults?.compaction?.provider &&
     params.operation !== "settled-tool-finalization" &&
     params.extraParams.responsesCompactEndpoint !== false &&
     params.extraParams.responsesServerCompaction !== false &&

@@ -80,8 +80,6 @@ export async function startGatewayEarlyRuntime(params: {
             gatewayDirectReachable: params.gatewayDirectReachable,
             discovery: params.cfgAtStart.discovery,
             tailscaleMode: params.tailscaleMode,
-            gatewayDiscoveryServices: params.pluginRegistry?.gatewayDiscoveryServices,
-            pluginRuntimeClaim: params.pluginRuntimeClaim,
             logDiscovery: params.logDiscovery,
           });
         },
