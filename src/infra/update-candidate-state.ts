@@ -80,10 +80,8 @@ export const UpdateCandidateStateSnapshotSchema = z.object({
   pluginPaths: z.record(z.string(), z.string()),
   pluginCodeLinks: UpdateCandidatePluginCodeLinkReceiptSchema.optional(),
 });
-type CandidateStateDatabase = Pick<
-  DB,
-  "agent_databases" | "agent_database_leases" | "state_leases"
->;
+const leaseTables = ["agent_database_leases", "state_leases"] as const;
+type CandidateStateDatabase = Pick<DB, "agent_databases" | (typeof leaseTables)[number]>;
 
 export const UpdateCandidateSnapshotInventorySchema = z.object({
   databases: z
@@ -652,12 +650,7 @@ export async function snapshotUpdateCandidateState(
               check: input.fullIntegrityCheck ? "full" : "quick",
               tables:
                 file === shared
-                  ? [
-                      "migration_sources",
-                      "agent_database_leases",
-                      "state_leases",
-                      "agent_databases",
-                    ]
+                  ? ["migration_sources", ...leaseTables, "agent_databases"]
                   : undefined,
             }
           : undefined,
@@ -672,7 +665,7 @@ export async function snapshotUpdateCandidateState(
               const queries = getNodeSqliteKysely<CandidateStateDatabase>(db);
               execApprovals.rebaseReceipt(db);
               // Source process leases cannot own the independently opened rehearsal copy.
-              for (const table of ["agent_database_leases", "state_leases"] as const) {
+              for (const table of leaseTables) {
                 if (tableExists(db, table)) {
                   executeSqliteQuerySync(db, queries.deleteFrom(table));
                 }
