@@ -2048,7 +2048,7 @@ describe("chat state render lifecycle", () => {
   function createRenderer(
     overrides: Partial<Parameters<typeof createChatState<ChatPageHost>>[0]> = {},
   ) {
-    return { requestUpdate: () => undefined, updateComplete: Promise.resolve(true), ...overrides };
+    return { invalidate: () => undefined, updateComplete: Promise.resolve(true), ...overrides };
   }
 
   function createOwner(renderer: Parameters<typeof createChatState<ChatPageHost>>[0]) {
@@ -2546,7 +2546,7 @@ describe("chat state render lifecycle", () => {
         completion = nextCommit;
       });
       const host = {
-        requestUpdate,
+        invalidate: requestUpdate,
         get updateComplete() {
           return completion;
         },
@@ -2629,7 +2629,7 @@ describe("chat state render lifecycle", () => {
 
   it("rejects lifecycle work from detached and replaced state epochs", async () => {
     const requestUpdate = vi.fn();
-    const host = createRenderer({ requestUpdate });
+    const host = createRenderer({ invalidate: requestUpdate });
     const { controller, dispose } = createOwner(host);
     const first = controller.createRenderLifecycle();
     const replacement = controller.createRenderLifecycle();
@@ -2675,7 +2675,7 @@ describe("chat state render lifecycle", () => {
         frames.delete(id);
       });
     const host = createRenderer({
-      requestUpdate: vi.fn(),
+      invalidate: vi.fn(),
     });
     const { controller, dispose } = createOwner(host);
     const renderLifecycle = controller.createRenderLifecycle();
@@ -2702,35 +2702,37 @@ describe("chat state render lifecycle", () => {
     { handled: true, selection: 0 },
     { handled: false, selection: 5 },
   ] as const)(
-    "invalidates input history only when recall is handled: $handled",
+    "publishes the recalled draft only when history handles the key: $handled",
     ({ handled, selection }) => {
-      const requestUpdate = vi.fn();
-      const { controller, dispose } = createOwner(createRenderer({ requestUpdate }));
+      const { controller, dispose } = createOwner(createRenderer());
       const renderLifecycle = controller.createRenderLifecycle();
-      const navigateHistory = vi.fn().mockReturnValue({
-        handled,
-        preventDefault: handled,
-        restoreCaret: handled ? "up" : null,
-      });
       const state = createPageState(createChatPageStateContext(), renderLifecycle, {
         sessionKey: "agent:main:current",
         dispatchEvent: () => true,
         querySelector: () => null,
       });
+      const navigateHistory = vi.fn(() => {
+        if (handled) {
+          state.chatMessage = "recalled draft";
+        }
+        return { handled, preventDefault: handled, restoreCaret: handled ? "up" : null } as const;
+      });
       state.handleChatInputHistoryKey = navigateHistory;
+      const publishedDrafts: string[] = [];
+      let unsubscribe = () => {};
       try {
         controller.attach(state);
+        unsubscribe = controller.composerDraft.subscribe(() => {
+          publishedDrafts.push(controller.composerDraft.read().draft);
+        });
         const input = createInputHistoryKey(selection, selection);
         const result = state.handleChatInputHistoryKey!(input);
 
         expect(result.handled).toBe(handled);
         expect(navigateHistory).toHaveBeenCalledWith(input);
-        if (handled) {
-          expect(requestUpdate).toHaveBeenCalled();
-        } else {
-          expect(requestUpdate).not.toHaveBeenCalled();
-        }
+        expect(publishedDrafts).toEqual(handled ? ["recalled draft"] : []);
       } finally {
+        unsubscribe();
         dispose();
       }
     },

@@ -189,7 +189,7 @@ class RosterActivityStore {
         connection,
         query: {
           source: "agent-roster",
-          rowMode: "compact",
+          rowMode: "sidebar",
           includeDerivedTitles: true,
           includeLastMessage: true,
           archivedFilter: "all",

@@ -161,7 +161,7 @@ export function MemoryImportPage() {
       }
     }
   }
-
+  // Retire import attempts on target changes and request a new plan from the Gateway.
   createEffect(planArgs, ([client, connected, allowed, agentId, overwrite, scopeKey], previous) => {
     if (previous) {
       const identityChanged = previous[0] !== client || previous[5] !== scopeKey;

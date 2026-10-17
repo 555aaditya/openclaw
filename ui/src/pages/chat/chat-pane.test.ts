@@ -535,7 +535,7 @@ describe("chat pane initialization", () => {
     });
 
     try {
-      expect(() => getPaneTestRuntime(pane).connectedCallback()).toThrow(stopAfterAttach);
+      expect(() => getPaneTestRuntime(pane).start()).toThrow(stopAfterAttach);
       expect(attachedSessionKey).toBe(targetSessionKey);
       expect(attachedMessages).toBe(sharedMessages);
     } finally {
@@ -579,7 +579,7 @@ describe("chat pane initialization", () => {
     });
 
     try {
-      expect(() => getPaneTestRuntime(pane).connectedCallback()).toThrow(stopAfterAttach);
+      expect(() => getPaneTestRuntime(pane).start()).toThrow(stopAfterAttach);
       expect(attachedState?.chatMessages).toEqual(messages);
       expect(attachedState?.chatHistoryPagination).toEqual({
         hasMore: true,

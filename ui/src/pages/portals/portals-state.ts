@@ -96,6 +96,7 @@ export function createPortals(
     },
     equality: "revision",
   });
+  // Connection receipts retire portal requests, probes, and presentation acknowledgements before reconnect.
   const stopGateway = context.gateway.subscribe((value) => {
     const nextPresentationScope = gatewayPresentationScope(context.gateway);
     const identityChanged = client !== value.client || presentationScope !== nextPresentationScope;

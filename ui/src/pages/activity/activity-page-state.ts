@@ -15,7 +15,7 @@ import { readPresenceEntries, type PresencePayload } from "../../app/user-profil
 import { isMissingOperatorReadScopeError } from "../../lib/gateway-errors.ts";
 import { canCallGatewayMethod, isGatewayMethodAdvertised } from "../../lib/gateway-methods.ts";
 import { projectPresencePayload } from "../../lib/presence-users.ts";
-import { projectSource } from "../../lib/reactive/projection.ts";
+import { projectOwner, projectSource } from "../../lib/reactive/projection.ts";
 import { readSessionChangedEvent } from "../../lib/sessions/reconcile.ts";
 import { createLiveActivity } from "./live-activity.ts";
 import {
@@ -72,8 +72,6 @@ export function createActivityPageState(context: ApplicationContext) {
       runInspector,
       presencePayload,
       sessionActivity,
-      liveActivity,
-      entries: liveActivity.snapshot.entries,
     }),
     subscribe: (_source, notify) => {
       publish = notify;
@@ -425,25 +423,26 @@ export function createActivityPageState(context: ApplicationContext) {
     }
   }
 
-  const stopActivity = liveActivity.subscribe(() => publish());
-  const stopAgents = context.agents.subscribe(() => publish());
   const gateway = context.gateway;
   applyGatewaySnapshot(gateway, gateway.snapshot, true);
   const stopEvents = gateway.subscribeEvents((event) => applyGatewayEvent(gateway, event));
+  // Gateway receipts retire inspector requests and session presentation before replacement reads start.
   const stopGateway = gateway.subscribe((snapshot) =>
     applyGatewaySnapshot(gateway, snapshot, false),
   );
   onCleanup(() => {
     active = false;
-    stopActivity();
     liveActivity.dispose();
-    stopAgents();
     stopGateway();
     stopEvents();
     cancelInspectorRequest();
     sessionActivity.dispose();
   });
   return {
+    liveActivity: projectOwner(liveActivity, (source) => source.snapshot),
+    retryLiveActivity: () => liveActivity.retry(),
+    clearLiveActivity: () => liveActivity.clear(),
+    agents: projectOwner(context.agents, (source) => source.state),
     read: projection.read,
     revision: projection.revision,
     setRouteLocation,

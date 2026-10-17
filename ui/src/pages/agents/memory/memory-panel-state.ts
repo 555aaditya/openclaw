@@ -15,7 +15,7 @@ import { formatTimeMs } from "../../../lib/format.ts";
 import { GatewayPageBinding, type GatewayPageChange } from "../../../lib/gateway-page-binding.ts";
 import { pathDisplayName } from "../../../lib/path-display.ts";
 import { isPluginEnabledInConfigSnapshot } from "../../../lib/plugin-activation.ts";
-import { projectSource } from "../../../lib/reactive/projection.ts";
+import { projectOwner, projectSource } from "../../../lib/reactive/projection.ts";
 import {
   canCallDreamingMethod,
   copyDreamingArchivePath,
@@ -53,6 +53,7 @@ function resolveDreamingNextCycle(status: DreamingState["dreamingStatus"]): stri
 export type AgentMemoryState = ReturnType<typeof createAgentMemory>;
 
 export function createAgentMemory(context: ApplicationContext) {
+  const config = projectOwner(context.runtimeConfig, (source) => source.state);
   let active = false;
   let publish = () => {};
   let dreaming = createDreamingState();
@@ -135,13 +136,17 @@ export function createAgentMemory(context: ApplicationContext) {
   }
 
   function createGatewayState(snapshot = context.gateway.snapshot): DreamingState {
-    return createDreamingState({
-      client: snapshot.client,
-      connected: snapshot.phase === "connected",
-      hello: snapshot.hello,
-      configSnapshot: context.runtimeConfig.state.configSnapshot,
-      selectedAgentId,
-    });
+    return {
+      ...createDreamingState({
+        client: snapshot.client,
+        connected: snapshot.phase === "connected",
+        hello: snapshot.hello,
+        selectedAgentId,
+      }),
+      get configSnapshot() {
+        return context.runtimeConfig.state.configSnapshot;
+      },
+    };
   }
 
   function applyGatewaySnapshot({ snapshot, initial, identityChanged }: GatewayPageChange) {
@@ -177,10 +182,6 @@ export function createAgentMemory(context: ApplicationContext) {
       void loadResources();
     }
     notify();
-  }
-
-  function syncConfigSnapshot() {
-    dreaming.configSnapshot = context.runtimeConfig.state.configSnapshot;
   }
 
   async function runDreamingTask<T>(
@@ -242,7 +243,6 @@ export function createAgentMemory(context: ApplicationContext) {
     if (!isTaskScopeCurrent(scope) || context.runtimeConfig !== runtimeConfig) {
       return;
     }
-    syncConfigSnapshot();
     if (resource === "all") {
       await Promise.all(
         (["dreamingStatus", "dreamDiary", "wikiImportInsights", "wikiOverview"] as const).map(
@@ -315,7 +315,6 @@ export function createAgentMemory(context: ApplicationContext) {
       if (!isTaskScopeCurrent(scope) || context.runtimeConfig !== runtimeConfig) {
         return;
       }
-      syncConfigSnapshot();
       await runDreamingTask((current) => loadDreamingResource(current, "dreamingStatus"), scope);
       if (!isTaskScopeCurrent(scope)) {
         return;
@@ -515,15 +514,9 @@ export function createAgentMemory(context: ApplicationContext) {
   onSettled(() => {
     active = true;
     gateway.connect();
-    syncConfigSnapshot();
-    const unsubscribe = context.runtimeConfig.subscribe(() => {
-      syncConfigSnapshot();
-      notify();
-    });
     return () => {
       active = false;
       publish = () => {};
-      unsubscribe();
       resetTransientState();
       dreaming = createDreamingState();
       gateway.dispose();
@@ -534,6 +527,7 @@ export function createAgentMemory(context: ApplicationContext) {
     loadResources,
     setEnabled,
     view() {
+      config.read();
       const model = projection.read();
       return {
         ...model,

@@ -116,7 +116,7 @@ function EmptyRow(props: { columns: number; label: string }) {
 }
 function Cell(props: { labelKey: string; value: JSX.Element; mono?: boolean }) {
   return (
-    <td class={props.mono ? "mono" : undefined} data-label={t(props.labelKey)}>
+    <td class={{ mono: props.mono }} data-label={t(props.labelKey)}>
       {props.value}
     </td>
   );
@@ -169,13 +169,13 @@ export function ApprovalsPage() {
     revision();
     return state;
   };
-
   createEffect(
     () => context.gateway,
     (gateway) => {
       resetHistory(true);
       state.gatewaySource = gateway;
       applyGatewaySnapshot(gateway.snapshot);
+      // Gateway receipts retire history and grant reads before reconnect or access changes settle them.
       const stopSnapshots = gateway.subscribe((snapshot) => {
         if (state.gatewaySource === gateway && context.gateway === gateway) {
           applyGatewaySnapshot(snapshot);
@@ -328,7 +328,7 @@ export function ApprovalsPage() {
       if (!canPublish()) {
         return;
       }
-      state.grants = Array.isArray(result.grants) ? result.grants : [];
+      state.grants = result.grants;
       state.grantsLoaded = true;
       state.grantsError = null;
       publish();

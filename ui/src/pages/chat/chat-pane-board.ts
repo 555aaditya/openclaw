@@ -1,4 +1,4 @@
-import { GATEWAY_SERVER_CAPS } from "../../../../packages/gateway-protocol/src/index.js";
+import { GATEWAY_SERVER_CAPS } from "../../../../packages/gateway-protocol/src/server-capabilities.js";
 import type { GatewaySessionRow } from "../../api/types.ts";
 import { gatewayPresentationScope } from "../../app/gateway-presentation-scope.ts";
 import {
@@ -149,7 +149,7 @@ export abstract class ChatPaneBoard extends ChatPaneHistory {
       this.context.sessions === scope.sessions &&
       this.dashboardDefaultWriteOwner === operation.owner &&
       selectedChatSessionRow(scope.state)?.sessionId === row.sessionId;
-    this.requestUpdate();
+    this.invalidate();
     try {
       const result = await scope.sessions.patch(
         row.key,
@@ -179,7 +179,7 @@ export abstract class ChatPaneBoard extends ChatPaneHistory {
     } finally {
       if (this.dashboardDefaultWrite === operation) {
         this.dashboardDefaultWrite = undefined;
-        this.requestUpdate();
+        this.invalidate();
       }
     }
   }
@@ -206,16 +206,19 @@ export abstract class ChatPaneBoard extends ChatPaneHistory {
     if (!layout.columns[0]?.browserWidthPending || !isSidebarSlotVisible(layout, "browser")) {
       return layout;
     }
-    const composer = this.querySelector<HTMLElement>(".agent-chat__composer-shell");
+    // The composer owns this shell even when its textarea is hidden or replaced.
+    const composer = this.element.querySelector<HTMLElement>(".agent-chat__composer-shell");
     if (!composer) {
       return layout;
     }
     const inset = Number.parseFloat(
       getComputedStyle(composer).getPropertyValue("--chat-composer-side-inset"),
     );
+    // The independently mounted sidebar region owns the width used for its initial layout.
     return initializeBrowserSidebarWidth(
       layout,
-      this.querySelector(".sidebar-region")?.getBoundingClientRect().width ?? this.paneWidth,
+      this.element.querySelector(".sidebar-region")?.getBoundingClientRect().width ??
+        this.paneWidth,
       composer.getBoundingClientRect().width + (Number.isFinite(inset) ? inset : 0),
     );
   }
@@ -422,7 +425,7 @@ export abstract class ChatPaneBoard extends ChatPaneHistory {
     ) {
       void ensureBoardViewElement().then((loaded) => {
         if (loaded) {
-          this.requestUpdate();
+          this.invalidate();
         }
       });
     }
@@ -564,7 +567,7 @@ export abstract class ChatPaneBoard extends ChatPaneHistory {
     if (this.state) {
       this.state.settings = next;
     }
-    this.requestUpdate();
+    this.invalidate();
   }
 
   protected isBoardPanelAvailable(board = this.resolveBoardView()): boolean {
@@ -611,7 +614,7 @@ export abstract class ChatPaneBoard extends ChatPaneHistory {
           return;
         }
         // The retained board owns actions and errors; the header only relocates its menu.
-        const view = this.querySelector("openclaw-board-view");
+        const view = this.element.querySelector("openclaw-board-view");
         if (
           view?.snapshot?.sessionKey === board.snapshot.sessionKey &&
           view.session.agentId === session.agentId &&
@@ -641,7 +644,7 @@ export abstract class ChatPaneBoard extends ChatPaneHistory {
       elementReady: Boolean(customElements.get("openclaw-board-view")),
       surface: {
         active: {
-          owner: this,
+          owner: this.element,
           isPresented: () => isSidebarSlotVisible(layout, "dashboard") && this.visuallyPresented,
           preview: () => !this.presented && this.connectionGeneration === connectionGeneration,
         },
