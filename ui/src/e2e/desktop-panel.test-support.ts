@@ -12,7 +12,12 @@ export function sessionsList(placement: "local" | "active") {
         label: "Main",
         placement: {
           state: placement,
-          ...(placement === "active" ? { environmentId: "worker-desktop-1" } : {}),
+          ...(placement === "active"
+            ? {
+                environmentId: "device-worker-desktop",
+                runner: { kind: "device", deviceId: "desktop-node", status: "available" },
+              }
+            : {}),
         },
         updatedAt: Date.now(),
       },

@@ -54,22 +54,34 @@ describe("native Control UI manifest", () => {
     });
   });
 
-  it("preserves settings-only presentation metadata through manifest discovery", () => {
-    const controlUi = {
-      entry: "dist/control-ui/index.js",
-      activation: "settings-only",
-      settingsViews: [{ section: "memory", panel: "overview" }],
-    };
-    expect(loadPluginManifest(fixture(controlUi).dir)).toMatchObject({
-      ok: true,
-      manifest: { controlUi },
-    });
-  });
+  it.each([
+    { settingsViews: [{ section: "memory", panel: "overview" }] },
+    { settingsViews: [{ section: "memory", panel: "memories" }] },
+    {
+      settingsViews: [
+        { section: "memory", panel: "overview" },
+        { section: "memory", panel: "memories" },
+      ],
+    },
+  ])(
+    "preserves settings-only presentation metadata through manifest discovery: $settingsViews",
+    ({ settingsViews }) => {
+      const controlUi = {
+        entry: "dist/control-ui/index.js",
+        activation: "settings-only",
+        settingsViews,
+      };
+      expect(loadPluginManifest(fixture(controlUi).dir)).toMatchObject({
+        ok: true,
+        manifest: { controlUi },
+      });
+    },
+  );
 
   it.each([
     { declaration: undefined, expected: undefined },
     { declaration: [], expected: [] },
-    { declaration: ["link-reader", "page", "link-reader"], expected: ["page", "link-reader"] },
+    { declaration: ["widget", "page", "widget"], expected: ["page", "widget"] },
   ])(
     "reads static UI capabilities without a browser module: $declaration",
     ({ declaration, expected }) => {
@@ -86,6 +98,7 @@ describe("native Control UI manifest", () => {
     { declaration: null },
     { declaration: "page" },
     { declaration: ["pages"] },
+    { declaration: ["link-reader"] },
     { declaration: ["page", 1] },
   ])(
     "keeps an installed plugin discoverable with invalid optional UI metadata $declaration",
@@ -124,6 +137,14 @@ describe("native Control UI manifest", () => {
 
   it.each([
     { entry: "dist/control-ui/index.js", activation: "settings-only" },
+    { entry: "dist/control-ui/index.js", settingsViews: [] },
+    {
+      entry: "dist/control-ui/index.js",
+      settingsViews: [
+        { section: "memory", panel: "memories" },
+        { section: "memory", panel: "memories" },
+      ],
+    },
     { entry: "dist/control-ui/index.js", activation: "on-startup" },
     { entry: "dist/control-ui/index.js", settingsViews: [{ section: "memory", panel: "search" }] },
     {

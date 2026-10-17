@@ -459,6 +459,41 @@ describe("Systems workspace", () => {
     expect(enable.disabled).toBe(false);
   });
 
+  it("updates desktop setup when only the configuration owner publishes", async () => {
+    const { controller, context } = harness(async () => [
+      { ...host, desktopSetup: { state: "ready" } },
+    ]);
+    const { page } = await mount(controller);
+    expect(page.querySelector(".systems-state button")?.textContent).toContain(
+      "Enable desktop access in OpenClaw",
+    );
+    const request = vi.spyOn(context.gateway.snapshot.client!, "request");
+    request.mockResolvedValueOnce({
+      config: { desktop: { host: { enabled: true } } },
+      hash: "enabled",
+      valid: true,
+    });
+    await context.runtimeConfig.refresh();
+    await waitForSolid(() =>
+      expect(page.querySelector(".systems-state h2")?.textContent).toBe(
+        "Desktop access is enabled",
+      ),
+    );
+    expect(page.querySelector(".systems-state button")).toBeNull();
+
+    request.mockResolvedValueOnce({
+      config: { desktop: { host: { enabled: false } } },
+      hash: "disabled",
+      valid: true,
+    });
+    await context.runtimeConfig.refresh();
+    await waitForSolid(() =>
+      expect(page.querySelector(".systems-state button")?.textContent).toContain(
+        "Enable desktop access in OpenClaw",
+      ),
+    );
+  });
+
   it.each(["selection", "authority"])(
     "cancels pending desktop enablement when %s changes",
     async (change) => {
@@ -742,7 +777,14 @@ describe("Systems workspace", () => {
   });
 
   it("shares inventory, keeps a single view-only connection through presentation changes, and retains a removed selection", async () => {
-    let environments = [host, worker, offline];
+    const desktopNode: EnvironmentSummary = {
+      id: "node:desktop-node",
+      type: "node",
+      label: "Paired desktop",
+      status: "available",
+      desktop: true,
+    };
+    let environments = [host, desktopNode, offline];
     const { controller, request } = harness(async () => environments);
     const disconnect = vi.fn();
     const handle = createConnectionHandle({ disconnect });
@@ -759,12 +801,12 @@ describe("Systems workspace", () => {
     expect(page.textContent).toContain("No desktop available");
     expect(request.mock.calls.filter(([method]) => method === "environments.list")).toHaveLength(1);
     const entry = [...sidebar.querySelectorAll<HTMLButtonElement>(".systems-machine")].find(
-      (button) => button.textContent?.includes("Cloud worker"),
+      (button) => button.textContent?.includes("Paired desktop"),
     );
     entry!.click();
     await waitForSolid(() => expect(connect).toHaveBeenCalledOnce());
     expect(request).toHaveBeenCalledWith("desktop.observe", {
-      source: { kind: "environment", environmentId: worker.id },
+      source: { kind: "node", nodeId: "desktop-node" },
       control: false,
     });
     const viewer = page.querySelector("openclaw-desktop-panel");
@@ -776,31 +818,35 @@ describe("Systems workspace", () => {
     flush();
     expect(page.querySelector("openclaw-desktop-panel")).toBe(viewer);
     expect(connect).toHaveBeenCalledOnce();
-    expect(page.querySelector<HTMLSelectElement>(".systems-mobile-picker")?.value).toBe(worker.id);
+    expect(page.querySelector<HTMLSelectElement>(".systems-mobile-picker")?.value).toBe(
+      desktopNode.id,
+    );
     unmount();
     ({ page } = await mount(controller));
     await waitForSolid(() => expect(controller.loading()).toBe(false));
     flush();
-    expect(controller.state.selectedId).toBe(worker.id);
-    expect(page.querySelector<HTMLSelectElement>(".systems-mobile-picker")?.value).toBe(worker.id);
-    expect(page.querySelector("openclaw-desktop-panel")?.requestedSource).toBe(worker.id);
+    expect(controller.state.selectedId).toBe(desktopNode.id);
+    expect(page.querySelector<HTMLSelectElement>(".systems-mobile-picker")?.value).toBe(
+      desktopNode.id,
+    );
+    expect(page.querySelector("openclaw-desktop-panel")?.requestedSource).toBe(desktopNode.id);
     await waitForSolid(() => expect(connect).toHaveBeenCalledTimes(2));
     disconnect.mockClear();
     environments = [host, offline];
     await controller.refresh();
     flush();
-    expect(controller.state.selectedId).toBe(worker.id);
+    expect(controller.state.selectedId).toBe(desktopNode.id);
     expect(page.textContent).toContain("This machine is no longer listed");
     expect(page.querySelector<HTMLSelectElement>(".systems-mobile-picker")?.value).toBe("");
     expect(page.querySelector("openclaw-desktop-panel")).toBeNull();
     await waitForSolid(() => expect(handle.disconnect).toHaveBeenCalled());
     window.dispatchEvent(
       new CustomEvent(DESKTOP_PANEL_TOGGLE_EVENT, {
-        detail: { open: true, environmentId: "worker-no-longer-known" },
+        detail: { open: true, environmentId: "node:no-longer-known" },
       }),
     );
     flush();
-    expect(controller.state.selectedId).toBe("worker-no-longer-known");
+    expect(controller.state.selectedId).toBe("node:no-longer-known");
     expect(page.textContent).toContain("This machine is no longer listed");
     expect(connect).toHaveBeenCalledTimes(2);
   });

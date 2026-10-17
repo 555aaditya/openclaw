@@ -47,18 +47,14 @@ type Gateway = Awaited<ReturnType<typeof installMockGateway>>;
 type DesktopHost = HTMLElement & { desktopClientFactory: () => Pick<DesktopClient, "connect"> };
 const makeEnvironment = (id: string) => ({
   id,
-  type: id === "gateway" ? "local" : id.startsWith("node:") ? "node" : "worker",
+  type: id === "gateway" ? "local" : "node",
   status: "available",
   desktop: true,
 });
 const gatewayEnvironment = makeEnvironment("gateway");
 const desktopMethods = ["desktop.observe", "environments.list", "environments.status"];
 const source = (id: string) =>
-  id === "gateway"
-    ? { kind: "host" }
-    : id.startsWith("node:")
-      ? { kind: "node", nodeId: id.slice(5) }
-      : { kind: "environment", environmentId: id };
+  id === "gateway" ? { kind: "host" } : { kind: "node", nodeId: id.slice(5) };
 const sessionRow = <T extends Record<string, unknown>>(key: string, fields: T, updatedAt = 1) => ({
   key,
   kind: "direct",
@@ -185,7 +181,7 @@ suite.define(() => {
   it("paints the session desktop without waiting for global inventory", async () => {
     await suite.withPage({ serviceWorkers: "block" }, async ({ page }) => {
       const sessionKey = "agent:main:targeted-desktop";
-      const targetEnvironment = makeEnvironment("worker-targeted");
+      const targetEnvironment = makeEnvironment("node:targeted");
       const gateway = await installMockGateway(page, {
         sessionKey,
         deferredMethods: ["environments.list", "environments.status"],
@@ -193,7 +189,11 @@ suite.define(() => {
         methodResponses: {
           "sessions.describe": {
             session: sessionRow(sessionKey, {
-              placement: { state: "active", environmentId: targetEnvironment.id },
+              placement: {
+                state: "active",
+                environmentId: "device-worker-targeted",
+                runner: { kind: "device", deviceId: "targeted", status: "available" },
+              },
             }),
           },
           "desktop.observe": observe("targeted", false),
@@ -227,7 +227,7 @@ suite.define(() => {
       await expectRequests(gateway, { "sessions.describe": 1, "desktop.observe": 1 });
       expect(await rfb.events()).toEqual(["authenticated:1"]);
 
-      const replacement = makeEnvironment("worker-replacement");
+      const replacement = makeEnvironment("node:replacement");
       await gateway.setMethodResponse("environments.status", replacement);
       await gateway.deferNext("sessions.describe");
       await gateway.emitGatewayEvent("sessions.changed", { sessionKey, reason: "placement" });
@@ -237,7 +237,14 @@ suite.define(() => {
       }
       await expectRequests(gateway, { "sessions.describe": 2, "desktop.observe": 1 });
       await gateway.resolveDeferred("sessions.describe", {
-        session: { key: sessionKey, placement: { state: "active", environmentId: replacement.id } },
+        session: {
+          key: sessionKey,
+          placement: {
+            state: "active",
+            environmentId: "device-worker-replacement",
+            runner: { kind: "device", deviceId: "replacement", status: "available" },
+          },
+        },
       });
       await expectObserve(gateway, replacement.id, false, 1);
       await expect.poll(async () => (await rfb.events()).includes("authenticated:2")).toBe(true);
@@ -274,9 +281,11 @@ suite.define(() => {
           placement: {
             state: initialState === "offline" ? "active" : initialState,
             environmentId: "worker-cloud",
-            ...(initialState === "offline"
-              ? { runner: { kind: "device", status: "offline", deviceId: "workstation" } }
-              : {}),
+            runner: {
+              kind: "device",
+              status: initialState === "offline" ? "offline" : "available",
+              deviceId: "workstation",
+            },
           },
         });
         const gateway = await installMockGateway(page, {
@@ -298,9 +307,7 @@ suite.define(() => {
         const panel = page.locator("openclaw-desktop-panel");
         await panel.waitFor({ state: "attached" });
         await installDesktopClientFake(panel);
-        const sessionEnvironment = makeEnvironment(
-          initialState === "offline" ? "node:workstation" : "worker-cloud",
-        );
+        const sessionEnvironment = makeEnvironment("node:workstation");
         const inventory = {
           environments: [
             gatewayEnvironment,
@@ -326,9 +333,7 @@ suite.define(() => {
                 placement: {
                   state: "active",
                   environmentId: "worker-cloud",
-                  ...(initialState === "offline"
-                    ? { runner: { kind: "device", deviceId: "workstation", status: "available" } }
-                    : {}),
+                  runner: { kind: "device", deviceId: "workstation", status: "available" },
                 },
               },
             ]),
@@ -386,7 +391,11 @@ suite.define(() => {
           chatSessionListResponse([
             {
               ...session,
-              placement: { state: "active", environmentId: "worker-replacement" },
+              placement: {
+                state: "active",
+                environmentId: "device-worker-replacement",
+                runner: { kind: "device", deviceId: "replacement", status: "available" },
+              },
             },
           ]),
         );
@@ -397,7 +406,7 @@ suite.define(() => {
               (element) => (element as HTMLElement & { requestedSource: string }).requestedSource,
             ),
           )
-          .toBe("worker-replacement");
+          .toBe("node:replacement");
         expect(await selectedDesktop?.evaluate((element) => element.isConnected)).toBe(true);
         expect(await gateway.getRequests("desktop.observe")).toHaveLength(3);
         expect(await panel.getAttribute("data-view-only")).toBe("false");
@@ -493,7 +502,7 @@ suite.define(() => {
     await suite.withPage({ serviceWorkers: "block" }, async ({ page }) => {
       const { gateway, panel } = await openDesktopDocument(
         page,
-        "focus/desktop/source/missing-machine",
+        "focus/desktop/source/node%3Amissing-machine",
       );
 
       await exactText(panel, unavailable).waitFor();
@@ -520,12 +529,6 @@ suite.define(() => {
       },
       environment: { id: "node:workstation", type: "node" },
       source: { kind: "node", nodeId: "workstation" },
-    },
-    {
-      name: "cloud placement",
-      session: { placement: { state: "active", environmentId: "worker-cloud" } },
-      environment: { id: "worker-cloud", type: "worker" },
-      source: { kind: "environment", environmentId: "worker-cloud" },
     },
   ])("resolves a $name session to its observable machine and auto-connects", async (scenario) => {
     await suite.withPage({ serviceWorkers: "block" }, async ({ page }) => {

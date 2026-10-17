@@ -45,10 +45,10 @@ suite.define(() => {
           methodResponses: {
             "sessions.list": chatSessionListResponse(),
             "environments.status": {
-              id: "preview-desktop",
-              type: "worker",
-              status: "starting",
-              desktop: false,
+              id: "node:preview-desktop",
+              type: "node",
+              status: "available",
+              desktop: true,
             },
             "desktop.observe": {
               transport: "rfb",
@@ -188,26 +188,22 @@ suite.define(() => {
     const requester = expectDefined(browsers[0], "requester");
     const other = expectDefined(browsers[1], "other user");
     const rfb = await installScriptedRfbServer(requester.page);
+    await requester.gateway.deferNext("environments.status");
     await screen.execute("show-native", {
       action: "desktop_show",
-      environmentId: "preview-desktop",
+      environmentId: "node:preview-desktop",
       sessionKey: destination,
     });
     await Promise.all(deliveries);
     const desktop = requester.page.locator("openclaw-desktop-panel[embedded]");
     await requester.gateway.waitForRequest("environments.status");
     await desktop.locator("openclaw-panel-loading-skeleton").waitFor();
-    await desktop.getByText("Starting your machine…", { exact: true }).waitFor();
+    await desktop.getByRole("status", { name: "Connecting to desktop…", exact: true }).waitFor();
     expect(await requester.gateway.getRequests("desktop.observe")).toHaveLength(0);
     await captureUiProof(suite, requester.page, "screen-requester-routing", "pending-desktop.png");
-    await requester.gateway.setMethodResponse("environments.status", {
-      id: "preview-desktop",
-      type: "worker",
-      status: "available",
-      desktop: true,
-    });
+    await requester.gateway.resolveDeferred("environments.status");
     await requester.gateway.waitForRequest("desktop.observe", {
-      match: { source: { kind: "environment", environmentId: "preview-desktop" } },
+      match: { source: { kind: "node", nodeId: "preview-desktop" } },
     });
     await desktop.locator("canvas").waitFor();
     await expect.poll(rfb.events).toContain("authenticated:1");
@@ -231,7 +227,7 @@ suite.define(() => {
       ),
     );
     for (const [environmentId, dock] of [
-      ["preview-desktop", "bottom"],
+      ["node:preview-desktop", "bottom"],
       [undefined, "right"],
     ] as const) {
       await screen.execute("show-current-desktop", {
@@ -284,7 +280,7 @@ suite.define(() => {
 
     await screen.execute("prepare-web", {
       action: "portal_show",
-      environmentId: "preview-desktop",
+      environmentId: "node:preview-desktop",
       sessionKey: destination,
     });
     await Promise.all(deliveries);
@@ -321,7 +317,7 @@ suite.define(() => {
 
     await screen.execute("inspect-desktop", {
       action: "desktop_show",
-      environmentId: "preview-desktop",
+      environmentId: "node:preview-desktop",
       sessionKey: destination,
     });
     await Promise.all(deliveries);
@@ -346,7 +342,7 @@ suite.define(() => {
       await desktop.evaluate(
         (element) => (element as HTMLElementTagNameMap["openclaw-desktop-panel"]).requestedSource,
       ),
-    ).toBe("preview-desktop");
+    ).toBe("node:preview-desktop");
 
     await screen.execute("hide-web", { action: "portal_hide", sessionKey: destination });
     await Promise.all(deliveries);

@@ -3,18 +3,10 @@ import type { ControlUiMockGatewayScenario } from "../test-helpers/control-ui-e2
 export const RETAINED_DESKTOP_SESSION_KEY = "agent:main:retained-desktop-slot";
 
 export const retainedDesktopEnvironment = {
-  id: "worker-desktop-1",
-  type: "worker",
+  id: "node:desktop-node",
+  type: "node",
   status: "available",
   desktop: true,
-  worker: {
-    providerId: "crabbox",
-    state: "attached",
-    ageMs: 1_000,
-    attachedSessionIds: [RETAINED_DESKTOP_SESSION_KEY],
-    tunnelStatus: "connected",
-    desktopApps: [],
-  },
 };
 
 export function retainedDesktopScenario(
@@ -35,7 +27,11 @@ export function retainedDesktopScenario(
             sessionId: RETAINED_DESKTOP_SESSION_KEY,
             kind: "direct",
             label: "Retained desktop",
-            placement: { state: "active", environmentId: retainedDesktopEnvironment.id },
+            placement: {
+              state: "active",
+              environmentId: "device-worker-retained",
+              runner: { kind: "device", deviceId: "desktop-node", status: "available" },
+            },
             updatedAt: Date.now(),
           },
         ],

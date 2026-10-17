@@ -25,7 +25,11 @@ const row = {
   kind: "direct",
   label: "Desktop work",
   updatedAt: 1000,
-  placement: { state: "active", environmentId: "worker-desktop" },
+  placement: {
+    state: "active",
+    environmentId: "device-worker-desktop",
+    runner: { kind: "device", deviceId: "desktop-node", status: "available" },
+  },
 };
 const notes = {
   key: otherKey,
@@ -35,17 +39,10 @@ const notes = {
   updatedAt: 900,
 };
 const environment = {
-  id: "worker-desktop",
-  type: "worker",
+  id: "node:desktop-node",
+  type: "node",
   status: "available",
   desktop: true,
-  worker: {
-    providerId: "test",
-    state: "attached",
-    ageMs: 1000,
-    attachedSessionIds: ["desktop-session"],
-    tunnelStatus: "connected",
-  },
 };
 const list = (active: boolean, snapshotAt?: number) => ({
   sessions: [active ? row : { ...row, placement: { state: "local" }, snapshotAt }, notes],
@@ -115,7 +112,7 @@ suite.define(() => {
       const staleRoster = scenario === "stale-roster";
       const explicitTargetOnReload = scenario === "explicit-target";
       await withPage(async ({ page }) => {
-        const explicitEnvironmentId = "manual-desktop";
+        const explicitEnvironmentId = "node:manual-desktop";
         const gateway = await openResources(page, {
           sessions: [row, notes],
           deferredMethods: ["desktop.observe"],
@@ -130,7 +127,7 @@ suite.define(() => {
                       response: { ...environment, id: explicitEnvironmentId },
                     },
                     {
-                      match: { environmentId: "worker-desktop" },
+                      match: { environmentId: "node:desktop-node" },
                       response: environment,
                     },
                   ],
@@ -142,7 +139,7 @@ suite.define(() => {
         await desktopTab(page).waitFor();
         const observe = await gateway.waitForRequest("desktop.observe");
         expect(observe.params).toEqual({
-          source: { kind: "environment", environmentId: "worker-desktop" },
+          source: { kind: "node", nodeId: "desktop-node" },
           control: false,
         });
         const rfb = await installScriptedRfbServer(page);
@@ -161,7 +158,7 @@ suite.define(() => {
           expect(chatBox!.height).toBeGreaterThan(100);
         }
         if (explicitTargetOnReload) {
-          const explicitSource = { kind: "environment", environmentId: explicitEnvironmentId };
+          const explicitSource = { kind: "node", nodeId: "manual-desktop" };
           await gateway.deferNext("desktop.observe", { source: explicitSource });
           await page.evaluate(
             ({ eventName, ...detail }) =>
@@ -230,7 +227,7 @@ suite.define(() => {
           await selectChatLayoutAction(pane(page), /^(Side panel|Minimize side panel)$/);
           await desktopTab(page).waitFor({ state: "hidden" });
           await gateway.emitGatewayEvent("node.runnerInventory.changed", {
-            nodeId: "worker-desktop",
+            nodeId: "desktop-node",
           });
           expect(await desktopTab(page).isVisible()).toBe(false);
           await page.reload();
@@ -291,7 +288,7 @@ suite.define(() => {
         await ready(page);
         expect(await desktopTab(page).count()).toBe(0);
         await gateway.emitGatewayEvent("node.runnerInventory.changed", {
-          nodeId: "worker-desktop",
+          nodeId: "desktop-node",
         });
         await expectRequestCountStable(gateway, "desktop.observe", observationCount);
         expect(await rfb.events()).not.toContain("closed:1");

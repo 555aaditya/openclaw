@@ -44,19 +44,11 @@ function sessionsList() {
   };
 }
 
-const workerDesktopEnvironment = {
-  id: "worker-desktop-1",
-  type: "worker",
+const nodeDesktopEnvironment = {
+  id: "node:desktop-node",
+  type: "node",
   status: "available",
   desktop: true,
-  worker: {
-    providerId: "crabbox",
-    state: "attached",
-    ageMs: 1_000,
-    attachedSessionIds: ["agent:main:release-operations"],
-    tunnelStatus: "connected",
-    desktopApps: ["browser", "terminal"],
-  },
 } as const;
 
 async function openDesktopPanel(page: Page) {
@@ -122,12 +114,12 @@ suite.define(() => {
             webSocketPassthroughPrefixes: realVncWsUrl ? [realVncWsUrl] : [],
             methodResponses: {
               "sessions.list": sessionsList(),
-              "environments.list": { environments: [workerDesktopEnvironment] },
+              "environments.list": { environments: [nodeDesktopEnvironment] },
               "desktop.observe": {
                 cases: [
                   {
                     match: {
-                      source: { kind: "environment", environmentId: "worker-desktop-1" },
+                      source: { kind: "node", nodeId: "desktop-node" },
                       control: false,
                     },
                     response: {
@@ -139,7 +131,7 @@ suite.define(() => {
                   },
                   {
                     match: {
-                      source: { kind: "environment", environmentId: "worker-desktop-1" },
+                      source: { kind: "node", nodeId: "desktop-node" },
                       control: true,
                     },
                     response: {
@@ -284,8 +276,16 @@ suite.define(() => {
     },
   );
 
-  it("reports unavailable and denied fullscreen requests", async () => {
+  it.each(["unavailable", "denied"])("reports %s fullscreen requests", async (mode) => {
     await suite.withPage({ serviceWorkers: "block" }, async ({ page }) => {
+      if (mode === "unavailable") {
+        await page.addInitScript(() => {
+          Object.defineProperty(document, "fullscreenEnabled", {
+            configurable: true,
+            value: false,
+          });
+        });
+      }
       await installMockGateway(page, {
         featureMethods: ["desktop.observe", "environments.list"],
         methodResponses: {
@@ -295,31 +295,28 @@ suite.define(() => {
       });
       const panel = await openDesktopPanel(page);
       const button = panel.locator(".desktop-fullscreen-button");
-      await panel.locator("section.bp").evaluate((element) => {
-        element.requestFullscreen = () =>
-          Promise.reject(new DOMException("Fullscreen permission denied", "NotAllowedError"));
-      });
-      await button.click();
+      if (mode === "denied") {
+        await panel.locator("section.bp").evaluate((element) => {
+          element.requestFullscreen = () =>
+            Promise.reject(new DOMException("Fullscreen permission denied", "NotAllowedError"));
+        });
+        await button.click();
+      } else {
+        expect(await button.getAttribute("aria-label")).toBe(
+          "Fullscreen is unavailable in this browser",
+        );
+        expect(await button.getAttribute("aria-disabled")).toBe("true");
+        await button.focus();
+        await button.press("Enter");
+      }
       await panel
         .getByRole("alert")
-        .filter({ hasText: "Could not change fullscreen mode: Fullscreen permission denied" })
-        .waitFor();
-
-      await page.evaluate(() => {
-        Object.defineProperty(document, "fullscreenEnabled", { configurable: true, value: false });
-      });
-      await panel.evaluate((element) =>
-        (element as HTMLElement & { invalidate(): void }).invalidate(),
-      );
-      await expect
-        .poll(() => button.getAttribute("aria-label"))
-        .toBe("Fullscreen is unavailable in this browser");
-      expect(await button.getAttribute("aria-disabled")).toBe("true");
-      await button.focus();
-      await button.press("Enter");
-      await panel
-        .getByRole("alert")
-        .filter({ hasText: "Fullscreen is unavailable in this browser" })
+        .filter({
+          hasText:
+            mode === "denied"
+              ? "Could not change fullscreen mode: Fullscreen permission denied"
+              : "Fullscreen is unavailable in this browser",
+        })
         .waitFor();
     });
   });

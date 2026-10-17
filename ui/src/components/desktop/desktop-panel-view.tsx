@@ -1,6 +1,6 @@
 import type { DesktopAvailability, EnvironmentSummary } from "@openclaw/gateway-protocol";
 import type { JSX } from "@solidjs/web";
-import { For, Show, untrack } from "solid-js";
+import { For, Show, onCleanup, untrack } from "solid-js";
 import { registerDesktopEnglish } from "../../i18n/locales/en-desktop.ts";
 import { t, registerEnglishCatalog } from "../../lib/reactive/i18n.ts";
 import { Icon } from "../solid/icon.tsx";
@@ -262,6 +262,7 @@ export function DesktopCredentials(props: {
 
 function DesktopConnection(props: {
   state: DesktopPanelState;
+  surfaceRef: (element: HTMLElement | undefined) => void;
   controlling: boolean;
   sizing: DesktopSizingOptions;
   pictureInPictureControl: JSX.Element;
@@ -308,7 +309,7 @@ function DesktopConnection(props: {
       </div>
       <div class="desktop-stage">
         {/* noVNC owns this island's children for the entire connection. */}
-        <div class="desktop-surface" />
+        <DesktopSurface bind={props.surfaceRef} />
         {!props.controlling && (
           <button
             class="desktop-stage__take-control"
@@ -416,4 +417,12 @@ export function DesktopPanelRecovery(props: {
       </button>
     </div>
   );
+}
+
+/** Solid owns the target; noVNC owns its children for the whole connection. */
+export function DesktopSurface(props: { bind: (element: HTMLElement | undefined) => void }) {
+  // This binding belongs to the same retained owner for the surface's whole lifetime.
+  const bind = untrack(() => props.bind);
+  onCleanup(() => bind(undefined));
+  return <div class="desktop-surface" ref={bind} />;
 }

@@ -18,22 +18,14 @@ const captureUiProof = process.env.OPENCLAW_CAPTURE_UI_PROOF === "1";
 suite.define(() => {
   it("releases a late observation without opening RFB and reconnects on the same Gateway client", async () => {
     await suite.withPage(createControlUiE2eContextOptions(), async ({ page }) => {
-      const environmentId = "worker-desktop-abandonment";
+      const environmentId = "node:desktop-abandonment";
       const discardedPath = `/desktop/observe?token=${"a".repeat(48)}`;
       const claimedPath = `/desktop/observe?token=${"b".repeat(48)}`;
       const environment = {
         id: environmentId,
-        type: "worker",
+        type: "node",
         status: "available",
         desktop: true,
-        worker: {
-          providerId: "crabbox",
-          state: "attached",
-          ageMs: 1_000,
-          attachedSessionIds: [],
-          tunnelStatus: "connected",
-          desktopApps: [],
-        },
       };
       const gateway = await installMockGateway(page, {
         featureMethods: [

@@ -5,6 +5,7 @@ import * as firstAgentOnboarding from "../commands/onboard-first-agent.js";
 import type { OnboardMode, OnboardOptions } from "../commands/onboard-types.js";
 import { hasResolvedRosterBeforeMigrations } from "../config/agent-roster-provenance.js";
 import { resolveAgentModelPrimaryValue } from "../config/model-input.js";
+import { ConfigMutationConflictError } from "../config/mutation-conflict.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { resolveGatewayProbeAuthSafeWithSecretInputs } from "../gateway/probe-auth.js";
 import { formatErrorMessage } from "../infra/errors.js";
@@ -24,7 +25,7 @@ import { resolveSetupSecretInputString } from "./setup.secret-input.js";
 import {
   hasQuickstartGatewayOverrides,
   formatQuickstartGatewaySummary,
-  readSetupConfigFileSnapshot,
+  readSetupConfigAuthority,
   requireRiskAcknowledgement,
   requestTelemetryConsent,
   resolveQuickstartGatewayDefaults,
@@ -59,7 +60,9 @@ async function runSetupWizardOnce(
   await onboardHelpers.printWizardHeader(runtime);
   await prompter.intro(t("wizard.setup.intro"));
 
-  const snapshot = await readSetupConfigFileSnapshot();
+  const initialAuthority = await readSetupConfigAuthority();
+  const snapshot = initialAuthority.snapshot;
+  let assertConfigCurrent = initialAuthority.assertCurrent;
   const currentSetupSnapshot = snapshot;
   let baseConfig: OpenClawConfig = snapshot.valid
     ? (snapshot.runtimeConfig ?? snapshot.config)
@@ -157,9 +160,6 @@ async function runSetupWizardOnce(
         hint: t("wizard.setup.flowKeepModelHint"),
       }
     : undefined;
-  // Import flags are import intent. Non-interactive setup already routes them
-  // to the migration import; showing the mode prompt here would let the answer
-  // silently drop the requested import.
 
   const promptSetupFlow = async (): Promise<SetupFlowChoice> =>
     await prompter.select({
@@ -420,6 +420,7 @@ async function runSetupWizardOnce(
       runtime,
       pendingAgent: firstAgent && { ...firstAgent, workspaceDir },
       preserveExistingModelSelection: keepExistingModelConfig,
+      assertCurrent: assertConfigCurrent,
     });
     nextConfig = stagedModelAuth.config;
   }
@@ -440,8 +441,21 @@ async function runSetupWizardOnce(
     preserveCandidateRoster: false,
     // Pending setup choices must remain changes relative to the saved snapshot.
     baseConfig: setupConfigMergeBase,
+    ...(stagedModelAuth?.authProfiles.length
+      ? { expectedConfigHash: currentSetupSnapshot.hash ?? null }
+      : {}),
     ...(firstAgent ? { firstAgent } : {}),
   });
+  if (onboardingAgent.configHash) {
+    const createdAuthority = await readSetupConfigAuthority();
+    // Plugin validation can materialize different defaults from the same authored revision.
+    if (createdAuthority.snapshot.hash !== onboardingAgent.configHash) {
+      throw new ConfigMutationConflictError(
+        "config changed after first-agent creation; rerun setup",
+      );
+    }
+    assertConfigCurrent = createdAuthority.assertCurrent;
+  }
   nextConfig = onboardingAgent.config;
   setupConfigMergeBase = structuredClone(onboardingAgent.configBase);
   const migrationWarnings = onboardingAgent.sessionMigrationWarnings;
@@ -454,6 +468,7 @@ async function runSetupWizardOnce(
     opts,
     prompter,
     runtime,
+    assertCurrent: assertConfigCurrent,
     configTarget: createWizardInferenceConfigTarget(commitSetupConfigFile),
   });
   nextConfig = modelAuth.config;

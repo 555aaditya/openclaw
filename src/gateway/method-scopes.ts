@@ -81,7 +81,11 @@ function resolveDynamicLeastPrivilegeOperatorScopesForMethod(
   // a single static method scope.
   const record = asOptionalRecord(params);
   if (method === "sessions.github.action") {
-    return [record?.action === "refresh_base" ? SESSION_WRITE_SCOPE : WRITE_SCOPE];
+    return [
+      record?.action === "refresh_base" || record?.action === "edit"
+        ? SESSION_WRITE_SCOPE
+        : WRITE_SCOPE,
+    ];
   }
   if (method === "agent") {
     return isAgentSessionResetCommand(record?.message) ? [ADMIN_SCOPE] : [WRITE_SCOPE];

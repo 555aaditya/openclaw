@@ -177,7 +177,7 @@ function populatedColdOpenScenario(): ControlUiMockGatewayScenario {
       },
       "environments.list": {
         environments: [
-          { id: "worker-desktop-1", type: "worker", status: "available", desktop: true },
+          { id: "node:desktop-node", type: "node", status: "available", desktop: true },
         ],
       },
       "session.discussion.info": {

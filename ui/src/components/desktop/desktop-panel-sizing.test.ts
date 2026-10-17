@@ -68,7 +68,7 @@ describe("desktop panel sizing", () => {
       requestedSource: hostEnvironment.id,
       desktopClientFactory: () => ({ connect }),
     });
-    mountPanel(panel);
+    await mountPanel(panel);
 
     await waitForSolid(() => expect(connect).toHaveBeenCalledOnce());
     expect(connect.mock.calls[0]![0].credentials).toEqual(credentials);
@@ -111,7 +111,7 @@ describe("desktop panel sizing", () => {
         requestedSource: desktopEnvironment.id,
         desktopClientFactory: () => ({ connect }),
       });
-      mountPanel(panel);
+      await mountPanel(panel);
 
       await waitForSolid(() => expect(connect).toHaveBeenCalledOnce());
       await panel.updateComplete;
@@ -135,10 +135,8 @@ describe("desktop panel sizing", () => {
         expect(handle.setSizingMode).toHaveBeenLastCalledWith("match");
       }
       if (documentMode) {
-        expect(
-          panel.renderRoot.querySelectorAll(".desktop-touch-action, .desktop-sizing"),
-        ).toHaveLength(6);
-        const audio = panel.renderRoot.querySelector<HTMLButtonElement>(".desktop-audio-button");
+        expect(panel.querySelectorAll(".desktop-touch-action, .desktop-sizing")).toHaveLength(6);
+        const audio = panel.querySelector<HTMLButtonElement>(".desktop-audio-button");
         expect(audio?.getAttribute("aria-label")).toBe("Audio unavailable");
         expect(audio?.disabled).toBe(true);
       }
@@ -188,7 +186,7 @@ describe("desktop panel sizing", () => {
         requestedSource: desktopEnvironment.id,
         desktopClientFactory: () => ({ connect }),
       });
-      mountPanel(panel);
+      await mountPanel(panel);
       await waitForSolid(() => expect(connect).toHaveBeenCalledOnce());
       await panel.updateComplete;
       selectSizing(panel, "match");
@@ -249,7 +247,7 @@ describe("desktop panel sizing", () => {
       requestedSource: desktopEnvironment.id,
       desktopClientFactory: () => ({ connect }),
     });
-    mountPanel(panel);
+    await mountPanel(panel);
     await waitForSolid(() => expect(connect).toHaveBeenCalledOnce());
     await panel.updateComplete;
     const initial = connect.mock.calls[0]![0];

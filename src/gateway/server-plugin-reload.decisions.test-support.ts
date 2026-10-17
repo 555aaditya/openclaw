@@ -89,7 +89,7 @@ export async function verifyDecisionEarlyReloadRecovery(
   createRecoveryFixture: (
     options: Parameters<typeof createPluginReloadRecoveryFixture>[1],
   ) => ReturnType<typeof createPluginReloadRecoveryFixture>,
-  boundary: "prepare" | "drain" | "discovery",
+  boundary: "prepare" | "drain",
 ) {
   const entered = createDeferredCore();
   let callbackSignal: AbortSignal | undefined;
@@ -169,14 +169,6 @@ export async function verifyDecisionEarlyReloadRecovery(
       };
     },
   });
-  if (boundary === "discovery") {
-    fixture.runtime.runtimeState.discovery = {
-      stop: async () => {},
-      update: async () => {
-        failOnce();
-      },
-    };
-  }
   await expect(fixture.reload()).rejects.toThrow(`synthetic ${boundary} failure`);
   expect(await pending).toMatchObject({ status: "unavailable", reason: "retiring" });
   expect(settled).toBe(true);

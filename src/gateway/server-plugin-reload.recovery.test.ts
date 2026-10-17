@@ -885,7 +885,7 @@ it.for(["replace", "remove", "disable", "rollback"] as const)(
   },
 );
 
-it.each(["prepare", "drain", "discovery"] as const)(
+it.each(["prepare", "drain"] as const)(
   "recovers decision admission after early %s failure",
   (boundary) => verifyDecisionEarlyReloadRecovery(createRecoveryFixture, boundary),
 );

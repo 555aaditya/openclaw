@@ -65,8 +65,6 @@ const finalizeSetupWizard = vi.hoisted(() =>
     launchedTui: false,
   })),
 );
-const listChannelPlugins = vi.hoisted(() => vi.fn(() => []));
-const logConfigUpdated = vi.hoisted(() => vi.fn(() => {}));
 
 const runMemorySetupFlow = vi.hoisted(() =>
   vi.fn<typeof import("../flows/memory-setup.js").runMemorySetupFlow>(async (config) => config),
@@ -111,13 +109,9 @@ const resolveGatewayPort = vi.hoisted(() =>
 const readConfigFileSnapshot = vi.hoisted(() =>
   vi.fn<typeof import("../config/io.js").readConfigFileSnapshot>(),
 );
-const createConfigIO = vi.hoisted(() => vi.fn(() => ({ readConfigFileSnapshot })));
 const probeGatewayReachable = vi.hoisted(() => vi.fn(async () => ({ ok: true })));
 const buildPluginCompatibilitySnapshotNotices = vi.hoisted(() =>
   vi.fn((): PluginCompatibilityNotice[] => []),
-);
-const formatPluginCompatibilityNotice = vi.hoisted(() =>
-  vi.fn((notice: PluginCompatibilityNotice) => `${notice.pluginId} ${notice.message}`),
 );
 
 function providerFlag(
@@ -268,10 +262,10 @@ vi.mock("../system-agent/setup-inference.js", () => ({ verifySetupInferenceConfi
 vi.mock("../config/config.js", async (importActual) => {
   const actual = await importActual<typeof import("../config/config.js")>();
   return {
+    ...actual,
     DEFAULT_GATEWAY_PORT: 18789,
-    createConfigIO,
+    createConfigIO: () => ({ readConfigFileSnapshot }),
     readConfigFileSnapshot,
-    resolveConfigWriteAfterWrite: actual.resolveConfigWriteAfterWrite,
     resolveGatewayPort,
     replaceConfigFile,
     transformConfigFileWithRetry: async (
@@ -299,13 +293,19 @@ vi.mock("../config/config.js", async (importActual) => {
     },
   };
 });
-vi.mock("../commands/onboard-agent.js", async () => {
-  return {
-    ensureOnboardingAgent: ensureOnboardingConfig,
-    validateFirstOnboardingAgentName: (value: string | undefined) =>
-      value?.trim() ? undefined : "Agent name is required.",
-  };
-});
+vi.mock("./setup.shared.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./setup.shared.js")>()),
+  readSetupConfigAuthority: async () => ({
+    snapshot: await readConfigFileSnapshot(),
+    assertCurrent: () => {},
+  }),
+}));
+// mock-isolation: Keep roster/database creation and session migration outside these in-memory fixtures.
+vi.mock("../commands/onboard-agent.js", () => ({
+  ensureOnboardingAgent: ensureOnboardingConfig,
+  validateFirstOnboardingAgentName: (value: string | undefined) =>
+    value?.trim() ? undefined : "Agent name is required.",
+}));
 vi.mock("../commands/onboard-helpers.js", () => ({
   DEFAULT_WORKSPACE: "/tmp/openclaw-workspace",
   applyWizardMetadata: (cfg: unknown) => cfg,
@@ -315,14 +315,13 @@ vi.mock("../commands/onboard-helpers.js", () => ({
   probeGatewayReachable,
 }));
 
-vi.mock("../plugins/status.js", () => ({
+vi.mock("../plugins/status.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../plugins/status.js")>()),
   buildPluginCompatibilitySnapshotNotices,
-  formatPluginCompatibilityNotice,
 }));
 
-vi.mock("../channels/plugins/index.js", () => ({ listChannelPlugins }));
-
-vi.mock("../config/logging.js", () => ({ logConfigUpdated }));
+// mock-isolation: Keep process-global channel registry state outside wizard orchestration fixtures.
+vi.mock("../channels/plugins/index.js", () => ({ listChannelPlugins: () => [] }));
 
 vi.mock("./setup.gateway-config.js", () => ({ configureGatewayForSetup }));
 
@@ -632,20 +631,13 @@ describe("runSetupWizard", () => {
           entries: { main: {}, ops: {} },
         },
       };
-      if (accepted) {
-        readConfigFileSnapshot.mockResolvedValueOnce(configSnapshot(config));
-      } else {
-        readConfigFileSnapshot
-          .mockResolvedValueOnce(configSnapshot({}, false))
-          .mockResolvedValue(configSnapshot(config));
-      }
+      readConfigFileSnapshot.mockImplementation(async () =>
+        configSnapshot(persistedWizardConfigs().at(-1) ?? config),
+      );
       const confirm = vi.fn(async () => accepted);
       const prompter = buildWizardPrompter({ confirm });
-      await runWizard(
-        { workspace: requestedWorkspace, ...(!accepted ? { importFrom: "hermes" } : {}) },
-        createRuntime(),
-        prompter,
-      );
+      const runtime = createRuntime();
+      await runWizard({ workspace: requestedWorkspace }, runtime, prompter);
       expect(confirm).toHaveBeenCalledWith(
         expect.objectContaining({
           message: expect.stringContaining("Move the existing agent fleet"),
@@ -656,10 +648,10 @@ describe("runSetupWizard", () => {
       expect(final?.defaults?.workspace).toBe(accepted ? requestedWorkspace : currentWorkspace);
       if (accepted) {
         expect(vi.mocked(prompter.note).mock.calls.flat().join("\n")).toContain(currentWorkspace);
-        expect(ensureWorkspaceAndSessions).toHaveBeenCalledWith(
-          requestedWorkspace,
-          expect.anything(),
-          expect.any(Object),
+        expect(ensureWorkspaceAndSessions).toHaveBeenCalledExactlyOnceWith(
+          path.join(requestedWorkspace, "main"),
+          runtime,
+          { agentId: "main", skipBootstrap: false, skipOptionalBootstrapFiles: undefined },
         );
       } else {
         expect(final?.entries).toEqual(config.agents?.entries);
@@ -1100,4 +1092,3 @@ describe("runSetupWizard", () => {
     }
   });
 });
-/* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */

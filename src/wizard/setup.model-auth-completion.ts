@@ -19,6 +19,7 @@ export async function completeSetupModelAuth(params: {
   prompter: WizardPrompter;
   runtime: RuntimeEnv;
   configTarget: SetupInferenceConfigTarget;
+  assertCurrent?: () => void;
 }): Promise<{ config: OpenClawConfig; verified: boolean; persisted: boolean }> {
   const { stagedCandidate, opts, baseConfig } = params;
   const replacementTarget = resolveOnboardingSetupTarget(baseConfig);
@@ -55,6 +56,7 @@ export async function completeSetupModelAuth(params: {
       runtime: params.runtime,
       configTarget: params.configTarget,
       required: false,
+      assertCurrent: params.assertCurrent,
     });
     let config = verification.config;
     if (!verification.verified && verification.attempted && stagedCandidate) {

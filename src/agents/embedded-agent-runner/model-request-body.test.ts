@@ -66,7 +66,10 @@ it("encodes the final large provider body off-thread and shares its exact bytes 
   if (!("text" in finalContent)) {
     throw new Error("Expected the fixture's final text part");
   }
-  finalContent.text += "x".repeat(padding);
+  messages[99]!.content[0] = {
+    type: "text",
+    text: finalContent.text + "x".repeat(padding),
+  };
   const expectedWire = JSON.stringify(expectedPayload);
   expect(Buffer.byteLength(expectedWire)).toBe(614_400);
   const sse = `data: ${JSON.stringify({

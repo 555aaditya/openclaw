@@ -23,6 +23,8 @@ import {
 import { NonEmptyString } from "./primitives.js";
 import { stringLiteralUnion } from "./string-literal-union.js";
 
+export { PluginJsonValueSchema } from "./plugin-json-value.js";
+
 export {
   PLUGIN_UI_CAPABILITIES,
   validatePluginUiCapabilities,
@@ -52,8 +54,6 @@ export {
  * These payloads let the gateway expose plugin-provided UI actions without
  * baking plugin-specific payload shapes into the core protocol.
  */
-/** Arbitrary plugin-owned JSON payload carried opaquely through the gateway. */
-export const PluginJsonValueSchema = Type.Unknown();
 
 export const ControlUiPluginWidgetKindSchema = closedObject({
   pluginId: NonEmptyString,
