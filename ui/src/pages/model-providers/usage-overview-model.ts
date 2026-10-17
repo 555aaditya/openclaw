@@ -39,7 +39,7 @@ export type UsageOverview = {
   dates: string[];
   dailyTokens: number[];
   dailyCost: number[];
-  totals: UsageTotals & { input: number; output: number; cacheRead: number; cacheWrite: number };
+  totals: UsageTotals & { cacheRead: number };
   providers: OverviewProvider[];
   models: OverviewModel[];
 };
@@ -152,13 +152,7 @@ export function buildUsageOverview(usage: ModelProviderLocalUsage): UsageOvervie
     }))
     .filter(hasUsage);
 
-  const totals = {
-    ...emptyTotals(),
-    input: usage.totals.input,
-    output: usage.totals.output,
-    cacheRead: usage.totals.cacheRead,
-    cacheWrite: usage.totals.cacheWrite,
-  };
+  const totals = { ...emptyTotals(), cacheRead: usage.totals.cacheRead };
   for (const entry of ranked) {
     totals.tokens += entry.tokens;
     totals.cost += entry.cost;

@@ -67,20 +67,19 @@ function resetText(window: UsageWindow): { date?: string; relative?: string } {
   };
 }
 
-export function remainingPercent(window: UsageWindow): number {
+function remainingPercent(window: UsageWindow): number {
   return Math.round(100 - Math.max(0, Math.min(100, window.usedPercent)));
 }
 
 /** Little headroom reads as a warning, none as an error. */
-export function remainingTone(window: UsageWindow): "warning" | "error" | undefined {
+function remainingTone(window: UsageWindow): "warning" | "error" | undefined {
   const remaining = remainingPercent(window);
   return remaining <= 10 ? "error" : remaining <= 25 ? "warning" : undefined;
 }
 
-export const billingLabel = (entry: BillingEntry) =>
-  entry.label ?? t(`usage.providerUsage.${entry.type}`);
+const billingLabel = (entry: BillingEntry) => entry.label ?? t(`usage.providerUsage.${entry.type}`);
 
-export function billingText(entry: BillingEntry): string {
+function billingText(entry: BillingEntry): string {
   const format = createProviderAmountFormatter(entry.unit);
   return entry.type === "budget"
     ? `${format(entry.used)} / ${format(entry.limit)}`
@@ -99,7 +98,7 @@ export function hasProviderUsageDetails(usage: ProviderUsageDetails | undefined)
 }
 
 /** Remaining headroom of one plan window; the fill shows what is left. */
-export function UsageWindowMeter(props: { window: UsageWindow }) {
+function UsageWindowMeter(props: { window: UsageWindow }) {
   return (
     <div
       class="oc-inspector-meter"
@@ -295,5 +294,39 @@ export function ProviderUsagePanel(props: { usage: ProviderUsageDetails }) {
         {(summary) => <p class="provider-usage__note">{summary()}</p>}
       </Show>
     </div>
+  );
+}
+
+/** At most two windows (or the first balance) beside a provider's name; the panel has the rest. */
+export function ProviderUsageChips(props: { usage: ProviderUsageDetails | undefined }) {
+  const windows = () => props.usage?.windows.slice(0, 2) ?? [];
+  const balance = () => (windows().length === 0 ? props.usage?.billing?.[0] : undefined);
+  return (
+    <span class="provider-usage__chips">
+      <For each={windows()}>
+        {(window) => (
+          <span class="provider-usage__chip" data-tone={remainingTone(window)}>
+            <span class="provider-usage__chip-label">{window.label}</span>
+            <UsageWindowMeter window={window} />
+            <span class="provider-usage__chip-value">
+              {t("usage.providerUsage.remaining", { percent: String(remainingPercent(window)) })}
+            </span>
+          </span>
+        )}
+      </For>
+      <Show when={balance()}>
+        {(entry) => (
+          <span class="provider-usage__chip">
+            <span class="provider-usage__chip-label">{billingLabel(entry())}</span>
+            <span class="provider-usage__chip-value">{billingText(entry())}</span>
+          </span>
+        )}
+      </Show>
+      <Show when={props.usage?.error}>
+        <span class="provider-usage__chip provider-usage__chip--failed">
+          {t("usage.providerUsage.checkFailed")}
+        </span>
+      </Show>
+    </span>
   );
 }

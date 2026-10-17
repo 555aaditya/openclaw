@@ -195,7 +195,7 @@ suite.define(() => {
           .poll(() => catalogWarning.textContent(), { timeout: 5_000 })
           .toContain("Model catalog temporarily unavailable");
         await catalogWarning.getByRole("button", { name: "Retry", exact: true }).waitFor();
-        expect(await page.locator(".provider-usage-error").count()).toBe(0);
+        expect(await page.locator(".provider-usage__error").count()).toBe(0);
         expect(await page.locator('[data-model-readiness="model-required"]').count()).toBe(0);
         const primary = page.locator(".model-providers__defaults openclaw-select-picker").first();
         await expect.poll(() => pickerValue(primary)).toBe("openai/gpt-5.5");
@@ -206,7 +206,7 @@ suite.define(() => {
         await page.getByRole("button", { name: "Refresh", exact: true }).click();
 
         await expect.poll(() => catalogWarning.count()).toBe(0);
-        await expect.poll(() => page.locator(".provider-usage-error").count()).toBe(0);
+        await expect.poll(() => page.locator(".provider-usage__error").count()).toBe(0);
         await expect.poll(() => card.textContent()).toContain("API key set in config");
         await expect.poll(() => pickerValue(primary)).toBe("openai/gpt-5.5");
         if (recordVisuals) {

@@ -691,8 +691,6 @@ const enSettings = {
       providerCount: "{count} providers",
       unpricedMessages: "Unpriced messages",
       unpricedHint: "No price or no final usage",
-      providerMeta: "{tokens} tokens · {messages} messages",
-      providerTrend: "{provider} daily trend",
       dailyCost: "Daily cost",
       dailyTokens: "Daily tokens",
       peak: "Peak {value}",
@@ -710,7 +708,6 @@ const enSettings = {
     },
     limits: {
       title: "Plan limits",
-      checkFailed: "Check failed",
     },
     saving: "Saving…",
     requestFailed: "Request failed.",

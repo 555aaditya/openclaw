@@ -99,10 +99,10 @@ suite.define(() => {
         // An exhausted plan window reads as no headroom, beside the name and in the open row.
         expect(
           await page
-            .locator('li.provider-row[data-provider-id="github-copilot"] .provider-limit-chip', {
+            .locator('li.provider-row[data-provider-id="github-copilot"] .provider-usage__chip', {
               hasText: "Premium",
             })
-            .locator(".provider-limit-chip__value")
+            .locator(".provider-usage__chip-value")
             .textContent(),
         ).toBe("0% left");
         const copilot = await expandProvider(page, "github-copilot");

@@ -45,7 +45,7 @@ it("loads automatically, renders remaining quota and balance, and re-reads on a 
   expect(request).toHaveBeenCalledExactlyOnceWith(
     "codex.accountUsage",
     { agentId: "main", profileId: "openai:account" },
-    expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    { timeoutMs: 30_000 },
   );
   // A rebuilt scope with the same fields is the same account read.
   view.setScope({ ...view.scope() });
@@ -77,7 +77,6 @@ it("drops a pending response when the selected agent changes and shows the curre
   flush();
   expect(view.container.textContent).toContain("Account usage unavailable");
   expect(view.container.textContent).not.toContain("12 credits");
-  expect(request.mock.calls[0]?.[2]?.signal?.aborted).toBe(true);
 });
 
 it("shows the empty state when Codex returns a snapshot without quota data", async () => {

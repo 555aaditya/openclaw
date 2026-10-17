@@ -201,7 +201,7 @@ function renderProviderNoticeRow(text: string) {
   return (
     <div class="settings-row">
       <div class="settings-row__text">
-        <span class="settings-row__desc provider-usage-error">{text}</span>
+        <span class="settings-row__desc provider-usage__error">{text}</span>
       </div>
     </div>
   );

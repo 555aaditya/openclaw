@@ -7,6 +7,7 @@ import { Icon } from "../../components/solid/icon.tsx";
 import { ProviderBrandIcon } from "../../components/solid/provider-icon.tsx";
 import {
   hasProviderUsageDetails,
+  ProviderUsageChips,
   ProviderUsagePanel,
 } from "../../components/solid/provider-usage.tsx";
 import { formatUiExternalText } from "../../lib/format-error.ts";
@@ -14,7 +15,6 @@ import { formatCompactTokenCount } from "../../lib/format.ts";
 import { t } from "../../lib/reactive/i18n.ts";
 import type { ModelProviderCard, ModelProviderRemovalTarget } from "./data.ts";
 import { apiKeySource, profileIdentity, ProviderProfiles } from "./profiles-view.tsx";
-import { ProviderLimitSummary } from "./provider-limits.tsx";
 import { seriesColor, type OverviewProvider } from "./usage-overview-model.ts";
 import { usageCostText } from "./usage-overview.tsx";
 import { isProviderUsable, renderMutationMessage, renderProviderStatus } from "./view-status.tsx";
@@ -377,7 +377,7 @@ export function ProviderRow(props: ProviderRowProps) {
           <span class="provider-row__meta settings-row__desc">{meta().join(" · ")}</span>
         </span>
         {/* The open row shows the full panel below; its empty chip cell collapses. */}
-        <ProviderLimitSummary usage={open() ? undefined : card().usage} />
+        <ProviderUsageChips usage={open() ? undefined : card().usage} />
         <ProviderUsageFigure usage={props.usage} days={props.usageDays} />
         <span class="provider-row__status">{renderProviderStatus(card())}</span>
         <Icon name="chevronDown" class="provider-row__chevron" />

@@ -336,7 +336,7 @@ describe("Models page catalog publication", () => {
     const warnings = page.querySelectorAll('.model-providers__catalog-progress[role="alert"]');
     expect(warnings).toHaveLength(1);
     expect(warnings[0]?.textContent).toContain("More models could not be discovered.");
-    expect(page.querySelector(".model-providers__provider-list .provider-usage-error")).toBeNull();
+    expect(page.querySelector(".model-providers__provider-list .provider-usage__error")).toBeNull();
     expect(displayedCatalog(page)?.models).toEqual(preparedCatalog.models);
     expect(currentConfigObject(page.context.runtimeConfig.state)).toEqual(savedModelConfig);
     await openModelPicker(page);

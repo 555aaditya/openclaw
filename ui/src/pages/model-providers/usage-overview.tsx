@@ -237,44 +237,6 @@ export function UsageOverview(props: {
                     }))}
                   />
                 </div>
-                <ul class="usage-overview__providers">
-                  <For each={providers()} keyed={(provider) => provider.id}>
-                    {(provider) => (
-                      <li style={{ "--oc-chart-color": seriesColor(provider().slot) }}>
-                        <ProviderBrandIcon provider={provider().id} class="usage-overview__icon" />
-                        <span class="usage-overview__name">
-                          <span>{label(provider().id)}</span>
-                          <small>
-                            {t("modelProviders.usage.providerMeta", {
-                              tokens: formatCompactTokenCount(provider().tokens),
-                              messages: provider().messages.toLocaleString(),
-                            })}
-                          </small>
-                        </span>
-                        <StepSparkline
-                          // An unpriced provider still has a token trend worth showing.
-                          values={
-                            by() === "cost" && provider().cost > 0
-                              ? provider().dailyCost
-                              : provider().dailyTokens
-                          }
-                          color={seriesColor(provider().slot)}
-                          label={t("modelProviders.usage.providerTrend", {
-                            provider: label(provider().id),
-                          })}
-                        />
-                        <span class="usage-overview__share">
-                          {formatShare(provider(), by(), total())}
-                        </span>
-                        <strong class="usage-overview__value">
-                          {by() === "cost"
-                            ? usageCostText(provider())
-                            : formatCompactTokenCount(provider().tokens)}
-                        </strong>
-                      </li>
-                    )}
-                  </For>
-                </ul>
               </SettingsGroup>
 
               <SettingsGroup carapace>
