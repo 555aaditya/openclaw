@@ -32,7 +32,7 @@ import { parseYouTubeVideoUrl } from "../../../lib/chat/youtube-video.ts";
 import { t } from "../../../lib/reactive/i18n.ts";
 import { ContentPresentation } from "../../../lib/solid/presentation.ts";
 import { showToast } from "../../../lib/toast.ts";
-import { postWidgetTheme } from "../../../lib/widget-theme.ts";
+import { postWidgetTheme, registerWidgetThemeFrame } from "../../../lib/widget-theme.ts";
 import { CanvasWidgetMount } from "./canvas-widget-mount.tsx";
 import "./browser-tab-card.tsx";
 import {
@@ -286,7 +286,9 @@ function WidgetFrame(props: { params: PreviewFrameParams }) {
   const height = () => reportedHeight() ?? props.params.height;
   const Frame = () => {
     let element!: HTMLIFrameElement;
+    let releaseTheme: (() => void) | undefined;
     onCleanup(() => {
+      releaseTheme?.();
       widgetFrameRegistry.delete(element);
       widgetFrameResize.delete(element);
     });
@@ -306,6 +308,8 @@ function WidgetFrame(props: { params: PreviewFrameParams }) {
         sandbox={props.params.sandbox ?? ""}
         style={height() ? `height:${height()}px;min-height:${height()}px` : ""}
         onLoad={() => {
+          releaseTheme?.();
+          releaseTheme = registerWidgetThemeFrame(element, "*");
           widgetFrameRegistry.add(element);
           if (promptCapable) {
             promptEligibleFrames.add(element);

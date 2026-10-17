@@ -98,21 +98,22 @@ function widgetThemeState(root: HTMLElement): WidgetThemeState {
   }
   const state: WidgetThemeState = { frames: new Map() };
   widgetThemes.set(root, state);
+  let publication = 0;
   const publish = () => {
-    // Unregistered board/preview frames are sibling DOM islands, discovered across the document.
-    for (const frame of root.ownerDocument.querySelectorAll<HTMLIFrameElement>(
-      ".chat-tool-card__preview-frame, .board-widget__frame",
-    )) {
-      if (!state.frames.has(frame)) {
-        postWidgetTheme(frame);
-      }
-    }
+    publication = 0;
+    const message = buildWidgetThemeMessage();
     for (const [frame, origin] of state.frames) {
       if (frame.isConnected) {
-        postWidgetTheme(frame, origin);
+        frame.contentWindow?.postMessage(message, origin);
       } else {
         state.frames.delete(frame);
       }
+    }
+  };
+  const schedule = () => {
+    // Stylesheets and inline overrides settle together before the next paint.
+    if (!publication && state.frames.size) {
+      publication = requestAnimationFrame(publish);
     }
   };
   const observer = new MutationObserver((records) => {
@@ -121,7 +122,7 @@ function widgetThemeState(root: HTMLElement): WidgetThemeState {
       state.message = undefined;
     }
     if (stylesheetChanged || records.some((record) => record.target === root)) {
-      publish();
+      schedule();
     }
   });
   observer.observe(root, {
@@ -146,7 +147,7 @@ function widgetThemeState(root: HTMLElement): WidgetThemeState {
     (event) => {
       if (event.target instanceof HTMLLinkElement && isStylesheet(event.target)) {
         state.message = undefined;
-        publish();
+        schedule();
       }
     },
     true,

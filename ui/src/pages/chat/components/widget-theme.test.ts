@@ -19,7 +19,24 @@ function postedMessage(postMessage: ReturnType<typeof vi.fn>) {
   return postMessage.mock.calls[0] as [unknown, string];
 }
 
+const animationFrames = new Map<number, FrameRequestCallback>();
+let nextAnimationFrame = 0;
+
+async function publishTheme() {
+  await Promise.resolve();
+  const callbacks = [...animationFrames.values()];
+  animationFrames.clear();
+  for (const callback of callbacks) {
+    callback(0);
+  }
+}
+
 beforeEach(() => {
+  animationFrames.clear();
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+    animationFrames.set(++nextAnimationFrame, callback);
+    return nextAnimationFrame;
+  });
   // Other UI files can leave observers attached to the shared jsdom root.
   document.documentElement.replaceWith(document.documentElement.cloneNode(true));
 });
@@ -53,7 +70,7 @@ describe("widget theme bridge", () => {
     values["--bg"] = "#112233";
     style.textContent = ":root { --bg: #112233; }";
     document.head.append(style);
-    await Promise.resolve();
+    await publishTheme();
     expect(post).toHaveBeenLastCalledWith(
       expect.objectContaining({ tokens: { surface: "#112233" } }),
       "https://widget.example",
@@ -66,7 +83,7 @@ describe("widget theme bridge", () => {
       } else {
         style.firstChild!.textContent = css;
       }
-      await Promise.resolve();
+      await publishTheme();
       expect(post).toHaveBeenLastCalledWith(
         expect.objectContaining({ tokens: { surface: values["--bg"] } }),
         "https://widget.example",
@@ -74,7 +91,7 @@ describe("widget theme bridge", () => {
     }
     values["--bg"] = "#ffffff";
     style.remove();
-    await Promise.resolve();
+    await publishTheme();
     expect(post).toHaveBeenLastCalledWith(
       expect.objectContaining({ tokens: { surface: "#ffffff" } }),
       "https://widget.example",
@@ -97,6 +114,7 @@ describe("widget theme bridge", () => {
       values["--bg"] = color;
       // Resource load events do not bubble.
       link.dispatchEvent(new Event("load"));
+      await publishTheme();
       expect(post).toHaveBeenLastCalledWith(
         expect.objectContaining({ tokens: { surface: color } }),
         "https://widget.example",
@@ -116,11 +134,49 @@ describe("widget theme bridge", () => {
     await Promise.resolve();
     values["--bg"] = "#112233";
     link.media = "all";
-    await Promise.resolve();
+    await publishTheme();
     expect(post).toHaveBeenLastCalledWith(
       expect.objectContaining({ tokens: { surface: "#112233" } }),
       "https://widget.example",
     );
+  });
+
+  it("coalesces stylesheet and root changes across tasks before publishing to loaded frames", async () => {
+    const values = { "--bg": "#ffffff" };
+    stubComputedStyles(values);
+    const posts = Array.from({ length: 12 }, () => {
+      const frame = document.createElement("iframe");
+      document.body.append(frame);
+      const post = vi.spyOn(frame.contentWindow!, "postMessage");
+      registerWidgetThemeFrame(frame, "*");
+      postWidgetTheme(frame);
+      return post;
+    });
+    const readStyles = vi.mocked(getComputedStyle);
+    expect(readStyles).toHaveBeenCalledTimes(1);
+    readStyles.mockClear();
+    posts.forEach((post) => post.mockClear());
+
+    const style = document.createElement("style");
+    style.dataset.widgetThemeTest = "";
+    document.head.append(style);
+    await Promise.resolve();
+    values["--bg"] = "#112233";
+    style.textContent = ":root { --bg: #112233; }";
+    await Promise.resolve();
+    document.documentElement.style.setProperty("--accent", "#207d82");
+    await Promise.resolve();
+    expect(readStyles).not.toHaveBeenCalled();
+    posts.forEach((post) => expect(post).not.toHaveBeenCalled());
+
+    await publishTheme();
+    expect(readStyles).toHaveBeenCalledTimes(1);
+    for (const post of posts) {
+      expect(post).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ tokens: { surface: "#112233" } }),
+        "*",
+      );
+    }
   });
 
   it("posts host variables mapped to widget tokens, dropping empty values", () => {
@@ -201,6 +257,8 @@ describe("widget theme bridge", () => {
     const shadowPost = vi.spyOn(shadowFrame.contentWindow!, "postMessage");
     const unrelatedPost = vi.spyOn(unrelatedFrame.contentWindow!, "postMessage");
     const release = registerWidgetThemeFrame(shadowFrame, "https://widget.example");
+    registerWidgetThemeFrame(chatFrame, "*");
+    registerWidgetThemeFrame(boardFrame, "*");
 
     for (const frame of [chatFrame, boardFrame, shadowFrame]) {
       postWidgetTheme(frame);
@@ -224,7 +282,7 @@ describe("widget theme bridge", () => {
       }),
       "*",
     );
-    await Promise.resolve();
+    await publishTheme();
     expect(boardPost).toHaveBeenLastCalledWith(
       expect.objectContaining({
         mode: "dark",
@@ -243,7 +301,7 @@ describe("widget theme bridge", () => {
     readStyles.mockClear();
     values["--accent"] = "#207d82";
     document.documentElement.style.setProperty("--accent", "#207d82");
-    await Promise.resolve();
+    await publishTheme();
     expect(readStyles).toHaveBeenCalledTimes(1);
     expect(boardPost).toHaveBeenLastCalledWith(
       expect.objectContaining({

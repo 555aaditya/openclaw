@@ -13,7 +13,7 @@ import { t } from "../../lib/reactive/i18n.ts";
 import { projectOwner } from "../../lib/reactive/projection.ts";
 import { generateUUID } from "../../lib/uuid.ts";
 import { WidgetRenderTimeoutError } from "../../lib/widget-sandbox-host.ts";
-import { postWidgetTheme } from "../../lib/widget-theme.ts";
+import { postWidgetTheme, registerWidgetThemeFrame } from "../../lib/widget-theme.ts";
 import { COMMAND_PALETTE_OPEN_EVENT } from "../command-palette-contract.ts";
 import { McpAppConfirmation } from "../mcp-app-confirm-solid.tsx";
 import { McpAppConfirm } from "../mcp-app-confirm.ts";
@@ -158,6 +158,7 @@ export class BoardWidgetFrameOwner {
   private lastFrameUrl = "";
   private sandboxOrigin = "";
   private sandboxHost: BoardWidgetSandboxHost | null = null;
+  private releaseTheme?: () => void;
   private contentVisible = false;
   private revealFrame = 0;
   private readonly confirmation = new McpAppConfirm(() => this.changes.emit());
@@ -185,6 +186,7 @@ export class BoardWidgetFrameOwner {
   }
 
   disconnect(): void {
+    this.releaseTheme?.();
     this.frameProbeGeneration += 1;
     this.resetPresentation();
     this.stopWork();
@@ -474,6 +476,8 @@ export class BoardWidgetFrameOwner {
   }
 
   private postBoardHostState(frame: HTMLIFrameElement): void {
+    this.releaseTheme?.();
+    this.releaseTheme = registerWidgetThemeFrame(frame, this.sandboxOrigin || "*");
     this.boardHostNonce = generateUUID();
     this.keyboardHostNonce = this.sandboxOrigin ? generateUUID() : "";
     postWidgetTheme(frame, this.sandboxOrigin || "*");
