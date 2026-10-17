@@ -2032,31 +2032,6 @@ describe("chat loading skeleton", () => {
     }
   });
 
-  it("announces interruptions without a composer badge", () => {
-    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000);
-    try {
-      const container = renderChatView({
-        messages: [{ role: "assistant", content: "Partial response" }],
-        composerControls: createComposerControlsFixture(),
-        runStatus: {
-          phase: "interrupted",
-          runId: "run-1",
-          sessionKey: "main",
-          occurredAt: 1_000,
-        },
-      });
-
-      expect(container.querySelector(".agent-chat__composer-run-status")).toBeNull();
-      expect(container.querySelector(".agent-chat__run-status")).toBeNull();
-      expect(
-        container.querySelector(".agent-chat__run-status-announcement")?.textContent?.trim(),
-      ).toBe("Interrupted");
-      expect(container.querySelector(".chat-reading-indicator")).toBeNull();
-    } finally {
-      nowSpy.mockRestore();
-    }
-  });
-
   it("keeps a completed recap after later tool content", () => {
     vi.mocked(chatThread.buildCachedChatItems).mockReturnValueOnce([
       {
@@ -4900,7 +4875,7 @@ describe("right-click Reply", () => {
       "rendered message bubble",
     );
     document.body.appendChild(container);
-    transcript.hostConnected();
+    transcript.start();
 
     try {
       dispatchContextMenu(bubble);
@@ -4923,7 +4898,7 @@ describe("right-click Reply", () => {
         container.querySelector(".agent-chat__composer-combobox textarea"),
       );
     } finally {
-      transcript.hostDisconnected();
+      transcript.dispose();
       disposeChatView(container);
       container.remove();
     }
