@@ -97,7 +97,11 @@ it("keeps Layout hints aligned before and after panel styles load, and hidden on
   ));
   await userEvent.click(page.getByRole("button", { name: "Layout", exact: true }));
   const menu = page.getByRole("menu", { name: "Layout", exact: true }).element();
-  await waitForSolid(() => expect(menu.getAttribute("data-phase")).toBe("open"));
+  await waitForSolid(() => {
+    expect(menu.getAttribute("data-phase")).toBe("open");
+    // The opening transition scales DOM bounds; measure its final geometry.
+    expect(getComputedStyle(menu).scale).toBe("1");
+  });
   // Computed scale can round to 1 before WebKit finishes the entry transition.
   await Promise.all(menu.getAnimations().map((animation) => animation.finished));
   const hints = [...menu.querySelectorAll<HTMLElement>(".shortcut-kbd")];
