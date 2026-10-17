@@ -547,8 +547,8 @@ describe("personal navigation rail", () => {
   });
 
   it("opens a pinned dashboard on its saved face instead of forcing chat", async () => {
-    const { sidebar, result } = await fixture();
-    result.sessions.find((row) => row.key === "agent:main:mine")!.boardFace = "dashboard";
+    const { sidebar, publish } = await fixture();
+    publish({ boardFace: "dashboard" });
     sidebar.sidebarEntries = ["session:agent:main:mine"];
     sidebar.requestUpdate();
     await sidebar.updateComplete;
