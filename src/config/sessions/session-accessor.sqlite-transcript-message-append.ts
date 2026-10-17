@@ -20,7 +20,10 @@ import {
   readTranscriptMessageAppendMetadataInTransaction,
 } from "./session-accessor.sqlite-transcript-anchor.js";
 import { ensureTranscriptHeader } from "./session-accessor.sqlite-transcript-header.js";
-import { readTranscriptMessageByEventId } from "./session-accessor.sqlite-transcript-identity.js";
+import {
+  readTranscriptMessageByEventId,
+  readTranscriptMessageByScopedIdempotencyKey,
+} from "./session-accessor.sqlite-transcript-identity.js";
 import type { PreparedTranscriptMessageAppend } from "./session-accessor.sqlite-transcript-message-append.types.js";
 import {
   isTranscriptEntryOnActivePathInTransaction,
@@ -29,7 +32,6 @@ import {
 import { readTranscriptContextVersionInTransaction } from "./session-accessor.sqlite-transcript-state.js";
 import {
   appendTranscriptEventInTransaction,
-  readTranscriptMessageByScopedIdempotencyKey,
   sanitizeTranscriptMessageForStorage,
 } from "./session-accessor.sqlite-transcript-store.js";
 import { SqliteTranscriptMutationConflictError } from "./session-mutation-conflict-error.js";
@@ -61,6 +63,8 @@ type TranscriptMessageEnvelope = {
   id: string;
   parentId: string | null;
   appendMode?: "side";
+  /** Entry id this branch-rewrite copy replaces; absent on ordinary appends. */
+  supersedesEntryId?: string;
   timestamp: string;
 };
 
@@ -97,12 +101,14 @@ function createTranscriptMessageEvent<TMessage>(params: {
   parentId: string | null;
   now: number;
   appendMode?: "side";
+  supersedesEntryId?: string;
 }) {
   return {
     type: "message" as const,
     id: params.messageId,
     parentId: params.parentId,
     ...(params.appendMode ? { appendMode: params.appendMode } : {}),
+    ...(params.supersedesEntryId ? { supersedesEntryId: params.supersedesEntryId } : {}),
     timestamp: resolveTimestampMsToIsoString(params.now),
     message: params.message,
   };
@@ -142,6 +148,7 @@ export function appendTranscriptMessageInTransaction<TMessage>(
   resolved: ResolvedTranscriptScope,
   options: TranscriptMessageAppendOptions<TMessage> & {
     appendMode?: "side";
+    supersedesEntryId?: string;
   },
   preparedMessage?: PreparedTranscriptMessageAppend<TMessage>,
   projection?: { scheduleProjectionReconcile?: boolean; onProjectionReconcileNeeded?: () => void },
@@ -267,6 +274,7 @@ export function appendTranscriptMessageInTransaction<TMessage>(
     messageId,
     parentId: parentId ?? null,
     appendMode: options.appendMode,
+    supersedesEntryId: options.supersedesEntryId,
     now,
     message: storagePreparation?.persistedMessage ?? finalMessage,
   });
