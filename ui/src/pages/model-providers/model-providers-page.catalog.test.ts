@@ -603,8 +603,8 @@ describe("Models page catalog publication", () => {
     await waitForProviders(second, savedModelConfig);
     await retryCatalog(first);
     await retryCatalog(second);
-    expect(first.view.props.usageAgentId).toBe("main");
-    expect(second.view.props.usageAgentId).toBe("writer");
+    expect(first.view.props.credentialAgentLabel).toBe("Main");
+    expect(second.view.props.credentialAgentLabel).toBe("Writer");
     publishCatalog(context, "main", preparedCatalog);
     first.routeData = {
       ...createEmptyModelProvidersRouteData(context),

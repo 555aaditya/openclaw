@@ -26,6 +26,7 @@ import {
   saveKey,
   openApiKeyProvider,
   advanceUsageRetries,
+  expandProvider,
   focusDocument,
   sessionUsageResult,
 } from "./model-providers-page.test-support.tsx";
@@ -191,7 +192,7 @@ describe("ModelProvidersPage agent scope", () => {
 
     const page = appendPage(context);
     await waitForSolid(() => expect(page.view.props.authStatus?.providers).toHaveLength(1));
-    await page.updateComplete;
+    await expandProvider(page, "openai");
 
     expect(page.querySelector(".model-providers__profiles")).toBeNull();
     expect(page.renderRoot.textContent).not.toContain("owner@example.com");
@@ -370,8 +371,8 @@ describe("ModelProvidersPage agent scope", () => {
         ? { removedProfiles: ["openai:key"], warning: "Authentication refresh failed." }
         : originalRequest(method),
     );
-    await page.updateComplete;
-    page.querySelector<HTMLButtonElement>(".model-providers__card-actions .danger")!.click();
+    const row = await expandProvider(page, "openai");
+    row.querySelector<HTMLButtonElement>(".model-providers__card-actions .danger")!.click();
     await waitForSolid(() => expect(page.view.props.messages.openai?.kind).toBe("success"));
     expect(request).toHaveBeenCalledWith("models.authLogout", {
       provider: "openai",
@@ -430,7 +431,7 @@ describe("ModelProvidersPage agent scope", () => {
     settingsAgentSelection.state.selectedId = "writer";
     settingsAgentSelection.state.scopeId = "writer";
     notifySelection();
-    await vi.waitFor(() => expect(page.view.props.usageAgentId).toBe("writer"));
+    await vi.waitFor(() => expect(page.view.props.credentialAgentLabel).toBe("Writer"));
     runtimeConfig.ensureLoaded.mockImplementationOnce(() => replacementGate.promise);
     page.view.props.onUtilityChange("openai/gpt-4.1-mini");
     gate.resolve();
@@ -458,7 +459,7 @@ describe("ModelProvidersPage agent scope", () => {
     settingsAgentSelection.state.selectedId = "writer";
     settingsAgentSelection.state.scopeId = "writer";
     notifySelection();
-    await vi.waitFor(() => expect(page.view.props.usageAgentId).toBe("writer"));
+    await vi.waitFor(() => expect(page.view.props.credentialAgentLabel).toBe("Writer"));
     page.view.props.onOpenKeyEditor("anthropic");
     page.view.props.onKeyDraftChange("writer-agent-unsaved-key");
     gate.resolve();
@@ -499,7 +500,7 @@ describe("ModelProvidersPage agent scope", () => {
     settingsAgentSelection.state.selectedId = "writer";
     settingsAgentSelection.state.scopeId = "writer";
     notifySelection();
-    await vi.waitFor(() => expect(page.view.props.usageAgentId).toBe("writer"));
+    await vi.waitFor(() => expect(page.view.props.credentialAgentLabel).toBe("Writer"));
     await openApiKeyProvider(page, "anthropic");
     page.view.props.onAddProviderKeyChange("shared-provider-key");
     gate.resolve({ profileId: "anthropic:manual-api-key" });
@@ -532,7 +533,7 @@ describe("ModelProvidersPage agent scope", () => {
     settingsAgentSelection.state.selectedId = "writer";
     settingsAgentSelection.state.scopeId = "writer";
     notifySelection();
-    await vi.waitFor(() => expect(page.view.props.usageAgentId).toBe("writer"));
+    await vi.waitFor(() => expect(page.view.props.credentialAgentLabel).toBe("Writer"));
     await waitForProviders(page);
     page.view.props.onProfileOrderChange("openai", "openai", ["openai:one", "openai:two"]);
 
@@ -563,7 +564,7 @@ describe("ModelProvidersPage agent scope", () => {
       authStatus: createAuthStatus(),
       updatedAt: 1,
     });
-    await page.updateComplete;
+    await expandProvider(page, "openai");
     request.mockRejectedValueOnce(new Error("Priority could not be saved"));
     page
       .querySelector<HTMLButtonElement>(
@@ -626,7 +627,7 @@ describe("ModelProvidersPage agent scope", () => {
     await waitForSolid(() =>
       expect(request).toHaveBeenCalledWith("models.authStatus", { agentId: "writer" }),
     );
-    expect(page.view.props.usageAgentId).toBe("writer");
+    expect(page.view.props.credentialAgentLabel).toBe("Writer");
     expect(page.view.props.updatedAt).not.toBe(staleData.updatedAt);
   });
 
@@ -664,11 +665,11 @@ describe("ModelProvidersPage agent scope", () => {
     settingsAgentSelection.state.selectedId = "writer";
     settingsAgentSelection.state.scopeId = "writer";
     notifySelection();
-    await vi.waitFor(() => expect(page.view.props.usageAgentId).toBe("writer"));
+    await vi.waitFor(() => expect(page.view.props.credentialAgentLabel).toBe("Writer"));
     settingsAgentSelection.state.selectedId = "main";
     settingsAgentSelection.state.scopeId = "main";
     notifySelection();
-    await vi.waitFor(() => expect(page.view.props.usageAgentId).toBe("main"));
+    await vi.waitFor(() => expect(page.view.props.credentialAgentLabel).toBe("Main"));
     firstProbe.resolve({ provider: "anthropic", status: "ok", results: [] });
     await drainPageUpdates(page);
 
@@ -720,26 +721,52 @@ describe("ModelProvidersPage usage convergence", () => {
       return original(method);
     });
     const page = appendPage(context);
-    await vi.waitFor(() => expect(page.renderRoot.textContent).toContain("90% left"));
+    await waitForProviders(page);
+    const openai = await expandProvider(page, "openai");
+    const anthropic = await expandProvider(page, "anthropic");
+    const limitsText = () =>
+      [...openai.querySelectorAll(".model-providers__account-limits")].map(
+        (limits) => limits.textContent,
+      );
+    await vi.waitFor(() =>
+      expect(limitsText()).toEqual([
+        expect.stringContaining("90% left"),
+        expect.stringContaining("90% left"),
+      ]),
+    );
     expect(accountRequests).toEqual([
       { agentId: "main", profileId: "openai:one" },
       { agentId: "main", profileId: "openai:two" },
     ]);
     expect(
-      page.querySelector('[data-profile-id="anthropic:one"] openclaw-model-account-usage'),
+      [...openai.querySelectorAll('.model-providers__account-limits [role="meter"]')].map((meter) =>
+        meter.getAttribute("aria-valuenow"),
+      ),
+    ).toEqual(["90", "90"]);
+    expect(
+      anthropic.querySelector('[data-profile-id="anthropic:one"] .model-providers__account-limits'),
     ).toBeNull();
     expect(
-      page.querySelector('[data-profile-id="openai:key"] openclaw-model-account-usage'),
+      openai.querySelector('[data-profile-id="openai:key"] .model-providers__account-limits'),
     ).toBeNull();
     runtimeConfig.state.configSaving = true;
     notifyRuntimeConfig();
     await page.updateComplete;
-    expect(page.renderRoot.textContent).toContain("90% left");
+    expect(limitsText()).toEqual([
+      expect.stringContaining("90% left"),
+      expect.stringContaining("90% left"),
+    ]);
     runtimeConfig.state.configSaving = false;
     notifyRuntimeConfig();
     usedPercent = 90;
     page.querySelector<HTMLButtonElement>('button[aria-label="Refresh"]')?.click();
-    await vi.waitFor(() => expect(page.renderRoot.textContent).toContain("10% left"));
+    await vi.waitFor(() =>
+      expect(limitsText()).toEqual([
+        expect.stringContaining("10% left"),
+        expect.stringContaining("10% left"),
+      ]),
+    );
+    expect(accountRequests).toHaveLength(4);
   });
 
   it("waits for the route loader before starting provider requests, including after reconnect", async () => {
@@ -819,6 +846,10 @@ describe("ModelProvidersPage usage convergence", () => {
     harness.request.mockImplementation(
       async (method: string, _params?: unknown, options?: { signal?: AbortSignal }) => {
         if (method === "sessions.usage") {
+          // The core read fails, so the supplemental loader owns the local-usage read.
+          if (requestCount(harness.request, method) === 1) {
+            throw new Error("sessions.usage unavailable");
+          }
           costSignal = options?.signal;
           return pendingCost.promise;
         }
@@ -828,14 +859,19 @@ describe("ModelProvidersPage usage convergence", () => {
 
     const page = appendPage(harness.context);
     await page.updateComplete;
+    await vi.waitFor(() => expect(requestCount(harness.request, "sessions.usage")).toBe(2));
+    expect(requestCount(harness.request, "usage.status")).toBe(1);
     await vi.advanceTimersByTimeAsync(5_000);
 
     expect(requestCount(harness.request, "usage.status")).toBeGreaterThan(1);
-    expect(requestCount(harness.request, "sessions.usage")).toBe(1);
+    expect(requestCount(harness.request, "sessions.usage")).toBe(2);
     expect(costSignal?.aborted).toBe(false);
 
+    expect(page.view.props.localUsage).toBeNull();
     pendingCost.resolve(sessionUsageResult([]));
-    await waitForSolid(() => expect(page.view.props.supplementalLoading).toBe(false));
+    // The retried provider usage did not retire the original local-usage request.
+    await waitForSolid(() => expect(page.view.props.localUsage?.byProvider).toEqual([]));
+    expect(page.view.props.supplementalLoading).toBe(false);
   });
 
   it("replaces a pending pre-disconnect load before it can publish", async () => {
@@ -887,7 +923,11 @@ describe("ModelProvidersPage usage convergence", () => {
       async (method: string, _params?: unknown, options?: { signal?: AbortSignal }) => {
         if (method === "sessions.usage") {
           costCall += 1;
+          // The first core read fails, so supplemental work reads local usage itself.
           if (costCall === 1) {
+            throw new Error("sessions.usage unavailable");
+          }
+          if (costCall === 2) {
             firstCostSignal = options?.signal;
             return oldCost.promise;
           }
@@ -906,7 +946,8 @@ describe("ModelProvidersPage usage convergence", () => {
     );
     const page = appendPage(harness.context);
     await vi.waitFor(() => expect(requestCount(harness.request, "usage.status")).toBe(1));
-    await vi.waitFor(() => expect(requestCount(harness.request, "sessions.usage")).toBe(1));
+    await vi.waitFor(() => expect(requestCount(harness.request, "sessions.usage")).toBe(2));
+    expect(page.view.props.localUsage).toBeNull();
 
     const releaseCoreRefresh = harness.deferNextAuthStatus();
     page.view.props.onRefresh();
@@ -921,23 +962,25 @@ describe("ModelProvidersPage usage convergence", () => {
       ...sessionUsageResult([{ provider: "stale", totals: { totalCost: 1 } }]),
     });
     await Promise.resolve();
-    expect(page.view.props.cards.every((card) => !card.usage && !card.localCost)).toBe(true);
+    expect(page.view.props.cards.every((card) => !card.usage)).toBe(true);
+    expect(page.view.props.localUsage).toBeNull();
 
     releaseCoreRefresh();
     await drainPageUpdates(page);
 
     await vi.waitFor(() => expect(requestCount(harness.request, "usage.status")).toBe(2));
-    await vi.waitFor(() => expect(requestCount(harness.request, "sessions.usage")).toBe(2));
+    // The forced core refresh re-reads local usage, so supplemental work does not.
+    await vi.waitFor(() => expect(requestCount(harness.request, "sessions.usage")).toBe(3));
     await vi.waitFor(() =>
       expect(page.view.props.cards.find((card) => card.id === "openai")?.usage).toEqual(
         replacementUsage,
       ),
     );
     await waitForSolid(() => expect(page.view.props.supplementalLoading).toBe(false));
-    expect(page.view.props.cards.every((card) => !card.localCost)).toBe(true);
+    expect(page.view.props.localUsage?.byProvider).toEqual([]);
 
     expect(requestCount(harness.request, "usage.status")).toBe(2);
-    expect(requestCount(harness.request, "sessions.usage")).toBe(2);
+    expect(requestCount(harness.request, "sessions.usage")).toBe(3);
     expect(page.view.props.cards.find((card) => card.id === "openai")?.usage).toEqual(
       replacementUsage,
     );
