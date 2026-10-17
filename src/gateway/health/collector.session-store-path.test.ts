@@ -7,6 +7,7 @@ import * as configRuntime from "../../config/config.js";
 import { setRuntimeConfigSnapshot } from "../../config/runtime-snapshot.js";
 import { resolveSessionStorePathCore } from "../../config/sessions/paths.js";
 import * as sessionAccessor from "../../config/sessions/session-accessor.js";
+import * as sessionReadRuntime from "../../config/sessions/session-entry-read-runtime.js";
 import { resolveSqliteTargetFromSessionStorePath } from "../../config/sessions/session-sqlite-target.js";
 import { spyOnSessionStoreSummaries } from "../../config/sessions/session-store-summary.test-support.js";
 import { historyLane } from "../../config/sessions/session-transcript-worker-resources.js";
@@ -189,26 +190,53 @@ describe("health session store paths", () => {
     },
   );
 
-  it.each(["before-read", "during-read", "only-agent"] as const)(
+  it.each([
+    "before-read",
+    "during-read",
+    "only-agent",
+    "late-status",
+    "late-health",
+    "late-shared-status",
+  ] as const)(
     "omits committed deletions without aborting health or status (%s)",
     async (timing) => {
       await withOpenClawTestState({ label: "health-agent-deletion" }, async (state) => {
+        const late = timing.startsWith("late-");
+        const shared = timing === "late-shared-status";
         const cfg: OpenClawConfig = {
           agents: {
             ownership: "explicit",
             entries: timing === "only-agent" ? { deleting: {} } : { deleting: {}, survivor: {} },
           },
+          ...(shared ? { session: { store: state.statePath("shared.sqlite") } } : {}),
         };
         setRuntimeConfigSnapshot(cfg);
         const { ordered } = resolveHealthAgentOrder(cfg);
         for (const { id } of ordered) {
           await sessionAccessor.upsertSessionEntryCore(
-            { agentId: id, sessionKey: `agent:${id}:main` },
+            { agentId: id, sessionKey: `agent:${id}:main`, storePath: cfg.session?.store },
             { sessionId: `${id}-session`, updatedAt: 10 },
+          );
+        }
+        if (shared) {
+          await sessionAccessor.upsertSessionEntryCore(
+            { agentId: "retired", sessionKey: "agent:retired:main", storePath: cfg.session?.store },
+            { sessionId: "retired-session", updatedAt: 5 },
           );
         }
         const replied = createDeferred();
         const release = createDeferred();
+        const read = sessionReadRuntime.withSessionStoreReaderInWorker;
+        const laterRead = vi
+          .spyOn(sessionReadRuntime, "withSessionStoreReaderInWorker")
+          .mockImplementation(async (...args) => {
+            const result = await read(...args);
+            if (late && args[0].agentId === "survivor") {
+              replied.resolve();
+              await release.promise;
+            }
+            return result;
+          });
         const run = historyLane.pool.run.bind(historyLane.pool);
         const held = vi.spyOn(historyLane.pool, "run").mockImplementation(async (...args) => {
           const result = await run(...args);
@@ -225,15 +253,19 @@ describe("health session store paths", () => {
           return result;
         });
         const collect = () => collectGatewayHealthSnapshot({ audience: "admin", probe: false });
-        const pending =
-          timing === "during-read" ? readStatusSessionStores(cfg, ordered, 10) : undefined;
+        const pendingStatus =
+          timing === "during-read" || (late && timing !== "late-health")
+            ? readStatusSessionStores(cfg, ordered, 10)
+            : undefined;
+        const pendingHealth = timing === "late-health" ? collect() : undefined;
+        const pending = pendingStatus ?? pendingHealth;
         void pending?.catch(() => {});
         try {
           if (pending) {
             await awaitGateBeforeSettlement(
               replied.promise,
               pending,
-              "Summary bypassed its worker",
+              "Summary settled before the deletion gate",
             );
           }
           beginAgentDeletionJournal({
@@ -249,19 +281,35 @@ describe("health session store paths", () => {
             async () => {
               release.resolve();
               const expectedIds = timing === "only-agent" ? [] : ["survivor"];
-              if (pending) {
-                const status = await pending;
+              const expectedCount = expectedIds.length + (shared ? 1 : 0);
+              const expectedRecent = [
+                ...expectedIds.map((id) => `agent:${id}:main`),
+                ...(shared ? ["agent:retired:main"] : []),
+              ];
+              if (pendingStatus) {
+                const status = await pendingStatus;
                 expect(status.byAgent.map(({ agent }) => agent.id)).toEqual(expectedIds);
-                expect(status.count).toBe(expectedIds.length);
+                expect(status.count).toBe(expectedCount);
+                expect(status.recent.map(({ sessionKey }) => sessionKey).toSorted()).toEqual(
+                  expectedRecent.toSorted(),
+                );
+              }
+              if (pendingHealth) {
+                const health = await pendingHealth;
+                expect(health.agents.map((agent) => agent.agentId)).toEqual(expectedIds);
+                expect(health.sessions.count).toBe(expectedIds.length);
+                expect(health.sessions.recent.map(({ key }) => key)).toEqual(
+                  expectedIds.map((id) => `agent:${id}:main`),
+                );
               }
               const health = await collect();
               expect(health.agents.map((agent) => agent.agentId)).toEqual(expectedIds);
               expect(health.sessions.count).toBe(expectedIds.length);
               const status = await readStatusSessionStores(cfg, ordered, 10);
               expect(status.byAgent.map(({ agent }) => agent.id)).toEqual(expectedIds);
-              expect(status.count).toBe(expectedIds.length);
-              expect(status.recent.map(({ sessionKey }) => sessionKey)).toEqual(
-                expectedIds.map((id) => `agent:${id}:main`),
+              expect(status.count).toBe(expectedCount);
+              expect(status.recent.map(({ sessionKey }) => sessionKey).toSorted()).toEqual(
+                expectedRecent.toSorted(),
               );
             },
           );
@@ -269,6 +317,7 @@ describe("health session store paths", () => {
           release.resolve();
           await pending?.catch(() => {});
           held.mockRestore();
+          laterRead.mockRestore();
         }
       });
     },

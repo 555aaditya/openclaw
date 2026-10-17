@@ -150,9 +150,17 @@ async function buildHealthSessionSummary(
 /** Shares one bounded session snapshot across every configured agent in this collection. */
 export async function buildHealthAgentSummaries(
   cfg: OpenClawConfig,
-  { defaultAgentId, ordered }: ReturnType<typeof resolveHealthAgentOrder>,
+  order: ReturnType<typeof resolveHealthAgentOrder>,
   projection?: SessionRowProjection,
 ): Promise<AgentHealthSummary[]> {
+  return (await prepareHealthAgentSummaries(cfg, order, projection)).publish();
+}
+
+async function prepareHealthAgentSummaries(
+  cfg: OpenClawConfig,
+  { defaultAgentId, ordered }: ReturnType<typeof resolveHealthAgentOrder>,
+  projection?: SessionRowProjection,
+) {
   const agentIds = ordered.map((entry) => entry.id);
   const reader = await createHealthSessionStoreReader(agentIds, projection);
   // One roster pass for every agent: per-agent resolution re-walks the roster
@@ -175,7 +183,10 @@ export async function buildHealthAgentSummaries(
       sessions: projectHealthSessions(store.path, store),
     });
   }
-  return agents;
+  return {
+    hasAgents: agents.length > 0,
+    publish: () => agents.filter(({ agentId }) => !reader.isDeleted(agentId)),
+  };
 }
 
 function buildPluginHealthSummary(cfg: OpenClawConfig): PluginHealthSummary | undefined {
@@ -505,37 +516,20 @@ export async function collectGatewayHealthSnapshot(params: {
   const cfg = await readRuntimeHealthConfig();
   const { defaultAgentId, ordered } = resolveHealthAgentOrder(cfg);
   const channelBindings = buildChannelAccountBindings(cfg);
-  const agents = await buildHealthAgentSummaries(
+  const agentSummaries = await prepareHealthAgentSummaries(
     cfg,
     { defaultAgentId, ordered },
     params.sessionRowProjection,
   );
-  const summaryAgent = agents.find((agent) => agent.isDefault) ?? agents[0];
-  const configuredHeartbeatAgentId = normalizeOptionalString(
-    cfg.agents?.defaults?.heartbeat?.agentId,
-  );
-  const heartbeatSummaryAgent =
-    (configuredHeartbeatAgentId
-      ? agents.find(
-          (agent) =>
-            agent.heartbeat.enabled &&
-            agent.agentId === normalizeAgentId(configuredHeartbeatAgentId),
-        )
-      : undefined) ??
-    agents.find((agent) => agent.heartbeat.enabled) ??
-    summaryAgent;
-  const heartbeatSeconds = heartbeatSummaryAgent?.heartbeat.everyMs
-    ? Math.round(heartbeatSummaryAgent.heartbeat.everyMs / 1000)
-    : 0;
-  const sessions =
-    summaryAgent?.sessions ??
-    (await buildHealthSessionSummary(
-      resolveSessionStorePathCore(cfg.session?.store, {
-        agentId: defaultAgentId ?? ordered[0]?.id,
-      }),
-      defaultAgentId ?? ordered[0]?.id,
-      params.sessionRowProjection,
-    ));
+  const fallbackSessions = agentSummaries.hasAgents
+    ? undefined
+    : await buildHealthSessionSummary(
+        resolveSessionStorePathCore(cfg.session?.store, {
+          agentId: defaultAgentId ?? ordered[0]?.id,
+        }),
+        defaultAgentId ?? ordered[0]?.id,
+        params.sessionRowProjection,
+      );
 
   const includeSensitive = params.audience === "admin";
   const channels: Record<string, ChannelHealthSummary> = {};
@@ -648,6 +642,33 @@ export async function collectGatewayHealthSnapshot(params: {
   const pluginHealth = buildPluginHealthSummary(cfg);
   const contextEngineHealth = await buildContextEngineHealthSummary();
   const deliveryQueueHealth = await buildDeliveryQueueHealthSummary(undefined, stateContext);
+  const agents = agentSummaries.publish();
+  const summaryAgent = agents.find((agent) => agent.isDefault) ?? agents[0];
+  const configuredHeartbeatAgentId = normalizeOptionalString(
+    cfg.agents?.defaults?.heartbeat?.agentId,
+  );
+  const heartbeatSummaryAgent =
+    (configuredHeartbeatAgentId
+      ? agents.find(
+          (agent) =>
+            agent.heartbeat.enabled &&
+            agent.agentId === normalizeAgentId(configuredHeartbeatAgentId),
+        )
+      : undefined) ??
+    agents.find((agent) => agent.heartbeat.enabled) ??
+    summaryAgent;
+  const heartbeatSeconds = heartbeatSummaryAgent?.heartbeat.everyMs
+    ? Math.round(heartbeatSummaryAgent.heartbeat.everyMs / 1000)
+    : 0;
+  const sessions =
+    summaryAgent?.sessions ??
+    fallbackSessions ??
+    projectHealthSessions(
+      resolveSessionStorePathCore(cfg.session?.store, {
+        agentId: defaultAgentId ?? ordered[0]?.id,
+      }),
+      { count: 0, recent: [] },
+    );
   return {
     ok: true,
     ts: Date.now(),

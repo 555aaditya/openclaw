@@ -7,6 +7,7 @@ import { captureSessionTranscriptStorageEnvironment } from "../config/sessions/t
 import type { OpenClawConfig } from "../config/types.js";
 import type { listGatewayAgentsBasic } from "../gateway/agent-list.js";
 import type { SessionRowProjection } from "../gateway/session-row-projection.js";
+import { parseAgentSessionKey } from "../routing/session-key.js";
 import {
   AgentDatabaseAdmissionError,
   readAgentDatabaseAdmissionRefusal,
@@ -83,7 +84,7 @@ export function createStatusSessionStoreReader(
   } = {},
 ) {
   const env = captureSessionTranscriptStorageEnvironment(process.env);
-  const stores = new Map<string, SessionStoreSummary & { path: string }>();
+  const stores = new Map<string, SessionStoreSummary & { path: string; readBy: Set<string> }>();
   const statePath = resolveOpenClawStateSqlitePath(env);
   const isDeleted = (agentId?: string) => {
     const status = agentId
@@ -120,7 +121,7 @@ export function createStatusSessionStoreReader(
                 }
                 snapshot = options.recoverReadError(error);
               }
-              store = { ...snapshot, path };
+              store = { ...snapshot, path, readBy: new Set<string>() };
             }
             return store;
           });
@@ -150,10 +151,10 @@ export function createStatusSessionStoreReader(
           if (agentId && readAgentDatabaseAdmissionRefusal(agentId, { env })) {
             return { path: summary.path, count: 0, recent: [] };
           }
-          if (isDeleted(agentId)) {
-            return undefined;
-          }
           for (const store of selected) {
+            if (agentId) {
+              store.readBy.add(agentId);
+            }
             stores.set(store.path, store);
           }
           return summary;
@@ -201,11 +202,11 @@ export function createStatusSessionStoreReader(
             if (agentId && readAgentDatabaseAdmissionRefusal(agentId, { env })) {
               return { path, count: 0, recent: [] };
             }
-            if (isDeleted(agentId)) {
-              return undefined;
-            }
-            store = { ...summary, path };
+            store = { ...summary, path, readBy: new Set<string>() };
             stores.set(database.path, store);
+          }
+          if (agentId) {
+            store.readBy.add(agentId);
           }
           const summary = agentId ? store.byAgent.get(agentId) : store;
           return { path, count: summary?.count ?? 0, recent: summary?.recent ?? [] };
@@ -216,6 +217,7 @@ export function createStatusSessionStoreReader(
   };
   return {
     stores,
+    isDeleted,
     async read(storePath: string, agentId?: string) {
       // Journal commits precede resource closure; stale rosters must not reopen that agent.
       if (isDeleted(agentId)) {
@@ -256,10 +258,26 @@ export async function readStatusSessionStores<Agent extends { id: string; name?:
       byAgent.push({ agent, ...summary });
     }
   }
+  // A later read can outlive deletion of any earlier contributor.
+  const deleted = new Set(agents.filter((agent) => reader.isDeleted(agent.id)).map(({ id }) => id));
+  const stores = [...reader.stores.values()]
+    .filter((store) => [...store.readBy].some((agentId) => !deleted.has(agentId)))
+    .map((store) => ({
+      path: store.path,
+      count:
+        store.count -
+        [...deleted].reduce(
+          (count, agentId) => count + (store.byAgent.get(agentId)?.count ?? 0),
+          0,
+        ),
+      recent: store.recent.filter(
+        ({ sessionKey }) => !deleted.has(parseAgentSessionKey(sessionKey)?.agentId ?? ""),
+      ),
+    }));
   return {
-    paths: [...reader.stores.values()].map((store) => store.path),
-    count: [...reader.stores.values()].reduce((count, store) => count + store.count, 0),
-    recent: [...reader.stores.values()].flatMap((store) => store.recent),
-    byAgent,
+    paths: stores.map((store) => store.path),
+    count: stores.reduce((count, store) => count + store.count, 0),
+    recent: stores.flatMap((store) => store.recent),
+    byAgent: byAgent.filter(({ agent }) => !deleted.has(agent.id)),
   };
 }
