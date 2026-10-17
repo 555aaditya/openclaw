@@ -172,8 +172,7 @@ function responseFor(path: string): unknown {
 type RegistrationOrigin = "bundled" | "official-installed";
 type MatrixHarness = Awaited<ReturnType<typeof createHarness>>;
 
-// Installation provenance is a registrar fixture, as in the shared dispatcher suite.
-// Policy, action handlers, SDK requests, host instance and lifecycle are real; E2EE is off.
+// Only installation provenance is synthetic; policy, SDK, host and lifecycle are real (E2EE off).
 async function createHarness(origin: RegistrationOrigin) {
   const requests: Array<{
     method: string | undefined;
@@ -270,92 +269,69 @@ function expectReadRequests(requests: MatrixHarness["requests"]) {
   expect(requests.filter(({ path }) => responseFor(path) === undefined)).toEqual([]);
 }
 
-const reads = [
-  {
-    action: "read",
-    params: { limit: 1 },
-    path: messagePath,
-    result: { messages: [{ content: message.content.body }] },
+const expectedReads = {
+  read: { messages: [{ content: message.content.body }] },
+  reactions: { reactions: [{ key: "👍", count: 1, users: [memberId] }] },
+  "list-pins": { pinned: [messageId], pins: [{ content: message.content.body }] },
+  "emoji-list": {
+    emojis: [
+      { name: "spark", url: "mxc://example.org/spark" },
+      { name: "wave", url: "mxc://example.org/wave" },
+    ],
   },
-  {
-    action: "reactions",
-    params: { messageId, limit: 1 },
-    path: `/_matrix/client/v1/rooms/${allowedRoom}/relations/${messageId}/m.annotation/m.reaction`,
-    result: { reactions: [{ key: "👍", count: 1, users: [memberId] }] },
-  },
-  {
-    action: "list-pins",
-    params: {},
-    path: `${roomPath}/event/${messageId}`,
-    result: { pinned: [messageId], pins: [{ content: message.content.body }] },
-  },
-  {
-    action: "emoji-list",
-    params: {},
-    path: `/_matrix/client/v3/user/${selfId}/account_data/im.ponies.user_emotes`,
-    result: {
-      emojis: [
-        { name: "spark", url: "mxc://example.org/spark" },
-        { name: "wave", url: "mxc://example.org/wave" },
-      ],
+  "member-info": { member: { userId: memberId, displayName: "Alice", roomId: allowedRoom } },
+  "channel-info": {
+    room: {
+      roomId: allowedRoom,
+      name: "Allowed room",
+      topic: "Synthetic room topic",
+      memberCount: 3,
     },
   },
-  {
-    action: "member-info",
-    params: { userId: memberId },
-    path: `/_matrix/client/v3/profile/${memberId}`,
-    result: { member: { userId: memberId, displayName: "Alice", roomId: allowedRoom } },
-  },
-  {
-    action: "channel-info",
-    params: {},
-    path: `${roomPath}/state/m.room.topic/`,
-    result: {
-      room: {
-        roomId: allowedRoom,
-        name: "Allowed room",
-        topic: "Synthetic room topic",
-        memberCount: 3,
-      },
-    },
-  },
-] as const;
+};
+const reads: Array<[keyof typeof expectedReads, Record<string, unknown>, string]> = [
+  ["read", { limit: 1 }, messagePath],
+  [
+    "reactions",
+    { messageId, limit: 1 },
+    `/_matrix/client/v1/rooms/${allowedRoom}/relations/${messageId}/m.annotation/m.reaction`,
+  ],
+  ["list-pins", {}, `${roomPath}/event/${messageId}`],
+  ["emoji-list", {}, `/_matrix/client/v3/user/${selfId}/account_data/im.ponies.user_emotes`],
+  ["member-info", { userId: memberId }, `/_matrix/client/v3/profile/${memberId}`],
+  ["channel-info", {}, `${roomPath}/state/m.room.topic/`],
+];
 
-describe("Matrix member info CLI", () => {
-  it("reads a selected room member without current conversation context", async () => {
-    await using fixture = await createHarness("bundled");
-    setRuntimeConfigSnapshot(fixture.cfg, fixture.cfg);
-    const payload = await runReadCli(
-      "matrix",
-      registerMessageDiscordAdminCommands,
-      ["member", "info", "--user-id", memberId, "--channel-id", allowedRoom],
-      "member-info",
-    );
-    expect(payload).toMatchObject({
-      ok: true,
-      member: { userId: memberId, displayName: "Alice", roomId: allowedRoom },
-    });
-    expect(fixture.requests.map((request) => request.path)).toEqual(
-      expect.arrayContaining([
-        `${roomPath}/joined_members`,
-        `/_matrix/client/v3/profile/${memberId}`,
-      ]),
-    );
-    expectReadRequests(fixture.requests);
+it("Matrix member info CLI reads a selected room member without current conversation context", async () => {
+  await using fixture = await createHarness("bundled");
+  setRuntimeConfigSnapshot(fixture.cfg, fixture.cfg);
+  const payload = await runReadCli(
+    "matrix",
+    registerMessageDiscordAdminCommands,
+    ["member", "info", "--user-id", memberId, "--channel-id", allowedRoom],
+    "member-info",
+  );
+  expect(payload).toMatchObject({
+    ok: true,
+    member: { userId: memberId, displayName: "Alice", roomId: allowedRoom },
   });
+  expect(fixture.requests.map((request) => request.path)).toEqual(
+    expect.arrayContaining([
+      `${roomPath}/joined_members`,
+      `/_matrix/client/v3/profile/${memberId}`,
+    ]),
+  );
+  expectReadRequests(fixture.requests);
 });
 
 describe("registered installed Matrix reads", () => {
-  it.each(reads)(
-    "reads $action from a configured sibling room",
-    async ({ action, params, path, result }) => {
-      await using fixture = await createHarness("official-installed");
-      const outcome = await fixture.invoke(action, params);
-      expect(outcome?.details).toMatchObject({ ok: true, ...result });
-      expect(fixture.requests.map((request) => request.path)).toContain(path);
-      expectReadRequests(fixture.requests);
-    },
-  );
+  it.each(reads)("reads %s from a configured sibling room", async (action, params, path) => {
+    await using fixture = await createHarness("official-installed");
+    const outcome = await fixture.invoke(action, params);
+    expect(outcome?.details).toMatchObject({ ok: true, ...expectedReads[action] });
+    expect(fixture.requests.map((request) => request.path)).toContain(path);
+    expectReadRequests(fixture.requests);
+  });
 
   it.each([
     { owner: "caller", boundary: "preparation" },
@@ -396,24 +372,18 @@ describe("installed Matrix read restrictions", () => {
     expect(fixture.requests).toEqual([]);
   });
 
-  it.each(["room", "action", "account"] as const)(
+  it.each([
+    ["room", blockedRoom, "default", "not allowed"],
+    ["action", allowedRoom, "default", "member info is disabled"],
+    ["account", allowedRoom, "other", "current provider and account"],
+  ])(
     "preserves the existing %s denial before provider access",
-    async (denial) => {
+    async (denial, roomId, requesterAccountId, error) => {
       await using fixture = await createHarness("official-installed");
       fixture.cfg.channels.matrix.actions.memberInfo = denial !== "action";
       await expect(
-        fixture.invoke(
-          "member-info",
-          { roomId: denial === "room" ? blockedRoom : allowedRoom, userId: memberId },
-          { requesterAccountId: denial === "account" ? "other" : "default" },
-        ),
-      ).rejects.toThrow(
-        denial === "room"
-          ? "not allowed"
-          : denial === "action"
-            ? "member info is disabled"
-            : "current provider and account",
-      );
+        fixture.invoke("member-info", { roomId, userId: memberId }, { requesterAccountId }),
+      ).rejects.toThrow(error);
       expect(fixture.requests).toEqual([]);
     },
   );
