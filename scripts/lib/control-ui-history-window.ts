@@ -1,3 +1,4 @@
+import { constants, deflateRawSync } from "node:zlib";
 import { sanitizeChatHistoryMessages } from "../../src/gateway/chat-display-projection.sanitize.js";
 import { prepareChatHistoryResponsePage } from "../../src/gateway/server-methods/chat-history-response-page.js";
 
@@ -26,7 +27,12 @@ export function createBenchHistoryWindow(input: {
         }),
         pagination: { offset, totalMessages: input.messages.length, rawPageMessages: raw.length },
       },
-      { entry: undefined, maxHistoryBytes: maxBytes, responseHistoryBytes: maxBytes },
+      {
+        entry: undefined,
+        messageId: undefined,
+        maxHistoryBytes: maxBytes,
+        responseHistoryBytes: maxBytes,
+      },
     );
     const {
       messagesBytes: _messagesBytes,
@@ -44,8 +50,6 @@ export function createBenchHistoryWindow(input: {
     };
   };
 }
-import { constants, deflateRawSync } from "node:zlib";
-
 export function estimateBenchHistoryCompression(
   frames: Array<{ id: string; method: string; frame: string }>,
 ) {
@@ -86,12 +90,13 @@ export async function measureBenchOlderHistoryPage() {
   const rpcOffset = cold.read().rpcs.length;
   const frames: Array<{ start: number; duration: number; blocking: number }> = [];
   const collect = (entries: PerformanceEntry[]) => {
-    for (const entry of entries)
+    for (const entry of entries) {
       frames.push({
         start: entry.startTime,
         duration: entry.duration,
         blocking: Reflect.get(entry, "blockingDuration") ?? 0,
       });
+    }
   };
   if (!PerformanceObserver.supportedEntryTypes.includes("long-animation-frame")) {
     throw new Error("Older-page measurement requires long-animation-frame support");
@@ -102,16 +107,17 @@ export async function measureBenchOlderHistoryPage() {
   try {
     const loaded = await cold.loadOneOlderHistoryPage();
     const appliedAt = performance.now();
-    await new Promise<void>((resolve) =>
-      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-    );
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    });
     collect(observer.takeRecords());
     const responses = probe
       .history()
       .slice(historyOffset)
       .filter((entry: { method: string }) => entry.method === "chat.history");
-    if (!loaded || responses.length !== 1)
+    if (!loaded || responses.length !== 1) {
       throw new Error(`Expected one native older-page response, received ${responses.length}`);
+    }
     const response = responses[0];
     const arrivalFrames = frames.filter(
       (frame) =>

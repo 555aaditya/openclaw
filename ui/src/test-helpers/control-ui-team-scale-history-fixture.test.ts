@@ -14,12 +14,14 @@ it("pages a normal transcript without losing or repeating source messages", () =
   });
   const read = createBenchHistoryWindow({ messages: historyMessages, sessionInfo });
   let offset = 0;
-  let restored: unknown[] = [];
+  const restored: unknown[] = [];
   for (;;) {
     const page = read("chat.history", { offset, limit: 80, maxBytes: 256 * 1024 });
     expect(page.messages).toHaveLength(80);
-    restored = [...page.messages, ...restored];
-    if (!page.hasMore) break;
+    restored.unshift(...page.messages);
+    if (!page.hasMore) {
+      break;
+    }
     expect(page.nextOffset).toBeGreaterThan(offset);
     offset = page.nextOffset!;
   }

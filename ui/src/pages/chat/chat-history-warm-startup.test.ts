@@ -223,9 +223,13 @@ describe("first chat startup snapshot ordering", () => {
         ...nativeHistoryMessage(index + 741),
         role: "assistant",
       }));
-      const cached = [...older, ...newest].map((message, index) =>
-        mode === "disjoint" ? { ...message, __openclaw: { seq: index + 1 } } : message,
-      );
+      const source = [...older, ...newest];
+      const cached =
+        mode === "disjoint"
+          ? source.map((message, index) =>
+              Object.assign({}, message, { __openclaw: { seq: index + 1 } }),
+            )
+          : source;
       h.read.resolve({
         ...stored,
         deltaCursor: undefined,

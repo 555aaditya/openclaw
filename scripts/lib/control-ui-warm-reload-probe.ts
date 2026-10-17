@@ -192,7 +192,9 @@ export function warmReloadProbe() {
     if (inner !== observedInner) {
       resizeObserver.disconnect();
       observedInner = inner ?? null;
-      if (observedInner) resizeObserver.observe(observedInner);
+      if (observedInner) {
+        resizeObserver.observe(observedInner);
+      }
     }
     for (const row of currentRows) {
       rows.add(row);
@@ -201,8 +203,9 @@ export function warmReloadProbe() {
       currentRows.length && inner && getComputedStyle(inner).visibility !== "hidden",
     );
     if (visible) {
-      if (rowCounts.at(-1)?.rows !== currentRows.length)
+      if (rowCounts.at(-1)?.rows !== currentRows.length) {
         rowCounts.push({ at: performance.now(), rows: currentRows.length });
+      }
       mark("firstTranscript");
       if (!milestones.catchupResponse && milestones.cacheRead) {
         mark("firstCachedTranscript");

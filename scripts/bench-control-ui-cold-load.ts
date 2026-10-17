@@ -503,13 +503,14 @@ try {
         .frameLocator("iframe")
         .getByText("Team metric 1", { exact: true })
         .waitFor();
-      if (!historyWindow)
+      if (!historyWindow) {
         await page
           .frameLocator(".chat-tool-card__preview-frame")
           .last()
           .frameLocator("iframe")
           .getByText("Team metric 12", { exact: true })
           .waitFor();
+      }
       await page.waitForFunction(() => {
         const ready = Reflect.get(window, "__readWidgetReadiness")();
         return ready.firstBoardReadyMs !== null;
@@ -630,7 +631,9 @@ try {
         const store = Reflect.get(element, "sessionSnapshotStore");
         const cache = Reflect.get(element, "chatMessagesBySession");
         const entry = [...cache.entries()].find(([key]) => key.endsWith(`\u0000${sessionKey}`));
-        if (!entry) throw new Error("Missing live transcript snapshot");
+        if (!entry) {
+          throw new Error("Missing live transcript snapshot");
+        }
         await store.flush();
         await store.delete(entry[0], "cache-eviction");
       }, fixture.selectedSessionKey);

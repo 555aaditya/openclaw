@@ -526,7 +526,7 @@ function installColdLoadProbes(
   observer.observe({ type: "longtask", buffered: true });
   Reflect.set(window, "__coldLoad", {
     async loadOneOlderHistoryPage() {
-      const host = document.querySelector(".chat-pane-cache__pane--active");
+      const host = document.querySelector<HTMLElement>(".chat-pane-cache__pane--active");
       const owner = host ? chatOwners.get(host)?.owner : undefined;
       const load = owner && Reflect.get(owner, "loadOlderMessages");
       const pagination = owner && Reflect.get(owner, "state")?.chatHistoryPagination;
