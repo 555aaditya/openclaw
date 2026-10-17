@@ -296,12 +296,14 @@ export async function executePreparedReplyRun(state: PreparedReplyRunAdmission) 
     ...(transportReplyToId ? { replyToId: transportReplyToId } : {}),
     ...(transportThreadId ? { threadId: transportThreadId } : {}),
   };
+  const inputIdempotencyKey =
+    sourceTurnId ?? (opts?.internalEventExecution ? sourceMessageId : undefined);
   const userTurnInput =
     userTurnTranscriptText !== undefined || userTurnMediaForPersistence.length > 0
       ? {
           text: userTurnTranscriptText,
           senderIsOwner: command.senderIsOwner,
-          ...(sourceTurnId ? { idempotencyKey: sourceTurnId } : {}),
+          ...(inputIdempotencyKey ? { idempotencyKey: inputIdempotencyKey } : {}),
           ...(inputProvenance && !isHeartbeat ? { provenance: inputProvenance } : {}),
           ...(isHeartbeat
             ? {
@@ -351,6 +353,9 @@ export async function executePreparedReplyRun(state: PreparedReplyRunAdmission) 
             : undefined,
         })
       : undefined);
+  if (userTurnTranscriptRecorder) {
+    await opts?.internalEventExecution?.prepareInput?.(userTurnTranscriptRecorder);
+  }
   const replyPolicyChannel =
     (replyRoute.channel as OriginatingChannelType | undefined) ??
     (messageProvider as OriginatingChannelType | undefined);
