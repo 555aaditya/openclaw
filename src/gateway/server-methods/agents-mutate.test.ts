@@ -563,7 +563,7 @@ function createContext() {
     chatQueuedTurns: new Map(),
     dedupe: new Map(),
     cron: { removeAgentJobsTransactional: mocks.cronRemoveAgentJobsTransactional },
-    logGateway: { warn: mocks.logGatewayWarn },
+    logGateway: { warn: mocks.logGatewayWarn, isEnabled: () => false },
   };
 }
 

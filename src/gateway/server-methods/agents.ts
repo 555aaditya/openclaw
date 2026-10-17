@@ -32,6 +32,7 @@ import { normalizeAgentIdStrict } from "../../routing/session-key.js";
 import { resolveUserPath } from "../../utils.js";
 import { reviveAgentDatabasesAfterConfigCommit } from "../server-reload-agent-databases.js";
 import { SessionMutationAuthorizationChangedError } from "../session-mutation-authorization-error.js";
+import { startSlowRequestDiagnostics } from "../slow-request-diagnostics.js";
 import { captureGatewayClientUploadCommitGuard } from "../upload-policy.js";
 import {
   AgentConfigPreconditionError,
@@ -94,6 +95,15 @@ export const agentsHandlers: GatewayRequestHandlers = {
   "agents.list": agentListHandler,
   "agents.create": async (options) => {
     const { params, respond, client, context } = options;
+    using diagnostics = startSlowRequestDiagnostics<
+      | "preflight"
+      | "inference"
+      | "persistAgent"
+      | "reviveDatabases"
+      | "applyConfig"
+      | "createChat"
+      | "response"
+    >(context.logGateway, "slow agent create", "agents.create", "preflight");
     if (!assertValidParams(params, validateAgentsCreateParams, "agents.create", respond)) {
       return;
     }
@@ -117,6 +127,7 @@ export const agentsHandlers: GatewayRequestHandlers = {
         return;
       }
       try {
+        diagnostics?.mark("inference");
         opening = await prepareAgentOnboarding(options, identity.agentId, params);
       } catch (error) {
         respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, formatErrorMessage(error)));
@@ -125,6 +136,7 @@ export const agentsHandlers: GatewayRequestHandlers = {
     }
     const application = createAgentConfigApplication(respond);
     try {
+      diagnostics?.mark("persistAgent");
       const result = await createAgentConfigEntry(
         {
           name: params.name,
@@ -151,15 +163,19 @@ export const agentsHandlers: GatewayRequestHandlers = {
         respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, result.message));
         return;
       }
+      diagnostics?.mark("reviveDatabases");
       await reviveAgentDatabasesAfterConfigCommit([result.agentId], (message) =>
         context.logGateway.warn(message),
       );
+      diagnostics?.mark("applyConfig");
       if (!(await application.confirm())) {
         return;
       }
+      diagnostics?.mark("createChat");
       const onboarding = opening
         ? await completeAgentOnboarding(options, result.agentId, opening)
         : undefined;
+      diagnostics?.mark("response");
       respond(
         true,
         {

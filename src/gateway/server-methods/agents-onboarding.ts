@@ -17,6 +17,7 @@ import { formatErrorMessage } from "../../infra/errors.js";
 import { completeSetupInferenceConfig } from "../../system-agent/setup-inference-completion.js";
 import type { SetupInferenceAssistantReply } from "../../system-agent/setup-inference-core.js";
 import { resolveGatewayOperatorRoleActor } from "../operator-role-policy.js";
+import { startSessionCreateDiagnostics } from "../session-create-diagnostics.js";
 import { createGatewaySession } from "../session-create-service.js";
 import { resolveOperatorSessionCreation } from "../session-creation-provenance.js";
 import { emitSessionsChanged } from "./session-change-event.js";
@@ -101,6 +102,7 @@ export async function completeAgentOnboarding(
   agentId: string,
   opening: PreparedAgentOnboarding,
 ): Promise<NonNullable<AgentsCreateResult["onboarding"]>> {
+  using diagnostics = startSessionCreateDiagnostics();
   const cfg = options.context.getRuntimeConfig();
   const sessionKey = resolveAgentMainSessionKey({ cfg, agentId });
   try {
@@ -117,6 +119,7 @@ export async function completeAgentOnboarding(
       operatorRoleActor: resolveGatewayOperatorRoleActor(options.client),
       commitGuard: authority.assertCurrent,
       atomicInitialization: true,
+      onPhase: diagnostics?.mark,
       onCreatedSessionCommitted: (session) =>
         options.sessionMutationAuthorization?.recordCreatedSession?.({
           agentId,
