@@ -1,4 +1,5 @@
 import { sanitizeInlineImageDataUrl } from "openclaw/plugin-sdk/inline-image-data-url-runtime";
+import { readStringValue } from "openclaw/plugin-sdk/string-coerce-runtime";
 import type {
   SageBatchRequest,
   SageBatchResponse,
@@ -44,10 +45,9 @@ function array(value: unknown, min: number, max: number, field: string): unknown
 function unique(values: unknown[], field: string) {
   check(new Set(values).size === values.length, field);
 }
-function optionalString(value: unknown, field: string) {
-  if (value != null) {
-    string(value, field);
-  }
+// Native optional fields accept null and preserve empty strings and whitespace.
+function assertSageNullableString(value: unknown, field: string) {
+  check(value == null || readStringValue(value) !== undefined, field);
 }
 function grounding(value: unknown) {
   if (value == null) {
@@ -105,7 +105,7 @@ async function content(value: unknown, probe?: SageImageProbe, inList = false): 
   check(c.kind === "image" && !inList, "image placement");
   keys(c, ["kind", "media", "text"], "image fields");
   string(c.media, "image media");
-  optionalString(c.text, "image text");
+  assertSageNullableString(c.text, "image text");
   // Bound before decoding; canonical inline bytes only, never remote URLs.
   check(c.media.length <= 4 * Math.ceil((4 * 1024 * 1024) / 3) + 23, "image byte limit");
   check(
@@ -131,7 +131,7 @@ function question(value: unknown, c: unknown, batch: boolean, topGrounding?: unk
   grounding(g);
   check(!image || g == null, "image with grounding");
   if (q.kind === "tags") {
-    optionalString(q.instructions, "instructions");
+    assertSageNullableString(q.instructions, "instructions");
   } else {
     string(q.instructions, "instructions");
   }
@@ -153,7 +153,7 @@ function question(value: unknown, c: unknown, batch: boolean, topGrounding?: unk
         const o = object(v, "choice option");
         keys(o, ["option", "description"], "option fields");
         string(o.option, "option");
-        optionalString(o.description, "option description");
+        assertSageNullableString(o.description, "option description");
         return o.option;
       });
       unique(options, "duplicate options");
@@ -165,7 +165,7 @@ function question(value: unknown, c: unknown, batch: boolean, topGrounding?: unk
         const l = object(v, "scale level");
         keys(l, ["level", "description"], "level fields");
         integer(l.level, Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER, "scale level");
-        optionalString(l.description, "level description");
+        assertSageNullableString(l.description, "level description");
         return l.level;
       });
       unique(levels, "duplicate levels");
@@ -177,7 +177,7 @@ function question(value: unknown, c: unknown, batch: boolean, topGrounding?: unk
         const t = object(v, "tag");
         keys(t, ["id", "name", "threshold"], "tag fields");
         string(t.id, "tag id");
-        optionalString(t.name, "tag name");
+        assertSageNullableString(t.name, "tag name");
         if (t.threshold != null) {
           number(t.threshold, 0, 1, "tag threshold");
         }
@@ -220,7 +220,7 @@ function metadata(value: unknown) {
   if (m.model !== undefined) {
     string(m.model, "metadata model");
   }
-  optionalString(m.compute_mode, "compute mode");
+  assertSageNullableString(m.compute_mode, "compute mode");
   if (m.latency_ms != null) {
     number(m.latency_ms, 0, Infinity, "latency");
   }
@@ -263,7 +263,7 @@ function groundingMeta(value: unknown) {
   }
   const g = object(value, "grounding metadata");
   check(typeof g.triggered === "boolean", "grounding triggered");
-  optionalString(g.trigger_reason, "grounding trigger reason");
+  assertSageNullableString(g.trigger_reason, "grounding trigger reason");
   if (g.queries !== undefined) {
     for (const v of array(g.queries, 0, Infinity, "queries")) {
       string(v, "query");
@@ -273,7 +273,7 @@ function groundingMeta(value: unknown) {
     for (const v of array(g.sources, 0, Infinity, "sources")) {
       const source = object(v, "source");
       for (const k of ["url", "title", "snippet"]) {
-        optionalString(source[k], "source " + k);
+        assertSageNullableString(source[k], "source " + k);
       }
     }
   }
