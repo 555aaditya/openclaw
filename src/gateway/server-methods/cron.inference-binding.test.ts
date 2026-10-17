@@ -9,6 +9,7 @@ import { clearRuntimeAuthProfileStoreSnapshots } from "../../agents/auth-profile
 import { loadAuthProfileStoreWithoutExternalProfilesAsync } from "../../agents/auth-profiles/store-runtime.js";
 import { createAuthOwnerTestFixtures } from "../../agents/auth-profiles/store-state-owner.test-support.js";
 import { persistAuthProfileBatch } from "../../agents/auth-profiles/upsert-with-lock.js";
+import { registerAgentHarness } from "../../agents/harness/registry.js";
 import { prepareAgentRuntimeAuth } from "../../agents/runtime-plan/prepare-auth.js";
 import { resolvePreparedRuntimeModelAuth } from "../../agents/runtime-plan/resolve-auth.js";
 import { clearRuntimeConfigSnapshot, setRuntimeConfigSnapshot } from "../../config/config.js";
@@ -20,6 +21,10 @@ import type { CronRuntimeAuthority } from "../../cron/runtime-authority.js";
 import { CronService } from "../../cron/service.js";
 import { createNoopLogger } from "../../cron/service.test-harness.js";
 import { loadCronJobsStore } from "../../cron/store.js";
+import { setCurrentPluginMetadataSnapshot } from "../../plugins/current-plugin-metadata.test-support.js";
+import { createPluginMetadataSnapshotFixture } from "../../plugins/plugin-metadata.test-support.js";
+import { createEmptyPluginRegistry } from "../../plugins/registry-empty.js";
+import { resetPluginRuntimeStateForTest, setActivePluginRegistry } from "../../plugins/runtime.js";
 import { closeOpenClawAgentDatabasesForTest } from "../../state/openclaw-agent-db.js";
 import { closeOpenClawStateDatabaseAsync } from "../../state/openclaw-state-db.js";
 import { connectUserModelAccountAsync } from "../../state/user-model-account-operations.js";
@@ -61,6 +66,8 @@ async function withFixture(
       } finally {
         await fixture.stop();
         clearRuntimeConfigSnapshot();
+        setCurrentPluginMetadataSnapshot(undefined);
+        resetPluginRuntimeStateForTest();
       }
     },
   );
@@ -211,6 +218,48 @@ async function createFixture(stateDir: string, agentDir: string) {
           },
         },
       };
+      setRuntimeConfigSnapshot(cfg);
+    },
+    setCodexRuntime({ runtime = "codex", registered = true, supported = true } = {}) {
+      const model = "codex/openai-compatible/gpt-5.4";
+      cfg.agents!.defaults = {
+        model,
+        models: { [model]: { agentRuntime: { id: runtime } } },
+      };
+      cfg.models = {
+        providers: {
+          codex: {
+            baseUrl: "https://api.openai.com/v1",
+            models: [
+              {
+                id: "openai-compatible/gpt-5.4",
+                name: "gpt-5.4",
+                reasoning: true,
+                input: ["text"],
+                cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+                maxTokens: 8192,
+              },
+            ],
+          },
+        },
+      };
+      const metadata = createPluginMetadataSnapshotFixture({
+        plugins: [{ id: "codex", providers: ["codex"], syntheticAuthRefs: ["codex"] }],
+      });
+      metadata.index.plugins[0]!.syntheticAuthRefs = ["codex"];
+      setCurrentPluginMetadataSnapshot(metadata, { config: cfg });
+      setActivePluginRegistry(createEmptyPluginRegistry());
+      if (registered) {
+        registerAgentHarness({
+          id: "codex",
+          label: "Codex fixture",
+          authBootstrap: "harness",
+          supports: () => ({ supported }),
+          runAttempt: async () => {
+            throw new Error("Admission proof must not start the Harness");
+          },
+        });
+      }
       setRuntimeConfigSnapshot(cfg);
     },
     replaceAccountBeforeMutation(method: "add" | "update") {
@@ -395,6 +444,52 @@ function createParams() {
 }
 
 describe("cron handler inference binding persistence", () => {
+  it("keeps native Codex inference unbound without a Gateway account", async () => {
+    await withFixture(async (fixture) => {
+      await fixture.useUnstoredCredential("openai");
+      fixture.setCodexRuntime();
+      await fixture.invoke("cron.add", createParams());
+      const job = await fixture.reload();
+      expect(job.enabled).toBe(false);
+      expect(job.inferenceBinding).toBeUndefined();
+    });
+  });
+
+  it.each([
+    { name: "builtin runtime setup hint", runtime: "openclaw", error: "stored inference account" },
+    { name: "unavailable Codex runtime", registered: false, error: "codex" },
+    { name: "unsupported Codex runtime", supported: false, error: "does not support" },
+  ])("rejects $name without persisting a job", async ({ name: _name, error, ...runtime }) => {
+    await withFixture(async (fixture) => {
+      await fixture.useUnstoredCredential("openai");
+      fixture.setCodexRuntime(runtime);
+      const failure = await fixture.invoke("cron.add", createParams(), null, {
+        expectedSuccess: false,
+      });
+      expect(failure).toMatchObject({ message: expect.stringContaining(error) });
+      expect(await fixture.status()).toMatchObject({ jobs: 0 });
+    });
+  });
+
+  it("does not replace an explicit missing Codex account with native auth", async () => {
+    await withFixture(async (fixture) => {
+      await fixture.useUnstoredCredential("openai");
+      fixture.setCodexRuntime();
+      const params = createParams();
+      const failure = await fixture.invoke(
+        "cron.add",
+        {
+          ...params,
+          payload: { ...params.payload, model: "codex/openai-compatible/gpt-5.4@missing-account" },
+        },
+        null,
+        { expectedSuccess: false },
+      );
+      expect(failure).toMatchObject({ message: expect.stringContaining("missing-account") });
+      expect(await fixture.status()).toMatchObject({ jobs: 0 });
+    });
+  });
+
   it.each(["absent", "ambient"] as const)(
     "keeps required worker inference unbound with %s Gateway credentials",
     async (credentials) => {

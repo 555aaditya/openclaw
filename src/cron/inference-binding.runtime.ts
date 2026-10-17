@@ -5,6 +5,7 @@ import {
 import { captureAuthProfileAuthorization } from "../agents/auth-profiles/authorization.js";
 import { resolveSessionAuthSelection } from "../agents/auth-profiles/session-override.js";
 import { ensureAuthProfileStoreAsync } from "../agents/auth-profiles/store-runtime.js";
+import { resolveAgentHarnessSelectionDecision } from "../agents/harness/selection-decision.js";
 import { resolveProviderModelAuthPolicy } from "../agents/model-auth-policy.js";
 import { resolveCliRuntimeExecutionProvider } from "../agents/model-runtime-aliases.js";
 import { isConfiguredKeyAuthSource } from "../agents/provider-model-auth-source-plan.js";
@@ -79,6 +80,12 @@ export async function captureCronInferenceBinding(params: {
   });
   if (!selection) {
     // With no compatible creator account, use the same route-aware planner as a fresh run.
+    const harness = resolveAgentHarnessSelectionDecision({
+      provider: model.provider,
+      modelId: model.modelId,
+      config: cfg,
+      agentId,
+    });
     const [attempt] = prepareAgentRuntimeAuth({
       provider: model.provider,
       modelId: model.modelId,
@@ -86,6 +93,9 @@ export async function captureCronInferenceBinding(params: {
       agentId,
       agentDir,
       authProfileStore: store,
+      harnessId: harness.selectedHarnessId,
+      harnessRuntime: harness.selectedHarnessId,
+      harnessAuthBootstrap: harness.harness?.authBootstrap,
     }).attempts;
     if (attempt?.kind !== "profile") {
       // A configured key keeps the job unbound, the same rule its runs follow.
