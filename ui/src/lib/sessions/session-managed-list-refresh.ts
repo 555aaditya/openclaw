@@ -168,11 +168,11 @@ export function createSessionManagedListRefresh(
         };
         const issuedRevision = nextRevision();
         entry.readRevision = issuedRevision;
+        // One-shot traversals also page without a mounted view to keep alive.
+        const requiresView = entry.listeners.size > 0;
         publishManagedList(entry, { ...entry.snapshot, loading: true, error: null }, isCurrent);
         try {
           const generation = entry.readGeneration;
-          // One-shot traversals also page without a mounted view to keep alive.
-          const requiresView = entry.listeners.size > 0;
           const readIsCurrent = () =>
             isCurrent() &&
             (!requestParams.pageSize ||

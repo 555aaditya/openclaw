@@ -41,6 +41,24 @@ const childQuery = childSessionListQuery(parentKey);
 const load = (sessions: ReturnType<typeof capability>) =>
   fetchChildSessionRows({ sessions, parentKey, isCurrent: () => true });
 
+it("does not refill retained child pages after their view closes during loading publication", async () => {
+  const children = childRows(101);
+  const request = vi.fn(async (_method: string, params?: unknown) => {
+    const offset = (params as { offset?: number })?.offset ?? 0;
+    return listResult(children.slice(offset, offset + 100), 101, offset === 0 ? 100 : null);
+  });
+  const sessions = capability(request);
+  expect(await load(sessions)).toHaveLength(101);
+  request.mockClear();
+  const observation = sessions.observeList(childQuery, (snapshot) => {
+    if (snapshot.loading) {
+      observation.dispose();
+    }
+  });
+  await expect(observation.refresh()).rejects.toThrow("disposed");
+  expect(request).not.toHaveBeenCalled();
+});
+
 it.each([50, 101])("loads a %i-child roster and reconciles renamed rows", async (count) => {
   const children = childRows(count);
   const renamed = {
