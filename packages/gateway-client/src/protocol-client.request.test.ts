@@ -105,6 +105,45 @@ afterEach(() => {
 });
 
 describe("GatewayProtocolClient requests", () => {
+  it.each([
+    { details: { reason: "startup-sidecars" }, accepted: false },
+    { details: { reason: "startup-sidecars", method: "sessions.create" }, accepted: false },
+    { details: { reason: "busy", method: "chat.send" }, accepted: false },
+    { details: { reason: "startup-sidecars", method: "chat.send" }, accepted: true },
+  ])(
+    "does not replay a write without its own pre-dispatch refusal: %j",
+    async ({ details, accepted }) => {
+      vi.useFakeTimers();
+      const { client, connections } = createRequestHarness();
+      const connection = connections[0];
+      assert(connection);
+      try {
+        const request = client.request("chat.send", {}, { expectFinal: true });
+        const frame = latestFrame(connection);
+        if (accepted) {
+          respond(connection, frame.id, { status: "accepted", runId: "admitted" });
+        }
+        respond(
+          connection,
+          frame.id,
+          {
+            code: "UNAVAILABLE",
+            message: "not a safe retry",
+            retryable: true,
+            retryAfterMs: 250,
+            details,
+          },
+          false,
+        );
+        await expect(request).rejects.toThrow("not a safe retry");
+        await vi.advanceTimersByTimeAsync(1_000);
+        expect(connection.frames).toHaveLength(1);
+      } finally {
+        client.stop();
+      }
+    },
+  );
+
   it.each(["gateway-suspending", "gateway-restarting"])(
     "parks 40 bootstrap clients during 30 seconds of %s after refusal",
     async (reason) => {

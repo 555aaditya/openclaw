@@ -21,12 +21,10 @@ import { withPluginRuntimeRegistryScope } from "../../plugins/runtime/gateway-re
 import { getAsyncWorkSignal } from "../../shared/async-work-scope.js";
 import type { SessionOperatorScope } from "../../shared/session-method-scopes-base.js";
 import {
-  AgentDatabaseAdmissionError,
   createAgentDatabaseAdmissionErrorShape,
   listAgentDatabaseAdmissionRefusals,
   readAgentDatabaseAdmissionRefusal,
 } from "../../state/agent-database-admission.js";
-import { waitForAgentDatabaseWriteAdmission } from "../../state/agent-database-preparation-context.js";
 import type { ExpectedProfileBinding } from "../expected-profile.js";
 import type { GatewayMethodRegistryView } from "../methods/descriptor.js";
 import {
@@ -109,6 +107,15 @@ function startupWriteAgents(
       ),
     ),
   ];
+}
+
+function startupWriteRefusal(agents: string[]) {
+  const refusals = agents
+    .map((agentId) => readAgentDatabaseAdmissionRefusal(agentId))
+    .filter((refusal) => refusal !== undefined);
+  return (
+    refusals.find((refusal) => refusal.code !== "agent-database-inspection-pending") ?? refusals[0]
+  );
 }
 
 function startupReadAgents(method: string, requestParams: unknown, cfg: OpenClawConfig) {
@@ -284,42 +291,22 @@ export async function authorizeGatewayRequestPreDispatch(params: {
       );
       const cfg = params.context.getRuntimeConfig();
       let agents = startupWriteAgents(params, cfg);
-      const refusal = agents
-        .map((agentId) => readAgentDatabaseAdmissionRefusal(agentId))
-        .find((entry) => entry && entry.code !== "agent-database-inspection-pending");
-      if (refusal) {
-        return { error: createAgentDatabaseAdmissionErrorShape(refusal) };
-      }
-      try {
-        if (!isPerAgentSessionStoreConfig(cfg.session?.store)) {
-          agents = await prepareStartupAgentTargets(agents, cfg, waitSignal);
-          if (params.context.getRuntimeConfig() !== cfg) {
-            continue;
-          }
-          const physicalRefusal = agents
-            .map((agentId) => readAgentDatabaseAdmissionRefusal(agentId))
-            .find((entry) => entry && entry.code !== "agent-database-inspection-pending");
-          if (physicalRefusal) {
-            return { error: createAgentDatabaseAdmissionErrorShape(physicalRefusal) };
-          }
-        }
-        const waiting = agents.flatMap((agentId) => {
-          const wait = waitForAgentDatabaseWriteAdmission(agentId, {
-            signal: waitSignal,
-            owner: params.context.agentDatabaseStartup,
-          });
-          return wait ? [wait] : [];
-        });
-        if (waiting.length > 0) {
-          await Promise.all(waiting);
-          // Admission publishes new storage facts; authorize again before retaining any.
+      let refusal = startupWriteRefusal(agents);
+      if (!refusal && !isPerAgentSessionStoreConfig(cfg.session?.store)) {
+        agents = await prepareStartupAgentTargets(agents, cfg, waitSignal);
+        if (params.context.getRuntimeConfig() !== cfg) {
           continue;
         }
-      } catch (error) {
-        if (error instanceof AgentDatabaseAdmissionError) {
-          return { error: createAgentDatabaseAdmissionErrorShape(error.refusal) };
+        refusal = startupWriteRefusal(agents);
+      }
+      if (refusal) {
+        const error = createAgentDatabaseAdmissionErrorShape(refusal);
+        if (error.retryable && !params.consumeSessionTurn) {
+          // Only initial dispatch proves no handler work occurred. A client may safely
+          // resend this refusal, but must never time out a write parked on readiness.
+          error.details = { ...gatewayStartupUnavailableDetails(), method: params.method };
         }
-        throw error;
+        return { error };
       }
     }
     const startup =

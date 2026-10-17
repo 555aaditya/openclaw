@@ -6,11 +6,9 @@ import {
 } from "../../../packages/gateway-protocol/src/index.js";
 import type { CronJob, CronJobPatch } from "../../cron/types.js";
 import {
-  AgentDatabaseAdmissionError,
   createAgentDatabaseAdmissionErrorShape,
   readAgentDatabaseAdmissionRefusal,
 } from "../../state/agent-database-admission.js";
-import { waitForAgentDatabaseWriteAdmission } from "../../state/agent-database-preparation-context.js";
 import { assertActiveAgentRuntimeAuthority } from "./agent-runtime-authority.js";
 import {
   cronJobMatchesCallerScope,
@@ -43,29 +41,7 @@ export function isLegacyCreatorPromptUpdate(
   );
 }
 
-export async function respondRefusedCronAgent(
-  agentId: string | undefined,
-  respond: RespondFn,
-  options: Pick<GatewayRequestHandlerOptions, "context" | "signal" | "client">,
-): Promise<boolean> {
-  if (agentId) {
-    try {
-      await waitForAgentDatabaseWriteAdmission(agentId, {
-        owner: options.context.agentDatabaseStartup,
-        signal: AbortSignal.any(
-          [options.signal, options.client?.connectionSignal].filter(
-            (signal): signal is AbortSignal => signal !== undefined,
-          ),
-        ),
-      });
-    } catch (error) {
-      if (!(error instanceof AgentDatabaseAdmissionError)) {
-        throw error;
-      }
-      respond(false, undefined, createAgentDatabaseAdmissionErrorShape(error.refusal));
-      return true;
-    }
-  }
+export function respondRefusedCronAgent(agentId: string | undefined, respond: RespondFn): boolean {
   const refusal = agentId ? readAgentDatabaseAdmissionRefusal(agentId) : undefined;
   if (!refusal) {
     return false;

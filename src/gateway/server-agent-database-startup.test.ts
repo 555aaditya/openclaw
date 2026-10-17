@@ -310,7 +310,6 @@ it.for([
     const preparationRelease = createDeferredCore();
     const preparationEntered = createDeferredCore();
     const maintenanceCompleted = createDeferredCore();
-    const admissionWaitEntered = createDeferredCore();
     const dispatched = createDeferredCore();
     let sessionPrepared = false;
     let preparationParent: number | undefined;
@@ -407,7 +406,6 @@ it.for([
     let suppliedBroker: Awaited<ReturnType<typeof spawnBroker.startGatewaySpawnBroker>>;
     let unadoptedPortClaim: TestPortClaim | undefined;
     let chatClient: Awaited<ReturnType<typeof connectWebchatClient>> | undefined;
-    let pendingChat: ReturnType<typeof rpcReq> | undefined;
     try {
       if (outcome === "startup-failure") {
         const startupFailure = new Error("startup stopped before Gateway adoption");
@@ -427,16 +425,6 @@ it.for([
       unadoptedPortClaim = portClaim;
       const port = portClaim.port;
       const startup = withAgentDatabaseStartupAdmission(async (admission) => {
-        if (outcome === "recover") {
-          const waitForPreparation = admission.waitForAgentPreparation.bind(admission);
-          vi.spyOn(admission, "waitForAgentPreparation").mockImplementation((id, options) => {
-            const pending = waitForPreparation(id, options);
-            if (id === agentId && options?.forWrite && pending) {
-              admissionWaitEntered.resolve();
-            }
-            return pending;
-          });
-        }
         if (outcome === "shutdown-preparation") {
           admission.signal.addEventListener(
             "abort",
@@ -621,15 +609,14 @@ it.for([
             dispatched.resolve();
             return { text: "Synthetic startup reply" };
           });
-          pendingChat = rpcReq(chatClient, "chat.send", chatParams);
-          await withinTest(
-            awaitGateBeforeSettlement(
-              admissionWaitEntered.promise,
-              pendingChat,
-              "chat.send settled before waiting for startup admission",
-            ),
-            signal,
-          );
+          expect(await rpcReq(chatClient, "chat.send", chatParams)).toMatchObject({
+            ok: false,
+            error: {
+              code: "UNAVAILABLE",
+              retryable: true,
+              details: { reason: "startup-sidecars", method: "chat.send" },
+            },
+          });
           expect(gatewayReplyMock).not.toHaveBeenCalled();
           const active = getActiveSecretsRuntimeSnapshot()!;
           const source = structuredClone(active.sourceConfig);
@@ -701,7 +688,7 @@ it.for([
           false,
         );
         expect((await fetch(`http://127.0.0.1:${port}/readyz`)).status).toBe(200);
-        expect(await withinTest(pendingChat!, signal)).toMatchObject({ ok: true });
+        expect(await rpcReq(chatClient!, "chat.send", chatParams)).toMatchObject({ ok: true });
         await withinTest(dispatched.promise, signal);
         if (checkHostJournalReads) {
           expect(hostJournalReads).toBe(0);

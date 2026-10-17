@@ -164,10 +164,9 @@ export const cronHandlers: GatewayRequestHandlers = {
       return;
     }
     if (
-      await respondRefusedCronAgent(
+      respondRefusedCronAgent(
         tryResolveCronJobEffectiveAgentId(jobCreate, context.cron.getDefaultAgentId()),
         respond,
-        { context, client, signal },
       )
     ) {
       return;
@@ -329,14 +328,13 @@ export const cronHandlers: GatewayRequestHandlers = {
     }
     if (
       ("agentId" in patch || "sessionTarget" in patch || "sessionKey" in patch) &&
-      (await respondRefusedCronAgent(
+      respondRefusedCronAgent(
         tryResolveCronJobEffectiveAgentId(
           { ...currentJob, ...patch },
           context.cron.getDefaultAgentId(),
         ),
         respond,
-        { context, client, signal },
-      ))
+      )
     ) {
       return;
     }

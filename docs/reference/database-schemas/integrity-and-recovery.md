@@ -571,18 +571,23 @@ During startup, reaching the inspection's foreground deadline records pending
 preparation and marks that agent **degraded** while the Gateway continues with healthy agents.
 Its database remains excluded from automatic migration and ordinary writes until
 admission completes.
-Write requests wait for that agent's existing preparation before normal admission,
-without holding database or session locks. The wait allows five minutes for slow
-hosts plus one minute per remaining two-agent inspection batch, measured when the
-request starts waiting. Client cancellation or Gateway shutdown ends the wait;
-expiry returns a retryable unavailable error explaining that the agent is still
-preparing. Reads keep their existing readiness behavior, and admitted requests do
-not join another agent's preparation. Cron jobs for preparing agents retain queued custody without consuming running
+Session and agent write RPCs targeting a preparing agent return a retryable startup-unavailable
+error before handler work begins. The reference Gateway client waits by retrying
+that refused request with the same request ID and input, within its original
+deadline and cancellation signal. Expiry or cancellation stops retries; no write
+remains parked at the server. Clients without this retry behavior receive the
+unavailable error immediately and can retry after preparation finishes.
+Channel ingress and direct agent execution wait for existing preparation without
+holding database or session locks, for up to five minutes plus one minute per
+remaining two-agent inspection batch. Reads keep their existing readiness behavior,
+and admitted requests do not join another agent's preparation.
+Cron configuration and wake RPCs refuse preparing targets before writing.
+Scheduled cron jobs for preparing agents retain queued custody without consuming running
 slots or inheriting the foreground request timeout. Admission completion wakes their queue;
 healthy agents remain eligible. Service or Gateway shutdown cancels the readiness observation
 and leaves those receipts queued for ordinary recovery.
 The inspection continues in the background within
-the same concurrency limit. Expiring the wait does not establish corruption.
+the same concurrency limit. Expiring either wait does not establish corruption.
 
 A successful inspection alone does not make the agent available. The Gateway
 opens each agent's database and completes its session validation and transcript

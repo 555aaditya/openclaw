@@ -4,6 +4,7 @@ import {
   isGatewayRestartUnavailableError,
   isGatewaySuspendUnavailableError,
 } from "@openclaw/gateway-protocol/restart-unavailable";
+import { isRetryableGatewayStartupUnavailableError } from "@openclaw/gateway-protocol/startup-unavailable";
 import {
   GatewayProtocolRequestError,
   GatewayProtocolRequestTimeoutError,
@@ -37,6 +38,7 @@ type GatewayPendingRequest = {
   method: string;
   startedAtMs: number;
   resend?: () => void;
+  retryStartup?: () => void;
   waitingForResume?: boolean;
 };
 
@@ -250,7 +252,9 @@ export class GatewayPendingRequests {
             }
           }
         };
-        // Writes retain their synchronous authority/send boundary and are never replayed.
+        // A startup refusal proves dispatch never reached the handler. Retain the
+        // exact frame for that retry only; ordinary writes still send synchronously.
+        pending.retryStartup = send;
         if (
           method === "agent.identity.get" ||
           method === "sessions.subscribe" ||
@@ -282,13 +286,21 @@ export class GatewayPendingRequests {
       }
       return;
     }
+    const startupRefusal =
+      !frame.ok &&
+      isRetryableGatewayStartupUnavailableError(frame.error) &&
+      (frame.error?.details as { method?: unknown } | undefined)?.method === pending.method;
+    if (startupRefusal && !pending.acceptedNotified) {
+      pending.resend ??= pending.retryStartup;
+    }
     if (
       !frame.ok &&
       pending.resend &&
       !pending.acceptedNotified &&
       frame.error?.code === "UNAVAILABLE" &&
       frame.error.retryable === true &&
-      (isGatewaySuspendUnavailableError(frame.error) ||
+      (startupRefusal ||
+        isGatewaySuspendUnavailableError(frame.error) ||
         isGatewayRestartUnavailableError(frame.error))
     ) {
       // The admission fence refused execution. Keep the original deadline and cancellation.

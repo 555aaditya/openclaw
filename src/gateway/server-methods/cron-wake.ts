@@ -11,7 +11,6 @@ import {
   resolveAgentHarnessSessionStoreEntryError,
 } from "../../sessions/agent-harness-session-key.js";
 import { parseAgentSessionKey } from "../../sessions/session-key-utils.js";
-import { listAgentDatabaseAdmissionRefusals } from "../../state/agent-database-admission.js";
 import { authorizeGatewaySessionCreation } from "../operator-role-policy.js";
 import { resolveRequestedSessionAgentId } from "../session-request-agent.js";
 import { loadGatewaySessionEntryReadOnlyInWorker } from "../session-utils-store-worker.js";
@@ -26,7 +25,6 @@ export const cronWakeHandler: GatewayRequestHandler = async ({
   respond,
   context,
   client,
-  signal,
   sessionMutationCommitGuard,
 }) => {
   if (!assertValidParams(params, validateWakeParams, "wake", respond)) {
@@ -63,42 +61,26 @@ export const cronWakeHandler: GatewayRequestHandler = async ({
     );
     return;
   }
-  const resolveOwner = () =>
-    sessionKey
-      ? resolveRequestedSessionAgentId(
-          context.getRuntimeConfig(),
-          sessionKey,
-          agentId ?? callerScope?.agentId,
-        )
-      : undefined;
-  let requestedOwner = resolveOwner();
-  const requestedError = requestedOwner && !requestedOwner.ok ? requestedOwner.error : undefined;
-  const pendingOwner = requestedError
-    ? listAgentDatabaseAdmissionRefusals().find(
-        (refusal) =>
-          refusal.code === "agent-database-inspection-pending" &&
-          refusal === requestedError.details,
+  const requestedOwner = sessionKey
+    ? resolveRequestedSessionAgentId(
+        context.getRuntimeConfig(),
+        sessionKey,
+        agentId ?? callerScope?.agentId,
       )
     : undefined;
-  if (requestedOwner && !requestedOwner.ok && !pendingOwner) {
+  if (requestedOwner && !requestedOwner.ok) {
     respond(false, undefined, requestedOwner.error);
     return;
   }
   if (
-    await respondRefusedCronAgent(
-      (requestedOwner?.ok ? requestedOwner.agentId : pendingOwner?.agentId) ??
+    respondRefusedCronAgent(
+      requestedOwner?.agentId ??
         callerScope?.agentId ??
         agentId ??
         tryResolveAmbientOwnerAgentId(context.getRuntimeConfig()),
       respond,
-      { context, client, signal },
     )
   ) {
-    return;
-  }
-  requestedOwner = resolveOwner();
-  if (requestedOwner && !requestedOwner.ok) {
-    respond(false, undefined, requestedOwner.error);
     return;
   }
   const resolvedAgentId = requestedOwner?.agentId ?? callerScope?.agentId ?? agentId;
