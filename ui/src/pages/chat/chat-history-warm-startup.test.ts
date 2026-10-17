@@ -29,6 +29,7 @@ import {
 } from "./chat-pane.test-support.ts";
 import { chatRunPresentation } from "./chat-run-presentation.ts";
 import { refreshChatCommands, refreshPageChat } from "./chat-state-refresh.ts";
+import { StoredChatHistoryState } from "./chat-transcript-metadata.ts";
 import { resetTranscriptTestDom } from "./components/chat-transcript.test-support.ts";
 import {
   observeChatCache,
@@ -512,6 +513,72 @@ describe("first chat startup snapshot ordering", () => {
     },
   );
 
+  it.each(["valid", "invalid", "retired"] as const)(
+    "defers stored receipt admission until after cached paint and retains request ownership (%s)",
+    async (mode) => {
+      const stateRevision = {
+        pendingInputs: "pending-1",
+        sessionInfo: "info-1",
+        commands: "commands-1",
+      };
+      const pendingInputs = { items: [], total: 0 };
+      const commands = [
+        {
+          name: "fixture",
+          description: "Fixture command",
+          source: "skill",
+          scope: "text",
+          acceptsArgs: true,
+        },
+      ];
+      vi.spyOn(snapshotDatabase, "readStoredChatSnapshotRecord").mockImplementation(
+        async (key) => ({
+          projectionVersion: 3,
+          sessionKey: key,
+          sessionId: stored.sessionId,
+          savedAt: 1,
+          snapshot: {
+            ...stored,
+            historyState: {
+              stateRevision,
+              pendingInputs,
+              commands,
+              sessionInfo: {
+                key: sessionKey,
+                kind: "direct",
+                sessionId: stored.sessionId,
+                ...(mode === "invalid" ? { owner: { actor: { type: "unknown" } } } : {}),
+              },
+            },
+          },
+        }),
+      );
+      const h = mountPane(true, sessionKey, false, new SessionSnapshotStore());
+      await vi.advanceTimersByTimeAsync(0);
+      expect(h.state.chatMessages).toEqual(stored.messages);
+      h.connect();
+      const loading = h.start();
+      expect(h.request).not.toHaveBeenCalled();
+      if (mode === "retired") {
+        h.state.connectionEpoch++;
+      }
+      await vi.advanceTimersByTimeAsync(50);
+      await loading;
+      if (mode === "retired") {
+        expect(h.request).not.toHaveBeenCalled();
+      } else {
+        expect(h.request).toHaveBeenCalledWith(
+          "chat.startup",
+          expect.objectContaining({
+            cursor: "stored-cursor",
+            knownState: mode === "valid" ? stateRevision : {},
+          }),
+          expect.anything(),
+        );
+      }
+    },
+  );
+
   it("does not advertise a command revision without the retained catalog", async () => {
     const h = mountPane();
     h.read.resolve({ ...stored, historyState: { stateRevision: { commands: "commands-1" } } });
@@ -619,7 +686,7 @@ describe("first chat startup snapshot ordering", () => {
     const snapshot = readChatSessionSnapshot(initial.state.chatMessagesBySession!, initial.state, {
       sessionKey,
     });
-    if (!snapshot?.historyState) {
+    if (!snapshot?.historyState || snapshot.historyState instanceof StoredChatHistoryState) {
       throw new Error("expected cached startup metadata");
     }
     const first = mountPane();

@@ -7,6 +7,7 @@ import {
   isProgressCard,
 } from "../../lib/protocol-validators.generated/transcript.js";
 import * as json from "../../lib/snapshot-json.ts";
+import { StoredChatHistoryState } from "./chat-transcript-metadata.ts";
 import {
   getSessionCacheValue,
   MAX_CACHED_CHAT_SESSIONS,
@@ -81,7 +82,7 @@ const snapshotSchema = json.object(
     transcriptMetadata: json.optional(json.checked(isChatTranscriptMetadata)),
     progressCard: json.optional(json.nullable(json.checked(isProgressCard))),
     deltaCursor: json.optional(json.text),
-    // Only persisted warm metadata needs its full validator; read admission loads it below.
+    // Receipt admission is deferred until a live request needs it, after the cached paint.
     historyState: json.optional(json.unknown),
     displayedLeafEntryId: json.optional(json.nullable(json.text)),
     // Message contents are opaque; only the array boundary needs validation.
@@ -141,22 +142,15 @@ type PendingSessionState = {
 
 const activeStores = new Set<SessionSnapshotStore>();
 
-async function parseSnapshotRecord(
-  value: unknown,
-  sessionKey?: string,
-): Promise<SessionSnapshotRecord | null> {
+function parseSnapshotRecord(value: unknown, sessionKey?: string): SessionSnapshotRecord | null {
   const parsed = json.parseSnapshot(recordSchema, value);
   if (!parsed || (sessionKey && parsed.sessionKey !== sessionKey)) {
     return null;
   }
-  const historyState = parsed.snapshot.historyState;
-  if (historyState !== undefined) {
-    const { isChatHistoryState } =
-      await import("../../lib/protocol-validators.generated/history-state.js");
-    if (!isChatHistoryState(historyState)) {
-      return null;
-    }
-  }
+  const historyState =
+    parsed.snapshot.historyState === undefined
+      ? undefined
+      : new StoredChatHistoryState(parsed.snapshot.historyState);
   return { ...parsed, snapshot: { ...parsed.snapshot, historyState } };
 }
 
@@ -491,10 +485,7 @@ export class SessionSnapshotStore implements ChatCacheObserver {
     if (asOptionalRecord(value)?.projectionVersion !== CHAT_SNAPSHOT_PROJECTION_VERSION) {
       return null;
     }
-    const record = await parseSnapshotRecord(value, sessionKey);
-    if (!isCurrent()) {
-      return null;
-    }
+    const record = parseSnapshotRecord(value, sessionKey);
     if (!record) {
       debugSnapshotStore("resetting cache after record shape mismatch");
       await resetSessionSnapshotDatabase();

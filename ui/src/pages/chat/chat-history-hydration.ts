@@ -41,6 +41,7 @@ import {
 import { applyChatPendingInputs } from "./chat-pending-inputs.ts";
 import { isChatRunRecoveryStatus, reconcileChatRunStartup } from "./chat-run-startup.ts";
 import type { ChatHistoryHost, ChatHistorySessions, ChatState } from "./chat-state-contract.ts";
+import { StoredChatHistoryState } from "./chat-transcript-metadata.ts";
 import {
   getChatSessionProjection,
   readChatSessionProjectionScope,
@@ -50,7 +51,11 @@ import {
 } from "./history-merge.ts";
 import type { ChatHistoryRunObservation } from "./run-lifecycle.ts";
 import { applySessionMessagePayload } from "./session-message-apply.ts";
-import { readChatHistoryCursor, readChatHistoryState } from "./session-message-cache.ts";
+import {
+  readChatHistoryCursor,
+  readChatHistoryState,
+  readChatSessionSnapshot,
+} from "./session-message-cache.ts";
 import { retainPersistedStreamPrefix } from "./stream-causal-boundary.ts";
 import {
   hasVisibleStreamParts,
@@ -160,6 +165,19 @@ export async function hydrateChatHistory(
     // The snapshot covers activity emitted before the foreground observer was
     // admitted; subsequent activity arrives through its acknowledged full stream.
     setChatError(state, null);
+    const retained = state.chatMessagesBySession
+      ? readChatSessionSnapshot(state.chatMessagesBySession, state, { sessionKey })
+      : null;
+    if (
+      readChatHistoryCursor(state) !== undefined &&
+      retained?.sessionId === state.currentSessionId &&
+      retained?.historyState instanceof StoredChatHistoryState
+    ) {
+      await retained.historyState.load();
+      if (!isCurrent()) {
+        return undefined;
+      }
+    }
     // The cached transcript can finish hydrating while stream admission is pending.
     let response = await request(readChatHistoryCursor(state));
     if (!isCurrent()) {

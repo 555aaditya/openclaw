@@ -8,8 +8,10 @@ import {
   requestResult,
   transactionComplete as transactionDone,
 } from "../../lib/chat/control-ui-database.runtime.ts";
+import * as historyStateValidator from "../../lib/protocol-validators.generated/history-state.js";
 import { collectGarbageForTest } from "../../test-helpers/garbage-collection.ts";
 import { createStorageMock } from "../../test-helpers/storage.ts";
+import { StoredChatHistoryState } from "./chat-transcript-metadata.ts";
 import { MAX_CACHED_CHAT_SESSIONS } from "./session-cache.ts";
 import {
   appendChatMessageToCache,
@@ -194,7 +196,8 @@ describe("persistent chat session snapshots", () => {
       await store.flush();
       const restored = await new SessionSnapshotStore().read(sessionKey);
       expect(restored?.deltaCursor).toBe("cursor-1");
-      expect(restored?.historyState).toEqual(pairing ? undefined : value.historyState);
+      const serialized = JSON.stringify(restored);
+      expect(JSON.parse(serialized).historyState).toEqual(pairing ? undefined : value.historyState);
       expect(JSON.stringify(await readStoredChatSnapshotRecord(sessionKey))).not.toContain(
         "synthetic-private-pairing",
       );
@@ -219,8 +222,51 @@ describe("persistent chat session snapshots", () => {
       },
     };
     await putRawRecord(envelope(sessionKey, previous));
-    expect(await new SessionSnapshotStore().read(sessionKey)).toEqual(previous);
+    const serialized = JSON.stringify(await new SessionSnapshotStore().read(sessionKey));
+    expect(JSON.parse(serialized)).toEqual(previous);
   });
+
+  it.each([false, true])(
+    "paints cached history before admitting stored receipts (invalid: %s)",
+    async (invalid) => {
+      const sessionKey = key("agent:main:deferred-receipts");
+      await persist(writer, sessionKey, snapshot("cached conversation"));
+      const historyState = {
+        stateRevision: { sessionInfo: "info-1" },
+        sessionInfo: {
+          key: "agent:main:deferred-receipts",
+          kind: "direct",
+          ...(invalid ? { owner: { actor: { type: "unknown" } } } : {}),
+        },
+      };
+      await putRawRecord({
+        ...envelope(sessionKey, snapshot("cached conversation")),
+        snapshot: { ...snapshot("cached conversation"), historyState },
+      });
+      const validate = vi.spyOn(historyStateValidator, "isChatHistoryState");
+      const frames: FrameRequestCallback[] = [];
+      vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) =>
+        frames.push(callback),
+      );
+      const restored = await new SessionSnapshotStore().read(sessionKey);
+      expect(restored?.messages).toEqual(["cached conversation"]);
+      expect(validate).not.toHaveBeenCalled();
+      const receipts = restored?.historyState;
+      if (!(receipts instanceof StoredChatHistoryState)) {
+        throw new Error("expected deferred persisted receipts");
+      }
+      const loading = receipts.load();
+      expect(receipts.load()).toBe(loading);
+      expect(validate).not.toHaveBeenCalled();
+      frames.shift()?.(0);
+      expect(validate).not.toHaveBeenCalled();
+      frames.shift()?.(16);
+      await loading;
+      expect(validate).toHaveBeenCalledTimes(1);
+      expect(receipts.current).toEqual(invalid ? undefined : historyState);
+      expect(restored?.messages).toEqual(["cached conversation"]);
+    },
+  );
 
   it("restores bounded sidebar facts with legacy defaults and strips live-only fields", async () => {
     const store = makeStore(undefined, true);
@@ -281,15 +327,6 @@ describe("persistent chat session snapshots", () => {
     { snapshot: { ...snapshot("message"), unexpected: true } },
     { snapshot: { ...snapshot("message"), pagination: { hasMore: false, nextOffset: 1 } } },
     { snapshot: { ...snapshot("message"), pagination: { hasMore: true, nextOffset: -1 } } },
-    {
-      snapshot: {
-        ...snapshot("message"),
-        historyState: {
-          stateRevision: { sessionInfo: "info-1" },
-          sessionInfo: { key: "s", kind: "direct", owner: { actor: { type: "unknown" } } },
-        },
-      },
-    },
     { sessionId: "different-session" },
   ])(
     "rejects malformed durable snapshot envelopes without exposing cached history ($snapshot)",
