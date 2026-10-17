@@ -39,3 +39,17 @@ a server you trust. Set the server's routing model ID as `decisionModel`.
 See the [TypeSafe AI setup guide](https://docs.openclaw.ai/plugins/typesafe) and
 [decision-model documentation](https://docs.openclaw.ai/concepts/decision-models)
 for configuration, rubrics, and API semantics.
+
+## Live adapter test
+
+From a matching source checkout, inject a TypeSafe-issued `TYPESAFE_API_KEY`
+through your secret manager, then run:
+
+```sh
+OPENCLAW_LIVE_TEST=1 node scripts/run-vitest.mjs --config test/vitest/vitest.live.config.ts extensions/typesafe/src/decisions.live.test.ts
+```
+
+The test sends one synthetic Boolean/Choice/Score batch to hosted Jev and consumes
+the account's allowance. It skips without both the opt-in flag and key. It checks
+the registered V2 adapter and real transport with an isolated prepared credential;
+it does not test host credential discovery or change any model selection.
