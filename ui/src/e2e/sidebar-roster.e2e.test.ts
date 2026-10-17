@@ -122,7 +122,9 @@ suite.define(() => {
               page
                 .locator(".sessions-table .session-agent-col [data-agent-id]")
                 .evaluateAll((chips) =>
-                  chips.map((chip) => chip.getAttribute("data-agent-id")).toSorted(),
+                  chips
+                    .map((chip) => chip.getAttribute("data-agent-id") ?? "")
+                    .toSorted((left, right) => left.localeCompare(right)),
                 ),
             )
             .toEqual(["forge", "forge", "main", "main", "scout", "scout"]);
