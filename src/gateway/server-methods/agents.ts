@@ -47,6 +47,7 @@ import {
   writeWorkspaceFileOrRespond,
 } from "./agents-files.js";
 import { agentListHandler } from "./agents-list.js";
+import { startCreatedAgentOnboarding } from "./agents-onboarding.js";
 import {
   captureLocalStateMutationGuard,
   localStateOwnerChangedError,
@@ -130,6 +131,9 @@ export const agentsHandlers: GatewayRequestHandlers = {
       if (!(await application.confirm())) {
         return;
       }
+      const onboarding = params.onboarding
+        ? await startCreatedAgentOnboarding(options, result.agentId)
+        : undefined;
       respond(
         true,
         {
@@ -139,6 +143,7 @@ export const agentsHandlers: GatewayRequestHandlers = {
           workspace: result.workspace,
           agentDir: result.agentDir,
           ...(result.model ? { model: result.model } : {}),
+          ...(onboarding ? { onboarding } : {}),
         },
         undefined,
       );

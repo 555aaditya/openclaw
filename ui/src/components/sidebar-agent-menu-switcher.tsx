@@ -14,6 +14,9 @@ export type SidebarAgentMenuSwitcherParams = {
   query: string;
   openMode: "hover" | "click";
   agents: readonly GatewayAgentRow[];
+  pendingAgent?: GatewayAgentRow;
+  filter?: MenuItem;
+  recentlyCreatedAgentId?: string;
   identities: ReadonlyMap<string, AgentIdentityResult>;
   pinnedAgentIds: readonly string[];
   onTogglePinnedAgent: (agentId: string) => Promise<void>;
@@ -91,6 +94,7 @@ function renderAgentRow(
   readAutofocus: () => boolean,
 ) {
   const agentId = createMemo(() => normalizeAgentId(readAgent().id));
+  const pending = createMemo(() => params.pendingAgent?.id === agentId());
   const identity = createMemo(() => params.identities.get(agentId()) ?? null);
   const label = createMemo(() => normalizeAgentLabel(readAgent(), identity()));
   const active = createMemo(() => agentId() === params.activeId && !params.allAgentsScope);
@@ -103,6 +107,9 @@ function renderAgentRow(
   );
   return {
     as: "div",
+    get disabled() {
+      return pending();
+    },
     id: `${AGENT_VALUE_PREFIX}${encodeURIComponent(agentId())}`,
     get label() {
       return [label(), unread() > 0 ? t("sessionsView.unread") : null].filter(Boolean).join(" ");
@@ -131,7 +138,7 @@ function renderAgentRow(
           </span>
         </span>
         <span class="sidebar-agent-menu__agent-status">
-          {params.agents.length > 3 ? (
+          {params.agents.length > 3 && !pending() ? (
             <button
               type="button"
               class="sidebar-agent-menu__pin"
@@ -166,21 +173,27 @@ function renderAgentRow(
           {unread() > 0 ? (
             <span class="session-unread-dot" role="img" aria-label={t("sessionsView.unread")} />
           ) : undefined}
-          <button
-            type="button"
-            class="sidebar-agent-menu__settings"
-            aria-label={t("agentChip.namedSettings", { name: label() })}
-            title={t("agentChip.namedSettings", { name: label() })}
-            tabindex="-1"
-            data-form-control
-            onClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              params.onAgentSettings(agentId());
-            }}
-          >
-            <Icon name="settings" />
-          </button>
+          {pending() ? (
+            <span role="status" aria-label={t("agentChip.creatingAgent")}>
+              <span class="btn__spinner" aria-hidden="true" />
+            </span>
+          ) : (
+            <button
+              type="button"
+              class="sidebar-agent-menu__settings"
+              aria-label={t("agentChip.namedSettings", { name: label() })}
+              title={t("agentChip.namedSettings", { name: label() })}
+              tabindex="-1"
+              data-form-control
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                params.onAgentSettings(agentId());
+              }}
+            >
+              <Icon name="settings" />
+            </button>
+          )}
         </span>
       </span>
     ),
@@ -189,10 +202,16 @@ function renderAgentRow(
 export function renderSidebarAgentMenuSwitcher(params: SidebarAgentMenuSwitcherParams) {
   const agents = createMemo(() => {
     const pinnedIds = new Set(params.pinnedAgentIds.map(normalizeAgentId));
-    return params.agents.toSorted(
+    const pending = params.pendingAgent;
+    const roster = pending
+      ? [pending, ...params.agents.filter((agent) => agent.id !== pending.id)]
+      : params.agents;
+    const firstId = pending?.id ?? params.recentlyCreatedAgentId;
+    return roster.toSorted(
       (a, b) =>
+        Number(b.id === firstId) - Number(a.id === firstId) ||
         Number(pinnedIds.has(normalizeAgentId(b.id))) -
-        Number(pinnedIds.has(normalizeAgentId(a.id))),
+          Number(pinnedIds.has(normalizeAgentId(a.id))),
     );
   });
   const query = createMemo(() => params.query.trim().toLocaleLowerCase());
@@ -215,7 +234,7 @@ export function renderSidebarAgentMenuSwitcher(params: SidebarAgentMenuSwitcherP
       : undefined,
   );
   const entries: MenuEntry[] = [];
-  if (params.agents.length === 0) {
+  if (agents().length === 0) {
     return entries;
   }
   if (params.agents.length > 1 && !query()) {
@@ -239,6 +258,9 @@ export function renderSidebarAgentMenuSwitcher(params: SidebarAgentMenuSwitcherP
         </span>
       ),
     });
+  }
+  if (params.filter) {
+    entries.push(params.filter);
   }
   for (const agent of visibleAgents()) {
     entries.push(

@@ -23,7 +23,7 @@ async function fixture(
   options: {
     verification?: Promise<{ ok: boolean; error?: string }>;
     creation?: Promise<void>;
-    send?: () => Promise<unknown>;
+    onboardingError?: string;
   } = {},
 ) {
   const toast = document.createElement("openclaw-toast-host");
@@ -56,10 +56,17 @@ async function fixture(
         throw new Error("Expected a stable ID and display name in agents.create");
       }
       roster.agents.push({ id: params.agentId, name: params.name });
-      return { ok: true, agentId: params.agentId, name: params.name };
-    }
-    if (method === "chat.send") {
-      return options.send?.() ?? { runId: "intro-run", status: "started" };
+      return {
+        ok: true,
+        agentId: params.agentId,
+        name: params.name,
+        onboarding: {
+          sessionKey: `agent:${params.agentId}:home`,
+          ...(options.onboardingError
+            ? { status: "error", error: options.onboardingError }
+            : { status: "accepted", runId: "intro-run" }),
+        },
+      };
     }
     throw new Error(`Unexpected gateway request: ${method}`);
   });
@@ -118,7 +125,7 @@ async function fixture(
 }
 
 describe("application agent creation", () => {
-  it("creates from the selector row, selects New Bot, and sends its first ordinary chat message", async () => {
+  it("puts creation first, shows a pending top row, and opens the agent-initiated chat", async () => {
     const verification = createDeferred<{ ok: boolean }>();
     const creation = createDeferred();
     const { context, request, roster, navigate, toast, settledNavigation } = await fixture({
@@ -132,6 +139,8 @@ describe("application agent creation", () => {
     await sidebar.updateComplete;
     const create = sidebar.querySelector<HTMLButtonElement>('[data-value="command:new-agent"]');
     expect(create?.textContent).toContain("Create new agent");
+    expect(sidebar.querySelector(".sidebar-agent-menu [data-value]")).toBe(create);
+    expect(sidebar.querySelector(".sidebar-agent-menu [role=separator]")).toBeNull();
     create?.click();
     await vi.waitFor(() => {
       expect(context.agents.state.agentCreationPhase).toBe("checking");
@@ -148,15 +157,21 @@ describe("application agent creation", () => {
       const pendingRow = sidebar.querySelector<HTMLButtonElement>(
         '[data-value="command:new-agent"]',
       );
-      expect(pendingRow?.textContent).toContain("Creating New Bot");
+      expect(pendingRow?.textContent).toContain("Creating agent");
       expect(pendingRow?.getAttribute("aria-disabled")).toBe("true");
+      const firstAgent = sidebar.querySelector('[data-value^="agent:"]');
+      expect(firstAgent?.textContent).toContain("New agent");
+      expect(firstAgent?.getAttribute("aria-disabled")).toBe("true");
+      expect(firstAgent?.querySelector('[role="status"]')?.getAttribute("aria-label")).toBe(
+        "Creating agent…",
+      );
     });
     expect(navigate).not.toHaveBeenCalled();
     creation.resolve();
-    await vi.waitFor(() => expect(request).toHaveBeenCalledWith("chat.send", expect.anything()));
+    await vi.waitFor(() => expect(navigate).toHaveBeenCalled());
     await settledNavigation();
     const bot = roster.agents[1];
-    expect(bot).toEqual({ id: expect.stringMatching(/^bot-/), name: "New Bot" });
+    expect(bot).toEqual({ id: expect.stringMatching(/^bot-/), name: "New agent" });
     expect(context.agentSelection.state.selectedId).toBe(bot?.id);
     expect(context.agents.state.agentsList?.agents).toContainEqual(bot);
     expect(context.gateway.snapshot.sessionKey).toBe(`agent:${bot?.id}:home`);
@@ -164,12 +179,17 @@ describe("application agent creation", () => {
       pathname: `/chat/${bot?.id}`,
       search: `?${SESSION_FACE_PREFERENCE_PARAM}=1`,
     });
-    expect(request).toHaveBeenCalledWith("chat.send", {
-      sessionKey: `agent:${bot?.id}:home`,
-      message: "Hello! Let's get to know each other and choose your name and identity.",
-      deliver: false,
-      idempotencyKey: expect.any(String),
+    expect(request).toHaveBeenCalledWith("agents.create", {
+      agentId: bot?.id,
+      name: "New agent",
+      onboarding: true,
     });
+    // The creation owner starts the assistant turn; the UI never impersonates a user.
+    expect(request.mock.calls.map(([method]) => method)).toEqual([
+      "agents.list",
+      "openclaw.setup.verify",
+      "agents.create",
+    ]);
     expect(toast.toast).toBeNull();
   });
 
@@ -216,14 +236,11 @@ describe("application agent creation", () => {
       navigate.mockClear();
       verification.resolve({ ok: true });
       await creating;
-      expect(roster.agents[1]).toEqual({ id: expect.stringMatching(/^bot-/), name: "New Bot" });
+      expect(roster.agents[1]).toEqual({ id: expect.stringMatching(/^bot-/), name: "New agent" });
       expect(context.agents.state.agentsList?.agents).toContainEqual(roster.agents[1]);
       expect(request).toHaveBeenCalledWith(
-        "chat.send",
-        expect.objectContaining({
-          sessionKey: `agent:${roster.agents[1]?.id}:home`,
-          deliver: false,
-        }),
+        "agents.create",
+        expect.objectContaining({ agentId: roster.agents[1]?.id, onboarding: true }),
       );
       expect(context.router.getState().location).toBe(location);
       expect(context.agentSelection.state).toEqual(selection);
@@ -233,30 +250,22 @@ describe("application agent creation", () => {
     },
   );
 
-  it.each(["rejected", "error", "timeout"] as const)(
-    "retains the created bot when the chat kickoff is %s and offers recovery",
-    async (failure) => {
-      const { context, roster, toast, settledNavigation } = await fixture({
-        send: async () => {
-          if (failure === "rejected") {
-            throw new Error("Gateway disconnected");
-          }
-          return { runId: "intro-run", status: failure };
-        },
-      });
-      await createApplicationAgent(context);
-      await settledNavigation();
-      const bot = roster.agents[1];
-      expect(bot?.name).toBe("New Bot");
-      expect(context.agents.state.agentsList?.agents).toContainEqual(bot);
-      expect(context.agentSelection.state.selectedId).toBe(bot?.id);
-      expect(context.gateway.snapshot.sessionKey).toBe(`agent:${bot?.id}:home`);
-      await toast.updateComplete;
-      await vi.dynamicImportSettled();
-      expect(toast.active).toBe(true);
-      expect(toast.querySelector(".app-toast__message")?.textContent).toContain(
-        "Your bot was created, but its first message couldn't be sent",
-      );
-    },
-  );
+  it("retains the created agent when onboarding admission fails and offers recovery", async () => {
+    const { context, roster, toast, settledNavigation } = await fixture({
+      onboardingError: "Provider disconnected before admission",
+    });
+    await createApplicationAgent(context);
+    await settledNavigation();
+    const agent = roster.agents[1];
+    expect(agent?.name).toBe("New agent");
+    expect(context.agents.state.agentsList?.agents).toContainEqual(agent);
+    expect(context.agentSelection.state.selectedId).toBe(agent?.id);
+    expect(context.gateway.snapshot.sessionKey).toBe(`agent:${agent?.id}:home`);
+    await toast.updateComplete;
+    await vi.dynamicImportSettled();
+    expect(toast.active).toBe(true);
+    expect(toast.querySelector(".app-toast__message")?.textContent).toContain(
+      "Your agent was created, but its first message couldn't be sent",
+    );
+  });
 });

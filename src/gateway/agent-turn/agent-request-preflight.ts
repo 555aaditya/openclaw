@@ -46,6 +46,8 @@ export async function prepareAgentRequestPreflight(params: {
   context: AgentTurnContext;
   client: AgentTurnPrincipal | null;
   io: AgentTurnIo;
+  /** A fixed prompt authored by a backend owner; never read from the public request. */
+  allowPromptPersistenceSuppression?: true;
 }) {
   const { request } = params;
   const rejectInvalidRequest = (message: string): undefined => {
@@ -178,7 +180,8 @@ export async function prepareAgentRequestPreflight(params: {
     return rejectInvalidRequest("provider/model overrides are not authorized for this caller.");
   }
   if (
-    (requestedInternalSessionEffects || requestedPromptPersistenceSuppression) &&
+    (requestedInternalSessionEffects ||
+      (requestedPromptPersistenceSuppression && !params.allowPromptPersistenceSuppression)) &&
     !canUseInternalRuntimeHandoff
   ) {
     return rejectInvalidRequest(

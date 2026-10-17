@@ -50,6 +50,7 @@ describe.runIf("__vitest_browser__" in globalThis)("sidebar agent menu layout", 
               agents: agents.slice(0, count),
               identities: new Map(),
               pinnedAgentIds: ["agent-0"],
+              recentlyCreatedAgentId: count === 5 ? "agent-4" : undefined,
               onTogglePinnedAgent: async () => {},
               resolveAvatarUrl: (url) => url,
               avatarErrorHandler: () => () => {},
@@ -64,6 +65,13 @@ describe.runIf("__vitest_browser__" in globalThis)("sidebar agent menu layout", 
         requestAnimationFrame(() => resolve());
       });
       expect(root.querySelectorAll(".sidebar-agent-menu__pin")).toHaveLength(pinCount);
+      if (count === 5) {
+        const rows = [...root.querySelectorAll('[data-value^="agent:"]')];
+        expect(rows.slice(0, 2).map((row) => row.getAttribute("data-value"))).toEqual([
+          "agent:agent-4",
+          "agent:agent-0",
+        ]);
+      }
       const all = root.querySelector('[data-value="scope:all"]');
       if (count < 2) {
         expect(all).toBeNull();
@@ -161,6 +169,12 @@ describe.runIf("__vitest_browser__" in globalThis)("sidebar agent menu layout", 
     await sidebar.updateComplete;
     await menuShown;
 
+    expect(
+      [...sidebar.querySelectorAll(".sidebar-agent-menu [data-value]")]
+        .slice(0, 2)
+        .map((item) => item.getAttribute("data-value")),
+    ).toEqual(["command:new-agent", "scope:all"]);
+    expect(sidebar.querySelector(".sidebar-agent-menu [role=separator]")).toBeNull();
     const tiles = Array.from(
       sidebar.querySelectorAll<HTMLElement>(".sidebar-agent-menu__agent-switch"),
     );

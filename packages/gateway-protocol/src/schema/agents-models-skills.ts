@@ -101,6 +101,8 @@ export const AgentsCreateParamsSchema = closedObject({
   name: NonEmptyString,
   /** Stable internal identity, independent of the display name. Omission derives it from name. */
   agentId: Type.Optional(NonEmptyString),
+  /** Begin the created agent's normal onboarding with an assistant-authored opening turn. */
+  onboarding: Type.Optional(Type.Boolean()),
   expectedOwnerId: Type.Optional(NonEmptyString),
   workspace: Type.Optional(NonEmptyString),
   model: Type.Optional(NonEmptyString),
@@ -116,6 +118,20 @@ export const AgentsCreateResultSchema = closedObject({
   workspace: NonEmptyString,
   agentDir: Type.Optional(NonEmptyString),
   model: Type.Optional(NonEmptyString),
+  onboarding: Type.Optional(
+    Type.Union([
+      closedObject({
+        sessionKey: NonEmptyString,
+        runId: NonEmptyString,
+        status: Type.Literal("accepted"),
+      }),
+      closedObject({
+        sessionKey: NonEmptyString,
+        status: Type.Literal("error"),
+        error: NonEmptyString,
+      }),
+    ]),
+  ),
 });
 
 /** Updates mutable agent identity, workspace, and model fields; null clears the model override. */

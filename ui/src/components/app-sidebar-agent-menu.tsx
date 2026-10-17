@@ -113,7 +113,6 @@ export function renderSidebarAgentMenu(params: SidebarAgentMenuParams): JSX.Elem
     t(params.rosterMode ? "agentChip.workspaceMenuLabel" : "agentChip.menuLabel"),
   );
   const agentsTitle = <div class="sidebar-customize-menu__title">{t("agentChip.agents")}</div>;
-  const agentsSeparator = <div class="sidebar-customize-menu__separator" role="separator" />;
   const items = (): MenuEntry[] => [
     ...(params.agents.length > 0
       ? [
@@ -121,51 +120,6 @@ export function renderSidebarAgentMenu(params: SidebarAgentMenuParams): JSX.Elem
             kind: "content" as const,
             id: "agents-title",
             content: agentsTitle,
-          },
-        ]
-      : []),
-    ...(params.agents.length > 6
-      ? [
-          {
-            id: "search",
-            label: t("agentChip.search"),
-            closeOnSelect: false,
-            render: () => (
-              <input
-                class="sidebar-agent-menu__filter"
-                data-search
-                type="search"
-                role="searchbox"
-                aria-label={t("agentChip.search")}
-                placeholder={t("agentChip.search")}
-                value={params.query}
-                onInput={(event) => params.onQueryChange(event.currentTarget.value)}
-              />
-            ),
-          },
-        ]
-      : []),
-    {
-      kind: "group",
-      id: "agents",
-      class: "sidebar-agent-menu__agent-list",
-      items: renderSidebarAgentMenuSwitcher({
-        ...params,
-        allAgentsScope: params.rosterMode && params.agents.length > 1,
-        onAgentSettings: (agentId) => {
-          params.onClose(false);
-          params.onNavigate("agents", {
-            pathname: pathForAgentPanel(agentId, null, params.basePath),
-          });
-        },
-      }),
-    },
-    ...(params.agents.length > 0
-      ? [
-          {
-            kind: "content" as const,
-            id: "agents-separator",
-            content: agentsSeparator,
           },
         ]
       : []),
@@ -189,13 +143,48 @@ export function renderSidebarAgentMenu(params: SidebarAgentMenuParams): JSX.Elem
                 params.creationPhase === "checking"
                   ? "agentChip.checkingInference"
                   : params.creationPhase === "creating"
-                    ? "agentChip.creatingBot"
+                    ? "agentChip.creatingAgent"
                     : "agentChip.createAgent",
               )}
             </span>
           </span>
         </span>
       ),
+    },
+    {
+      kind: "group",
+      id: "agents",
+      class: "sidebar-agent-menu__agent-list",
+      items: renderSidebarAgentMenuSwitcher({
+        ...params,
+        filter:
+          params.agents.length > 6
+            ? {
+                id: "search",
+                label: t("agentChip.search"),
+                closeOnSelect: false,
+                render: () => (
+                  <input
+                    class="sidebar-agent-menu__filter"
+                    data-search
+                    type="search"
+                    role="searchbox"
+                    aria-label={t("agentChip.search")}
+                    placeholder={t("agentChip.search")}
+                    value={params.query}
+                    onInput={(event) => params.onQueryChange(event.currentTarget.value)}
+                  />
+                ),
+              }
+            : undefined,
+        allAgentsScope: params.rosterMode && params.agents.length > 1,
+        onAgentSettings: (agentId) => {
+          params.onClose(false);
+          params.onNavigate("agents", {
+            pathname: pathForAgentPanel(agentId, null, params.basePath),
+          });
+        },
+      }),
     },
   ];
   return (

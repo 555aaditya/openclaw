@@ -3,9 +3,11 @@ import { normalizeUniqueTrimmedStringList } from "@openclaw/normalization-core/s
 import { registerListener } from "../../../../src/shared/listeners.js";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import type {
+  AgentsCreateResult,
   AgentsFilesGetResult,
   AgentsFilesListResult,
   AgentsListResult,
+  GatewayAgentRow,
   ToolsCatalogResult,
 } from "../../api/types.ts";
 import { t } from "../../i18n/index.ts";
@@ -67,6 +69,12 @@ type AgentCapabilityState = {
   agentsError: string | null;
   agentsList: AgentsListResult | null;
   agentCreationPhase?: "checking" | "creating";
+  pendingAgent?: GatewayAgentRow;
+  recentlyCreatedAgentId?: string;
+};
+
+type AgentCreationResult = AgentsCreateResult & {
+  onboarding: NonNullable<AgentsCreateResult["onboarding"]>;
 };
 
 export type AgentCapability = ReturnType<typeof createAgentCapability>;
@@ -226,6 +234,7 @@ export function createAgentCapability(gateway: AgentGateway) {
     if (state.agentsList && !force) {
       return state.agentsList;
     }
+    const createdWhenRequested = state.recentlyCreatedAgentId;
     state.agentsLoading = true;
     state.agentsError = null;
     publish();
@@ -234,6 +243,16 @@ export function createAgentCapability(gateway: AgentGateway) {
       .request<AgentsListResult>("agents.list", { includeSessionPlacement: true })
       .then((result) => {
         const current = state.client === client && agentsRequest === request;
+        if (
+          current &&
+          state.recentlyCreatedAgentId &&
+          state.recentlyCreatedAgentId !== createdWhenRequested &&
+          !result.agents.some((agent) => agent.id === state.recentlyCreatedAgentId)
+        ) {
+          // This read predates a confirmed creation. Its original caller still
+          // needs the current roster to reconcile identity and workspace caches.
+          return loadList(true);
+        }
         if (current) {
           state.agentsList = result;
           state.agentsError = null;
@@ -242,7 +261,6 @@ export function createAgentCapability(gateway: AgentGateway) {
       })
       .catch((err: unknown) => {
         if (state.client === client && agentsRequest === request) {
-          state.agentsList = null;
           state.agentsError = resolveAgentReadErrorMessage(err, "agent list");
         }
         return null;
@@ -320,6 +338,8 @@ export function createAgentCapability(gateway: AgentGateway) {
     if (connectionChanged && (clientChanged || !connected)) {
       creatingAgentId = null;
       state.agentCreationPhase = undefined;
+      state.pendingAgent = undefined;
+      state.recentlyCreatedAgentId = undefined;
       retireAgentsRequest();
       fileRequests.clear();
       for (const status of files.values()) {
@@ -340,7 +360,7 @@ export function createAgentCapability(gateway: AgentGateway) {
     },
     ensureList: () => loadList(false),
     refreshList: () => loadList(true),
-    async create(name: string): Promise<string | null> {
+    async create(name: string): Promise<AgentCreationResult | null> {
       const client = state.client;
       if (!client || !state.connected || disposed || state.agentCreationPhase) {
         return null;
@@ -373,28 +393,35 @@ export function createAgentCapability(gateway: AgentGateway) {
           throw new Error(state.agentsError || t("agentChip.rosterUnavailable"));
         }
         state.agentCreationPhase = "creating";
+        state.pendingAgent = { id: agentId, name };
         publish();
-        const created = await client.request<{ agentId: string; name: string }>("agents.create", {
+        const created = await client.request<AgentCreationResult>("agents.create", {
           agentId,
           name,
+          onboarding: true,
         });
         if (!isCurrent()) {
           return null;
         }
-        const refreshed = await loadList(true);
-        if (isCurrent() && !refreshed) {
-          // The create receipt is authoritative even if the following roster read
-          // fails. Keep its display name so a successful create never shows an ID.
-          state.agentsList = {
-            ...previous,
-            agents: [...previous.agents, { id: created.agentId, name: created.name }],
-          };
-        }
-        return isCurrent() ? created.agentId : null;
+        // Publish the authoritative create receipt immediately. Config events own
+        // the full roster refresh; opening this chat must not wait for another read.
+        const current = state.agentsList ?? previous;
+        const row = current.agents.find((agent) => agent.id === created.agentId) ?? {
+          id: created.agentId,
+          name: created.name,
+        };
+        state.agentsList = {
+          ...current,
+          agents: [row, ...current.agents.filter((agent) => agent.id !== created.agentId)],
+        };
+        state.recentlyCreatedAgentId = created.agentId;
+        state.agentsError = null;
+        return created;
       } finally {
         if (creatingAgentId === agentId) {
           creatingAgentId = null;
           state.agentCreationPhase = undefined;
+          state.pendingAgent = undefined;
           publish();
         }
       }

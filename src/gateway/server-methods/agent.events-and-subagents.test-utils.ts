@@ -24,6 +24,7 @@ import {
   getActiveGatewayRootWorkCount,
   resetGatewayWorkAdmission,
 } from "../../process/gateway-work-admission.js";
+import { startCreatedAgentOnboardingTurn } from "./agent-run-handler.js";
 import {
   getAgentTestMocks,
   makeContext,
@@ -226,6 +227,43 @@ describe("gateway agent handler", () => {
         },
       },
     });
+  });
+
+  it("starts agent onboarding without recording a user turn or elevating the UI caller", async () => {
+    primeMainAgentRun({ cfg: mocks.loadConfigReturn });
+    mocks.agentCommand.mockClear();
+    const context = makeContext();
+    const client = operatorWriteCliClient(["operator.admin"]);
+    const respond = vi.fn();
+    await startCreatedAgentOnboardingTurn(
+      {
+        params: {},
+        respond,
+        context,
+        req: { type: "req", id: "new-agent-opening", method: "agents.create" },
+        client,
+        isWebchatConnect: () => false,
+      },
+      { agentId: "main", sessionKey: "agent:main:main", runId: "new-agent-opening" },
+    );
+    const callArgs = await waitForAgentCommandCall();
+    expect(callArgs).toMatchObject({
+      sessionKey: "agent:main:main",
+      suppressPromptPersistence: true,
+      inputProvenance: { kind: "internal_system", sourceTool: "agents.create" },
+      deliver: false,
+    });
+    expect(callArgs.userTurnTranscriptRecorder).toBeUndefined();
+    expect(callArgs.sessionEffects).not.toBe("internal");
+    expect(callArgs.message).toContain("BOOTSTRAP.md");
+    expect(client.connect.client.mode).not.toBe("backend");
+    expect(context.addChatRun).toHaveBeenCalled();
+    expect(respond).toHaveBeenCalledWith(
+      true,
+      expect.objectContaining({ runId: "new-agent-opening", status: "accepted" }),
+      undefined,
+      expect.anything(),
+    );
   });
 
   it("rejects public internal session-effect controls", async () => {

@@ -1,12 +1,7 @@
 import { t } from "../i18n/index.ts";
 import { formatUiError } from "../lib/format-error.ts";
 import { openPreferredApplicationSession } from "../lib/sessions/route-navigation.ts";
-import {
-  buildAgentMainSessionKey,
-  resolveUiConfiguredMainKey,
-} from "../lib/sessions/session-key.ts";
 import { showToast } from "../lib/toast.ts";
-import { isTerminalFailureChatSendAck, normalizeChatSendAck } from "../pages/chat/chat-send-ack.ts";
 import type { ApplicationContext } from "./context.ts";
 import { patchSettings } from "./settings.ts";
 
@@ -17,19 +12,14 @@ export async function createApplicationAgent(context: ApplicationContext): Promi
   const selectionRevision = context.agentSelection.intentRevision;
   let created = false;
   try {
-    const agentId = await context.agents.create(t("agentChip.newBot"));
-    if (!agentId || context.gateway.snapshot.client !== client || !client) {
+    const result = await context.agents.create(t("agentChip.newAgent"));
+    if (!result || context.gateway.snapshot.client !== client || !client) {
       return;
     }
     created = true;
-    const sessionKey = buildAgentMainSessionKey({
-      agentId,
-      mainKey: resolveUiConfiguredMainKey({
-        agentsList: context.agents.state.agentsList,
-        hello: context.gateway.snapshot.hello,
-      }),
-    });
-    // A user who navigated away keeps their foreground; the bot and its chat
+    const { agentId, onboarding } = result;
+    const sessionKey = onboarding.sessionKey;
+    // A user who navigated away keeps their foreground; the agent and its chat
     // still exist and appear in the normal agent/session roster.
     if (
       context.router.getState().location === location &&
@@ -38,15 +28,8 @@ export async function createApplicationAgent(context: ApplicationContext): Promi
       patchSettings({ sidebarAgentsMode: "chip" });
       openPreferredApplicationSession(context, sessionKey, agentId);
     }
-    const idempotencyKey = crypto.randomUUID();
-    const ack = await client.request("chat.send", {
-      sessionKey,
-      message: t("agentChip.introduceBot"),
-      deliver: false,
-      idempotencyKey,
-    });
-    if (isTerminalFailureChatSendAck(normalizeChatSendAck(ack, idempotencyKey))) {
-      throw new Error(t("agentChip.inferenceUnavailable"));
+    if (onboarding.status === "error") {
+      throw new Error(onboarding.error);
     }
   } catch (error) {
     if (context.gateway.snapshot.client !== client) {

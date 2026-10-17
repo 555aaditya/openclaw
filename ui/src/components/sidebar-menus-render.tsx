@@ -163,9 +163,12 @@ export function renderSidebarAgentMenuForController(
           host.switchChipAgent(agentId);
         },
         creationPhase: agentState()?.read().agentCreationPhase,
+        pendingAgent: agentState()?.read().pendingAgent,
+        recentlyCreatedAgentId: agentState()?.read().recentlyCreatedAgentId,
         onCreateAgent: async () => {
           const context = host.sessionDataContext;
           if (context) {
+            controller.setAgentMenuQuery("");
             await createApplicationAgent(context);
             controller.closeAgentMenu();
           }
