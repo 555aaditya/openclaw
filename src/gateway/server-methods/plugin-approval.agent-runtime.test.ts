@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi, type TestContext } from "vitest";
+import { describe, expect, it, vi, type TestContext } from "vitest";
 import type { PluginApprovalRequestPayload } from "../../infra/plugin-approvals.js";
 import { openOpenClawStateDatabase } from "../../state/openclaw-state-db.js";
 import type { AgentRuntimeIdentity } from "../agent-runtime-identity-token.js";
@@ -45,18 +45,24 @@ function identityWithoutExecution(
   };
 }
 
-function requestOptions(params: {
-  request: Record<string, unknown>;
-  identity: AgentRuntimeIdentity;
-  validateAuthority?: () => boolean;
-}): GatewayRequestHandlerOptions {
+function requestOptions(
+  params: {
+    request?: Record<string, unknown>;
+    identity?: AgentRuntimeIdentity;
+    validateAuthority?: () => boolean;
+  } = {},
+): GatewayRequestHandlerOptions {
+  const request = { title: "Sensitive action", description: "D", ...params.request };
   return {
-    req: { method: "plugin.approval.request", params: params.request, id: "req-1" },
-    params: params.request,
+    req: { method: "plugin.approval.request", params: request, id: "req-1" },
+    params: request,
     client: {
       connId: "conn-agent-runtime",
       connect: { client: { id: "test-client", displayName: "Test Client" } },
-      internal: { agentRuntimeIdentity: params.identity },
+      internal: {
+        agentRuntimeIdentity:
+          params.identity ?? identityWithoutExecution({ approvalOwnerPluginId: "codex" }),
+      },
     },
     isWebchatConnect: () => false,
     respond: vi.fn(),
@@ -70,9 +76,7 @@ function requestOptions(params: {
   } as unknown as GatewayRequestHandlerOptions;
 }
 
-function requestHandler(
-  manager: ExecApprovalManager<PluginApprovalRequestPayload>,
-): NonNullable<ReturnType<typeof createPluginApprovalHandlers>["plugin.approval.request"]> {
+function requestHandler(manager: ExecApprovalManager<PluginApprovalRequestPayload>) {
   const handler = createPluginApprovalHandlers(manager)["plugin.approval.request"];
   if (!handler) {
     throw new Error("plugin approval request handler is unavailable");
@@ -84,27 +88,37 @@ function requestedApprovalId(opts: GatewayRequestHandlerOptions) {
     (vi.mocked(opts.context.broadcast).mock.calls[0]?.[1] as { id?: unknown } | undefined)?.id,
   );
 }
-
-afterEach(() => {
-  vi.restoreAllMocks();
-});
-
 describe("plugin approval signed agent runtime", () => {
-  it("rejects closed authority before creating a plugin approval", async (testContext) => {
-    const fixture = createFixture(testContext, () => false);
-    const { manager } = fixture;
+  it.each([
+    { kind: "closed", message: "no longer active" },
+    { kind: "ownerless", message: "signed plugin approval owner is unavailable" },
+    { kind: "unsigned", message: "requires agent runtime authority" },
+  ])("rejects $kind approval authority", async ({ kind, message }, testContext) => {
+    const validate = () => kind !== "closed";
+    const fixture = createTestApprovalFixture<PluginApprovalRequestPayload>(testContext, {
+      approvalKind: "plugin",
+      ...(kind === "unsigned" ? {} : { validateAgentRuntimeDelegatedAuthority: validate }),
+    });
     await fixture.run(async () => {
       const opts = requestOptions({
-        request: { title: "Sensitive action", description: "D" },
-        identity: identityWithoutExecution({ approvalOwnerPluginId: "codex" }),
-        validateAuthority: () => false,
+        request:
+          kind === "ownerless"
+            ? { pluginId: "forged" }
+            : kind === "unsigned"
+              ? { policySubject: { pluginKey: "calendar" } }
+              : {},
+        identity: kind === "closed" ? undefined : identityWithoutExecution(),
+        validateAuthority: validate,
       });
-
-      await requestHandler(manager)(opts);
-
-      expect(await manager.listPendingRecords()).toHaveLength(0);
+      if (kind === "unsigned") {
+        (opts.client as { internal?: unknown }).internal = undefined;
+      }
+      await requestHandler(fixture.manager)(opts);
+      if (kind !== "ownerless") {
+        expect(await fixture.manager.listPendingRecords()).toHaveLength(0);
+      }
       expect(vi.mocked(opts.respond).mock.calls[0]?.[2]).toMatchObject({
-        message: expect.stringContaining("no longer active"),
+        message: expect.stringContaining(message),
       });
     });
   });
@@ -115,8 +129,7 @@ describe("plugin approval signed agent runtime", () => {
     const { manager } = fixture;
     await fixture.run(async () => {
       const opts = requestOptions({
-        request: { title: "Sensitive action", description: "D", twoPhase: true },
-        identity: identityWithoutExecution({ approvalOwnerPluginId: "codex" }),
+        request: { twoPhase: true },
         validateAuthority: () => active,
       });
       const { pending } = await startApproval(fixture, opts);
@@ -130,23 +143,6 @@ describe("plugin approval signed agent runtime", () => {
     });
   });
 
-  it("rejects a signed runtime without a host-resolved approval owner", async (testContext) => {
-    const fixture = createFixture(testContext);
-    const { manager } = fixture;
-    await fixture.run(async () => {
-      const opts = requestOptions({
-        request: { pluginId: "forged", title: "Sensitive action", description: "D" },
-        identity: identityWithoutExecution(),
-      });
-
-      await requestHandler(manager)(opts);
-
-      expect(vi.mocked(opts.respond).mock.calls[0]?.[2]).toMatchObject({
-        message: expect.stringContaining("signed plugin approval owner is unavailable"),
-      });
-    });
-  });
-
   it("uses signed runtime owner and route instead of forged request metadata", async (testContext) => {
     const fixture = await createPreparedTestApprovalManager<PluginApprovalRequestPayload>(
       testContext,
@@ -157,8 +153,6 @@ describe("plugin approval signed agent runtime", () => {
       const opts = requestOptions({
         request: {
           pluginId: "forged-plugin",
-          title: "Sensitive action",
-          description: "D",
           policySubject: {
             pluginKey: "calendar",
             tool: "create_event.raw",
@@ -217,30 +211,6 @@ describe("plugin approval signed agent runtime", () => {
     });
   });
 
-  it("rejects a plugin reviewer policy subject from an unsigned client", async (testContext) => {
-    const fixture = createTestApprovalFixture<PluginApprovalRequestPayload>(testContext, {
-      approvalKind: "plugin",
-    });
-    await fixture.run(async () => {
-      const opts = requestOptions({
-        request: {
-          title: "Sensitive action",
-          description: "D",
-          policySubject: { pluginKey: "calendar" },
-        },
-        identity: identityWithoutExecution(),
-      });
-      (opts.client as { internal?: unknown }).internal = undefined;
-
-      await requestHandler(fixture.manager)(opts);
-
-      expect(await fixture.manager.listPendingRecords()).toHaveLength(0);
-      expect(vi.mocked(opts.respond).mock.calls[0]?.[2]).toMatchObject({
-        message: expect.stringContaining("requires agent runtime authority"),
-      });
-    });
-  });
-
   it("does not create execution identity storage when collection is disabled", async (testContext) => {
     const fixture = await createPreparedTestApprovalManager<PluginApprovalRequestPayload>(
       testContext,
@@ -248,10 +218,7 @@ describe("plugin approval signed agent runtime", () => {
     );
     const { manager, databaseOptions: options } = fixture;
     await fixture.run(async () => {
-      const opts = requestOptions({
-        request: { title: "Sensitive action", description: "D", twoPhase: true },
-        identity: identityWithoutExecution({ approvalOwnerPluginId: "codex" }),
-      });
+      const opts = requestOptions({ request: { twoPhase: true } });
 
       const { pending } = await startApproval(fixture, opts);
       expect(opts.context.broadcast).toHaveBeenCalled();
