@@ -191,7 +191,8 @@ suite.define(() => {
       const viewer = await page.locator("openclaw-image-lightbox .lightbox").boundingBox();
       expect(viewer).toMatchObject({ x: 0, y: 0, ...page.viewportSize() });
       expect(requestedVariants).toEqual(["thumbnail", ...Array(failures + 1).fill("full")]);
-      expect(await gateway.getRequests("artifacts.download")).toHaveLength(failures + 2);
+      // Failed byte fetches retain the unexpired source ticket for each rendition.
+      expect(await gateway.getRequests("artifacts.download")).toHaveLength(2);
     } finally {
       await suite.closeBrowserContext(context);
     }
