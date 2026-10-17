@@ -1,9 +1,12 @@
 import { projectRuntimeToolInputSchema } from "openclaw/plugin-sdk/agent-harness-runtime";
+import { applyGatewayToolPolicy } from "openclaw/plugin-sdk/agent-harness-tool-runtime";
+import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import {
   type JsonSchemaObject,
   validateJsonSchemaValue,
 } from "openclaw/plugin-sdk/json-schema-runtime";
 import { normalizeOpenAIStrictCompatSchema } from "openclaw/plugin-sdk/provider-tools";
+import { getRuntimeConfigSnapshot } from "openclaw/plugin-sdk/runtime-config-snapshot";
 import { isRecord } from "openclaw/plugin-sdk/string-coerce-runtime";
 import type { CodexDynamicToolsLoading } from "./config.js";
 import {
@@ -102,21 +105,36 @@ export function createCodexDynamicToolSpecs(params: {
 
 export function projectCodexDynamicTools<T extends CodexToolDescriptor>(
   tools: readonly T[],
+  gatewayPolicy?: { config?: OpenClawConfig },
 ): {
   tools: ProjectedCodexDynamicTool<T>[];
   quarantinedTools: CodexDynamicToolSchemaQuarantine[];
 } {
   const projectedTools: ProjectedCodexDynamicTool<T>[] = [];
   const quarantinedTools: CodexDynamicToolSchemaQuarantine[] = [];
-  for (const [toolIndex, tool] of tools.entries()) {
-    const descriptor = readCodexDynamicToolDescriptor(tool, toolIndex);
+  const hasGatewayPolicy = Boolean(
+    gatewayPolicy &&
+    (gatewayPolicy.config?.tools?.gatewayPolicy ||
+      getRuntimeConfigSnapshot()?.tools?.gatewayPolicy),
+  );
+  for (const [toolIndex, candidate] of tools.entries()) {
+    const descriptor = readCodexDynamicToolDescriptor(candidate, toolIndex, hasGatewayPolicy);
     if ("diagnostic" in descriptor) {
       quarantinedTools.push(descriptor.diagnostic);
       continue;
     }
-    const normalizedParameters = normalizeOpenAIStrictCompatSchema(descriptor.parameters);
+    // Quarantine unreadable descriptors before policy reads them. Policy errors
+    // remain fatal, and the concrete tool retains its private control metadata.
+    const tool = gatewayPolicy
+      ? applyGatewayToolPolicy([candidate], gatewayPolicy.config)[0]
+      : candidate;
+    if (!tool) {
+      continue;
+    }
+    const parameters = tool === candidate ? descriptor.parameters : tool.parameters;
+    const normalizedParameters = normalizeOpenAIStrictCompatSchema(parameters);
     const projection = projectRuntimeToolInputSchema(
-      normalizedParameters ?? descriptor.parameters,
+      normalizedParameters ?? parameters,
       `${descriptor.name}.inputSchema`,
     );
     if (projection.violations.length > 0) {
@@ -147,6 +165,7 @@ type CodexDynamicToolDescriptorRead =
 function readCodexDynamicToolDescriptor(
   tool: CodexToolDescriptor,
   toolIndex: number,
+  hasGatewayPolicy: boolean,
 ): CodexDynamicToolDescriptorRead {
   const fallbackName = `tool[${toolIndex}]`;
   const invalid = (name: string, violation: string): CodexDynamicToolDescriptorRead => ({
@@ -189,6 +208,18 @@ function readCodexDynamicToolDescriptor(
     parameters = tool.parameters;
   } catch {
     return invalid(name, "inputSchema is unreadable");
+  }
+  if (hasGatewayPolicy) {
+    try {
+      // Action narrowing copies enumerable metadata and checks the executor.
+      // Keep the original object so identity-backed host controls stay intact.
+      Object.assign({}, tool);
+      if ("execute" in tool) {
+        void tool.execute;
+      }
+    } catch {
+      return invalid(name, "metadata is unreadable");
+    }
   }
   return { name, description, parameters };
 }

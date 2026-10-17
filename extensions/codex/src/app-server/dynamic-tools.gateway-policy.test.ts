@@ -1,4 +1,5 @@
 import {
+  embeddedAgentLog,
   getPluginToolMeta,
   wrapToolWithBeforeToolCallHook,
 } from "openclaw/plugin-sdk/agent-harness-runtime";
@@ -62,6 +63,129 @@ afterEach(() => {
 });
 
 describe("Codex Gateway tool policy", () => {
+  it.each(["none", "captured", "current"])(
+    "quarantines unreadable dynamic tool descriptors without dropping healthy siblings (Gateway policy: %s)",
+    (policySource) => {
+      vi.spyOn(embeddedAgentLog, "warn").mockImplementation(() => undefined);
+      const hookContext =
+        policySource !== "none"
+          ? {
+              config: {
+                tools: {
+                  gatewayPolicy: {
+                    allow: [
+                      "message",
+                      "fuzzplugin_unreadable_schema",
+                      "fuzzplugin_unreadable_execute",
+                    ],
+                    actions: { message: ["read"], fuzzplugin_unreadable_execute: ["read"] },
+                  },
+                },
+              },
+            }
+          : undefined;
+      if (policySource === "current" && hookContext) {
+        setRuntimeConfigSnapshot(hookContext.config);
+      }
+      const scopedContext = policySource === "captured" ? hookContext : undefined;
+      function unreadable(name: string, key: string) {
+        const tool = taskTool(name);
+        Object.defineProperty(tool, key, {
+          enumerable: true,
+          get() {
+            throw new Error(`Unreadable ${key}`);
+          },
+        });
+        return tool;
+      }
+      const poisonedName = unreadable("fuzzplugin_unreadable_name", "name");
+      const poisonedSchema = unreadable("fuzzplugin_unreadable_schema", "parameters");
+      const invalidName = taskTool("");
+      const poisonedExecute = unreadable("fuzzplugin_unreadable_execute", "execute");
+
+      const bridge = createCodexDynamicToolBridge({
+        tools: [poisonedName, poisonedSchema, invalidName, poisonedExecute, taskTool("message")],
+        signal: new AbortController().signal,
+        hookContext: scopedContext,
+      });
+
+      expect(flattenCodexDynamicToolFunctions(bridge.availableSpecs)).toMatchObject([
+        { name: "message" },
+      ]);
+      expect(flattenCodexDynamicToolFunctions(bridge.specs)).toMatchObject([{ name: "message" }]);
+      expect(bridge.telemetry.quarantinedTools).toEqual([
+        {
+          tool: "tool[0]",
+          violations: ["tool[0].name is unreadable"],
+        },
+        {
+          tool: "fuzzplugin_unreadable_schema",
+          violations: ["fuzzplugin_unreadable_schema.inputSchema is unreadable"],
+        },
+        {
+          tool: "tool[2]",
+          violations: ["tool[2].name must be a non-empty string"],
+        },
+        {
+          tool: "fuzzplugin_unreadable_execute",
+          violations: [
+            policySource === "none"
+              ? "fuzzplugin_unreadable_execute could not be wrapped for before-tool-call hooks"
+              : "fuzzplugin_unreadable_execute.metadata is unreadable",
+          ],
+        },
+      ]);
+      const registeredBridge = createCodexDynamicToolBridge({
+        tools: [poisonedExecute, taskTool("message")],
+        registeredTools: [poisonedExecute, taskTool("message")],
+        signal: new AbortController().signal,
+        hookContext: scopedContext,
+      });
+
+      expect(flattenCodexDynamicToolFunctions(registeredBridge.availableSpecs)).toMatchObject([
+        { name: "message" },
+      ]);
+      expect(flattenCodexDynamicToolFunctions(registeredBridge.specs)).toMatchObject([
+        { name: "message" },
+      ]);
+
+      const fallbackBridge = createCodexDynamicToolBridge({
+        tools: [taskTool("message")],
+        registeredTools: [poisonedName, poisonedSchema, taskTool("message")],
+        registeredFallbackTools: [poisonedName, poisonedSchema, poisonedExecute],
+        signal: new AbortController().signal,
+        hookContext: scopedContext,
+      });
+      expect(flattenCodexDynamicToolFunctions(fallbackBridge.availableSpecs)).toMatchObject([
+        { name: "message" },
+      ]);
+      expect(flattenCodexDynamicToolFunctions(fallbackBridge.specs)).toMatchObject([
+        { name: "message" },
+      ]);
+      expect(fallbackBridge.telemetry.quarantinedTools.map(({ tool }) => tool)).toEqual([
+        "tool[0]",
+        "fuzzplugin_unreadable_schema",
+        "fuzzplugin_unreadable_execute",
+      ]);
+    },
+  );
+
+  it.each(["available", "registered", "fallback"] as const)(
+    "rejects missing action policy for %s tools instead of quarantining it",
+    (source) => {
+      const task = taskTool();
+      expect(() =>
+        createCodexDynamicToolBridge({
+          tools: source === "available" ? [task] : [],
+          registeredTools: source === "registered" ? [task] : undefined,
+          registeredFallbackTools: source === "fallback" ? [task] : undefined,
+          signal: new AbortController().signal,
+          hookContext: { config: { tools: { gatewayPolicy: { allow: ["task"] } } } },
+        }),
+      ).toThrow("Gateway tool policy requires tools.gatewayPolicy.actions.task.");
+    },
+  );
+
   it.each(["direct", "searchable"] as const)(
     "filters registered descriptors and executable tools with %s loading",
     async (loading) => {
