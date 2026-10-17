@@ -71,5 +71,12 @@ describe.runIf("__vitest_browser__" in globalThis)("sidebar agent menu scrolling
     await hoveredMenuShown;
     await expect.poll(selectedAgentIsVisible).toBe(true);
     expect(document.activeElement).toBe(input);
+
+    trigger.focus();
+    await userEvent.keyboard("{Enter}");
+    await expect.poll(() => document.activeElement).toBe(activeRow());
+    await userEvent.keyboard("{Escape}");
+    await expect.poll(() => sidebar.querySelector(".sidebar-agent-menu")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
   });
 });

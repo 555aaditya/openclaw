@@ -422,11 +422,10 @@ export class SidebarMenusController {
         }
         const dropdown = this.host.querySelector<HTMLElement>(".sidebar-agent-menu");
         if (dropdown) {
-          dropdown
-            .querySelector<HTMLElement>(
-              '.sidebar-agent-menu__agent-switch--active, [role^="menuitem"]:not([disabled])',
-            )
-            ?.focus();
+          const target =
+            dropdown.querySelector<HTMLElement>(".sidebar-agent-menu__agent-switch--active") ??
+            dropdown.querySelector<HTMLElement>('[role^="menuitem"]:not([disabled])');
+          target?.focus();
         }
       });
       return;

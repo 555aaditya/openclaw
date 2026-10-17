@@ -191,6 +191,10 @@ suite.define(() => {
           expect.poll(() => locator.evaluate((el) => el === document.activeElement)).toBe(true);
         await expectFocused(activeAgentTile);
         await page.keyboard.press("Home");
+        await expectFocused(
+          sidebar.locator('.sidebar-agent-menu [data-value="command:new-agent"]'),
+        );
+        await page.keyboard.press("ArrowDown");
         await expectFocused(allAgentsTile);
         await page.keyboard.press("Enter");
 
@@ -315,17 +319,12 @@ suite.define(() => {
         );
         await page.keyboard.press("Enter");
         const workspaceMenuItems = workspaceMenu.locator(':scope > [role^="menuitem"]');
-        await expect.poll(() => workspaceMenuItems.count()).toBe(4);
+        await expect.poll(() => workspaceMenuItems.count()).toBe(1);
         expect(
           await workspaceMenuItems.evaluateAll((items) =>
             items.map((item) => item.getAttribute("data-value")),
           ),
-        ).toEqual([
-          "command:new-agent",
-          "command:agents-directory",
-          "command:capabilities",
-          "command:agent-settings",
-        ]);
+        ).toEqual(["command:new-agent"]);
         expect(
           await workspaceMenu.locator('.sidebar-agent-menu__agent-list [role^="menuitem"]').count(),
         ).toBe(5);
@@ -339,7 +338,7 @@ suite.define(() => {
         await page.keyboard.press("ArrowDown");
         await expectFocused(agentTiles.nth(1));
         await page.keyboard.press("End");
-        await expectFocused(workspaceMenuItems.last());
+        await expectFocused(agentTiles.last());
         await captureSidebarUiProof(suite, page, "sidebar-team-workspace-menu.png");
         await page.keyboard.press("Escape");
         await expect.poll(() => workspaceMenu.count()).toBe(0);

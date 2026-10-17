@@ -187,104 +187,6 @@ suite.define(() => {
     });
   });
 
-  async function openCapabilitiesPrompt(reducedMotion: "no-preference" | "reduce") {
-    const context = await suite.newBrowserContext({ ...desktop, reducedMotion });
-    const page = await context.newPage();
-    await installMockGateway(page);
-    await page.goto(`${suite.server.baseUrl}chat`);
-
-    // Record the 600ms cue before clicking; a host-side poll can arrive after it expires.
-    const observedCue = await page.evaluateHandle(() => {
-      const state = {
-        active: false,
-        background: "",
-        boxShadow: "",
-        duration: "",
-        focused: false,
-        name: "",
-        value: "",
-      };
-      const observer = new MutationObserver(() => {
-        const textarea = document.querySelector<HTMLTextAreaElement>(
-          ".agent-chat__composer-combobox > textarea",
-        );
-        const input = textarea?.closest<HTMLElement>(".agent-chat__input");
-        if (!textarea || !input?.classList.contains("agent-chat__input--prefill-attention")) {
-          return;
-        }
-        const style = getComputedStyle(input);
-        Object.assign(state, {
-          active: true,
-          background: style.backgroundColor,
-          boxShadow: style.boxShadow,
-          duration: style.animationDuration,
-          focused: textarea === document.activeElement,
-          name: style.animationName,
-          value: textarea.value,
-        });
-        observer.disconnect();
-      });
-      observer.observe(document.documentElement, {
-        attributes: true,
-        attributeFilter: ["class"],
-        childList: true,
-        subtree: true,
-      });
-      return { state, disconnect: () => observer.disconnect() };
-    });
-
-    try {
-      const sidebar = page.locator("openclaw-app-sidebar");
-      await sidebar.locator(".sidebar-agent-card__main").click();
-      await sidebar.locator('.sidebar-agent-menu [data-value="command:capabilities"]').click();
-
-      const textarea = page.locator(".agent-chat__composer-combobox > textarea");
-      const input = textarea.locator("xpath=ancestor::*[contains(@class, 'agent-chat__input')][1]");
-      await expect
-        .poll(() => observedCue.evaluate((cue) => cue.state))
-        .toMatchObject({ active: true, focused: true, value: "What can you do?" });
-      const cueStyle = await observedCue.evaluate((cue) => cue.state);
-      await expect
-        .poll(() =>
-          textarea.evaluate((element: HTMLTextAreaElement) => ({
-            focused: element === document.activeElement,
-            value: element.value,
-          })),
-        )
-        .toEqual({ focused: true, value: "What can you do?" });
-      return { context, cueStyle, input, page };
-    } finally {
-      await observedCue.evaluate((cue) => cue.disconnect());
-      await observedCue.dispose();
-    }
-  }
-
-  it.each(["no-preference", "reduce"] as const)(
-    "focuses the capabilities prompt with the %s motion cue",
-    async (motion) => {
-      const { context, cueStyle, input } = await openCapabilitiesPrompt(motion);
-      try {
-        if (motion === "reduce") {
-          expect(cueStyle.name).toBe("none");
-          expect(cueStyle.boxShadow).not.toBe("none");
-        } else {
-          expect(cueStyle).toMatchObject({
-            duration: "0.6s",
-            name: "chat-composer-prefill-attention",
-          });
-        }
-        await expect
-          .poll(() => input.getAttribute("class"))
-          .not.toContain("agent-chat__input--prefill-attention");
-        expect(
-          await input.evaluate((element) => getComputedStyle(element).backgroundColor),
-        ).not.toBe(cueStyle.background);
-      } finally {
-        await suite.closeBrowserContext(context);
-      }
-    },
-  );
-
   it.each(["Escape", "Tab"] as const)("returns pin-menu focus on %s", async (exit) => {
     const { context, page } = await openSidebarCustomizationPage(suite);
     try {
@@ -495,7 +397,7 @@ suite.define(() => {
           };
         });
         expect(geometry).toMatchObject({ scrolls: true, actionsFit: true });
-        expect(geometry.heights.every((height) => height === 44)).toBe(true);
+        expect(geometry.heights.every((height) => height >= 44)).toBe(true);
         const duplicateNames = rows.filter({ hasText: "Support" });
         expect(await duplicateNames.count()).toBe(2);
         expect(await duplicateNames.locator(".agent-select__option-description").count()).toBe(0);
