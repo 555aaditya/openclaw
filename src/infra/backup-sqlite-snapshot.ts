@@ -320,10 +320,12 @@ export async function createBackupSqliteSnapshotPlan(params: {
   snapshots: SqliteBackupAsset[];
   postgresSnapshots: Array<{ sourcePath: string; manifestSha256: string }>;
   discoveredSourcePaths: Set<string>;
+  sharedDatabaseSourcePath?: string;
 }> {
   const capturedSnapshots = new Map<BackupSqliteSourceGroup, string>();
   const snapshots: SqliteBackupAsset[] = [];
   const postgresSnapshots: Array<{ sourcePath: string; manifestSha256: string }> = [];
+  let sharedDatabaseSourcePath: string | undefined;
   let capturedAgents: Array<{ role: "agent"; agentId: string; sourcePath: string }> = [];
   function captureAgentRegistry(database: DatabaseSync, archiveSourcePath: string) {
     capturedAgents = readOpenClawAgentDatabaseRegistryRows(database, archiveSourcePath).map(
@@ -516,6 +518,7 @@ export async function createBackupSqliteSnapshotPlan(params: {
     );
     globalGroup = groups.get(globalSource.sourcePath);
     await captureSource(globalPath, globalGroup, globalSource);
+    sharedDatabaseSourcePath = globalSource.sourcePath;
   } else {
     for (const sidecar of resolveSqliteDatabaseFilePaths(globalPath).slice(1)) {
       const exists = await fs.lstat(sidecar).catch(ignoreMissingSource);
@@ -612,5 +615,6 @@ export async function createBackupSqliteSnapshotPlan(params: {
     snapshots,
     postgresSnapshots,
     discoveredSourcePaths: discovery.discoveredSourcePaths,
+    sharedDatabaseSourcePath,
   };
 }

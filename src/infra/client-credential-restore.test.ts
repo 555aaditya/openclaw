@@ -2,10 +2,11 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { StatementSync } from "node:sqlite";
+import * as tar from "tar";
 import { describe, expect, it, vi } from "vitest";
 import { backupRestoreCommand } from "../commands/backup-restore.js";
 import { buildBackupArchivePath } from "../commands/backup-shared.js";
-import type { BackupManifest } from "../commands/backup-verify-manifest.js";
+import { parseBackupManifest, type BackupManifest } from "../commands/backup-verify-manifest.js";
 import { beginDoctorMaintenance } from "../commands/doctor-maintenance.js";
 import { backupDoctorMigrationDatabases } from "../commands/doctor-migration-backup.js";
 import { createDoctorOriginalCaptureHook } from "../commands/doctor-original-capture-admission.js";
@@ -239,17 +240,32 @@ describe("whole-archive credential relocation", () => {
     );
   });
 
-  it.each([false, true])(
-    "requires the matched archived shared identity (mismatch=%s)",
-    async (mismatch) => {
+  it.each([
+    { alias: false, mismatch: "none" },
+    { alias: false, mismatch: "generation" },
+    ...(process.platform === "win32"
+      ? []
+      : [
+          { alias: true, mismatch: "none" },
+          { alias: true, mismatch: "capture" },
+        ]),
+  ])(
+    "requires the matched archived shared identity (alias=$alias, mismatch=$mismatch)",
+    async ({ alias, mismatch }) => {
       await withOpenClawTestState(
         { layout: "split", scenario: "external-service", label: "credential-restore" },
         async (state) => {
           const identity = generateStoredDeviceIdentity(41);
           const sharedPath = state.statePath("state", "openclaw.sqlite");
+          const physicalSharedPath = alias
+            ? state.statePath("state", "shared-source.sqlite")
+            : sharedPath;
           fs.mkdirSync(path.dirname(sharedPath), { recursive: true, mode: 0o700 });
+          if (alias) {
+            fs.symlinkSync(path.basename(physicalSharedPath), sharedPath);
+          }
           {
-            using native = openNodeSqliteDatabase(sharedPath);
+            using native = openNodeSqliteDatabase(physicalSharedPath);
             native.exec(
               CLIENT_CREDENTIAL_SCHEMA_SQL.slice(
                 0,
@@ -330,7 +346,7 @@ describe("whole-archive credential relocation", () => {
             const stored = readClientCredentialReceipt(local.database)!;
             expect(stored.receipt.source?.engine).toBe("sqlite");
             expectedSource = stored.receipt.source;
-            if (mismatch) {
+            if (mismatch === "generation") {
               stored.receipt.source!.identity = `${sharedPath}:different-generation`;
               runSqliteImmediateTransactionSync(local.database, () =>
                 writeClientCredentialReceipt(local.database, stored.receipt, "complete"),
@@ -341,11 +357,35 @@ describe("whole-archive credential relocation", () => {
             output: state.path("credentials.tar.gz"),
             includeWorkspace: false,
           });
+          let archivePath = backup.archivePath;
+          if (mismatch === "capture") {
+            const extracted = state.path("mismatched-capture");
+            fs.mkdirSync(extracted);
+            await tar.x({ file: archivePath, cwd: extracted });
+            const manifestPath = path.join(extracted, backup.archiveRoot, "manifest.json");
+            const manifest = parseBackupManifest(fs.readFileSync(manifestPath, "utf8"));
+            manifest.paths = {
+              ...manifest.paths,
+              sharedDatabaseSourcePath: state.path("different-shared.sqlite"),
+            };
+            fs.writeFileSync(manifestPath, JSON.stringify(manifest));
+            archivePath = state.path("mismatched.tar.gz");
+            await tar.c({ file: archivePath, gzip: true, cwd: extracted }, [backup.archiveRoot]);
+          }
+          if (alias) {
+            // Restore must use captured identity even when neither source spelling exists.
+            fs.unlinkSync(sharedPath);
+            fs.unlinkSync(physicalSharedPath);
+            expect(fs.existsSync(sharedPath)).toBe(false);
+            expect(fs.existsSync(physicalSharedPath)).toBe(false);
+          }
           const target = state.path("relocated");
-          const restore = backupRestoreCommand(runtime, { archive: backup.archivePath, target });
-          if (mismatch) {
+          const restore = backupRestoreCommand(runtime, { archive: archivePath, target });
+          if (mismatch !== "none") {
             await expect(restore).rejects.toThrow(
-              "Backup restore failed; the incomplete target was cleaned",
+              mismatch === "capture"
+                ? "Restored client credentials do not match the captured shared database"
+                : "Restored client credentials have a different shared database identity",
             );
             expect(fs.existsSync(target)).toBe(false);
             return;
@@ -361,9 +401,16 @@ describe("whole-archive credential relocation", () => {
               kind: "identity.read",
               identity_key: "primary",
             }),
-          ).toMatchObject({
+          ).toEqual({
             kind: "identity",
-            identity: { device_id: identity.deviceId, private_key_pem: identity.privateKeyPem },
+            identity: {
+              identity_key: "primary",
+              device_id: identity.deviceId,
+              public_key_pem: identity.publicKeyPem,
+              private_key_pem: identity.privateKeyPem,
+              created_at_ms: 41,
+              updated_at_ms: 41,
+            },
           });
           using local = openClientCredentialCustody(restoredEnv, { migration: true })!;
           const relocated = readClientCredentialReceipt(local.database)!;
@@ -372,6 +419,17 @@ describe("whole-archive credential relocation", () => {
             sha256: expectedSource!.sha256,
           });
           expect(relocated.receipt.sharedFile?.path).not.toBe(sharedPath);
+          const restoredSharedPath = path.join(
+            restoredEnv.OPENCLAW_STATE_DIR,
+            "state",
+            "openclaw.sqlite",
+          );
+          const restoredIdentity = fs.statSync(restoredSharedPath, { bigint: true });
+          expect(relocated.receipt.sharedFile).toEqual({
+            path: fs.realpathSync.native(restoredSharedPath),
+            dev: String(restoredIdentity.dev),
+            ino: String(restoredIdentity.ino),
+          });
         },
       );
     },

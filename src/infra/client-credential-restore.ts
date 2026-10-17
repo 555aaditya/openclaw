@@ -189,7 +189,7 @@ export function prepareRestoredClientCredentials(options: {
   const receipt = prepareMatchedReceipt({
     localPath,
     sharedPath,
-    originalSharedPath: shared.sourcePath,
+    originalSharedPath: manifest.paths?.sharedDatabaseSourcePath ?? shared.sourcePath,
     restoredSharedPath: sharedPath,
     // The export is nested beneath this manifest-declared global snapshot.
     postgresExportDirectory: `${sharedPath}.postgres`,
