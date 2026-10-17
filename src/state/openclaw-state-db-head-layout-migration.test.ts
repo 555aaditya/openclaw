@@ -99,31 +99,33 @@ it.each([
   { schema: "current", integrityCheck: "full" },
 ] as const)(
   "reserves untouched index recovery for $integrityCheck verification with $schema schema",
-  ({ schema, integrityCheck }) => {
+  async ({ schema, integrityCheck }) => {
     const { options, pathname } = legacyDatabase();
-    if (schema === "current") {
-      expect(repairOpenClawStateDatabaseSchema(options).warnings).toEqual([]);
-    }
-    const source = new DatabaseSync(pathname);
-    source.exec(`
-      CREATE TABLE untouched_payloads (value TEXT);
-      CREATE INDEX idx_untouched_payload ON untouched_payloads(value);
-      INSERT INTO untouched_payloads VALUES ('retained');
-    `);
-    source.close();
-    corruptSqliteIndexKey(pathname, "idx_untouched_payload", "retained", "mismatch");
-    const result = repairOpenClawStateDatabaseSchema({ ...options, integrityCheck });
-    expect(result.warnings).toEqual([]);
-    expect(result.changes.some((change) => change.includes("idx_untouched_payload"))).toBe(
-      integrityCheck === "full",
-    );
-    using database = new DatabaseSync(pathname);
-    expect(database.prepare("PRAGMA integrity_check").get()?.integrity_check === "ok").toBe(
-      integrityCheck === "full",
-    );
-    expect(database.prepare("SELECT value FROM untouched_payloads NOT INDEXED").all()).toEqual([
-      { value: "retained" },
-    ]);
+    await withMigrationCustody(pathname, () => {
+      if (schema === "current") {
+        expect(repairOpenClawStateDatabaseSchema(options).warnings).toEqual([]);
+      }
+      const source = new DatabaseSync(pathname);
+      source.exec(`
+        CREATE TABLE untouched_payloads (value TEXT);
+        CREATE INDEX idx_untouched_payload ON untouched_payloads(value);
+        INSERT INTO untouched_payloads VALUES ('retained');
+      `);
+      source.close();
+      corruptSqliteIndexKey(pathname, "idx_untouched_payload", "retained", "mismatch");
+      const result = repairOpenClawStateDatabaseSchema({ ...options, integrityCheck });
+      expect(result.warnings).toEqual([]);
+      expect(result.changes.some((change) => change.includes("idx_untouched_payload"))).toBe(
+        integrityCheck === "full",
+      );
+      using database = new DatabaseSync(pathname);
+      expect(database.prepare("PRAGMA integrity_check").get()?.integrity_check === "ok").toBe(
+        integrityCheck === "full",
+      );
+      expect(database.prepare("SELECT value FROM untouched_payloads NOT INDEXED").all()).toEqual([
+        { value: "retained" },
+      ]);
+    });
   },
 );
 
