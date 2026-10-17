@@ -296,7 +296,8 @@ vi.mock("/src/agents/embedded-agent-runner/active-run-projections.js", async (im
   isEmbeddedAgentRunActive: (sessionId: string) => embeddedRunMock.activeIds.has(sessionId),
 }));
 
-vi.mock("./health/collector.js", () => ({
+vi.mock("./health/collector.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./health/collector.js")>()),
   collectGatewayHealthSnapshot: vi
     .fn<typeof import("./health/collector.js").collectGatewayHealthSnapshot>()
     .mockImplementation(async () => ({
