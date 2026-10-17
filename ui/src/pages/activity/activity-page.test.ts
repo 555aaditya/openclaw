@@ -420,12 +420,18 @@ describe("ActivityPage gateway lifecycle", () => {
           features: { methods: ["audit.run.inspect"], events: [] },
         });
       }
-      const attachAccount = (id: string) =>
+      let presenceVersion = 0;
+      const attachAccount = (id: string) => {
         current().opts.onEvent?.(
           createGatewayEvent("presence", {
+            reset: true,
+            version: ++presenceVersion,
+            keys: ["self"],
             presence: [{ instanceId: current().instanceId, user: { id } }],
           }),
         );
+        expect(source.snapshot.selfUser?.id).toBe(id);
+      };
       attachAccount("reader-a");
       const result = presentResult("account-run");
       current().request.mockImplementation(async (method, params) =>
