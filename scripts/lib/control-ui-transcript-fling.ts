@@ -7,7 +7,9 @@ function installFlingProbe() {
   const thread = [...document.querySelectorAll<HTMLElement>(".chat-thread")].find(
     (node) => node.getBoundingClientRect().height > 100,
   );
-  if (!thread) throw new Error("No visible transcript");
+  if (!thread) {
+    throw new Error("No visible transcript");
+  }
   thread.dataset.flingTarget = "true";
   const samples: Array<{
     at: number;
@@ -32,7 +34,9 @@ function installFlingProbe() {
   let running = true;
   let frame = 0;
   const sample = () => {
-    if (!running) return;
+    if (!running) {
+      return;
+    }
     const viewport = thread.getBoundingClientRect();
     const sizer = thread.querySelector(".chat-virtual-sizer")!.getBoundingClientRect();
     const inner = thread.querySelector(".chat-thread-inner")!.getBoundingClientRect();
@@ -45,10 +49,14 @@ function installFlingProbe() {
     for (const row of rows) {
       const rect = row.getBoundingClientRect();
       if (!row.checkVisibility({ contentVisibilityAuto: true, visibilityProperty: true })) {
-        if (rect.bottom > top && rect.top < bottom) skipped++;
+        if (rect.bottom > top && rect.top < bottom) {
+          skipped++;
+        }
         continue;
       }
-      if (rect.bottom <= top || rect.top >= bottom) continue;
+      if (rect.bottom <= top || rect.top >= bottom) {
+        continue;
+      }
       gap += Math.max(0, Math.min(rect.top, bottom) - cursor);
       cursor = Math.max(cursor, Math.min(bottom, rect.bottom));
     }
@@ -71,16 +79,17 @@ function installFlingProbe() {
     async verify() {
       const block = thread.querySelector<HTMLElement>(".chat-virtual-block")!;
       block.style.visibility = "hidden";
-      await new Promise<void>((resolve) =>
-        requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(resolve, 0))),
-      );
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(resolve, 0)));
+      });
       const hidden = samples.at(-1)!;
       block.style.visibility = "";
-      if (hidden.height < 100 || hidden.gap < hidden.height - 1)
+      if (hidden.height < 100 || hidden.gap < hidden.height - 1) {
         throw new Error("Blank detector failed hidden-content negative control");
-      await new Promise<void>((resolve) =>
-        requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(resolve, 0))),
-      );
+      }
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(resolve, 0)));
+      });
       samples.length = 0;
       loaf.length = 0;
       return { height: hidden.height, gap: hidden.gap };
@@ -90,10 +99,14 @@ function installFlingProbe() {
       let stable = 0;
       let last = thread.scrollTop;
       for (let i = 0; i < 180; i++) {
-        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        await new Promise<void>((resolve) => {
+          requestAnimationFrame(() => resolve());
+        });
         stable = Math.abs(thread.scrollTop - last) <= 1 ? stable + 1 : 0;
         last = thread.scrollTop;
-        if (stable >= 12) return;
+        if (stable >= 12) {
+          return;
+        }
       }
       throw new Error("Transcript did not settle within 180 frames");
     },
@@ -120,10 +133,13 @@ export async function probeTranscriptFling(
   const thread = page.locator("[data-fling-target]");
   const negativeControl = await page.evaluate(() => Reflect.get(window, "__fling").verify());
   const lastIndex = await thread.locator(".chat-virtual-row").last().getAttribute("data-index");
-  if (Number(lastIndex) < 999)
+  if (Number(lastIndex) < 999) {
     throw new Error(`Expected 1,000 virtual rows, last index ${lastIndex}`);
+  }
   const bounds = await thread.boundingBox();
-  if (!bounds) throw new Error("No transcript bounds");
+  if (!bounds) {
+    throw new Error("No transcript bounds");
+  }
   const actions: Array<{
     name: string;
     start: number;
@@ -132,10 +148,10 @@ export async function probeTranscriptFling(
     before: number;
     after: number;
   }> = [];
-  const screenshots: Array<{ data: string; timestamp: number }> = [];
+  const screenshots: Array<{ data: string; timestamp?: number }> = [];
   const recordFrame = (event: {
     data: string;
-    metadata: { timestamp: number };
+    metadata: { timestamp?: number };
     sessionId: number;
   }) => {
     screenshots.push({ data: event.data, timestamp: event.metadata.timestamp });
@@ -154,7 +170,9 @@ export async function probeTranscriptFling(
     const inputEnd = (await mark()).at;
     await settle();
     const after = await mark();
-    if (Math.abs(after.top - before.top) < 10) throw new Error(`No native movement: ${name}`);
+    if (Math.abs(after.top - before.top) < 10) {
+      throw new Error(`No native movement: ${name}`);
+    }
     actions.push({
       name,
       start: before.at,
@@ -169,31 +187,53 @@ export async function probeTranscriptFling(
     await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
     for (const delta of [240, 960, 2880]) {
       await act(`wheel-down-${delta}`, async () => {
-        for (let i = 0; i < 18; i++) await page.mouse.wheel(0, delta);
+        for (let i = 0; i < 18; i++) {
+          await page.mouse.wheel(0, delta);
+        }
       });
       await act(`wheel-up-${delta}`, async () => {
-        for (let i = 0; i < 12; i++) await page.mouse.wheel(0, -delta);
+        for (let i = 0; i < 12; i++) {
+          await page.mouse.wheel(0, -delta);
+        }
       });
     }
     await act("End", () => page.keyboard.press("End"));
     await act("PageUp", async () => {
-      for (let i = 0; i < 8; i++) await page.keyboard.press("PageUp");
+      for (let i = 0; i < 8; i++) {
+        await page.keyboard.press("PageUp");
+      }
     });
     await act("PageDown", async () => {
-      for (let i = 0; i < 8; i++) await page.keyboard.press("PageDown");
+      for (let i = 0; i < 8; i++) {
+        await page.keyboard.press("PageDown");
+      }
     });
     await page.keyboard.press("End");
     await settle();
-    const thumbShift = await thread.evaluate((element) => {
+    const scrollbar = await thread.evaluate((element: HTMLElement) => {
       const max = element.scrollHeight - element.clientHeight;
-      return ((max - element.scrollTop) / max) * element.clientHeight;
+      return {
+        shift: ((max - element.scrollTop) / max) * element.clientHeight,
+        width: element.offsetWidth - element.clientWidth,
+      };
     });
     await act("scrollbar-drag", async () => {
-      await page.mouse.move(bounds.x + bounds.width - 5, bounds.y + bounds.height - 8 - thumbShift);
+      await page.mouse.move(
+        bounds.x + bounds.width - Math.max(5, scrollbar.width / 2),
+        bounds.y + bounds.height - Math.max(8, scrollbar.width) - scrollbar.shift,
+      );
       await page.mouse.down();
-      await page.mouse.move(bounds.x + bounds.width - 5, bounds.y + 20, { steps: 12 });
+      await page.mouse.move(
+        bounds.x + bounds.width - Math.max(5, scrollbar.width / 2),
+        bounds.y + 20,
+        { steps: 12 },
+      );
       await page.mouse.up();
     });
+    const drag = actions.at(-1)!;
+    if (Math.abs(drag.after - drag.before) < bounds.height * 3) {
+      throw new Error("Scrollbar gesture did not drag the thumb across the long transcript");
+    }
     await act("jump-to-bottom", () =>
       page.getByRole("button", { name: "Scroll to latest" }).click(),
     );
