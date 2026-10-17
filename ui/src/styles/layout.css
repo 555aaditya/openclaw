@@ -4692,4 +4692,5 @@ html.openclaw-native-web-chrome
 .sidebar-agent-menu__create-icon svg {
   width: 100%;
   height: 100%;
+  stroke-width: 1.5;
 }
