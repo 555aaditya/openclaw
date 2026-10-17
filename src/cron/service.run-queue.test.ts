@@ -126,9 +126,9 @@ it.for(["manual", "scheduled"] as const)(
         const completed =
           source === "scheduled"
             ? onTimer(state)
-            : drainCronRunQueue(state).then(() =>
-                Promise.all(requests.map((request) => request.completion)),
-              );
+            : drainCronRunQueue(state).then(async () => {
+                await Promise.all(requests.map((request) => request.completion));
+              });
         void completed.catch(() => {});
         if (source === "manual") {
           await drainCronRunQueue(state);

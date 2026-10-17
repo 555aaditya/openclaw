@@ -2565,7 +2565,6 @@ src/sessions/session-run-error-presentation.ts
 src/sessions/user-turn-media.ts
 src/shared/channel-read-authority.ts
 src/shared/tool-approval-reviews.ts
-src/cron/service/run-queue-execution.ts
 src/agents/agent-lifecycle-parent-state.ts
 src/agents/agent-run-terminal-error.ts
 src/agents/agent-run-terminal-outcome-merge.ts
