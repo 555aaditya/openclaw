@@ -11,12 +11,12 @@ import {
 import * as historyStateValidator from "../../lib/protocol-validators.generated/history-state.js";
 import { collectGarbageForTest } from "../../test-helpers/garbage-collection.ts";
 import { createStorageMock } from "../../test-helpers/storage.ts";
-import { StoredChatHistoryState } from "./chat-transcript-metadata.ts";
 import { MAX_CACHED_CHAT_SESSIONS } from "./session-cache.ts";
 import {
   appendChatMessageToCache,
   cacheChatSessionSnapshot,
   observeChatCache,
+  StoredChatHistoryState,
   type ChatMessageCache,
   type ChatSessionSnapshot,
 } from "./session-message-cache.ts";

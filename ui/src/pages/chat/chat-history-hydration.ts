@@ -41,7 +41,6 @@ import {
 import { applyChatPendingInputs } from "./chat-pending-inputs.ts";
 import { isChatRunRecoveryStatus, reconcileChatRunStartup } from "./chat-run-startup.ts";
 import type { ChatHistoryHost, ChatHistorySessions, ChatState } from "./chat-state-contract.ts";
-import { StoredChatHistoryState } from "./chat-transcript-metadata.ts";
 import {
   getChatSessionProjection,
   readChatSessionProjectionScope,
@@ -55,6 +54,7 @@ import {
   readChatHistoryCursor,
   readChatHistoryState,
   readChatSessionSnapshot,
+  StoredChatHistoryState,
 } from "./session-message-cache.ts";
 import { retainPersistedStreamPrefix } from "./stream-causal-boundary.ts";
 import {

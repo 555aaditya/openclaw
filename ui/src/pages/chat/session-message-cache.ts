@@ -7,12 +7,9 @@ import type { ProgressCard } from "@openclaw/gateway-protocol";
 import type { GatewaySessionRow } from "../../api/types.ts";
 import { readPairingQrContent } from "../../lib/chat/pairing-qr.ts";
 import type { ChatHistoryCursor, ChatHistoryPagination } from "./chat-history-pagination.ts";
-import {
-  StoredChatHistoryState,
-  type ChatHistoryState,
-  type ChatTranscriptMetadata,
-} from "./chat-transcript-metadata.ts";
+import type { ChatHistoryState, ChatTranscriptMetadata } from "./chat-transcript-metadata.ts";
 import { readChatSessionProjectionScope, reduceChatSessionProjection } from "./history-merge.ts";
+import { scheduleControlUiAfterPaint } from "./performance.ts";
 import { getSessionCacheValue, setSessionCacheValue } from "./session-cache.ts";
 import type { SessionSnapshotInvalidationReason } from "./session-snapshot-invalidation-events.ts";
 import { resolveChatSnapshotKey } from "./session-snapshot-key.ts";
@@ -29,6 +26,34 @@ const cachedMessageWeights = new WeakMap<object, number>();
 const appendedEventClaims = new WeakMap<ChatMessageCache, WeakSet<object>>();
 
 const transcriptMetadata = new WeakMap<GatewaySessionRow, ChatTranscriptMetadata>();
+
+/** Persisted receipts travel with snapshot copies, but never gate the cached paint. */
+export class StoredChatHistoryState {
+  current?: ChatHistoryState;
+  private pending?: Promise<void>;
+
+  constructor(private value: unknown) {}
+
+  toJSON(): unknown {
+    return this.value;
+  }
+
+  load(): Promise<void> {
+    return (this.pending ??= new Promise<void>((resolve) => {
+      scheduleControlUiAfterPaint({}, resolve);
+    })
+      .then(async () => {
+        const { isChatHistoryState } =
+          await import("../../lib/protocol-validators.generated/history-state.js");
+        this.current = isChatHistoryState(this.value) ? this.value : undefined;
+        this.value = this.current;
+      })
+      .catch(() => {
+        // Missing/invalid cached receipts request full state from the Gateway.
+        this.value = undefined;
+      }));
+  }
+}
 
 export function projectChatTranscriptMetadata(row: GatewaySessionRow): ChatTranscriptMetadata {
   const existing = transcriptMetadata.get(row);

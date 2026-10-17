@@ -7,7 +7,6 @@ import {
   isProgressCard,
 } from "../../lib/protocol-validators.generated/transcript.js";
 import * as json from "../../lib/snapshot-json.ts";
-import { StoredChatHistoryState } from "./chat-transcript-metadata.ts";
 import {
   getSessionCacheValue,
   MAX_CACHED_CHAT_SESSIONS,
@@ -15,6 +14,7 @@ import {
 } from "./session-cache.ts";
 import {
   MAX_CACHED_CHAT_WEIGHT,
+  StoredChatHistoryState,
   type ChatCacheObserver,
   type ChatMessageCache,
   type ChatSessionSnapshot,

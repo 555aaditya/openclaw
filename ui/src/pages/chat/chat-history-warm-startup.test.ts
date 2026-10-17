@@ -29,12 +29,12 @@ import {
 } from "./chat-pane.test-support.ts";
 import { chatRunPresentation } from "./chat-run-presentation.ts";
 import { refreshChatCommands, refreshPageChat } from "./chat-state-refresh.ts";
-import { StoredChatHistoryState } from "./chat-transcript-metadata.ts";
 import { resetTranscriptTestDom } from "./components/chat-transcript.test-support.ts";
 import {
   observeChatCache,
   cacheChatSessionSnapshot,
   readChatSessionSnapshot,
+  StoredChatHistoryState,
   type ChatMessageCache,
   type ChatSessionSnapshot,
 } from "./session-message-cache.ts";
