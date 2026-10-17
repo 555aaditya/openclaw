@@ -2612,7 +2612,10 @@ openclaw-session-menu[popover] {
   overflow-wrap: anywhere;
 }
 
-.session-menu__item--described:disabled {
+:is(.session-menu__item, .oc-menu-item).session-menu__item--described:is(
+    :disabled,
+    [aria-disabled="true"]
+  ) {
   opacity: 1;
   color: var(--muted);
 }
