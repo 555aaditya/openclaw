@@ -1,10 +1,10 @@
 // Requester continuation and child-batch ownership across Gateway replacement.
 import { describe, expect, it, vi } from "vitest";
-import { createDeferred } from "../../../../test/helpers/promise.js";
 // Preserve module setup before modules that consume it.
 // oxfmt-ignore
 import {
   makeRestartRecoveryRun as makeRunRecord,
+  createParentRestartRecoveryFixture,
   useSubagentRestartRecoveryFixture,
 } from "./subagent-restart-recovery.test-support.js";
 import { getRuntimeConfig, setRuntimeConfigSnapshot } from "../../../config/config.js";
@@ -16,7 +16,6 @@ import {
 } from "../../../config/sessions/session-accessor.js";
 import { markCanonicalSessionValidationPending } from "../../../config/sessions/session-canonical-key.js";
 import { captureGatewayAuthPolicy } from "../../../gateway/auth-policy.js";
-import * as gatewayCall from "../../../gateway/call.js";
 import { captureGatewayOperatorRunAuthority } from "../../../gateway/operator-run-authority.js";
 import type { GatewayRequestContext } from "../../../gateway/server-methods/types.js";
 import { captureOperatorToolGatewayContinuationContext } from "../../../gateway/server-plugin-in-process-authority.js";
@@ -41,7 +40,6 @@ import {
   closeOpenClawAgentDatabasesAsync,
   runOpenClawAgentWriteTransaction,
 } from "../../../state/openclaw-agent-db.js";
-import { createRecoveryRuntimeFixture } from "../../main-session-recovery/main-session-recovery-runtime.test-support.js";
 import { transitionMainSessionRecovery } from "../../main-session-recovery/main-session-recovery-state.js";
 import {
   markRestartAbortedMainSessions,
@@ -59,7 +57,10 @@ import {
   loadSubagentRegistryFromSqlite,
   saveSubagentRegistryToSqlite,
 } from "./subagent-registry-state.fixture.test-support.js";
-import { writeSubagentSessionEntry } from "./subagent-registry.persistence.test-support.js";
+import {
+  prepareSubagentRecoveryFixture,
+  writeSubagentSessionEntry,
+} from "./subagent-registry.persistence.test-support.js";
 import {
   addSubagentRunForTests,
   activateSubagentRegistry,
@@ -96,19 +97,6 @@ describe("subagent parent recovery — durable yielded continuation", () => {
       agentId?: string;
     },
   ) => writeSubagentSessionEntry({ stateDir: fixture.stateDir, agentId: "main", ...params });
-
-  function recoveryFixture() {
-    const settlement = createDeferred();
-    const dispatch = vi
-      .spyOn(gatewayCall, "callGateway")
-      .mockResolvedValue({ runId: "recovered-parent" });
-    const runtime = createRecoveryRuntimeFixture({
-      callGateway: gatewayCall.callGateway,
-      getDispatchSettlement: () => settlement.promise,
-      sendRecoveryNotice: vi.fn(async () => ({ suppressed: false })),
-    });
-    return { settlement, dispatch, runtime };
-  }
 
   it.each([
     ["subagent_settle", "announce:requester-settle:main:agent:main:parent:child:pause"],
@@ -198,7 +186,7 @@ describe("subagent parent recovery — durable yielded continuation", () => {
         abortedLastRun: true,
         mainRestartRecovery: expect.objectContaining({ cycleId: expect.any(String) }),
       });
-      const { settlement, dispatch, runtime } = recoveryFixture();
+      const { settlement, dispatch, runtime } = createParentRestartRecoveryFixture();
       try {
         expect(
           await recoverRestartAbortedMainSessions({
@@ -424,6 +412,17 @@ describe("subagent parent recovery — durable yielded continuation", () => {
       requesterTurnYielded: true,
       expectsCompletionMessage: true,
     });
+    if (scenario === "settled batch") {
+      await prepareSubagentRecoveryFixture(child, {
+        storePath: parentStorePath,
+        entries: {
+          [parentKey]: loadSessionEntryReadOnly({
+            storePath: parentStorePath,
+            sessionKey: parentKey,
+          })!,
+        },
+      });
+    }
     await addSubagentRunForTests(child);
     expect(
       await settleRequesterTurnAfterSessionSpawns({
@@ -631,7 +630,7 @@ describe("subagent parent recovery — durable yielded continuation", () => {
       activeSessionKeys: [],
     });
     if (legacy) {
-      const { settlement, dispatch, runtime } = recoveryFixture();
+      const { settlement, dispatch, runtime } = createParentRestartRecoveryFixture();
       try {
         expect(
           await recoverRestartAbortedMainSessions({
@@ -724,6 +723,7 @@ describe("subagent parent recovery — durable yielded continuation", () => {
             },
           },
         );
+        await prepareSubagentRecoveryFixture(child, { stateDir: fixture.stateDir });
         await addSubagentRunForTests(child);
         children.push(child);
       }

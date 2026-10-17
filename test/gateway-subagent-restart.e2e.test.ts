@@ -152,10 +152,10 @@ it.skipIf(process.platform === "win32").for([
         {
           url: instance.url,
           token: instance.gatewayToken,
-          clientName: legacy ? "openclaw-control-ui" : "gateway-client",
-          clientBuildId: legacy && typeof buildId === "string" ? buildId : undefined,
-          mode: legacy ? "webchat" : "backend",
-          ...(legacy ? { origin: `http://127.0.0.1:${instance.port}` } : {}),
+          clientName: "openclaw-control-ui",
+          clientBuildId: typeof buildId === "string" ? buildId : undefined,
+          mode: "webchat",
+          origin: `http://127.0.0.1:${instance.port}`,
           scopes: ["operator.admin", "operator.read", "operator.write"],
           deviceIdentity: loadOrCreateDeviceIdentity({
             path: instance.state.path("proof-device.sqlite"),
@@ -371,7 +371,7 @@ it.skipIf(process.platform === "win32").for([
               mode: "local",
               controlUi: {
                 enabled: false,
-                ...(legacy ? { allowedOrigins: [`http://127.0.0.1:${instance.port}`] } : {}),
+                allowedOrigins: [`http://127.0.0.1:${instance.port}`],
               },
               bind: "loopback",
               port: instance.port,

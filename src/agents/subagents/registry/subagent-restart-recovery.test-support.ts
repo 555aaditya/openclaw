@@ -12,6 +12,7 @@ import {
   applySessionEntryLifecycleMutation,
   listSessionEntriesCore,
 } from "../../../config/sessions/session-accessor.js";
+import * as gatewayCall from "../../../gateway/call.js";
 import type { GatewayRecoveryRuntime } from "../../../gateway/server-instance-runtime.types.js";
 import { onAgentEvent } from "../../../infra/agent-events.js";
 import { hasErrnoCode } from "../../../infra/errno.js";
@@ -27,6 +28,7 @@ import {
   cleanupSessionStateForTest,
   drainSessionStateForTest,
 } from "../../../test-utils/session-state-cleanup.js";
+import { createRecoveryRuntimeFixture } from "../../main-session-recovery/main-session-recovery-runtime.test-support.js";
 import {
   createSubagentRunRecord,
   type SubagentRunRecordOverrides,
@@ -71,6 +73,19 @@ export function makeRestartRecoveryRun(
       ...overrides,
     }),
   );
+}
+
+export function createParentRestartRecoveryFixture() {
+  const settlement = createDeferred();
+  const dispatch = vi
+    .spyOn(gatewayCall, "callGateway")
+    .mockResolvedValue({ runId: "recovered-parent" });
+  const runtime = createRecoveryRuntimeFixture({
+    callGateway: gatewayCall.callGateway,
+    getDispatchSettlement: () => settlement.promise,
+    sendRecoveryNotice: vi.fn(async () => ({ suppressed: false })),
+  });
+  return { settlement, dispatch, runtime };
 }
 
 export function useSubagentRestartRecoveryFixture(
