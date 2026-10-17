@@ -30,6 +30,9 @@ const transcriptMetadata = new WeakMap<GatewaySessionRow, ChatTranscriptMetadata
 /** Persisted receipts travel with snapshot copies, but never gate the cached paint. */
 export class StoredChatHistoryState {
   current?: ChatHistoryState;
+  private readonly painted = new Promise<void>((resolve) => {
+    scheduleControlUiAfterPaint({}, resolve);
+  });
   private pending?: Promise<void>;
 
   constructor(private value: unknown) {}
@@ -39,9 +42,7 @@ export class StoredChatHistoryState {
   }
 
   load(): Promise<void> {
-    return (this.pending ??= new Promise<void>((resolve) => {
-      scheduleControlUiAfterPaint({}, resolve);
-    })
+    return (this.pending ??= this.painted
       .then(async () => {
         const { isChatHistoryState } =
           await import("../../lib/protocol-validators.generated/history-state.js");

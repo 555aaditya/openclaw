@@ -226,9 +226,13 @@ describe("persistent chat session snapshots", () => {
     expect(JSON.parse(serialized)).toEqual(previous);
   });
 
-  it.each([false, true])(
-    "paints cached history before admitting stored receipts (invalid: %s)",
-    async (invalid) => {
+  it.each([
+    { invalid: false, alreadyPainted: false },
+    { invalid: true, alreadyPainted: false },
+    { invalid: false, alreadyPainted: true },
+  ])(
+    "paints cached history before admitting stored receipts (invalid: $invalid, already painted: $alreadyPainted)",
+    async ({ invalid, alreadyPainted }) => {
       const sessionKey = key("agent:main:deferred-receipts");
       await persist(writer, sessionKey, snapshot("cached conversation"));
       const historyState = {
@@ -255,12 +259,19 @@ describe("persistent chat session snapshots", () => {
       if (!(receipts instanceof StoredChatHistoryState)) {
         throw new Error("expected deferred persisted receipts");
       }
+      if (alreadyPainted) {
+        frames.shift()?.(0);
+        frames.shift()?.(16);
+      }
       const loading = receipts.load();
       expect(receipts.load()).toBe(loading);
       expect(validate).not.toHaveBeenCalled();
-      frames.shift()?.(0);
-      expect(validate).not.toHaveBeenCalled();
-      frames.shift()?.(16);
+      if (!alreadyPainted) {
+        frames.shift()?.(0);
+        expect(validate).not.toHaveBeenCalled();
+        frames.shift()?.(16);
+      }
+      expect(frames).toHaveLength(0);
       await loading;
       expect(validate).toHaveBeenCalledTimes(1);
       expect(receipts.current).toEqual(invalid ? undefined : historyState);
