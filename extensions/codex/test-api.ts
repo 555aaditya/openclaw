@@ -56,9 +56,6 @@ export const loadCodexNativeSubagentMonitorTestFixture = () =>
 export const loadCodexAbortTranscriptTestFixture = () =>
   import("./src/app-server/transcript-abort.test-support.js");
 
-export const loadCodexDynamicToolBuildTestFixture = () =>
-  import("./src/app-server/dynamic-tool-build.test-support.js");
-
 type CodexHarnessPromptSnapshot = {
   developerInstructions: string;
   parentLocalInstructions: string | null;
