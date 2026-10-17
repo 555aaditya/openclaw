@@ -296,21 +296,21 @@ vi.mock("/src/agents/embedded-agent-runner/active-run-projections.js", async (im
   isEmbeddedAgentRunActive: (sessionId: string) => embeddedRunMock.activeIds.has(sessionId),
 }));
 
+// mock-isolation: Gateway fixtures must not collect real channel or session state.
 vi.mock("./health/collector.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./health/collector.js")>()),
   collectGatewayHealthSnapshot: vi
     .fn<typeof import("./health/collector.js").collectGatewayHealthSnapshot>()
     .mockImplementation(async () => ({
       ok: true,
-      ts: Date.now(),
+      ts: 0,
       durationMs: 0,
       channels: {},
       channelOrder: [],
       channelLabels: {},
       heartbeatSeconds: 0,
-      defaultAgentId: "main",
       agents: [],
-      sessions: { path: "", count: 0, recent: [] },
+      sessions: { path: "/test/gateway/sessions", count: 0, recent: [] },
     })),
 }));
 vi.mock("../status/summary.js", () => ({
