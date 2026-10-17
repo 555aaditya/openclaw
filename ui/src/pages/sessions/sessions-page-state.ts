@@ -1110,7 +1110,7 @@ export function createSessionsPage(
       return;
     }
     try {
-      const forkedKey = await scope.sessions.create(createParams);
+      const forkedKey = await scope.sessions.create(createParams, { signal: scope.signal });
       if (!isRequestScopeCurrent(scope)) {
         return;
       }

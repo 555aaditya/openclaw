@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { GATEWAY_STARTUP_ADMISSION_WAIT_MS } from "../../packages/gateway-protocol/src/startup-unavailable.js";
 import { raceWithTimeout } from "../../packages/retry/src/index.js";
 import { cloneEnvWithPlatformSemantics } from "../config/config-env-vars.js";
 import { racePromiseWithAbortSignal } from "../infra/abort-signal.js";
@@ -285,7 +286,8 @@ class AgentDatabaseStartupAdmission {
     }
     // Allow five minutes for slow-host startup, plus a minute per queued inspection batch.
     const timeoutMs =
-      300_000 + Math.ceil(this.pending.size / AGENT_DATABASE_PREFLIGHT_CONCURRENCY) * 60_000;
+      GATEWAY_STARTUP_ADMISSION_WAIT_MS +
+      Math.ceil(this.pending.size / AGENT_DATABASE_PREFLIGHT_CONCURRENCY) * 60_000;
     return raceWithTimeout(
       pending.completion,
       timeoutMs,

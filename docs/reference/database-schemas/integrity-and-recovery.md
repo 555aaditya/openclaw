@@ -577,6 +577,10 @@ that refused request with the same request ID and input, within its original
 deadline and cancellation signal. Expiry or cancellation stops retries; no write
 remains parked at the server. Clients without this retry behavior receive the
 unavailable error immediately and can retry after preparation finishes.
+TUI and Control UI sends and new sessions use the shared five-minute startup
+budget for their client-owned response deadline. Stop or retiring the initiating
+view cancels pending admission retries. SDK, native, and tool callers retain their
+own deadlines.
 Channel ingress and direct agent execution wait for existing preparation without
 holding database or session locks, for up to five minutes plus one minute per
 remaining two-agent inspection batch. Reads keep their existing readiness behavior,
