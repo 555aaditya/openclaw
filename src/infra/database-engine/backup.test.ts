@@ -28,8 +28,7 @@ import {
 } from "../../state/openclaw-state-db.js";
 import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
 import { createBackupSqliteSnapshotPlan } from "../backup-sqlite-snapshot.js";
-import { CLIENT_CREDENTIAL_SCHEMA_SQL } from "../client-credential-schema.js";
-import { resolveClientCredentialStorePath } from "../client-credential-store.js";
+import { resolveClientCredentialStorePath } from "../client-credential-paths.js";
 import { openNodeSqliteDatabase } from "../node-sqlite.js";
 import * as snapshotSource from "../sqlite-snapshot-source.js";
 import { restoreUpdateDatabaseBackup } from "../update-database-restore.js";
@@ -131,11 +130,8 @@ describe.skipIf(!connection)("matched PostgreSQL backup and update recovery", ()
         openOpenClawStateDatabase({ env: state.env });
         await closeOpenClawStateDatabaseAsync();
         const credentialsPath = resolveClientCredentialStorePath(state.env);
-        await fs.mkdir(path.dirname(credentialsPath), { recursive: true, mode: 0o700 });
         {
           using credentials = openNodeSqliteDatabase(credentialsPath);
-          credentials.exec(CLIENT_CREDENTIAL_SCHEMA_SQL);
-          credentials.exec("PRAGMA user_version = 1");
           credentials
             .prepare("INSERT INTO device_auth_tokens VALUES (?, ?, ?, ?, ?)")
             .run("synthetic-device", "operator", "synthetic-token", "[]", 1);
