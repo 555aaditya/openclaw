@@ -73,7 +73,9 @@ it.each(
     assert(outcome.status === "ok");
     expect(validateDecisionResult(batch, outcome.result)).toBe(true);
     expect(Object.hasOwn(outcome.result.answers, id)).toBe(true);
-    expect(validateDecisionResult(batch, JSON.parse(JSON.stringify(outcome.result)))).toBe(true);
+    // JSON serialization must preserve reserved own keys in the returned result.
+    const serialized = JSON.stringify(outcome.result);
+    expect(validateDecisionResult(batch, JSON.parse(serialized))).toBe(true);
     expect(fetch).toHaveBeenCalledOnce();
     const body = fetch.mock.calls[0]?.[1]?.body;
     assert(typeof body === "string");
