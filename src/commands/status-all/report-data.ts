@@ -24,7 +24,7 @@ import { buildStatusUpdateRows } from "../status-update-restart.ts";
 import { resolveStatusAllConnectionDetails } from "../status.gateway-connection.ts";
 import type { NodeOnlyGatewayInfo } from "../status.node-mode.js";
 import {
-  resolveStatusSummaryFromOverview,
+  prepareStatusSummaryFromOverview,
   type StatusScanOverviewResult,
 } from "../status.scan-overview.ts";
 
@@ -134,7 +134,6 @@ async function resolveStatusAllLocalDiagnosis(params: {
       pluginCompatibility,
       channelsStatus: overview.channelsStatus,
       channelIssues: overview.channelIssues,
-      agentStatus: overview.agentStatus,
       gatewayReachable,
       gatewayStartupPhase: gatewayProbe?.startupPhase,
       localGatewayHealthy:
@@ -158,14 +157,31 @@ export async function buildStatusAllReportData(params: {
   gatewayProbeDeadlineMs: number;
 }) {
   const gatewaySnapshot = params.overview.gatewaySnapshot;
-  const [{ configPath, diagnosis }, summary] = await Promise.all([
+  const runtimeDegradation = params.overview.runtimeDegradation;
+  const [{ configPath, diagnosis }, prepared] = await Promise.all([
     resolveStatusAllLocalDiagnosis(params),
-    params.overview.runtimeDegradation ??
-      resolveStatusSummaryFromOverview({ overview: params.overview }),
+    runtimeDegradation
+      ? {
+          publish: () => ({
+            summary: runtimeDegradation,
+            sessionStores: undefined,
+          }),
+        }
+      : prepareStatusSummaryFromOverview({ overview: params.overview }),
   ]);
 
+  const updateRows = await buildStatusUpdateRows(diagnosis.sentinel?.payload, {
+    localGatewayHealthy: diagnosis.localGatewayHealthy,
+    gatewayServer: diagnosis.gatewayServer,
+  });
+  const { summary, sessionStores } = prepared.publish();
+  const agentStatus =
+    "publish" in params.overview.agentStatus
+      ? params.overview.agentStatus.publish(sessionStores)
+      : params.overview.agentStatus;
   const overviewSurface = {
     ...params.overview,
+    agentStatus,
     ...gatewaySnapshot,
     gatewayService: params.daemon,
     nodeService: params.nodeService,
@@ -177,11 +193,8 @@ export async function buildStatusAllReportData(params: {
     configPath,
     summary,
     secretDiagnosticsCount: params.overview.secretDiagnostics.length,
-    updateRows: await buildStatusUpdateRows(diagnosis.sentinel?.payload, {
-      localGatewayHealthy: diagnosis.localGatewayHealthy,
-      gatewayServer: diagnosis.gatewayServer,
-    }),
-    agentStatus: params.overview.agentStatus,
+    updateRows,
+    agentStatus,
   });
 
   return {
@@ -192,7 +205,7 @@ export async function buildStatusAllReportData(params: {
       channel: issue.channel,
       message: issue.message,
     })),
-    agentStatus: params.overview.agentStatus,
+    agentStatus,
     connectionDetailsForReport: resolveStatusAllConnectionDetails({
       nodeOnlyGateway: params.nodeOnlyGateway,
       remoteUrlMissing: gatewaySnapshot.remoteUrlMissing,
@@ -200,6 +213,6 @@ export async function buildStatusAllReportData(params: {
       bindMode: params.overview.cfg.gateway?.bind ?? "loopback",
       configPath,
     }),
-    diagnosis,
+    diagnosis: { ...diagnosis, agentStatus },
   };
 }

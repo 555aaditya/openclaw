@@ -103,24 +103,6 @@ export function resolveHealthAgentOrder(cfg: OpenClawConfig) {
   return { defaultAgentId, ordered };
 }
 
-async function createHealthSessionStoreReader(
-  agentIds: readonly string[],
-  projection?: SessionRowProjection,
-) {
-  const { createStatusSessionStoreReader } = await import("../../status/session-stores.js");
-  const { isTransientSqliteError } = await import("../../infra/unhandled-rejections.js");
-  return createStatusSessionStoreReader(agentIds, HEALTH_RECENT_SESSION_LIMIT, {
-    projection,
-    recoverReadError(error) {
-      if (!isTransientSqliteError(error)) {
-        throw error;
-      }
-      // Health is best-effort: one empty snapshot beats repeated transient lock failures.
-      return { count: 0, recent: [], byAgent: new Map() };
-    },
-  });
-}
-
 function projectHealthSessions(
   path: string,
   summary: { count: number; recent: SessionEntrySummary[] },
@@ -137,23 +119,13 @@ function projectHealthSessions(
   } satisfies HealthSummary["sessions"];
 }
 
-async function buildHealthSessionSummary(
-  storePath: string,
-  agentId?: string,
-  projection?: SessionRowProjection,
-) {
-  const reader = await createHealthSessionStoreReader(agentId ? [agentId] : [], projection);
-  const store = await reader.read(storePath, agentId);
-  return projectHealthSessions(store?.path ?? storePath, store ?? { count: 0, recent: [] });
-}
-
 /** Shares one bounded session snapshot across every configured agent in this collection. */
 export async function buildHealthAgentSummaries(
   cfg: OpenClawConfig,
   order: ReturnType<typeof resolveHealthAgentOrder>,
   projection?: SessionRowProjection,
 ): Promise<AgentHealthSummary[]> {
-  return (await prepareHealthAgentSummaries(cfg, order, projection)).publish();
+  return (await prepareHealthAgentSummaries(cfg, order, projection)).publish().agents;
 }
 
 async function prepareHealthAgentSummaries(
@@ -161,31 +133,54 @@ async function prepareHealthAgentSummaries(
   { defaultAgentId, ordered }: ReturnType<typeof resolveHealthAgentOrder>,
   projection?: SessionRowProjection,
 ) {
-  const agentIds = ordered.map((entry) => entry.id);
-  const reader = await createHealthSessionStoreReader(agentIds, projection);
-  // One roster pass for every agent: per-agent resolution re-walks the roster
-  // and froze large fleets for tens of seconds each refresh (#137570).
-  const heartbeats = resolveHeartbeatSummariesForAgents(cfg, agentIds);
-  const agents: AgentHealthSummary[] = [];
-  for (const [index, entry] of ordered.entries()) {
-    const store = await reader.read(
-      resolveSessionStorePathCore(cfg.session?.store, { agentId: entry.id }),
-      entry.id,
-    );
-    if (!store) {
-      continue;
-    }
-    agents.push({
-      agentId: entry.id,
-      name: entry.name,
-      isDefault: entry.id === defaultAgentId,
+  const { prepareStatusSessionStores } = await import("../../status/session-stores.js");
+  const { isTransientSqliteError } = await import("../../infra/unhandled-rejections.js");
+  const heartbeats = resolveHeartbeatSummariesForAgents(
+    cfg,
+    ordered.map(({ id }) => id),
+  );
+  const prepared = await prepareStatusSessionStores(
+    cfg,
+    ordered.map((agent, index) => ({
+      ...agent,
       heartbeat: expectDefined(heartbeats[index], "heartbeat summary"),
-      sessions: projectHealthSessions(store.path, store),
-    });
-  }
+    })),
+    HEALTH_RECENT_SESSION_LIMIT,
+    {
+      projection,
+      fallbackToUnscopedStore: true,
+      recoverReadError(error) {
+        if (!isTransientSqliteError(error)) {
+          throw error;
+        }
+        // Health is best-effort for transient locks; unrelated failures still surface.
+        return { count: 0, recent: [], byAgent: new Map() };
+      },
+    },
+  );
   return {
-    hasAgents: agents.length > 0,
-    publish: () => agents.filter(({ agentId }) => !reader.isDeleted(agentId)),
+    publish() {
+      const stores = prepared.publish();
+      const agents: AgentHealthSummary[] = stores.byAgent.map(({ agent, ...store }) => ({
+        agentId: agent.id,
+        name: agent.name,
+        isDefault: agent.id === defaultAgentId,
+        heartbeat: agent.heartbeat,
+        sessions: projectHealthSessions(store.path, store),
+      }));
+      return {
+        agents,
+        sessions:
+          (agents.find((agent) => agent.isDefault) ?? agents[0])?.sessions ??
+          projectHealthSessions(
+            stores.paths[0] ??
+              resolveSessionStorePathCore(cfg.session?.store, {
+                agentId: defaultAgentId ?? ordered[0]?.id,
+              }),
+            stores,
+          ),
+      };
+    },
   };
 }
 
@@ -521,15 +516,6 @@ export async function collectGatewayHealthSnapshot(params: {
     { defaultAgentId, ordered },
     params.sessionRowProjection,
   );
-  const fallbackSessions = agentSummaries.hasAgents
-    ? undefined
-    : await buildHealthSessionSummary(
-        resolveSessionStorePathCore(cfg.session?.store, {
-          agentId: defaultAgentId ?? ordered[0]?.id,
-        }),
-        defaultAgentId ?? ordered[0]?.id,
-        params.sessionRowProjection,
-      );
 
   const includeSensitive = params.audience === "admin";
   const channels: Record<string, ChannelHealthSummary> = {};
@@ -642,7 +628,7 @@ export async function collectGatewayHealthSnapshot(params: {
   const pluginHealth = buildPluginHealthSummary(cfg);
   const contextEngineHealth = await buildContextEngineHealthSummary();
   const deliveryQueueHealth = await buildDeliveryQueueHealthSummary(undefined, stateContext);
-  const agents = agentSummaries.publish();
+  const { agents, sessions } = agentSummaries.publish();
   const summaryAgent = agents.find((agent) => agent.isDefault) ?? agents[0];
   const configuredHeartbeatAgentId = normalizeOptionalString(
     cfg.agents?.defaults?.heartbeat?.agentId,
@@ -660,15 +646,6 @@ export async function collectGatewayHealthSnapshot(params: {
   const heartbeatSeconds = heartbeatSummaryAgent?.heartbeat.everyMs
     ? Math.round(heartbeatSummaryAgent.heartbeat.everyMs / 1000)
     : 0;
-  const sessions =
-    summaryAgent?.sessions ??
-    fallbackSessions ??
-    projectHealthSessions(
-      resolveSessionStorePathCore(cfg.session?.store, {
-        agentId: defaultAgentId ?? ordered[0]?.id,
-      }),
-      { count: 0, recent: [] },
-    );
   return {
     ok: true,
     ts: Date.now(),

@@ -7,6 +7,7 @@ import * as configRuntime from "../../config/config.js";
 import { setRuntimeConfigSnapshot } from "../../config/runtime-snapshot.js";
 import { resolveSessionStorePathCore } from "../../config/sessions/paths.js";
 import * as sessionAccessor from "../../config/sessions/session-accessor.js";
+import { replaceSessionEntrySync } from "../../config/sessions/session-accessor.js";
 import * as sessionReadRuntime from "../../config/sessions/session-entry-read-runtime.js";
 import { resolveSqliteTargetFromSessionStorePath } from "../../config/sessions/session-sqlite-target.js";
 import { spyOnSessionStoreSummaries } from "../../config/sessions/session-store-summary.test-support.js";
@@ -319,6 +320,121 @@ describe("health session store paths", () => {
           held.mockRestore();
           laterRead.mockRestore();
         }
+      });
+    },
+  );
+
+  it.each(["desktop", "certificate"] as const)(
+    "publishes status after deletion during the final %s preparation",
+    async (phase) => {
+      await withOpenClawTestState({ label: "status-final-publication" }, async (state) => {
+        const cfg: OpenClawConfig = {
+          agents: { ownership: "explicit", entries: { deleting: {}, survivor: {} } },
+        };
+        setRuntimeConfigSnapshot(cfg);
+        for (const id of ["deleting", "survivor"]) {
+          await sessionAccessor.upsertSessionEntryCore(
+            { agentId: id, sessionKey: `agent:${id}:main` },
+            { sessionId: `${id}-session`, updatedAt: 1 },
+          );
+        }
+        const desktop = await import("../desktop/host-source.js");
+        const certificate = await import("../../secrets/egress-proxy/registry.js");
+        const { getStatusSummary } = await import("../../status/summary.js");
+        const entered = createDeferred();
+        const release = createDeferred();
+        const inspect = desktop.inspectHostDesktop;
+        vi.spyOn(desktop, "inspectHostDesktop").mockImplementation(async (params) => {
+          const result = await inspect(params);
+          if (phase === "desktop") {
+            entered.resolve();
+            await release.promise;
+          }
+          return result;
+        });
+        vi.spyOn(certificate, "getSecretEgressCertificateStatus").mockImplementation(async () => {
+          if (phase === "certificate") {
+            entered.resolve();
+            await release.promise;
+          }
+          return { state: "ready", caExpiresAt: "2099-01-01T00:00:00.000Z", failedCertificates: 0 };
+        });
+        const pending = getStatusSummary({
+          config: cfg,
+          includeSensitive: false,
+          includeChannelSummary: false,
+          includeCliProjection: true,
+        });
+        try {
+          await awaitGateBeforeSettlement(
+            entered.promise,
+            pending,
+            "Status skipped final preparation",
+          );
+          beginAgentDeletionJournal({
+            agentId: "deleting",
+            operationId: "status-publication",
+            agentDir: state.agentDir("deleting"),
+            sessionsDir: state.sessionsDir("deleting"),
+            workspaceDir: state.workspaceDir,
+            deleteFiles: true,
+          });
+          release.resolve();
+          const summary = await pending;
+          expect(summary.sessions.byAgent.map(({ agentId }) => agentId)).toEqual(["survivor"]);
+          expect(summary.sessions.count).toBe(1);
+          expect(summary.heartbeat.agents.map(({ agentId }) => agentId)).toEqual(["survivor"]);
+          expect(summary.cliProjection?.agents.rows.map(({ id }) => id)).toEqual(["survivor"]);
+        } finally {
+          release.resolve();
+          await pending.catch(() => {});
+        }
+      });
+    },
+  );
+
+  it.each([true, false])(
+    "refills shared-store recent sessions and excludes deleted namespaces (configured: %s)",
+    async (configured) => {
+      await withOpenClawTestState({ label: "status-shared-publication" }, async (state) => {
+        const storePath = state.statePath("shared.sqlite");
+        const cfg: OpenClawConfig = {
+          agents: {
+            ownership: "explicit",
+            entries: configured ? { survivor: {}, deleting: {} } : { survivor: {} },
+          },
+          session: { store: storePath },
+        };
+        setRuntimeConfigSnapshot(cfg);
+        for (const agentId of ["survivor", "deleting", "retired"]) {
+          for (let index = 0; index < 12; index++) {
+            const key = `agent:${agentId}:${String(index).padStart(2, "0")}`;
+            replaceSessionEntrySync(
+              { agentId, sessionKey: key, storePath },
+              {
+                sessionId: key,
+                updatedAt: agentId === "deleting" ? 30 : agentId === "survivor" ? 20 : 10,
+              },
+            );
+          }
+        }
+        beginAgentDeletionJournal({
+          agentId: "deleting",
+          operationId: "shared-publication",
+          agentDir: state.agentDir("deleting"),
+          sessionsDir: state.sessionsDir("deleting"),
+          workspaceDir: state.workspaceDir,
+          deleteFiles: true,
+        });
+        const result = await readStatusSessionStores(cfg, resolveHealthAgentOrder(cfg).ordered, 10);
+        expect(result.byAgent.map(({ agent }) => agent.id)).toEqual(["survivor"]);
+        expect(result.count).toBe(24);
+        expect(result.recent.map(({ sessionKey }) => sessionKey)).toEqual(
+          Array.from(
+            { length: 10 },
+            (_, index) => `agent:survivor:${String(index).padStart(2, "0")}`,
+          ),
+        );
       });
     },
   );

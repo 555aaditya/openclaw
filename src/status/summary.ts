@@ -47,9 +47,9 @@ import { deliveryContextFromSession } from "../utils/delivery-context.read.js";
 import { resolveRuntimeServiceVersion } from "../version.js";
 import { buildStatusCliProjection } from "./cli-projection.js";
 import {
-  readStatusSessionStores,
+  prepareStatusSessionStores,
   STATUS_RECENT_SESSION_LIMIT,
-  type StatusSessionStores,
+  type PreparedStatusSessionStores,
 } from "./session-stores.js";
 import type { HeartbeatStatus, SessionStatus } from "./types.js";
 
@@ -293,8 +293,13 @@ async function prepareSessionStatusDetails(
   };
 }
 
-/** Builds the aggregate status summary for agents, sessions, heartbeat, and channels. */
-export async function getStatusSummary(
+/** Builds the aggregate status summary at its final synchronous publication boundary. */
+export async function getStatusSummary(options: Parameters<typeof prepareStatusSummary>[0] = {}) {
+  return (await prepareStatusSummary(options)).publish().summary;
+}
+
+/** Composing CLI owners retain this preparation until their remaining work settles. */
+export async function prepareStatusSummary(
   options: {
     includeSensitive?: boolean;
     includeChannelSummary?: boolean;
@@ -302,7 +307,7 @@ export async function getStatusSummary(
     config?: OpenClawConfig;
     sourceConfig?: OpenClawConfig;
     hostDesktopStatus?: import("../gateway/desktop/host-source.js").HostDesktopStatus;
-    sessionStores?: StatusSessionStores;
+    sessionStores?: PreparedStatusSessionStores;
     sessionRowProjection?: SessionRowProjection;
   } = {},
 ) {
@@ -443,49 +448,19 @@ export async function getStatusSummary(
         }),
       )
     : [];
-  const queuedSystemEvents = agentList.agents.flatMap(({ id: agentId }) =>
-    peekSystemEvents(
-      resolveSystemEventQueueKey(
-        resolveCanonicalMainSessionKey({
-          agentId,
-          mainKey: cfg.session?.mainKey,
-          sessionScope: cfg.session?.scope,
-        }),
-        agentId,
-      ),
-    ),
-  );
   const now = Date.now();
 
   const sessionStores =
     options.sessionStores ??
-    (await readStatusSessionStores(
+    (await prepareStatusSessionStores(
       cfg,
       agentList.agents,
       includeSensitive ? STATUS_RECENT_SESSION_LIMIT : 0,
-      options.sessionRowProjection,
+      { projection: options.sessionRowProjection },
     ));
-  const recentCandidates = sortAndLimitBy(
-    sessionStores.recent,
-    STATUS_RECENT_SESSION_LIMIT,
-    compareSessionCandidatesByUpdatedAt,
-  );
   const sessionDetails = includeSensitive
-    ? await prepareSessionStatusDetails(cfg, now, [
-        ...new Set([...recentCandidates, ...sessionStores.byAgent.flatMap(({ recent }) => recent)]),
-      ])
+    ? await prepareSessionStatusDetails(cfg, now, sessionStores.candidates)
     : undefined;
-  const byAgent = sessionStores.byAgent.map(({ agent, path, count, recent }) => ({
-    agentId: agent.id,
-    ...(agent.status ? { status: agent.status } : {}),
-    ...(includeSensitive && agent.admissionRefusal
-      ? { admissionRefusal: agent.admissionRefusal }
-      : {}),
-    path: includeSensitive ? path : "[redacted]",
-    count,
-    recent: sessionDetails ? sessionDetails.buildSessionRows(recent) : [],
-  }));
-  const recent = sessionDetails ? sessionDetails.buildSessionRows(recentCandidates) : [];
   const hostDesktopStatus =
     options.hostDesktopStatus ??
     (
@@ -493,53 +468,96 @@ export async function getStatusSummary(
         await import("../gateway/desktop/host-source.js")
       ).inspectHostDesktop({ config: cfg.desktop?.host })
     ).status;
-  const sqliteWal = readOpenClawStateWalHealth();
+  const secretEgressProxy = await getSecretEgressCertificateStatus();
   return {
-    runtimeVersion: resolveRuntimeServiceVersion(process.env),
-    ...(options.includeCliProjection
-      ? { cliProjection: buildStatusCliProjection(cfg, agentList) }
-      : {}),
-    sqliteWal: sqliteWal && !includeSensitive ? { ...sqliteWal, error: undefined } : sqliteWal,
-    hostDesktop: hostDesktopStatus,
-    linkChannel: linkContext
-      ? {
-          id: linkContext.plugin.id,
-          label: linkContext.plugin.meta.label ?? "Channel",
-          linked: linkContext.linked,
-          authAgeMs: linkContext.authAgeMs,
-        }
-      : undefined,
-    heartbeat: {
-      defaultAgentId: agentList.defaultId,
-      agents: heartbeatAgents,
-    },
-    channelSummary,
-    queuedSystemEvents,
-    startupMigrationWarning: readStartupMigrationWarning(includeSensitive),
-    startupRecoveryWarning: readStartupRecoveryWarning(includeSensitive),
-    installationReplacementWarning: getGatewayInstallationReplacement()?.message,
-    secretEgressProxy: await getSecretEgressCertificateStatus(),
-    degradedSecretOwners: listActiveDegradedSecretOwners().map(
-      ({ ownerKind, ownerId, state, degradationState, paths, reason }) => ({
-        ownerKind,
-        ownerId,
-        state,
-        degradationState: degradationState ?? "cold",
-        paths,
-        reason: redactSecretDegradationReason(reason),
-      }),
-    ),
-    degradedPlugins: listActiveDegradedPlugins().map(({ pluginId, state, diagnostic }) => ({
-      pluginId,
-      state,
-      diagnostic: toPublicPluginVerificationDiagnostic(diagnostic),
-    })),
-    sessions: {
-      paths: includeSensitive ? sessionStores.paths : [],
-      count: sessionStores.count,
-      defaults: sessionDetails?.defaults ?? { model: null, contextTokens: null },
-      recent,
-      byAgent,
+    publish() {
+      const publishedStores = sessionStores.publish();
+      const survivingIds = new Set(publishedStores.byAgent.map(({ agent }) => agent.id));
+      const publishedAgentList = {
+        ...agentList,
+        agents: agentList.agents.filter(({ id }) => survivingIds.has(id)),
+      };
+      const recentCandidates = sortAndLimitBy(
+        publishedStores.recent,
+        STATUS_RECENT_SESSION_LIMIT,
+        compareSessionCandidatesByUpdatedAt,
+      );
+      const byAgent = publishedStores.byAgent.map(({ agent, path, count, recent }) => ({
+        agentId: agent.id,
+        ...(agent.status ? { status: agent.status } : {}),
+        ...(includeSensitive && agent.admissionRefusal
+          ? { admissionRefusal: agent.admissionRefusal }
+          : {}),
+        path: includeSensitive ? path : "[redacted]",
+        count,
+        recent: sessionDetails ? sessionDetails.buildSessionRows(recent) : [],
+      }));
+      const recent = sessionDetails ? sessionDetails.buildSessionRows(recentCandidates) : [];
+      const queuedSystemEvents = publishedAgentList.agents.flatMap(({ id: agentId }) =>
+        peekSystemEvents(
+          resolveSystemEventQueueKey(
+            resolveCanonicalMainSessionKey({
+              agentId,
+              mainKey: cfg.session?.mainKey,
+              sessionScope: cfg.session?.scope,
+            }),
+            agentId,
+          ),
+        ),
+      );
+      const sqliteWal = readOpenClawStateWalHealth();
+      return {
+        sessionStores: publishedStores,
+        summary: {
+          runtimeVersion: resolveRuntimeServiceVersion(process.env),
+          ...(options.includeCliProjection
+            ? { cliProjection: buildStatusCliProjection(cfg, publishedAgentList) }
+            : {}),
+          sqliteWal:
+            sqliteWal && !includeSensitive ? { ...sqliteWal, error: undefined } : sqliteWal,
+          hostDesktop: hostDesktopStatus,
+          linkChannel: linkContext
+            ? {
+                id: linkContext.plugin.id,
+                label: linkContext.plugin.meta.label ?? "Channel",
+                linked: linkContext.linked,
+                authAgeMs: linkContext.authAgeMs,
+              }
+            : undefined,
+          heartbeat: {
+            defaultAgentId: agentList.defaultId,
+            agents: heartbeatAgents.filter(({ agentId }) => survivingIds.has(agentId)),
+          },
+          channelSummary,
+          queuedSystemEvents,
+          startupMigrationWarning: readStartupMigrationWarning(includeSensitive),
+          startupRecoveryWarning: readStartupRecoveryWarning(includeSensitive),
+          installationReplacementWarning: getGatewayInstallationReplacement()?.message,
+          secretEgressProxy,
+          degradedSecretOwners: listActiveDegradedSecretOwners().map(
+            ({ ownerKind, ownerId, state, degradationState, paths, reason }) => ({
+              ownerKind,
+              ownerId,
+              state,
+              degradationState: degradationState ?? "cold",
+              paths,
+              reason: redactSecretDegradationReason(reason),
+            }),
+          ),
+          degradedPlugins: listActiveDegradedPlugins().map(({ pluginId, state, diagnostic }) => ({
+            pluginId,
+            state,
+            diagnostic: toPublicPluginVerificationDiagnostic(diagnostic),
+          })),
+          sessions: {
+            paths: includeSensitive ? publishedStores.paths : [],
+            count: publishedStores.count,
+            defaults: sessionDetails?.defaults ?? { model: null, contextTokens: null },
+            recent,
+            byAgent,
+          },
+        },
+      };
     },
   };
 }

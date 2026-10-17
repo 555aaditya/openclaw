@@ -7,24 +7,44 @@ import { captureSessionTranscriptStorageEnvironment } from "../config/sessions/t
 import type { OpenClawConfig } from "../config/types.js";
 import type { listGatewayAgentsBasic } from "../gateway/agent-list.js";
 import type { SessionRowProjection } from "../gateway/session-row-projection.js";
-import { parseAgentSessionKey } from "../routing/session-key.js";
 import {
   AgentDatabaseAdmissionError,
   readAgentDatabaseAdmissionRefusal,
 } from "../state/agent-database-admission.js";
-import { getOrLoadAgentDeletionJournalStatus } from "../state/agent-deletion-journal-status.js";
+import {
+  getPreparedAgentDeletionDiscovery,
+  getOrLoadAgentDeletionJournalStatus,
+} from "../state/agent-deletion-journal-status.js";
 import { resolveOpenClawStateSqlitePath } from "../state/openclaw-state-db.paths.js";
 
 export const STATUS_RECENT_SESSION_LIMIT = 10;
 const SESSION_STORE_READ_SLICE_MS = 8;
 type SessionStoreSummary = Awaited<ReturnType<SessionHistoryWorkerDatabase["readStoreSummary"]>>;
-export type StatusSessionStores = Awaited<
+export type PreparedStatusSessionStores = Awaited<
   ReturnType<
-    typeof readStatusSessionStores<
+    typeof prepareStatusSessionStores<
       Awaited<ReturnType<typeof listGatewayAgentsBasic>>["agents"][number]
     >
   >
 >;
+
+export type StatusSessionStores = ReturnType<PreparedStatusSessionStores["publish"]>;
+
+type SessionStoreReadOptions = {
+  projection?: SessionRowProjection;
+  recoverReadError?: (error: unknown) => SessionStoreSummary;
+  fallbackToUnscopedStore?: boolean;
+};
+
+function compareSessionRows(
+  left: SessionStoreSummary["recent"][number],
+  right: SessionStoreSummary["recent"][number],
+) {
+  return (
+    (right.entry.updatedAt ?? 0) - (left.entry.updatedAt ?? 0) ||
+    (left.sessionKey < right.sessionKey ? -1 : left.sessionKey > right.sessionKey ? 1 : 0)
+  );
+}
 
 function summarizeProjectionRows(
   projection: SessionRowProjection,
@@ -33,64 +53,57 @@ function summarizeProjectionRows(
   recentLimit: number,
 ): SessionStoreSummary {
   const rows = projection.selectEntries({ storePath, sortBy: null });
+  // Keep each namespace's candidates until the publisher selects surviving windows.
   if (recentLimit !== 0) {
-    // The projection returns a fresh selection, independent of its resident indexes.
     rows.sort(
       (left, right) =>
         (right.entry.updatedAt ?? 0) - (left.entry.updatedAt ?? 0) ||
         (left.key < right.key ? -1 : left.key > right.key ? 1 : 0),
     );
   }
-  const summarize = (selected: typeof rows) => ({
-    count: selected.length,
-    recent: selected.slice(0, recentLimit).map(({ key: sessionKey, entry }) => ({
-      sessionKey,
-      entry,
-    })),
-  });
-  if (recentLimit >= 0) {
-    const byAgent: SessionStoreSummary["byAgent"] = new Map(
-      agentIds.map((agentId) => [agentId, { count: 0, recent: [] }]),
-    );
-    rows.forEach((row) => {
-      const agent = byAgent.get(row.agentId);
-      if (agent) {
-        agent.count += 1;
-        if (agent.count <= recentLimit) {
-          agent.recent.push({ sessionKey: row.key, entry: row.entry });
-        }
-      }
-    });
-    return { count: rows.length, recent: recentLimit === 0 ? [] : summarize(rows).recent, byAgent };
+  const byAgent: SessionStoreSummary["byAgent"] = new Map(
+    agentIds.map((agentId) => [agentId, { count: 0, recent: [] }]),
+  );
+  for (const row of rows) {
+    let agent = byAgent.get(row.agentId);
+    if (!agent) {
+      agent = { count: 0, recent: [] };
+      byAgent.set(row.agentId, agent);
+    }
+    agent.count += 1;
+    if (recentLimit < 0 || agent.recent.length < recentLimit) {
+      agent.recent.push({ sessionKey: row.key, entry: row.entry });
+    }
   }
-  return {
-    ...summarize(rows),
-    byAgent: new Map(
-      agentIds.map((agentId) => [
-        agentId,
-        summarize(rows.filter((row) => row.agentId === agentId)),
-      ]),
-    ),
-  };
+  return { count: rows.length, recent: [], byAgent };
 }
 
 /** One collection owns each physical store's bounded snapshot, including its agent windows. */
-export function createStatusSessionStoreReader(
+function createStatusSessionStoreReader(
   agentIds: readonly string[],
   recentLimit: number,
-  options: {
-    projection?: SessionRowProjection;
-    recoverReadError?: (error: unknown) => SessionStoreSummary;
-  } = {},
+  options: SessionStoreReadOptions = {},
 ) {
   const env = captureSessionTranscriptStorageEnvironment(process.env);
-  const stores = new Map<string, SessionStoreSummary & { path: string; readBy: Set<string> }>();
+  const stores = new Map<
+    string,
+    SessionStoreSummary & { path: string; readBy: Set<string | undefined> }
+  >();
   const statePath = resolveOpenClawStateSqlitePath(env);
+  const readStatus = (agentId: string) =>
+    getOrLoadAgentDeletionJournalStatus(statePath, agentId, () => undefined);
   const isDeleted = (agentId?: string) => {
-    const status = agentId
-      ? getOrLoadAgentDeletionJournalStatus(statePath, agentId, () => undefined)
-      : undefined;
-    return status === "pending" || status === "complete";
+    if (!agentId) {
+      return false;
+    }
+    const status = readStatus(agentId);
+    const discovery = getPreparedAgentDeletionDiscovery(statePath);
+    return (
+      status === "pending" ||
+      status === "complete" ||
+      (discovery?.status === "present" &&
+        discovery.entries.some((entry) => entry.agentId === agentId))
+    );
   };
   let sliceStartedAt = performance.now();
   const storeReader = {
@@ -121,23 +134,14 @@ export function createStatusSessionStoreReader(
                 }
                 snapshot = options.recoverReadError(error);
               }
-              store = { ...snapshot, path, readBy: new Set<string>() };
+              store = { ...snapshot, path, readBy: new Set<string | undefined>() };
             }
             return store;
           });
           const summaries = selected.map((store) => (agentId ? store.byAgent.get(agentId) : store));
-          let recent = summaries.flatMap((summary) => summary?.recent ?? []);
+          const recent = summaries.flatMap((summary) => summary?.recent ?? []);
           if (selected.length > 1) {
-            recent.sort(
-              (left, right) =>
-                (right.entry.updatedAt ?? 0) - (left.entry.updatedAt ?? 0) ||
-                (left.sessionKey < right.sessionKey
-                  ? -1
-                  : left.sessionKey > right.sessionKey
-                    ? 1
-                    : 0),
-            );
-            recent = recent.slice(0, recentLimit);
+            recent.sort(compareSessionRows);
           }
           const summary = {
             path: paths.length === 1 ? paths[0]! : storePath,
@@ -152,9 +156,7 @@ export function createStatusSessionStoreReader(
             return { path: summary.path, count: 0, recent: [] };
           }
           for (const store of selected) {
-            if (agentId) {
-              store.readBy.add(agentId);
-            }
+            store.readBy.add(agentId);
             stores.set(store.path, store);
           }
           return summary;
@@ -181,7 +183,7 @@ export function createStatusSessionStoreReader(
               summary = await reader.readStoreSummary({
                 env: database.env,
                 agentIds,
-                recentLimit,
+                recentLimit: recentLimit < 0 ? Infinity : recentLimit,
                 continuation,
               });
             } catch (error) {
@@ -202,12 +204,10 @@ export function createStatusSessionStoreReader(
             if (agentId && readAgentDatabaseAdmissionRefusal(agentId, { env })) {
               return { path, count: 0, recent: [] };
             }
-            store = { ...summary, path, readBy: new Set<string>() };
+            store = { ...summary, path, readBy: new Set<string | undefined>() };
             stores.set(database.path, store);
           }
-          if (agentId) {
-            store.readBy.add(agentId);
-          }
+          store.readBy.add(agentId);
           const summary = agentId ? store.byAgent.get(agentId) : store;
           return { path, count: summary?.count ?? 0, recent: summary?.recent ?? [] };
         },
@@ -217,15 +217,26 @@ export function createStatusSessionStoreReader(
   };
   return {
     stores,
-    isDeleted,
+    readDeletedAgents(contributors: Set<string>) {
+      const discovery = getPreparedAgentDeletionDiscovery(statePath);
+      const deleted = new Set(
+        discovery?.status === "present" ? discovery.entries.map(({ agentId }) => agentId) : [],
+      );
+      for (const agentId of contributors) {
+        const status = readStatus(agentId);
+        if (status === "pending" || status === "complete") {
+          deleted.add(agentId);
+        }
+      }
+      return deleted;
+    },
     async read(storePath: string, agentId?: string) {
       // Journal commits precede resource closure; stale rosters must not reopen that agent.
       if (isDeleted(agentId)) {
         return undefined;
       }
       try {
-        const summary = await storeReader.read(storePath, agentId);
-        return isDeleted(agentId) ? undefined : summary;
+        return await storeReader.read(storePath, agentId);
       } catch (error) {
         if (!isDeleted(agentId)) {
           throw error;
@@ -236,19 +247,21 @@ export function createStatusSessionStoreReader(
   };
 }
 
-/** Reads each physical store once, retaining retired agent namespaces in the aggregate. */
-export async function readStatusSessionStores<Agent extends { id: string; name?: string }>(
+/** Prepares physical snapshots; only the final synchronous publisher selects live contributions. */
+export async function prepareStatusSessionStores<Agent extends { id: string; name?: string }>(
   cfg: OpenClawConfig,
   agents: readonly Agent[],
   recentLimit: number,
-  projection?: SessionRowProjection,
+  options: SessionStoreReadOptions = {},
 ) {
   const reader = createStatusSessionStoreReader(
     agents.map((agent) => agent.id),
     recentLimit,
-    { projection },
+    options,
   );
-  const byAgent = [];
+  const byAgent: Array<
+    { agent: Agent; path: string } & Pick<SessionStoreSummary, "count" | "recent">
+  > = [];
   for (const agent of agents) {
     const summary = await reader.read(
       resolveSessionStorePathCore(cfg.session?.store, { agentId: agent.id }),
@@ -258,26 +271,58 @@ export async function readStatusSessionStores<Agent extends { id: string; name?:
       byAgent.push({ agent, ...summary });
     }
   }
-  // A later read can outlive deletion of any earlier contributor.
-  const deleted = new Set(agents.filter((agent) => reader.isDeleted(agent.id)).map(({ id }) => id));
-  const stores = [...reader.stores.values()]
-    .filter((store) => [...store.readBy].some((agentId) => !deleted.has(agentId)))
-    .map((store) => ({
-      path: store.path,
-      count:
-        store.count -
-        [...deleted].reduce(
-          (count, agentId) => count + (store.byAgent.get(agentId)?.count ?? 0),
-          0,
-        ),
-      recent: store.recent.filter(
-        ({ sessionKey }) => !deleted.has(parseAgentSessionKey(sessionKey)?.agentId ?? ""),
-      ),
-    }));
+  if (agents.length === 0 && options.fallbackToUnscopedStore) {
+    await reader.read(resolveSessionStorePathCore(cfg.session?.store));
+  }
+  const snapshots = [...reader.stores.values()];
+  const contributors = new Set([
+    ...agents.map(({ id }) => id),
+    ...snapshots.flatMap((store) => [...store.byAgent.keys()]),
+  ]);
   return {
-    paths: stores.map((store) => store.path),
-    count: stores.reduce((count, store) => count + store.count, 0),
-    recent: stores.flatMap((store) => store.recent),
-    byAgent: byAgent.filter(({ agent }) => !deleted.has(agent.id)),
+    candidates: snapshots.flatMap((store) =>
+      [...store.byAgent.values()].flatMap(({ recent }) => recent),
+    ),
+    publish() {
+      const deleted = reader.readDeletedAgents(contributors);
+      const stores = snapshots
+        .filter((store) =>
+          [...store.readBy].some((agentId) => agentId === undefined || !deleted.has(agentId)),
+        )
+        .map((store) => {
+          const namespaces = [...store.byAgent].filter(([agentId]) => !deleted.has(agentId));
+          return {
+            path: store.path,
+            count: namespaces.reduce((count, [, namespace]) => count + namespace.count, 0),
+            recent: namespaces
+              .flatMap(([, namespace]) => namespace.recent)
+              .toSorted(compareSessionRows)
+              .slice(0, recentLimit),
+          };
+        });
+      return {
+        paths: stores.map((store) => store.path),
+        count: stores.reduce((count, store) => count + store.count, 0),
+        recent: stores.flatMap((store) => store.recent),
+        byAgent: byAgent
+          .filter(({ agent }) => !deleted.has(agent.id))
+          .map((summary) => ({
+            agent: summary.agent,
+            path: summary.path,
+            count: summary.count,
+            recent: summary.recent.slice(0, recentLimit),
+          })),
+      };
+    },
   };
+}
+
+/** Standalone readers publish immediately; composing owners retain preparation through their awaits. */
+export async function readStatusSessionStores<Agent extends { id: string; name?: string }>(
+  cfg: OpenClawConfig,
+  agents: readonly Agent[],
+  recentLimit: number,
+  projection?: SessionRowProjection,
+) {
+  return (await prepareStatusSessionStores(cfg, agents, recentLimit, { projection })).publish();
 }

@@ -152,7 +152,6 @@ describe("health and status resident session summaries", () => {
           );
           expect(summaries.map(({ agentId, sessions }) => [agentId, sessions.count])).toEqual([
             ["main", 1],
-            ["retiring", 0],
           ]);
           expect(summaries[0]?.sessions.recent[0]?.key).toBe("agent:main:main");
           const subscribers = createSessionEventSubscriberRegistry();
