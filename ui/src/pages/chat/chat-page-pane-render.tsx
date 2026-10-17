@@ -13,7 +13,7 @@ import {
 import type { DropIndicator } from "./chat-page-drop-indicator.ts";
 import type { PaneSessionChangeOptions } from "./chat-pane-shared.ts";
 import { ChatPaneView } from "./chat-pane.tsx";
-import { PendingSessionCreate } from "./pending-session-create.tsx";
+import { PendingSessionCreate } from "./pending-session-create-lazy.ts";
 import type { RouteDraftComposerFocus } from "./route-draft-focus-handoff.ts";
 import { routeDraft } from "./route-draft.ts";
 import type { SessionChatRouteData } from "./route-loader.ts";

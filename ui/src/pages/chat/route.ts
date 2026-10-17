@@ -10,6 +10,7 @@ import {
   resolveUiConfiguredMainKey,
 } from "../../lib/sessions/session-key.ts";
 import { preloadSessionMessageSubscriptions } from "../../lib/sessions/session-scoped-operations.ts";
+import { PendingSessionCreate } from "./pending-session-create-lazy.ts";
 import { sessionRouteHints } from "./route-draft.ts";
 
 function sessionLoaderDeps(
@@ -61,9 +62,7 @@ function sessionPage(face: BoardFace) {
               : undefined;
         if (target?.namespace === face && sessionKey === creation.sessionKey) {
           options.signal.throwIfAborted();
-          // The creating owner already knows this exact target. Publish its display
-          // synchronously, before lazy route loading or Gateway discovery can wait.
-          return {
+          const result = {
             kind: "session" as const,
             sessionKey,
             agentId: target.agentId,
@@ -71,6 +70,14 @@ function sessionPage(face: BoardFace) {
             face,
             creation,
           };
+          // The agent menu has already loaded its pending view. Ordinary draft
+          // creation enters a literal route directly and retains its preview until ready.
+          return target.kind === "main"
+            ? result
+            : PendingSessionCreate.preload().then(() => {
+                options.signal.throwIfAborted();
+                return result;
+              });
         }
       }
       return import("./route-loader.ts").then((module) =>

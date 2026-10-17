@@ -24,6 +24,7 @@ import {
   resolveAgentIdFromSessionKey,
   resolveUiConfiguredMainKey,
 } from "../../lib/sessions/session-key.ts";
+import { PendingSessionCreate } from "./pending-session-create-lazy.ts";
 import { draftSearchFromLocation, sessionRouteHints } from "./route-draft.ts";
 import { loadCatalogShareRouteFromLocation } from "./route-loader-catalog-share.ts";
 import type { SessionRouteContext as ApplicationContext } from "./route-loader-context.ts";
@@ -601,6 +602,10 @@ export async function loadSessionPage(
   if ("kind" in result && result.kind === "session") {
     if (creation?.sessionKey === result.sessionKey) {
       result.creation = creation;
+    }
+    if (result.creation || context.placementStartup.get(result.sessionKey)?.initialTurn) {
+      await PendingSessionCreate.preload();
+      signal.throwIfAborted();
     }
   }
   return result;
