@@ -575,7 +575,9 @@ function indexedNavigationRows(rows: readonly GatewaySessionRow[]) {
   if (!indexed) {
     indexed = new Map();
     for (const row of rows) {
-      if (!indexed.has(row.key)) indexed.set(row.key, row);
+      if (!indexed.has(row.key)) {
+        indexed.set(row.key, row);
+      }
     }
     navigationRowsByKey.set(rows, indexed);
   }
