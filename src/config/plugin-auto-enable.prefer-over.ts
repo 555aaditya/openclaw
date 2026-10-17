@@ -1,4 +1,3 @@
-// Resolves plugin auto-enable preference ordering across candidate plugins.
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { findChatChannelMeta } from "../channels/chat-meta.js";
 import { normalizeChatChannelId } from "../channels/ids.js";

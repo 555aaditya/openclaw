@@ -1,4 +1,3 @@
-// Shared session-store writer queue state.
 import {
   clearStoreWriterQueuesForTest,
   type StoreWriterQueue,

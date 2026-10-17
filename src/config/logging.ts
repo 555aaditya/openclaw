@@ -10,7 +10,6 @@ type LogConfigUpdatedOptions = {
   suffix?: string;
 };
 
-/** Formats a config path for operator-facing log output. */
 export function formatConfigFilePath(
   path: string = resolveConfigPath(process.env, resolveStateDir()),
 ): string {

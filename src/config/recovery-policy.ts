@@ -1,4 +1,3 @@
-// Decides when config recovery should use snapshots, backups, or defaults.
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import type { ConfigFileSnapshot, ConfigValidationIssue } from "./types.openclaw.js";
 

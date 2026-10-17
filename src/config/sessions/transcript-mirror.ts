@@ -1,4 +1,3 @@
-// Transcript mirroring turns outbound text/media notifications into compact transcript text.
 import path from "node:path";
 import type { SUBAGENT_COMPLETION_DIRECT_DELIVERY_KIND } from "../../shared/transcript-only-openclaw-assistant.js";
 

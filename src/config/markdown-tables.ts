@@ -1,4 +1,3 @@
-// Normalizes markdown table configuration by channel and rendering mode.
 import { normalizeChannelId } from "../channels/plugins/index.js";
 import { getLoadedChannelPlugin } from "../channels/plugins/registry.js";
 import { resolveChannelAccountEntry } from "../routing/account-lookup.js";

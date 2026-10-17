@@ -3,7 +3,6 @@ import { resolveLoadedSessionThreadInfo } from "../../channels/plugins/session-t
 import { normalizeMessageChannel } from "../../utils/message-channel.js";
 import type { SessionConfig, SessionResetConfig } from "../types.base.js";
 import type { SessionResetType } from "./reset-policy.js";
-/** Public reset policy exports plus helpers that classify direct, group, and thread sessions. */
 export {
   evaluateSessionFreshness,
   resolveSessionResetPolicy,
@@ -15,7 +14,6 @@ export {
 
 const GROUP_SESSION_MARKERS = [":group:", ":channel:"];
 
-/** Returns true when a session key is known to represent a thread. */
 function isThreadSessionKey(sessionKey?: string | null): boolean {
   return Boolean(resolveLoadedSessionThreadInfo(sessionKey).threadId);
 }
