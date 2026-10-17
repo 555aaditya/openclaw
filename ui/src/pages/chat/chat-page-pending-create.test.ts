@@ -98,6 +98,11 @@ it.each([
     );
     if (!agentCreation) {
       expect(page.textContent).not.toContain("Creating new agent…");
+      expect(page.textContent).not.toContain("Hi! What would you like to call me?");
+    } else {
+      expect(page.querySelector(".chat-group.assistant .chat-text")?.textContent?.trim()).toBe(
+        "Hi! What would you like to call me?",
+      );
     }
     expect(page.textContent).not.toContain("Reconnecting");
     expect(page.querySelector(".chat-pane-cache__pane--visible")?.textContent).not.toContain(

@@ -8,6 +8,7 @@ import { locationForRoute, routePageSpec, type RouteId } from "../app-route-path
 import { createAgentCapability } from "../lib/agents/index.ts";
 import { SESSION_FACE_PREFERENCE_PARAM } from "../lib/sessions/route-navigation.ts";
 import "../lib/toast-host.ts";
+import "../pages/chat/pending-session-create.tsx";
 import "../test-helpers/app-sidebar-suite.ts";
 import {
   createContext,
@@ -179,6 +180,27 @@ describe("application agent creation", () => {
         "agents.list",
         "agents.create",
       ]);
+      Object.assign(context.placementStartup, {
+        get: () => null,
+        subscribe: () => () => undefined,
+      });
+      const pending = Object.assign(document.createElement("openclaw-pending-session-create"), {
+        context,
+        sessionKey: context.chatSubmissions.creation!.sessionKey,
+      });
+      document.body.append(pending);
+      onTestFinished(() => pending.remove());
+      await vi.waitFor(() => {
+        expect(pending.querySelector(".chat-group.assistant .chat-text")?.textContent?.trim()).toBe(
+          "Hi! What would you like to call me?",
+        );
+      });
+      expect(pending.querySelector(".chat-avatar.assistant")?.getAttribute("aria-label")).toBe(
+        "New agent",
+      );
+      expect(pending.querySelector(".chat-group.user")).toBeNull();
+      expect(roster.agents).toHaveLength(1);
+      expect(context.chatSubmissions.creation?.admitted).toBe(false);
     } finally {
       verification.resolve({ ok: false, error: "Test verification did not pass" });
       await creating;

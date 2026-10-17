@@ -11,6 +11,7 @@ import {
 } from "../../config/runtime-snapshot.js";
 import { resolveAgentMainSessionKey } from "../../config/sessions/main-session.js";
 import { formatErrorMessage } from "../../infra/errors.js";
+import { AGENT_ONBOARDING_GREETING } from "../../shared/agent-onboarding.js";
 import {
   OPENCLAW_TRANSCRIPT_ARTIFACT_API,
   OPENCLAW_TRANSCRIPT_ARTIFACT_PROVIDER,
@@ -116,7 +117,7 @@ export async function completeAgentOnboarding(
             provider: OPENCLAW_TRANSCRIPT_ARTIFACT_PROVIDER,
             id: "onboarding",
           },
-          content: [{ type: "text", text: "Hi! What would you like to call me?" }],
+          content: [{ type: "text", text: AGENT_ONBOARDING_GREETING }],
           stopReason: "stop",
           usage: buildUsageWithNoCost({}),
         }),

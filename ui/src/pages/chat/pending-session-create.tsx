@@ -1,4 +1,5 @@
 import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
+import { AGENT_ONBOARDING_GREETING } from "../../../../src/shared/agent-onboarding.js";
 import { isIncognitoSessionKey } from "../../../../src/shared/incognito-session-key.js";
 import type { ApplicationContext } from "../../app/context.ts";
 import { readDeletedSessionStartup } from "../../app/deleted-session-startup.ts";
@@ -10,9 +11,11 @@ import { defineSolidBridge } from "../../lib/solid-bridge.ts";
 import { generateUUID } from "../../lib/uuid.ts";
 import { CreationComposer } from "../new-session/creation-composer-render.tsx";
 import { NewSessionBody } from "../new-session/draft-body.solid.tsx";
+import { ChatAvatar } from "./chat-avatar-view.tsx";
 import { chatStartupStatusLabel } from "./chat-run-startup.ts";
 import { ChatComposer, resetChatComposerState } from "./components/chat-composer.tsx";
 import { ChatImageLightbox } from "./components/chat-image-lightbox-view.tsx";
+import { MessageMarkdown } from "./components/chat-message-text-view.tsx";
 import { ChatPaneHeader, type ChatPaneHeaderProps } from "./components/chat-pane-header.tsx";
 import { ChatWorkingIndicator } from "./components/chat-working-indicator.tsx";
 import { buildLocalUserMessage } from "./user-message-content.ts";
@@ -193,6 +196,29 @@ function PendingSessionCreateContent(props: PendingSessionCreateProps) {
             : undefined,
         renderDraft: () => (
           <div class="new-session-page__starting chat-thread-inner">
+            <Show when={creatingAgent}>
+              {/* The shared greeting is a presentation preview; only the Gateway persists it. */}
+              <div class="chat-group assistant">
+                <ChatAvatar
+                  role="assistant"
+                  assistant={{
+                    agentId,
+                    name: displayName ?? t("agentChip.newAgent"),
+                    avatar: null,
+                  }}
+                />
+                <div class="chat-group-messages">
+                  <div class="chat-bubble chat-bubble--first">
+                    <MessageMarkdown
+                      markdown={AGENT_ONBOARDING_GREETING}
+                      messageKey={`${composerId}-greeting`}
+                      options={{ role: "assistant", isStreaming: false }}
+                      markdownOptions={{ codeBlockChrome: "none" }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </Show>
             <div class="chat-group assistant chat-group--working">
               <div class="chat-group-messages">
                 <ChatWorkingIndicator

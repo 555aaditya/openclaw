@@ -51,7 +51,7 @@ it.each(["admission", "rollback"] as const)(
           messages: [
             nativeHistoryMessage(
               2,
-              key === previousKey ? "Previous transcript" : "Hello, new agent",
+              key === previousKey ? "Previous transcript" : "Hi! What would you like to call me?",
             ),
           ],
           sessionInfo: row,
@@ -101,6 +101,9 @@ it.each(["admission", "rollback"] as const)(
         "Previous transcript",
       );
       expect(page.querySelector("openclaw-pending-session-create")).not.toBeNull();
+      expect(
+        page.querySelector(".chat-pane-cache__pane--visible .chat-text")?.textContent?.trim(),
+      ).toBe("Hi! What would you like to call me?");
       expect(startupKeys).toEqual([previousKey]);
 
       context.agents.state.pendingAgent = undefined;
@@ -115,9 +118,15 @@ it.each(["admission", "rollback"] as const)(
       await settleChatPage(page);
       await vi.waitFor(() =>
         expect(page.querySelector(".chat-pane-cache__pane--visible")?.textContent).toContain(
-          outcome === "admission" ? "Hello, new agent" : "Previous transcript",
+          outcome === "admission" ? "Hi! What would you like to call me?" : "Previous transcript",
         ),
       );
+      expect(page.querySelector("openclaw-pending-session-create")).toBeNull();
+      expect(
+        [...page.querySelectorAll(".chat-text")].filter(
+          (entry) => entry.textContent?.trim() === "Hi! What would you like to call me?",
+        ),
+      ).toHaveLength(outcome === "admission" ? 1 : 0);
       expect
         .soft(
           [...page.querySelectorAll<ChatPaneElement>("openclaw-chat-pane")].find(
