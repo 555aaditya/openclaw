@@ -397,7 +397,7 @@ export function renderAppSidebarPageEntry(
   const pinnedSession = () => (entry.type === "session" ? sessionRows().get(entry.key) : undefined);
   const content =
     entry.type === "route" ? (
-      host.sidebarMenus.renderRoute(entry.route)
+      host.sidebarMenus.renderRoute(entry.route, host)
     ) : entry.type === "plugin" ? (
       <Show
         when={pluginTab()}
@@ -477,7 +477,7 @@ export function renderAppSidebarPluginTab(
   );
   return (
     <Show when={routeId()} fallback={link}>
-      {(route) => host.sidebarMenus.renderRoute(route())}
+      {(route) => host.sidebarMenus.renderRoute(route(), host)}
     </Show>
   );
 }
