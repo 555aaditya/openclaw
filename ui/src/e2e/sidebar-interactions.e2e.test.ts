@@ -375,9 +375,9 @@ suite.define(() => {
         const trigger = sidebar.locator(".sidebar-agent-card__main");
         await trigger.click();
         const menu = sidebar.locator(".sidebar-agent-menu");
-        expect(await menu.getByRole("searchbox").count()).toBe(0);
         const rows = menu.locator('.sidebar-agent-menu__agent-list > [role^="menuitem"]');
         await expectCount(rows, 41);
+        await expectCount(menu.getByRole("searchbox"), 0);
         await menu.evaluate(async (dropdown) => {
           await document.fonts.ready;
           await Promise.all(dropdown.getAnimations().map((animation) => animation.finished));

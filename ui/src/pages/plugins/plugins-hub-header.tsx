@@ -1,8 +1,5 @@
 import type { JSX } from "@solidjs/web";
-import { subtitleForRoute, titleForRoute } from "../../app-navigation.ts";
-import { CatalogPageHeader } from "../../components/solid/catalog-page-header.tsx";
-import { HubTabs } from "../../components/solid/hub-tabs.tsx";
-import { LearnMoreLink } from "../../components/solid/settings-ui.tsx";
+import { HubPageHeader } from "../../components/solid/hub-page-header.tsx";
 import { registerPluginManagementEnglish } from "../../i18n/locales/en-plugin-management.ts";
 import { registerEnglishCatalog, t } from "../../lib/reactive/i18n.ts";
 import { PLUGINS_HUB_DOCS_URLS, PLUGINS_HUB_PANEL_ID, type PluginsHubTab } from "./plugins-hub.ts";
@@ -21,30 +18,20 @@ type PluginsHubHeaderProps = {
 
 export function PluginsHubHeader(props: PluginsHubHeaderProps) {
   return (
-    <CatalogPageHeader
+    <HubPageHeader<PluginsHubTab>
+      id="plugins"
+      active={props.active}
+      tabs={[
+        { value: "plugins", label: t("tabs.plugins") },
+        { value: "skills", label: t("tabs.skills") },
+        { value: "skill-workshop", label: t("tabs.skillWorkshop") },
+      ]}
+      ariaLabel={t("pluginsPage.hubTablistLabel")}
+      panelId={PLUGINS_HUB_PANEL_ID}
+      docsUrl={PLUGINS_HUB_DOCS_URLS[props.active]}
       class="plugins-hub-header"
-      title={titleForRoute(props.active, t)}
-      subtitle={
-        <>
-          {subtitleForRoute(props.active, t)}{" "}
-          <LearnMoreLink url={PLUGINS_HUB_DOCS_URLS[props.active]} />
-        </>
-      }
-      tabs={
-        <HubTabs
-          id="plugins"
-          active={props.active}
-          tabs={[
-            { value: "plugins", label: t("tabs.plugins") },
-            { value: "skills", label: t("tabs.skills") },
-            { value: "skill-workshop", label: t("tabs.skillWorkshop") },
-          ]}
-          ariaLabel={t("pluginsPage.hubTablistLabel")}
-          panelId={PLUGINS_HUB_PANEL_ID}
-          class="plugins-tabs"
-          onSelect={props.onSelect}
-        />
-      }
+      tabsClass="plugins-tabs"
+      onSelect={props.onSelect}
       actions={
         props.secondaryAction && (
           <button

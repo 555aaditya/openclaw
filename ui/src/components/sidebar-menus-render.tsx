@@ -36,7 +36,7 @@ import { findActiveSidebarLineageRow } from "./app-sidebar-session-lookup.ts";
 import { canRetryGatewayStatus } from "./gateway-status.ts";
 import "../styles/sidebar-menus.css";
 import { sessionMenuReasons } from "./session-menu-access.ts";
-import { SessionMenu, type SessionMenuAction } from "./session-menu.ts";
+import { SessionMenu, type SessionMenuAction } from "./session-menu-solid.tsx";
 import { moveSessionFromMenu, sessionPlacementAction } from "./session-placement-action.ts";
 import { isUpdateAttentionForced } from "./sidebar-attention-dismissals.ts";
 import { isReleaseUpdateAvailable } from "./sidebar-attention-update.ts";
@@ -135,6 +135,8 @@ export function renderSidebarAgentMenuForController(
           host.navigationView = "sessions";
           host.sessionDataContext?.navigation.update({ navCollapsed: false });
           patchSettings({ sidebarAgentsMode: "roster" });
+          host.sessionDataContext?.agentSelection.setScope(null);
+          host.onNavigate?.("sessions");
           host.requestUpdate();
           void host.updateComplete.then(() => {
             host

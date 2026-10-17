@@ -337,6 +337,20 @@ mode, Display omits grouping and empty-group controls because the sidebar always
 groups by agent. Reset leaves those hidden preferences unchanged. It also preserves
 a saved Person grouping while owner data temporarily makes that choice unavailable.
 
+In **Show all agents**, compact agent rows show a muted preview of the agent's
+most recent available assistant reply across its visible, non-archived sessions.
+A newer user message does not replace that preview. Agents without an available
+assistant reply keep a name-only row. The top-level roster does not show the
+session list's empty-filter hint.
+
+Choose **Pin** in an agent's options menu to move it into the icon section above
+the roster. Hover or focus its avatar to read the full name and a short preview
+of its latest assistant reply. Select the avatar to open its main chat, or use
+**Sessions** in its options menu to browse its conversations. The menu also
+offers **Settings** and a confirmed **Delete** action when permitted. Create a
+new conversation from the Sessions page. **Unpin** returns
+the agent to the roster. Agent pins are saved in this browser profile.
+
 Switching to the all-agents roster or another navigation view, or closing
 navigation releases background sidebar activity streams. Open conversation panes
 keep their live messages. The active agent's session list retains critical observer
@@ -396,13 +410,13 @@ Persistent child conversations and forks stay nested after their turns finish,
 including after a reload or Gateway restart. Archiving hides them from the
 **Active** list; restoring them brings them back under their parent.
 
-Choose the **Show all** tile in the agent switcher to enter **team mode**, which shows every selectable agent as a collapsible session group. This opens the **Sessions** view and expands the sidebar, even if team mode is already selected. It is off by default, and the browser remembers your choice and each agent's collapsed state. Groups start expanded. Headers emphasize the agent's avatar and name. Activity, attention, unread, and workspace indicators sit on the right of session rows; collapsed parents summarize hidden work and outcomes there. Agent headers show their indicators in a wrapping row below the name and controls. A row shows each status once, even when both the parent and a hidden child share that status. Session icons stay to the left of their titles in both sidebar modes; status indicators and actions stay on the right. Nested children indent 16px per level without moving the right edge of the trailing indicators. Groups keep the configured agent order as activity changes. Agent headers have a minimum height of 48px with 36px avatars and grow to fit their metadata; session rows stay on one line at 32px on desktop. Each agent header is its Home entry: selecting the name or avatar opens the main conversation and highlights the header. Home does not appear again as a session row, even when pinned. The header shows Home activity, unread state, and attention while expanded, and summarizes the group's hidden sessions while collapsed. It never shows who created the main session; the agent avatar is the header's only identity. Independent conversations created from Home remain visible beneath the agent.
+Choose **Show all** in the agent switcher to open the **Sessions** page across all agents and expand the compact agent roster. This clears any agent filter, even when the roster is already selected. The browser remembers the roster mode. Selecting an agent row opens its main conversation; use **Sessions** in that agent's options menu to browse only its conversations.
 
 Session-row owner avatars appear automatically when the signed-in user and session roster identify more than one human. With only one human, owner avatars stay hidden even when agents own or participate in sessions. Agent participants and undisplayed participant counts do not enable attribution. Session icons, channel avatars, and activity indicators keep their usual behavior.
 
 Observer assessments such as **stuck** or **waiting on user** stay with their session instead of opening a global toast over another conversation. This does not change explicit questions, approval requests, action feedback such as **Archive → Undo**, or completion notices for sessions you explicitly start in the background.
 
-Pending questions and approvals show their specific request when you tap, hover, or keyboard-focus the attention icon. Tapping the icon keeps the sidebar open; tap again or press Escape to dismiss the preview. The tooltip includes the oldest question, compact command, or approval title, plus a count of additional questions or approvals. This works in the regular list, Home, and team mode, including collapsed parents and agent groups. Questions and approvals take priority over agent attention notes and failed runs; requests at the same priority show the oldest first. Answering, approving, cancelling, or expiry clears that request and reveals the next one. Previews wrap and truncate without adding another line to session rows. Secret questions show only the question text, never entered answers.
+Pending questions and approvals show their specific request when you tap, hover, or keyboard-focus the attention icon. Tapping the icon keeps the sidebar open; tap again or press Escape to dismiss the preview. The tooltip includes the oldest question, compact command, or approval title, plus a count of additional questions or approvals. This works in the regular session list and Home, including collapsed parents. Questions and approvals take priority over agent attention notes and failed runs; requests at the same priority show the oldest first. Answering, approving, cancelling, or expiry clears that request and reveals the next one. Previews wrap and truncate without adding another line to session rows. Secret questions show only the question text, never entered answers.
 
 The top rail button becomes a neutral workspace identity with the configured Gateway display name, or **OpenClaw**, in its accessible label, and a small static OpenClaw mark in place of the agent avatar. Both modes use the same menu. The **Show all** tile groups the configured agents’ own avatars and appears only with multiple agents. Each compact agent row has a settings gear that opens its settings without selecting it. The menu starts with **Create new agent**, followed by **Show all** and the agent rows. Creating an agent immediately opens its chat with a preview of “Hi! What would you like to call me?” and a selected **New agent** row at the top of the list. OpenClaw verifies inference before saving the agent and greeting or enabling replies; a failed check explains the problem without creating an agent. The bot handles its name and identity when you reply. Messages remain in that chat when you leave and return, and the latest created agent stays first after a reload. Help stays in the account menu. Choose an agent row to leave team mode with that agent selected. The session header keeps the owner-filter title, **Filter & sort**, and one **+** control; search and the view buttons stay in the rail.
 
@@ -412,9 +426,21 @@ In both sidebar modes, **Home** stays at the bottom of the rail, not in Pages. C
 
 Choosing **Show all** defaults the shared page scope to **All agents**. Choosing a named agent tile leaves team mode and scopes pages to that agent. This sets a default once when the mode changes: you can select an individual agent afterward, and page navigation preserves your choice. Automations, Dashboards, Sessions, and Usage support all-agent views. Mixed-agent lists identify the agent on each row with an avatar and name where needed. Each identity chip includes the agent ID in its tooltip and screen-reader label, such as `Molty (agent:main)`, so agents with the same display name remain distinguishable. If no name is available, the label uses `agent:<id>`. In Settings, the agent selector below the sidebar title keeps the same target across Agents, Models, Memory, and Skills; global settings remain global. Skill Workshop uses the agent selected through chat. Open an agent's main chat from its group header to select it for Skill Workshop. Chat actions still target the conversation's agent.
 
-Personal session shortcuts stay in the icon rail in both sidebar modes, mixed with page, dashboard, and person shortcuts in your saved order. They remain available when an agent’s group is collapsed. Rail shortcuts are flat icons: pinning a parent does not move or duplicate its child tree into the rail or Pages. Each agent group still contains its ordinary sessions, including those with personal rail shortcuts, with the usual session menus, unread badges, nested child sessions, section limits, and **Show more** controls. Selecting any session switches the active agent for chat while the rail workspace button keeps its neutral identity. The **Sessions** filters apply across all agent groups. Select the separate **Users** view in the rail to see who is online. Category, person, and project grouping controls remain in chip mode; team mode always groups by agent and keeps empty agent groups visible. The open conversation keeps its selected row, including an archived conversation opened directly under the default **Active** filter. The filter button in the sidebar header keeps the same session filters. Each agent header has a **New conversation** action and an options menu with **Open main chat**, **All sessions**, and **Collapse others**. **All sessions** opens the Sessions page and sets the shared agent filter to that agent. Agent-header metadata uses a wrapping second row, keeping the name and actions readable and the indicators visible on hover, keyboard focus, and touch. The expand control appears when the agent has other sessions or descendants to display. Session rows reserve space only for present indicators, so quiet titles can use the full row width.
+Personal session shortcuts stay in the icon rail in both sidebar modes, mixed
+with page, dashboard, and person shortcuts in your saved order. Agent pins are
+separate, larger avatar tiles above the agent roster; pinning an agent does not
+move or duplicate its conversations. In **Show all agents**, each roster row
+represents one agent rather than an expandable session tree. Its latest
+available assistant reply appears beneath the name, and an activity ring
+surrounds the avatar while the agent or one of its sessions is working. Select
+an agent to open its main chat. The agent menu offers **Pin/Unpin**, **Sessions**,
+**Settings**, and a confirmed **Delete** action when permitted. **Sessions**
+opens the Sessions page filtered to that agent, where you can browse and create
+conversations. Select the separate **Users** view in the rail to see who is
+online. Category, person, and project grouping controls remain in chip mode;
+team mode keeps empty agent rows visible.
 
-Groups share a window of at most 300 sessions across agents. This bounds the session rows loaded for the groups, not the number of saved rail shortcuts; a personal pin does not reserve a place in that window. The open conversation can remain visible outside this window. **Involving me** loads the same bounded window filtered by the Gateway; the other filters apply to the loaded sessions across groups.
+The sidebar uses a window of at most 300 sessions across agents for activity and previews. This does not limit saved rail shortcuts; a personal pin does not reserve a place in that window. The open conversation can remain visible outside it. **Involving me** loads the same bounded window filtered by the Gateway; the other filters apply to the loaded sessions.
 
 A saved session shortcut whose title has not loaded is labeled **Open session**. Selecting it looks up that session on demand. A missing session shows **Session not found**; a failed lookup asks you to try again.
 
@@ -513,6 +539,12 @@ Older device labels saved as custom names keep that precedence until you clear
 or replace them explicitly. New Android device labels are stored separately, so
 a generated conversation title can replace the device label without changing
 your custom name.
+
+In team mode, the chat header shows the conversation's agent avatar and name.
+Select the agent to open its session and workspace context: rename the session,
+open its parent conversation, or use the workspace actions. **Details** also
+keeps workspace information available. The regular session view and external
+CLI catalog headers keep their workspace/session breadcrumbs.
 
 ### Session menu
 

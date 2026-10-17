@@ -4,17 +4,23 @@
  * art tiles, row messages, catalog details, and install/consent dialogs.
  * Structural layout comes from .settings-page/.settings-row. */
 
+.plugins-hub-header .page-title {
+  margin: 0;
+  font-size: 26px;
+}
+
 .plugins-hub-header .hub-tabs--sub .hub-tab {
   padding-block: var(--space-2);
 }
 
-.plugins-hub-header + .settings-workspace {
-  /* The settings page already contributes the lower half of the tab rhythm. */
-  margin-top: 0;
-}
-
 .plugins-hub-header__secondary {
   flex: 0 0 auto;
+}
+
+@media (max-width: 768px) {
+  .plugins-hub-header .page-title {
+    font-size: 22px;
+  }
 }
 
 .installed-plugins-card__head {

@@ -72,6 +72,35 @@ describe("AppSidebar agent menu scope", () => {
   });
 
   it.each(["chip", "roster"] as const)(
+    "opens sessions across agents from %s mode even after selecting a page scope",
+    async (mode) => {
+      const { sidebar, context } = await mountSidebar(
+        createGateway({} as GatewayBrowserClient),
+        createSessions("main", ["agent:main:main"]),
+        "panel",
+        TWO_AGENTS,
+      );
+      const onNavigate = vi.fn();
+      sidebar.onNavigate = onNavigate;
+      patchSettings({ sidebarAgentsMode: mode });
+      context.agentSelection.setScope("research");
+      await sidebar.updateComplete;
+      sidebar
+        .querySelector<HTMLButtonElement>(
+          ".sidebar-agent-card__main, .sidebar-workspace-header__main",
+        )
+        ?.click();
+      await sidebar.updateComplete;
+      sidebar.querySelector<HTMLElement>('.sidebar-agent-menu [data-value="scope:all"]')?.click();
+      await sidebar.updateComplete;
+      expect(onNavigate).toHaveBeenCalledExactlyOnceWith("sessions");
+      expect(context.agentSelection.state).toEqual({ selectedId: "main", scopeId: null });
+      expect(sidebar.sidebarAgentsMode).toBe("roster");
+      expect(sidebar.querySelector(".sidebar-agent-menu")).toBeNull();
+    },
+  );
+
+  it.each(["chip", "roster"] as const)(
     "opens each agent's settings without selecting it in %s mode",
     async (mode) => {
       const { sidebar, context } = await mountSidebar(

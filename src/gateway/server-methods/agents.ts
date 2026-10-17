@@ -34,6 +34,7 @@ import { reviveAgentDatabasesAfterConfigCommit } from "../server-reload-agent-da
 import { SessionMutationAuthorizationChangedError } from "../session-mutation-authorization-error.js";
 import { startSlowRequestDiagnostics } from "../slow-request-diagnostics.js";
 import { captureGatewayClientUploadCommitGuard } from "../upload-policy.js";
+import { agentAvatarGenerateHandler } from "./agents-avatar.js";
 import {
   AgentConfigPreconditionError,
   AgentModelSelectionError,
@@ -92,6 +93,7 @@ function createAgentConfigApplication(respond: RespondFn) {
 }
 
 export const agentsHandlers: GatewayRequestHandlers = {
+  "agents.avatar.generate": agentAvatarGenerateHandler,
   "agents.list": agentListHandler,
   "agents.create": async (options) => {
     const { params, respond, client, context } = options;

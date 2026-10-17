@@ -1,6 +1,6 @@
 import type { JSX } from "@solidjs/web";
 import { ShellLayoutBoundary } from "../../app/shell-layout-traits-solid.tsx";
-import "../../styles/catalog-page-header.css";
+import "../../styles/hub-tabs.css";
 
 export function CatalogPageHeader(props: {
   title: string;
@@ -13,7 +13,7 @@ export function CatalogPageHeader(props: {
     <ShellLayoutBoundary traits={{ hubHeader: true }}>
       <section
         class={[
-          "content-header content-header--stacked content-header--settings content-header--page hub-page-header catalog-page-header",
+          "content-header content-header--stacked content-header--settings content-header--page hub-page-header hub-page-header--stacked catalog-page-header",
           props.class,
           { "catalog-page-header--tabs": Boolean(props.tabs) },
         ]}
