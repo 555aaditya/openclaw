@@ -1,5 +1,5 @@
 /* @vitest-environment jsdom */
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, expect, it, vi } from "vitest";
 
 // The page and pending renderer stay real; ordinary panes expose every presented session.
 // mock-isolation: avoid starting Gateway-owned chat controllers for the transcript presentation test.
@@ -17,6 +17,7 @@ import {
   stubMatchMedia,
 } from "./chat-page.test-support.ts";
 import { ChatPage } from "./chat-page.ts";
+import { PendingSessionCreate } from "./pending-session-create-lazy.ts";
 
 const presentedSessions: string[] = [];
 class TranscriptPane extends HTMLElement {
@@ -39,6 +40,11 @@ class TranscriptPane extends HTMLElement {
   }
 }
 customElements.define("openclaw-chat-pane", TranscriptPane);
+
+// These page-only fixtures bypass the selector/router that prepares the pending view.
+beforeAll(async () => {
+  await PendingSessionCreate.preload();
+});
 
 afterEach(() => {
   document.body.replaceChildren();

@@ -3,7 +3,7 @@ import { expectDefined } from "@openclaw/normalization-core";
 import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import { createRouter } from "@openclaw/uirouter";
 import { IDBFactory } from "fake-indexeddb";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import type { GatewaySessionRow } from "../../api/types.ts";
 import { createApplicationContextProvider } from "../../test-helpers/application-context.ts";
 import { mountSolid } from "../../test-helpers/mount-solid.ts";
@@ -18,6 +18,12 @@ import {
   installTranscriptDomMocks,
   resetTranscriptTestDom,
 } from "./components/chat-transcript.test-support.ts";
+import { PendingSessionCreate } from "./pending-session-create-lazy.ts";
+
+// These page-only fixtures bypass the selector/router that prepares the pending view.
+beforeAll(async () => {
+  await PendingSessionCreate.preload();
+});
 
 beforeEach(() => {
   installTranscriptDomMocks();
