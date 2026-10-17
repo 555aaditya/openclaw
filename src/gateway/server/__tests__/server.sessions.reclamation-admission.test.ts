@@ -227,12 +227,13 @@ test("sessions.delete admits unrelated same-store patches during Worker validati
     },
     storePath,
   });
+  // Empty deletions reuse the admitted writer and do not enter reclamation validation.
   await seedLinearSessionTranscript({
     agentId: "main",
     sessionKey: targetKey,
     sessionId: "validation-delete",
     storePath,
-    contents: ["transcript requiring reclamation"],
+    contents: ["archived transcript"],
   });
   const { ws } = await openClient();
   const databasePath = resolveSqliteTargetFromSessionStorePath(storePath, { agentId: "main" }).path;
@@ -299,93 +300,119 @@ test("sessions.delete admits unrelated same-store patches during Worker validati
   }
 });
 
-test("sessions.delete rejects revoked authority before repairing the same database", async ({
-  signal,
-}) => {
-  // This test invokes the lifecycle owner directly instead of the foreground RPC dispatcher.
-  onTestFinished(retainSessionListForegroundWork());
-  const sessionKey = "agent:main:validation-revoked";
-  const sessionId = "validation-revoked";
-  const { storePath } = await createSessionStoreDir();
-  await writeSessionStore({ entries: { [sessionKey]: sessionStoreEntry(sessionId) }, storePath });
-  const transcriptScope = { agentId: "main", sessionKey, sessionId, storePath };
-  await seedLinearSessionTranscript({ ...transcriptScope, contents: ["retained transcript"] });
-  const originalEntry = loadSessionEntry(transcriptScope);
-  const originalTranscript = await loadSeededTranscriptEvents(transcriptScope);
-  const databaseOptions = {
-    agentId: "main",
-    path: resolveSqliteTargetFromSessionStorePath(storePath, { agentId: "main" }).path,
-  };
-  // Retire the seeded executor so validation must open beside this native handle.
-  await closeOpenClawAgentDatabaseByPathAsync(databaseOptions.path, "main");
-  const database = openOpenClawAgentDatabase(databaseOptions);
-  const stateDatabase = openOpenClawStateDatabase();
-  const readLeases = () =>
-    stateDatabase.db
-      .prepare("SELECT lease_id FROM agent_database_leases WHERE path = ? ORDER BY lease_id")
-      .all(database.path);
-  let originalLeases = readLeases();
-  expect(originalLeases).toHaveLength(1);
-  const readRepairIndex = () =>
-    database.db
-      .prepare("SELECT name FROM sqlite_schema WHERE type = 'index' AND name = ?")
-      .get("idx_agent_cache_expiry");
-  const reclaim = sqliteReclamation.runSqliteSessionReclamation;
-  const prepareReclamation = vi
-    .spyOn(sqliteReclamation, "runSqliteSessionReclamation")
-    .mockImplementationOnce((params) => {
-      expect(params.plan.kind).toBe("entry");
-      expect(params.plan.databaseOptions.path).toBe(database.path);
-      // Shared physical preparation belongs to the executor, not this caller.
-      // Expire proof only after planning, before the request-owned reclaimer opens.
+test.for(["shared", "reclamation"] as const)(
+  "sessions.delete rejects revoked authority during %s preparation",
+  async (preparation, { signal }) => {
+    // This test invokes the lifecycle owner directly instead of the foreground RPC dispatcher.
+    onTestFinished(retainSessionListForegroundWork());
+    const sessionKey = "agent:main:validation-revoked";
+    const sessionId = "validation-revoked";
+    const { storePath } = await createSessionStoreDir();
+    await writeSessionStore({ entries: { [sessionKey]: sessionStoreEntry(sessionId) }, storePath });
+    const transcriptScope = { agentId: "main", sessionKey, sessionId, storePath };
+    await seedLinearSessionTranscript({ ...transcriptScope, contents: ["retained transcript"] });
+    const originalEntry = loadSessionEntry(transcriptScope);
+    const originalTranscript = await loadSeededTranscriptEvents(transcriptScope);
+    const databaseOptions = {
+      agentId: "main",
+      path: resolveSqliteTargetFromSessionStorePath(storePath, { agentId: "main" }).path,
+    };
+    // Retire the seeded executor so validation must open beside this native handle.
+    await closeOpenClawAgentDatabaseByPathAsync(databaseOptions.path, "main");
+    const database = openOpenClawAgentDatabase(databaseOptions);
+    const stateDatabase = openOpenClawStateDatabase();
+    const readLeases = () =>
+      stateDatabase.db
+        .prepare("SELECT lease_id FROM agent_database_leases WHERE path = ? ORDER BY lease_id")
+        .all(database.path);
+    let originalLeases = readLeases();
+    expect(originalLeases).toHaveLength(1);
+    const readRepairIndex = () =>
+      database.db
+        .prepare("SELECT name FROM sqlite_schema WHERE type = 'index' AND name = ?")
+        .get("idx_agent_cache_expiry");
+    const invalidateSchema = () => {
       originalLeases = readLeases();
       database.db.exec("DROP INDEX idx_agent_cache_expiry");
       invalidateOpenClawAgentDatabaseValidation(database.path);
       expect(readRepairIndex()).toBeUndefined();
-      return reclaim(params);
-    });
-  const validation = holdReclamationValidation();
-  let authorized = true;
-  let guardCalls = 0;
-  try {
-    const deletion = validation.own(
-      deleteSessionEntryLifecycle({
-        archiveTranscript: true,
-        storePath,
-        target: { canonicalKey: sessionKey, storeKeys: [sessionKey] },
-        commitGuard: () => {
-          guardCalls += 1;
-          if (!authorized) {
-            throw new Error("caller authority revoked during Worker validation");
-          }
-        },
-      }),
+    };
+    const reclaim = sqliteReclamation.runSqliteSessionReclamation;
+    const prepareReclamation =
+      preparation === "reclamation"
+        ? vi
+            .spyOn(sqliteReclamation, "runSqliteSessionReclamation")
+            .mockImplementationOnce((params) => {
+              expect(params.plan.kind).toBe("entry");
+              expect(params.plan.databaseOptions.path).toBe(database.path);
+              // Shared physical preparation belongs to the executor, not this caller.
+              // Expire proof only after planning, before the request-owned reclaimer opens.
+              invalidateSchema();
+              return reclaim(params);
+            })
+        : undefined;
+    if (preparation === "shared") {
+      // Shared preparation repairs the physical store independently of its caller.
+      invalidateSchema();
+    }
+    const validation = holdReclamationValidation(
+      preparation === "shared" ? database.path : undefined,
     );
-    await validation.entered(deletion, signal);
-    expect(prepareReclamation).toHaveBeenCalledTimes(1);
-    expect(readRepairIndex()).toBeUndefined();
-    expect(openOpenClawAgentDatabase(databaseOptions)).toBe(database);
-    expect(database.db.isOpen).toBe(true);
-    expect(readLeases()).toHaveLength(originalLeases.length + 1);
-    const callsBeforeRevocation = guardCalls;
-    authorized = false;
-    validation.release();
+    let authorized = true;
+    let guardCalls = 0;
+    try {
+      const deletion = validation.own(
+        deleteSessionEntryLifecycle({
+          archiveTranscript: true,
+          storePath,
+          target: { canonicalKey: sessionKey, storeKeys: [sessionKey] },
+          commitGuard: () => {
+            guardCalls += 1;
+            if (!authorized) {
+              throw new Error("caller authority revoked during Worker validation");
+            }
+          },
+        }),
+      );
+      await validation.entered(deletion, signal);
+      if (prepareReclamation) {
+        expect(prepareReclamation).toHaveBeenCalledTimes(1);
+      }
+      expect(readRepairIndex()).toBeUndefined();
+      expect(openOpenClawAgentDatabase(databaseOptions)).toBe(database);
+      expect(database.db.isOpen).toBe(true);
+      const preparingLeases = readLeases();
+      expect(preparingLeases).toHaveLength(originalLeases.length + 1);
+      const callsBeforeRevocation = guardCalls;
+      authorized = false;
+      validation.release();
 
-    await expect(deletion).rejects.toThrow("caller authority revoked during Worker validation");
-    expect(guardCalls).toBeGreaterThan(callsBeforeRevocation);
-    expect(openOpenClawAgentDatabase(databaseOptions)).toBe(database);
-    expect(loadSessionEntry(transcriptScope)).toEqual(originalEntry);
-    await expect(loadSeededTranscriptEvents(transcriptScope)).resolves.toEqual(originalTranscript);
-    expect(Atomics.load(validation.gate, 2)).toBeGreaterThan(0);
-    expect(Atomics.load(validation.gate, 3)).toBeGreaterThan(0);
-    // Certified refusal releases the unopened lease but retains the healthy carrier.
-    expect(reclamation.exitCodes).toEqual([]);
-    expect(readLeases()).toEqual(originalLeases);
-    expect(readRepairIndex()).toBeUndefined();
-    await closeOpenClawAgentDatabasesAsync();
-    expect(reclamation.exitCodes).toEqual([0]);
-  } finally {
-    await validation.close();
-    prepareReclamation.mockRestore();
-  }
-});
+      await expect(deletion).rejects.toThrow("caller authority revoked during Worker validation");
+      expect(guardCalls).toBeGreaterThan(callsBeforeRevocation);
+      expect(openOpenClawAgentDatabase(databaseOptions)).toBe(database);
+      expect(loadSessionEntry(transcriptScope)).toEqual(originalEntry);
+      await expect(loadSeededTranscriptEvents(transcriptScope)).resolves.toEqual(
+        originalTranscript,
+      );
+      expect(Atomics.load(validation.gate, 2)).toBeGreaterThan(0);
+      expect(Atomics.load(validation.gate, 3)).toBeGreaterThan(0);
+      expect(reclamation.exitCodes).toEqual([]);
+      if (preparation === "shared") {
+        // Caller refusal leaves the shared preparation and its native owner usable.
+        expect(readLeases()).toEqual(preparingLeases);
+        expect(readRepairIndex()).toEqual({ name: "idx_agent_cache_expiry" });
+      } else {
+        // Certified refusal releases the unopened lease but retains the healthy carrier.
+        expect(readLeases()).toEqual(originalLeases);
+        expect(readRepairIndex()).toBeUndefined();
+      }
+      await closeOpenClawAgentDatabasesAsync();
+      // The broker terminates its shared executor; the reclaimer closes normally.
+      expect(reclamation.exitCodes).toEqual([preparation === "shared" ? 1 : 0]);
+      expect(readLeases()).toEqual([]);
+    } finally {
+      await validation.close();
+      prepareReclamation?.mockRestore();
+    }
+  },
+);
