@@ -268,8 +268,6 @@ type SessionTranscriptAssistantAppendOptions = {
   /** Optional override for store path (mostly for tests). */
   storePath?: string;
   updateMode?: SessionTranscriptUpdateMode;
-  /** Atomic session initialization owns entry publication until its transcript is ready. */
-  touchSessionEntry?: boolean;
   config?: OpenClawConfig;
   beforeMessageWrite?: AssistantBeforeMessageWrite;
   assertCurrent?: () => void;
@@ -468,8 +466,7 @@ async function appendExactAssistantMessageWithSource(
     sessionKey: normalizedKey,
     storePath,
   };
-  const deduplicateMirror = isRedundantDeliveryMirror(params.message) && !explicitIdempotencyKey;
-  if (deduplicateMirror) {
+  if (isRedundantDeliveryMirror(params.message) && !explicitIdempotencyKey) {
     // Reconciliation needs the writer queue. Wait before entering it, then
     // read the current projected tail again inside the guarded append.
     await waitForSessionTranscriptProjection(target);
@@ -495,7 +492,7 @@ async function appendExactAssistantMessageWithSource(
     ...(params.runId ? { runId: params.runId } : {}),
     updateMode: params.updateMode ?? "inline",
     onMessageCommitted: params.onMessageCommitted,
-    touchSessionEntry: params.touchSessionEntry !== false,
+    touchSessionEntry: true,
     messages: [
       ...(params.command
         ? [
@@ -528,20 +525,19 @@ async function appendExactAssistantMessageWithSource(
               },
             }
           : {}),
-        ...(deduplicateMirror
-          ? {
-              shouldAppend: async (appendTarget: SessionTranscriptTurnWriteContext) => {
-                const messageId = await findLatestEquivalentAssistantMessageId(
+        shouldAppend: async (appendTarget) => {
+          const messageId =
+            isRedundantDeliveryMirror(params.message) && !explicitIdempotencyKey
+              ? await findLatestEquivalentAssistantMessageId(
                   appendTarget,
                   preparedUnkeyedMessage as SessionTranscriptAssistantMessage,
-                );
-                equivalentAssistant = messageId
-                  ? { messageId, assertCurrent: captureOwnedTranscriptWriteAssertion(appendTarget) }
-                  : undefined;
-                return !equivalentAssistant;
-              },
-            }
-          : {}),
+                )
+              : undefined;
+          equivalentAssistant = messageId
+            ? { messageId, assertCurrent: captureOwnedTranscriptWriteAssertion(appendTarget) }
+            : undefined;
+          return !equivalentAssistant;
+        },
       },
     ],
   });

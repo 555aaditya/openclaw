@@ -1,7 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
+import fs from "node:fs/promises";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDeferred } from "../../test/helpers/promise.js";
+import * as embeddedAgent from "../agents/embedded-agent.js";
 import { FailoverError } from "../agents/failover-error.js";
-import { buildAssistantMessage, buildUsageWithNoCost } from "../agents/stream-message-shared.js";
 import {
   createPluginMetadataSnapshot,
   makeRegistry,
@@ -21,6 +22,7 @@ import {
 import { clearAgentRunContext, getAgentRunContext } from "../infra/agent-run-registry.js";
 import { getCurrentPluginMetadataSnapshot } from "../plugins/current-plugin-metadata-snapshot.js";
 import { createPluginCache, withPluginCache } from "../plugins/plugin-cache.js";
+import * as pluginMetadata from "../plugins/plugin-metadata-snapshot.js";
 import { resolvePluginMetadataSnapshot } from "../plugins/plugin-metadata-snapshot.js";
 import { createEmptyPluginRegistry } from "../plugins/registry-empty.js";
 import {
@@ -33,6 +35,7 @@ import { captureAsyncWorkTracker } from "../shared/async-work-scope.js";
 import { observeMainThreadSql } from "../test-utils/main-thread-sql-spies.test-support.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import type { SystemAgentConfiguredRoute } from "./inference-route.js";
+import { SETUP_INFERENCE_TEST_MAX_TOKENS } from "./setup-inference-probe-work.js";
 import {
   loadSetupInferencePluginGeneration,
   revalidateStableSetupInferenceOwner,
@@ -40,10 +43,15 @@ import {
 } from "./setup-inference-turn.js";
 import { createSystemAgentVerifiedInferenceTestFixture } from "./system-agent.test-helpers.js";
 
+// mock-isolation: Setup probes replace model I/O without loading the embedded runtime.
+vi.mock("../agents/embedded-agent.js", () => ({ runEmbeddedAgent: vi.fn() }));
+
 const mocks = vi.hoisted(() => ({ loadAgentRuntimePluginRegistryHandle: vi.fn() }));
 vi.mock("../agents/runtime-plugins.js", () => ({
   loadAgentRuntimePluginRegistryHandle: mocks.loadAgentRuntimePluginRegistryHandle,
 }));
+
+afterEach(() => vi.restoreAllMocks());
 
 function embeddedRoute(runtime: "codex" | "openclaw" = "codex"): SystemAgentConfiguredRoute {
   const config: OpenClawConfig = {
@@ -70,47 +78,34 @@ function embeddedRoute(runtime: "codex" | "openclaw" = "codex"): SystemAgentConf
 }
 
 describe("setup inference plugin ownership", () => {
-  it("runs a bounded read-only completion with a detached transcript", async () => {
+  it("runs a bounded read-only probe with a detached transcript", async () => {
     const route = embeddedRoute("openclaw");
-    const assistant = buildAssistantMessage({
-      model: { api: "openai-responses", provider: route.provider, id: route.model },
-      content: [{ type: "text", text: "What would you like to call me?" }],
-      stopReason: "stop",
-      usage: buildUsageWithNoCost({ input: 12, output: 9 }),
-      timestamp: 100,
+    vi.spyOn(embeddedAgent, "runEmbeddedAgent").mockImplementation(async (params) => {
+      expect(params).toMatchObject({
+        sessionPersistence: "detached",
+        authProfileStateMode: "read-only",
+        preparedModelRuntimeMode: "isolated-read-only",
+        allowAuthProfileFallback: false,
+        disableTools: true,
+        thinkLevel: "off",
+        streamParams: { maxTokens: SETUP_INFERENCE_TEST_MAX_TOKENS },
+      });
+      return {
+        payloads: [{ text: "OK" }],
+        meta: {
+          durationMs: 1,
+          executionTrace: { winnerProvider: route.provider, winnerModel: route.model },
+        },
+      };
     });
     const result = await runSetupInferenceTurn({
       route,
-      prompt: "Ask for your name.",
-      maxTokens: 128,
       requireExecutionOwner: false,
-      deps: {
-        createTempDir: async () => "/tmp/openclaw-opening-test",
-        removeTempDir: async () => {},
-        runEmbeddedAgent: async (params) => {
-          expect(params).toMatchObject({
-            sessionPersistence: "detached",
-            authProfileStateMode: "read-only",
-            preparedModelRuntimeMode: "isolated-read-only",
-            allowAuthProfileFallback: false,
-            disableTools: true,
-            thinkLevel: "off",
-            streamParams: { maxTokens: 128 },
-          });
-          await params.sessionManager!.appendMessageAsync(assistant);
-          return {
-            payloads: [{ text: "What would you like to call me?" }],
-            meta: {
-              durationMs: 1,
-              executionTrace: { winnerProvider: route.provider, winnerModel: route.model },
-            },
-          };
-        },
-      },
+      deps: {},
     });
-    expect(result).toMatchObject({
+    expect(result, result.ok ? undefined : result.error).toMatchObject({
       ok: true,
-      text: "What would you like to call me?",
+      text: "OK",
     });
   });
 
@@ -131,17 +126,14 @@ describe("setup inference plugin ownership", () => {
         },
       };
       let retryConnectionErrors: boolean | undefined;
+      vi.spyOn(embeddedAgent, "runEmbeddedAgent").mockImplementation(async (params) => {
+        retryConnectionErrors = params.retryConnectionErrors;
+        throw new FailoverError("Connection error.", { reason: "timeout", code });
+      });
       const result = await runSetupInferenceTurn({
         route,
         requireExecutionOwner: false,
-        deps: {
-          createTempDir: async () => "/tmp/openclaw-setup-inference-test",
-          removeTempDir: async () => {},
-          runEmbeddedAgent: async (params) => {
-            retryConnectionErrors = params.retryConnectionErrors;
-            throw new FailoverError("Connection error.", { reason: "timeout", code });
-          },
-        },
+        deps: {},
       });
       expect(result).toMatchObject({
         ok: false,
@@ -161,7 +153,7 @@ describe("setup inference plugin ownership", () => {
     const route = embeddedRoute();
     const cleanupStarted = createDeferred();
     const releaseCleanup = createDeferred();
-    const removeTempDir = vi.fn(async () => {});
+    const removeTempDir = vi.spyOn(fs, "rm");
     const runEmbeddedAgent = vi.fn(async () => {
       const trackOwner = captureAsyncWorkTracker();
       void trackOwner(async () => {
@@ -180,14 +172,11 @@ describe("setup inference plugin ownership", () => {
       };
     });
 
+    vi.spyOn(embeddedAgent, "runEmbeddedAgent").mockImplementation(runEmbeddedAgent);
     let settled = false;
     const turn = runSetupInferenceTurn({
       route,
-      deps: {
-        createTempDir: async () => "/tmp/openclaw-setup-inference-test",
-        removeTempDir,
-        runEmbeddedAgent,
-      },
+      deps: {},
       requireExecutionOwner: false,
     }).finally(() => {
       settled = true;
@@ -279,10 +268,12 @@ describe("setup inference plugin ownership", () => {
         }),
       );
       const previousMetadata = getCurrentPluginMetadataSnapshot();
-      const resolveMetadataSnapshot = vi.fn(() => {
-        order.push("metadata");
-        return metadataSnapshot;
-      });
+      const resolveMetadataSnapshot = vi
+        .spyOn(pluginMetadata, "resolvePluginMetadataSnapshotAsync")
+        .mockImplementation(async () => {
+          order.push("metadata");
+          return metadataSnapshot;
+        });
       mocks.loadAgentRuntimePluginRegistryHandle.mockImplementationOnce(() => {
         order.push("load");
         expect(getCurrentPluginMetadataSnapshot()).toBe(metadataSnapshot);
@@ -306,7 +297,6 @@ describe("setup inference plugin ownership", () => {
             stagedOwnerPluginArtifacts: binding,
             deps: {
               createSystemAgentVerifiedInferenceBinding,
-              resolvePluginMetadataSnapshot: resolveMetadataSnapshot,
             },
           }),
         ).resolves.toBe(binding);
@@ -401,42 +391,41 @@ describe("setup probe projection", () => {
       let runId: string | undefined;
       let unsubscribe = () => {};
       try {
+        vi.spyOn(embeddedAgent, "runEmbeddedAgent").mockImplementation(async (params) => {
+          runId = params.runId;
+          unsubscribe = onAgentEventForRun(params.runId, (event) => events.push(event));
+          sessionMessageSubscribers.subscribe("probe-viewer", params.sessionKey!);
+          emitAgentEvent({
+            runId: params.runId,
+            sessionKey: params.sessionKey,
+            stream: "assistant",
+            data: { text: "Internal setup response" },
+          });
+          emitAgentEvent({
+            runId: params.runId,
+            sessionKey: params.sessionKey,
+            stream: "lifecycle",
+            data: {
+              phase,
+              executionSettled: true,
+              ...(phase === "error" ? { error: "provider refused probe" } : {}),
+            },
+          });
+          if (phase === "error") {
+            throw new Error("provider refused probe");
+          }
+          return {
+            meta: {
+              durationMs: 1,
+              finalAssistantVisibleText: "Internal setup response",
+              executionTrace: { winnerProvider: route.provider, winnerModel: route.model },
+            },
+          };
+        });
         const result = await runSetupInferenceTurn({
           route,
           requireExecutionOwner: false,
-          deps: {
-            runEmbeddedAgent: async (params) => {
-              runId = params.runId;
-              unsubscribe = onAgentEventForRun(params.runId, (event) => events.push(event));
-              sessionMessageSubscribers.subscribe("probe-viewer", params.sessionKey!);
-              emitAgentEvent({
-                runId: params.runId,
-                sessionKey: params.sessionKey,
-                stream: "assistant",
-                data: { text: "Internal setup response" },
-              });
-              emitAgentEvent({
-                runId: params.runId,
-                sessionKey: params.sessionKey,
-                stream: "lifecycle",
-                data: {
-                  phase,
-                  executionSettled: true,
-                  ...(phase === "error" ? { error: "provider refused probe" } : {}),
-                },
-              });
-              if (phase === "error") {
-                throw new Error("provider refused probe");
-              }
-              return {
-                meta: {
-                  durationMs: 1,
-                  finalAssistantVisibleText: "Internal setup response",
-                  executionTrace: { winnerProvider: route.provider, winnerModel: route.model },
-                },
-              };
-            },
-          },
+          deps: {},
         });
         expect(result).toMatchObject(
           phase === "end"

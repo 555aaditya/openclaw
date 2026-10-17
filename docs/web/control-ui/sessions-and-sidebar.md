@@ -46,6 +46,11 @@ buttons is selected; click any view to open its list. Selecting a different view
 while the list is open switches directly to that view. Clicking Users again keeps
 its list open; use the collapse button or keyboard shortcut to hide it.
 Home, Inbox, and your account controls stay together at the bottom of the rail.
+When gateway switching is available, the account menu shows one current-gateway row.
+Open it to switch gateways or open **Gateway settings**; **Set as primary** appears
+when the current gateway supports it. In the Mac app, Command-click or Control-click
+a gateway to open a new window. **Get the apps** remains available in the browser,
+but is omitted in the Mac app.
 Open your account menu and choose **Updates** to go directly to **Settings → Updates**.
 This opens the update settings page without starting an update. For the `stable` and
 `beta` update channels, an **Available** badge appears beside **Updates** when a new
@@ -124,8 +129,9 @@ or connections without a durable profile stay browser-local rather than writing
 another person’s layout or shared Gateway configuration.
 
 New session previews the first prompt immediately while the Gateway accepts it.
-A temporary selected row appears in the sidebar immediately, clearing the previous
-chat’s highlight without changing the saved session until creation is accepted.
+A temporary selected row appears in the sidebar immediately, at the top of the
+session list or under its agent in the agent roster, clearing the previous chat’s
+highlight without changing the saved session until creation is accepted.
 The temporary row has no session actions; a failed creation restores the draft.
 As soon as creation is accepted, the submitted prompt and attachments are cleared
 from the New session composer, without waiting for its chat preview to load. The
@@ -182,7 +188,7 @@ can differ from the personal default selected when the actual chat starts.
 
 **Start session** uses a matching prepared name if it is ready. Otherwise, normal
 initial naming runs after submission; Start never waits for the speculative call.
-While a name is pending, the sidebar and chat header show a gently waving blob
+While a name is pending, the sidebar and chat header show a subtle loading bar
 instead of “New session.” A ready name replaces it immediately; if naming ends
 without a name, the ordinary fallback label returns. Reduced-motion preferences
 keep the placeholder still.
@@ -398,7 +404,7 @@ Observer assessments such as **stuck** or **waiting on user** stay with their se
 
 Pending questions and approvals show their specific request when you tap, hover, or keyboard-focus the attention icon. Tapping the icon keeps the sidebar open; tap again or press Escape to dismiss the preview. The tooltip includes the oldest question, compact command, or approval title, plus a count of additional questions or approvals. This works in the regular list, Home, and team mode, including collapsed parents and agent groups. Questions and approvals take priority over agent attention notes and failed runs; requests at the same priority show the oldest first. Answering, approving, cancelling, or expiry clears that request and reveals the next one. Previews wrap and truncate without adding another line to session rows. Secret questions show only the question text, never entered answers.
 
-The top rail button becomes a neutral workspace identity with the configured Gateway display name, or **OpenClaw**, in its tooltip and accessible label, and a small static OpenClaw mark in place of the agent avatar. Both modes use the same menu. The **Show all** tile groups the configured agents’ own avatars and appears only with multiple agents. Each compact agent row has a settings gear that opens its settings without selecting it. The inline **Create new agent** row checks inference, creates and selects a persistent **New Bot**, and opens its own chat for the identity conversation. Messages remain in that chat when you leave and return. Help stays in the account menu. Choose an agent row to leave team mode with that agent selected. The session header keeps the owner-filter title, **Filter & sort**, and one **+** control; search and the view buttons stay in the rail.
+The top rail button becomes a neutral workspace identity with the configured Gateway display name, or **OpenClaw**, in its accessible label, and a small static OpenClaw mark in place of the agent avatar. Both modes use the same menu. The **Show all** tile groups the configured agents’ own avatars and appears only with multiple agents. Each compact agent row has a settings gear that opens its settings without selecting it. The menu starts with **Create new agent**, followed by **Show all** and the agent rows. Creating an agent immediately opens its chat with a preview of “Hi! What would you like to call me?” and a selected **New agent** row at the top of the list. OpenClaw verifies inference before saving the agent and greeting or enabling replies; a failed check explains the problem without creating an agent. The bot handles its name and identity when you reply. Messages remain in that chat when you leave and return, and the latest created agent stays first after a reload. Help stays in the account menu. Choose an agent row to leave team mode with that agent selected. The session header keeps the owner-filter title, **Filter & sort**, and one **+** control; search and the view buttons stay in the rail.
 
 Agent avatars use the same precedence throughout the dashboard: an identity image (a data or same-origin URL), then the identity emoji, then a generated face. The face is stable for the agent ID, including after a rename, and uses crisp vector artwork in the sidebar, switcher, New conversation menu, identity chips, and chat. Configured workspace images also appear beside assistant replies after authenticated loading. A missing or failed image reveals the emoji or generated face. System agents always use the OpenClaw product mark, including in onboarding and custodian conversations; they never use a generated face. People keep their own profile images and initials.
 
@@ -574,9 +580,11 @@ Choose **Advanced → Icon & color** from a session menu and select a color swat
 
 ## Direct session shortcuts
 
-- **⌘⇧O** on Mac or **Ctrl+Shift+O** on Windows/Linux opens **New Session**
+- In desktop apps, **⌘N** on Mac or **Ctrl+N** on Windows/Linux opens **New Session**.
+  Web browsers keep **⌘⇧O** on Mac or **Ctrl+Shift+O** on Windows/Linux.
+  The shortcut opens **New Session**
   and focuses its composer. It opens a draft, without creating an empty session
-  or sending a message. **⌘N / Ctrl+N** remains **New Window**.
+  or sending a message. In web browsers, **⌘N / Ctrl+N** remains **New Window**.
 - **⌘⇧A** on Mac or **Ctrl+Shift+A** on Windows/Linux requests **Archive**
   for the current chat pane only, not other sessions selected in the sidebar.
   It uses the same permissions, protected-session checks, archive lifecycle, and

@@ -46,7 +46,6 @@ export async function prepareAgentRequestPreflight(params: {
   context: AgentTurnContext;
   client: AgentTurnPrincipal | null;
   io: AgentTurnIo;
-  /** A fixed prompt authored by a backend owner; never read from the public request. */
 }) {
   const { request } = params;
   const rejectInvalidRequest = (message: string): undefined => {

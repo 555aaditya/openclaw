@@ -6,6 +6,7 @@ import { readDeletedSessionStartup } from "../../app/deleted-session-startup.ts"
 import type { ImageLightboxItem } from "../../components/image-lightbox.types.ts";
 import { registerNewSessionSetupEnglish } from "../../i18n/locales/en-new-session-setup.ts";
 import { t } from "../../lib/reactive/i18n.ts";
+import { projectOwner, projectSource } from "../../lib/reactive/projection.ts";
 import { parseAgentSessionKey } from "../../lib/sessions/session-key.ts";
 import { defineSolidBridge } from "../../lib/solid-bridge.ts";
 import { generateUUID } from "../../lib/uuid.ts";
@@ -34,57 +35,65 @@ type PendingSessionCreateProps = {
 function PendingSessionCreateContent(props: PendingSessionCreateProps) {
   const composerId = `pending-create-${generateUUID()}`;
   const startedAt = Date.now();
-  const [revision, setRevision] = createSignal(0);
+  const sources = createMemo(() => {
+    const context = props.context;
+    return (
+      context && [
+        projectOwner(context.gateway, (owner) => owner.snapshot),
+        projectOwner(context.placementStartup, (owner) => owner),
+        projectOwner(context.theme, (owner) => owner),
+        projectOwner(context.agents, (owner) => owner.state),
+        projectSource(context.chatSubmissions, {
+          read: (owner) => owner,
+          subscribe: (owner, notify) => owner.subscribeCreate(notify),
+          equality: "revision",
+        }),
+      ]
+    );
+  });
+  const [imageRevision, setImageRevision] = createSignal(0);
   let image: ImageLightboxItem | null = null;
-  const notify = () => setRevision((value) => value + 1);
-  const closeImage = () => {
+  const openImage = (item: ImageLightboxItem | null) => {
     image?.release?.();
-    image = null;
-    notify();
-  };
-  const openImage = (item: ImageLightboxItem) => {
-    closeImage();
     image = item;
-    notify();
+    setImageRevision((value) => value + 1);
   };
+  const closeImage = () => openImage(null);
   createEffect(
     () => ({ context: props.context, sessionKey: props.sessionKey }),
     ({ context }) => {
       if (!context) {
         return undefined;
       }
-      const closeAndNotify = () => {
-        closeImage();
-      };
-      const unsubscribe = [
-        context.gateway.subscribe(closeAndNotify),
-        context.chatSubmissions.subscribeCreate(closeAndNotify),
-        context.placementStartup.subscribe(notify),
-        context.theme.subscribe(notify),
-      ];
+      // These events revoke image custody synchronously, even between render commits.
+      const stopGateway = context.gateway.subscribe(closeImage);
+      const stopCreate = context.chatSubmissions.subscribeCreate(closeImage);
       return () => {
-        for (const release of unsubscribe) {
-          release?.();
-        }
+        stopGateway();
+        stopCreate();
       };
     },
   );
   const composerOwner = createMemo(() => {
-    revision();
+    sources()?.forEach((source) => source.read());
     return props.context?.chatSubmissions.readCreateComposer(props.sessionKey);
   });
-  createEffect(composerOwner, (composer) => composer?.subscribe(notify));
+  const composerProjection = createMemo(() => {
+    const owner = composerOwner();
+    return owner && projectOwner(owner, (source) => source);
+  });
   onCleanup(() => {
     image?.release?.();
     resetChatComposerState(composerId);
   });
   const view = createMemo(() => {
-    revision();
+    sources()?.forEach((source) => source.read());
     const context = props.context;
     if (!context) {
       return null;
     }
     const snapshot = context.gateway.snapshot;
+    const submissions = context.chatSubmissions;
     const identity = snapshot.selfUser?.identity;
     const startup = readDeletedSessionStartup(context, props.sessionKey);
     const failed = startup?.phase === "failed";
@@ -116,9 +125,9 @@ function PendingSessionCreateContent(props: PendingSessionCreateProps) {
           },
           "available",
         )
-      : context.chatSubmissions.readCreateMessage(props.sessionKey);
-    const composer = context.chatSubmissions.readCreateComposer(props.sessionKey);
-    const pendingCreate = context.chatSubmissions.readCreate();
+      : submissions.readCreateMessage(props.sessionKey);
+    const creationComposer = composerProjection()?.read();
+    const pendingCreate = submissions.readCreate();
     const displayName =
       pendingCreate?.creation.sessionKey === props.sessionKey
         ? pendingCreate.displayName
@@ -231,8 +240,7 @@ function PendingSessionCreateContent(props: PendingSessionCreateProps) {
         ),
         onOpenImage: openImage,
       },
-      creationComposer: composer?.canDisplay() ? composer : undefined,
-      renderRevision: {},
+      creationComposer: creationComposer?.canDisplay() ? creationComposer : undefined,
       composer: {
         paneId: composerId,
         sessionKey: props.sessionKey,
@@ -272,19 +280,10 @@ function PendingSessionCreateContent(props: PendingSessionCreateProps) {
                     <Show
                       when={current().creationComposer}
                       keyed
-                      fallback={
-                        <ChatComposer
-                          {...current().composer}
-                          renderRevision={current().renderRevision}
-                        />
-                      }
+                      fallback={<ChatComposer {...current().composer} />}
                     >
                       {(composer) => (
-                        <CreationComposer
-                          composer={composer}
-                          onOpenImage={openImage}
-                          renderRevision={current().renderRevision}
-                        />
+                        <CreationComposer composer={composer} onOpenImage={openImage} />
                       )}
                     </Show>
                   )}
@@ -296,7 +295,7 @@ function PendingSessionCreateContent(props: PendingSessionCreateProps) {
       </div>
       <ChatImageLightbox
         item={(() => {
-          revision();
+          imageRevision();
           return image;
         })()}
         onClose={closeImage}

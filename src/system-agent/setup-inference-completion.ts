@@ -13,7 +13,7 @@ import { runSetupInferenceTurn, type SetupInferenceRequestParams } from "./setup
 
 /** Run one tool-free completion through the configured setup inference route. */
 export async function completeSetupInference(
-  params: SetupInferenceRequestParams & { prompt: string; maxTokens?: number },
+  params: SetupInferenceRequestParams & { prompt: string },
 ): Promise<CompleteSetupInferenceResult> {
   const readSnapshot =
     params.deps?.readConfigFileSnapshot ??
@@ -38,7 +38,6 @@ export async function completeSetupInferenceConfig(
     config: OpenClawConfig;
     configSnapshot?: SystemAgentConfigSnapshot;
     prompt: string;
-    maxTokens?: number;
   },
 ): Promise<CompleteSetupInferenceResult> {
   const deps: ActivateSetupInferenceDeps = {
@@ -67,7 +66,6 @@ export async function completeSetupInferenceConfig(
   const turn = await runSetupInferenceTurn({
     route,
     prompt: params.prompt,
-    maxTokens: params.maxTokens,
     deps,
     requireExecutionOwner: false,
     runtime: params.runtime,

@@ -11,6 +11,7 @@ import { upsertAuthProfile } from "../agents/auth-profiles/profiles.js";
 import { setRuntimeAuthProfileStoreSnapshot } from "../agents/auth-profiles/runtime-snapshots.js";
 import { ensureAuthProfileStore } from "../agents/auth-profiles/store-runtime.js";
 import { resolvePreparedRuntimeWorkspaces } from "../agents/embedded-agent-runner/run/prepared-runtime-context.js";
+import { runEmbeddedAgent as runEmbeddedAgentOwner } from "../agents/embedded-agent.js";
 import { fingerprintResolvedProviderAuth } from "../agents/execution-auth-binding.js";
 import { resolveManagedSecretRefRuntimeProviderAuth } from "../agents/model-auth-runtime-config.js";
 import { resolveApiKeyForProviderCore } from "../agents/model-auth.js";
@@ -36,6 +37,9 @@ import {
   createSystemAgentVerifiedInferenceBinding,
   resolveSystemAgentVerifiedInferenceRoute,
 } from "./verified-inference.js";
+
+// mock-isolation: The setup entrypoint exercises real route/auth owners, never a live model.
+vi.mock("../agents/embedded-agent.js", () => ({ runEmbeddedAgent: vi.fn() }));
 
 const key = "synthetic-setup-test-key";
 const secretRef = { source: "store", provider: "default", id: "SETUP_TEST_KEY" } as const;
@@ -114,6 +118,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  vi.mocked(runEmbeddedAgentOwner).mockReset();
   clearAuthProfileMigrationDiagnostics();
   clearSecretsRuntimeSnapshot();
   vi.unstubAllEnvs();
@@ -142,11 +147,7 @@ it.each(
     await fs.writeFile(configPath, JSON.stringify(config));
     await activate();
     const before = await fs.readFile(configPath, "utf8");
-    const runEmbeddedAgent = vi.fn<
-      NonNullable<
-        NonNullable<Parameters<typeof verifySetupInference>[0]["deps"]>["runEmbeddedAgent"]
-      >
-    >(async (params) => {
+    const runEmbeddedAgent = vi.fn<typeof runEmbeddedAgentOwner>(async (params) => {
       expect(params.agentId).toBe(agentId);
       expect(params.model).toBe("test-model");
       assert(params.sessionFile && params.config);
@@ -188,14 +189,13 @@ it.each(
         },
       };
     });
+    vi.mocked(runEmbeddedAgentOwner).mockImplementation(runEmbeddedAgent);
     const request = {
       agentId,
       modelTarget: "primary" as const,
       runtime: { log() {}, error() {}, exit() {} },
       deps: {
         readConfigFileSnapshot: readSnapshot,
-        createTempDir: () => fs.mkdtemp(path.join(temp.home, "probe-")),
-        runEmbeddedAgent,
       },
     };
     const result =
@@ -204,10 +204,9 @@ it.each(
         : await completeSetupInference({
             ...request,
             prompt: "Ask for your name.",
-            maxTokens: 128,
           });
 
-    expect(result.ok).toBe(scenario === "primary success");
+    expect(result.ok, result.ok ? undefined : result.error).toBe(scenario === "primary success");
     if (scenario === "utility-only") {
       expect(result).toMatchObject({
         ok: false,
@@ -493,11 +492,7 @@ it.each([
         credential: { type: "api_key", provider: "fixture", key: "synthetic-alternate-key" },
       });
     }
-    const runEmbeddedAgent = vi.fn<
-      NonNullable<
-        NonNullable<Parameters<typeof verifySetupInference>[0]["deps"]>["runEmbeddedAgent"]
-      >
-    >(async (params) => {
+    const runEmbeddedAgent = vi.fn<typeof runEmbeddedAgentOwner>(async (params) => {
       // Replace only the model turn; use the real planner and credential resolver.
       const store = ensureAuthProfileStore(params.agentDir);
       const prepared = prepareAgentRuntimeAuth({
@@ -556,11 +551,8 @@ it.each([
         throw new Error("Unexpected exit");
       },
     };
-    const deps = {
-      readConfigFileSnapshot: readSnapshot,
-      createTempDir: () => fs.mkdtemp(path.join(temp.home, "probe-")),
-      runEmbeddedAgent,
-    };
+    vi.mocked(runEmbeddedAgentOwner).mockImplementation(runEmbeddedAgent);
+    const deps = { readConfigFileSnapshot: readSnapshot };
     const attemptedOwners: string[] = [];
     const boundVerification =
       entrypoint === "verify"

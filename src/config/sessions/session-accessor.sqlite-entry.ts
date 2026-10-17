@@ -88,7 +88,6 @@ export { listSessionEntryKeysReadOnly } from "./session-retirement-read.js";
 export {
   loadExactSessionEntry,
   loadExactSessionEntryCandidates,
-  loadExactSessionEntryCandidatesReadOnlyBatch,
   loadExactSessionEntryFromStoreReadOnly,
   loadExactSessionEntryReadOnly,
   loadSessionEntryByIdReadOnly,

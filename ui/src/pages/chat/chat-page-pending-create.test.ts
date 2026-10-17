@@ -65,6 +65,7 @@ it.each([
     const page = new ChatPage();
     const { context } = setNavigationContext(page);
     Object.assign(context, { theme: { subscribe: () => () => undefined } });
+    Object.assign(context.agents, { subscribe: () => () => undefined });
     Object.assign(context.gateway.snapshot, { phase: "connected" });
     context.agents.state.agentsList = {
       defaultId: "main",
@@ -148,6 +149,7 @@ it.each(["rollback", "admission"] as const)(
     const page = new ChatPage();
     const { context } = setNavigationContext(page);
     Object.assign(context, { theme: { subscribe: () => () => undefined } });
+    Object.assign(context.agents, { subscribe: () => () => undefined });
     Object.assign(context.gateway.snapshot, { phase: "connected" });
     context.agents.state.agentsList = {
       defaultId: "main",

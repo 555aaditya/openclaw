@@ -41,7 +41,7 @@ badges remain visible on every shape.
 
 After a Gateway restart, an agent may need a few minutes to prepare its database. The chat view shows "Starting up" and the sidebar stays quiet while preparation is pending. Both reload automatically when the agent is ready; an actual preparation failure still shows its diagnostic and repair instructions.
 
-Reloading a previously visited chat restores the last settled sidebar while the Gateway reconnects. Pinned sessions, plugin rows, roster order, filters, and your display identity keep their places until live data is ready. The footer still reports the current connection status. This browser cache is scoped to the Gateway and profile, expires after 30 days, and excludes incognito sessions. The same snapshot provides the saved session rows and routing defaults for the first chat header. Cached rows never authorize session changes.
+Reloading a previously visited chat restores the last settled sidebar while the Gateway reconnects. Pinned sessions, plugin rows, roster order, filters, and your display identity keep their places until live data is ready. The footer still reports the current connection status. This browser cache is scoped to the Gateway and profile, expires after 30 days, and excludes incognito sessions. The same snapshot provides the saved session rows and routing defaults for the first chat header. Cached rows never authorize session changes. Sidebar snapshot capture coalesces live updates during idle time and flushes pending changes when the page is hidden or left.
 
 The cached transcript also preserves its conversation title when the conversation is outside the saved sidebar page. Live session metadata replaces that display projection when it arrives.
 
@@ -52,6 +52,8 @@ Saved pin labels remain visible while their details refresh, even when those ses
 Inline widgets and MCP Apps reserve their last rendered height when a cached conversation reloads, so loading their content does not move the surrounding messages. New widgets use their declared size until the content reports its height. Changed content or a different window width can still resize a widget.
 
 Transcript history loads in parallel with the browser cache. An unchanged history response keeps the cached message rows and widget sizes in place. The transcript restores its saved reading position, or opens at the end, before showing its initial measured rows. Measured rows become visible once their selected geometry is committed, without an extra layout frame.
+
+Consecutive informational system, recovery, and model-fallback events appear as a collapsed **system events** row in chat. Expand it with a click, Enter, or Space to read the original events in order. An amber **Updates not delivered** summary stays visible when delivery needs attention; event counts do not imply a count of undelivered updates. Human and assistant messages, actionable notices, and search results remain separate. This changes presentation only, not retry or delivery behavior.
 
 During connection recovery, Send shows its busy state and explains why sending is unavailable without inserting a temporary notice above the composer.
 
@@ -237,20 +239,21 @@ name the child session that failed, even when its parent has finished or continu
 working. Select the warning to open the child session and acknowledge its failure;
 a subagent chat opens without adding a sidebar row.
 
-Choose **Create new agent** in the agent selector to create a persistent bot.
-OpenClaw first checks that inference is usable. If it is unavailable, the selector
-explains the problem without creating an agent. Otherwise, a selected **New Bot**
-row appears with a brief creating state, then its own chat opens. The bot handles
-its name and identity there. Every message stays in that conversation; leaving
-and returning resumes the same chat. Its stable internal ID can appear in the URL,
-but never as its display name or subtitle.
+Choose **Create new agent** in the agent selector to open a new bot's chat
+immediately. A selected **New agent** row appears first in the agent list, and
+the chat previews “Hi! What would you like to call me?” while OpenClaw checks
+that inference is usable. If the check fails, OpenClaw explains the problem and
+does not create an agent. After verification, it saves the agent and greeting,
+and enables the composer. The bot handles its name and identity when you reply.
+Every message stays in that conversation; leaving and returning resumes the same
+chat. Its stable internal ID can appear in the URL, but never as its display name
+or subtitle. The latest created agent stays first after a reload.
 
-The selector uses compact avatar-and-name rows in a bounded, scrollable list.
-Each row's settings gear opens that agent's existing settings without switching
-the selected agent. The inline **Create new agent** row uses a plus-circle icon.
-With more than six agents, **Find an agent…** filters the list; matching agents
-retain their existing order. Reopening the menu clears the filter and brings the
-selected agent into view.
+The selector starts with **Create new agent**, using a plus-circle icon, followed
+by **Show all** when multiple agents are available. Compact avatar-and-name rows
+fill a bounded, scrollable list. Each row's settings gear opens that agent's
+existing settings without switching the selected agent. Reopening the menu
+brings the selected agent into view.
 
 ## Download files
 
@@ -357,8 +360,8 @@ overlap diagonally, three or four form a two-column grid, and five or more show
 three avatars plus a remaining-agent count. This enables **team mode**, a browser
 preference that is off by default. The top row becomes a workspace header with
 the configured Gateway display name, or **OpenClaw**, and a small static OpenClaw mark.
-Both modes use the same selector: compact agent rows with a settings gear on the
-right, followed by **Create new agent**. Choosing a gear opens that agent's
+Both modes use the same selector: **Create new agent**, **Show all**, then compact
+agent rows with a settings gear on the right. Choosing a gear opens that agent's
 configuration without selecting it. The selected row has an avatar ring. Help
 and its links remain in the account menu. Pinned sessions stay in **Pages**, using
 their agent's avatar as the icon.
@@ -392,6 +395,7 @@ for group controls and filtering.
 Agent names and avatars follow agent and identity updates. While a configured avatar image loads,
 the avatar keeps its tinted background with no face or text. The image appears when ready;
 an emoji or generated face appears only when no image is configured or the image fails to load.
+Agents without an advertised image use their fallback without probing an avatar route.
 Repeated views reuse prepared avatar thumbnails; updating the avatar refreshes its thumbnail.
 Profiles with an uploaded photo or a linked email (for a Gateway-proxied Gravatar) request the
 versioned profile image; profiles with neither use initials without probing an image route. Authenticated

@@ -11,10 +11,10 @@ import { SessionMutationAuthorizationChangedError } from "../session-mutation-au
 import { captureGatewayClientUploadCommitGuard } from "../upload-policy.js";
 import type { AgentRunRequest } from "./agent-request-types.js";
 import { createAgentRuntimeAuthorityGuard } from "./agent-runtime-authority.js";
-import type { GatewayRequestHandlerOptions, GatewayRequestHandlers } from "./types.js";
+import type { GatewayRequestHandlers } from "./types.js";
 import { assertValidParams } from "./validation.js";
 
-async function handleAgentRun({
+export const agentRunHandler: GatewayRequestHandlers["agent"] = async ({
   params,
   respond,
   context,
@@ -22,7 +22,7 @@ async function handleAgentRun({
   isWebchatConnect,
   hasCurrentClientAuthority,
   sessionMutationCommitGuard,
-}: GatewayRequestHandlerOptions): Promise<void> {
+}) => {
   const assertUploadAllowed = captureGatewayClientUploadCommitGuard({
     method: "agent",
     requestParams: params,
@@ -58,12 +58,7 @@ async function handleAgentRun({
   }
   const request = params as AgentRunRequest;
   const principal = captureAgentTurnPrincipal(client);
-  const preflight = await prepareAgentRequestPreflight({
-    request,
-    context,
-    client: principal,
-    io,
-  });
+  const preflight = await prepareAgentRequestPreflight({ request, context, client: principal, io });
   if (!preflight) {
     return;
   }
@@ -88,7 +83,4 @@ async function handleAgentRun({
     }
     runtimeAuthority.handleClosedError(error);
   }
-}
-
-export const agentRunHandler: GatewayRequestHandlers["agent"] = (options) =>
-  handleAgentRun(options);
+};
