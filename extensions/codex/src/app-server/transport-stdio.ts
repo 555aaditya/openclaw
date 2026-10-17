@@ -27,7 +27,6 @@ const RUNTIME_INJECTION_ENVIRONMENT_KEYS = new Set([
   "LD_PRELOAD",
 ]);
 
-/** Resolves the concrete command/argv/shell settings used to spawn Codex app-server. */
 export function resolveCodexAppServerSpawnInvocation(
   options: CodexAppServerStartOptions,
   env: NodeJS.ProcessEnv,
@@ -124,7 +123,6 @@ export function withCodexAppServerGitConfig(
   };
 }
 
-/** Spawns the Codex app-server process and returns the shared transport interface. */
 export async function createStdioTransport(
   options: CodexAppServerStartOptions,
   baseEnv: NodeJS.ProcessEnv = process.env,
