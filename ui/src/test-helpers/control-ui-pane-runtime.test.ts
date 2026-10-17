@@ -39,7 +39,7 @@ it("keeps private pane probes on the reported runtime while composing stream ins
   const runtime = new ChatPaneRuntime(element, fixture.pane.context);
   Reflect.set(runtime, "state", fixture.state);
   onTestFinished(() => {
-    runtime.disconnectedCallback();
+    runtime.dispose();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
@@ -61,11 +61,14 @@ it("keeps private pane probes on the reported runtime while composing stream ins
 
   const suggestions: [] = [];
   Reflect.set(runtime, "taskSuggestions", suggestions);
-  Reflect.set(runtime, "loadingOlder", true);
+  const catalogMessages = [{ role: "assistant", content: "Catalog fixture" }];
+  runtime.history.catalogMessages = catalogMessages;
+  runtime.history.loadingOlder = true;
   Reflect.set(runtime, "historyIntentTimer", 37);
   const presence = { presence: [] };
   Reflect.set(runtime, "presencePayload", presence);
   expect(Reflect.get(element, "taskSuggestions")).toBe(suggestions);
+  expect(Reflect.get(element, "catalogMessages")).toBe(catalogMessages);
   expect(Reflect.get(element, "loadingOlder")).toBe(true);
   expect(Reflect.get(element, "historyIntentTimer")).toBe(37);
   expect(Reflect.get(element, "presencePayload")).toBe(presence);
@@ -74,7 +77,7 @@ it("keeps private pane probes on the reported runtime while composing stream ins
   expect(Reflect.get(element, "boardProviderLease")).toBe(boardProviderLease);
   Reflect.set(runtime, "boardProviderLease", undefined);
   expect(Reflect.get(element, "boardProviderLease")).toBeUndefined();
-  Reflect.set(runtime, "loadingOlder", false);
+  runtime.history.loadingOlder = false;
   Reflect.set(runtime, "historyIntentTimer", null);
   expect(Reflect.get(element, "loadingOlder")).toBe(false);
   expect(Reflect.get(element, "historyIntentTimer")).toBeNull();
@@ -88,7 +91,7 @@ it("keeps private pane probes on the reported runtime while composing stream ins
   expect(streamProbe).toHaveBeenCalledWith(runtime, "invalidate");
 
   for (const key of ["requestUpdate", "render"] as const) {
-    const ownerMethod = vi.spyOn(runtime, key);
+    const ownerMethod = vi.spyOn(runtime, key === "requestUpdate" ? "invalidate" : key);
     const original: unknown = Reflect.get(element, key);
     if (typeof original !== "function") {
       throw new Error(`Expected the recorded pane's ${key} operation`);

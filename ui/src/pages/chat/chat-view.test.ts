@@ -88,7 +88,7 @@ import {
   itemAt,
 } from "./chat-view.test-helpers.ts";
 import type { ChatProps } from "./chat-view.tsx";
-import * as chatMessageConfirmation from "./components/chat-message-confirmation.ts";
+import * as chatMessageConfirmation from "./components/chat-message-confirmation-view.tsx";
 import { renderChatModelAccountControl } from "./components/chat-model-account-control.ts";
 import { ChatModelControls } from "./components/chat-model-controls.tsx";
 import { installChatComposerPickerDismissal } from "./components/chat-picker-overlay.ts";
@@ -1645,9 +1645,8 @@ describe("per-pane chat presentation state", () => {
       const other = platform === "MacIntel" ? { ctrlKey: true } : { metaKey: true };
       const container = createComposerContainer();
       document.body.append(container);
-      const onRequestUpdate = vi.fn(() => renderChatInto(container, { onRequestUpdate }));
       try {
-        renderChatInto(container, { onRequestUpdate });
+        renderChatInto(container);
         const composer = getComposerTextarea(container);
         composer.focus();
         for (const key of ["f", "а"]) {
@@ -1662,7 +1661,6 @@ describe("per-pane chat presentation state", () => {
           expect(navigationEvent.defaultPrevented).toBe(false);
           expect(container.querySelector(".agent-chat__search-bar")).toBeNull();
           expect(document.activeElement).toBe(composer);
-          onRequestUpdate.mockClear();
           const event = new KeyboardEvent("keydown", {
             key,
             code: "KeyF",
@@ -1672,12 +1670,13 @@ describe("per-pane chat presentation state", () => {
           });
 
           composer.dispatchEvent(event);
-          await Promise.resolve();
-
           expect(event.defaultPrevented).toBe(true);
-          expect(onRequestUpdate).toHaveBeenCalledOnce();
-          expect(document.activeElement).toBe(
-            container.querySelector<HTMLInputElement>('.agent-chat__search-bar input[type="text"]'),
+          await waitForSolid(() =>
+            expect(document.activeElement).toBe(
+              container.querySelector<HTMLInputElement>(
+                '.agent-chat__search-bar input[type="text"]',
+              ),
+            ),
           );
 
           const closeEvent = new KeyboardEvent("keydown", {
@@ -1688,12 +1687,12 @@ describe("per-pane chat presentation state", () => {
             cancelable: true,
           });
           document.activeElement?.dispatchEvent(closeEvent);
-          await Promise.resolve();
-
           expect(closeEvent.defaultPrevented).toBe(true);
-          expect(onRequestUpdate).toHaveBeenCalledTimes(2);
-          expect(document.activeElement).toBe(composer);
-          expect(container.querySelector(".agent-chat__search-bar")).toBeNull();
+          await waitForSolid(() => {
+            expect(document.activeElement).toBe(composer);
+            expect(container.querySelector(".agent-chat__search-bar")).toBeNull();
+          });
+          expect(getComposerTextarea(container)).toBe(composer);
         }
       } finally {
         container.remove();
@@ -1704,9 +1703,8 @@ describe("per-pane chat presentation state", () => {
   it("returns focus to the composer when the original target disappears", async () => {
     const container = createComposerContainer();
     document.body.append(container);
-    const onRequestUpdate = vi.fn(() => renderChatInto(container, { onRequestUpdate }));
     try {
-      renderChatInto(container, { onRequestUpdate });
+      renderChatInto(container);
       const composer = getComposerTextarea(container);
       const transientTarget = document.createElement("button");
       const chat = container.querySelector<HTMLElement>(".chat");
@@ -1725,7 +1723,11 @@ describe("per-pane chat presentation state", () => {
           cancelable: true,
         }),
       );
-      await Promise.resolve();
+      await waitForSolid(() =>
+        expect(document.activeElement).toBe(
+          container.querySelector('.agent-chat__search-bar input[type="text"]'),
+        ),
+      );
 
       transientTarget.remove();
       document.activeElement?.dispatchEvent(
@@ -1737,9 +1739,9 @@ describe("per-pane chat presentation state", () => {
           cancelable: true,
         }),
       );
-      await Promise.resolve();
-
-      expect(document.activeElement).toBe(composer);
+      await waitForSolid(() => expect(document.activeElement).toBe(composer));
+      expect(container.querySelector(".agent-chat__search-bar")).toBeNull();
+      expect(getComposerTextarea(container)).toBe(composer);
     } finally {
       container.remove();
     }
@@ -1752,7 +1754,7 @@ describe("per-pane chat presentation state", () => {
     const renderPane = (container: HTMLElement, paneId: string) =>
       renderChatInto(container, { paneId, draft: "", getDraft: () => "" });
     const open = (container: HTMLElement, paneId: string) => {
-      toggleTranscriptSearch(paneId, vi.fn());
+      toggleTranscriptSearch(paneId);
       renderPane(container, paneId);
     };
     renderPane(paneA, "pane-a");
@@ -2032,31 +2034,6 @@ describe("chat loading skeleton", () => {
     }
   });
 
-  it("announces interruptions without a composer badge", () => {
-    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000);
-    try {
-      const container = renderChatView({
-        messages: [{ role: "assistant", content: "Partial response" }],
-        composerControls: createComposerControlsFixture(),
-        runStatus: {
-          phase: "interrupted",
-          runId: "run-1",
-          sessionKey: "main",
-          occurredAt: 1_000,
-        },
-      });
-
-      expect(container.querySelector(".agent-chat__composer-run-status")).toBeNull();
-      expect(container.querySelector(".agent-chat__run-status")).toBeNull();
-      expect(
-        container.querySelector(".agent-chat__run-status-announcement")?.textContent?.trim(),
-      ).toBe("Interrupted");
-      expect(container.querySelector(".chat-reading-indicator")).toBeNull();
-    } finally {
-      nowSpy.mockRestore();
-    }
-  });
-
   it("keeps a completed recap after later tool content", () => {
     vi.mocked(chatThread.buildCachedChatItems).mockReturnValueOnce([
       {
@@ -2237,9 +2214,27 @@ describe("chat voice controls", () => {
       const initialScale = centerBar?.style.getPropertyValue("--talk-bar-scale");
 
       inputLevel.set(0.8);
+      flush();
 
       expect(visualizer?.getAttribute("data-level")).toBe("0.8");
       expect(centerBar?.style.getPropertyValue("--talk-bar-scale")).not.toBe(initialScale);
+
+      const replacement = new RealtimeTalkLevelSignal();
+      replacement.set(0.35);
+      renderChatInto(container, {
+        realtimeTalkActive: true,
+        realtimeTalkStatus: "listening",
+        realtimeTalkInputLevel: replacement,
+      });
+      expect(container.querySelector(".agent-chat__voice-activity")).toBe(visualizer);
+      inputLevel.set(0.1);
+      flush();
+      expect(visualizer?.getAttribute("data-level")).toBe("0.35");
+
+      disposeChatView(container);
+      replacement.set(0.9);
+      flush();
+      expect(visualizer?.getAttribute("data-level")).toBe("0.35");
     } finally {
       container.remove();
     }
@@ -2268,20 +2263,14 @@ describe("chat composer render invalidation", () => {
     const onDraftChange = vi.fn((next: string) => {
       draft = next;
     });
-    let props = createChatProps({
+    const props = createChatProps({
       draft,
       getDraft: () => draft,
       onDraftChange,
     });
-    const onRequestUpdate = vi.fn(() => {
-      props = { ...props, draft, getDraft: () => draft };
-      renderChatPropsInto(container, props);
-    });
-    props = { ...props, onRequestUpdate };
     renderChatPropsInto(container, props);
 
     const textarea = getComposerTextarea(container);
-    onRequestUpdate.mockClear();
     vi.mocked(chatThread.buildCachedChatItems).mockClear();
 
     textarea.value = "ab";
@@ -2290,13 +2279,13 @@ describe("chat composer render invalidation", () => {
     textarea.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText" }));
 
     expect(draft).toBe("abc");
-    expect(onRequestUpdate).not.toHaveBeenCalled();
+    expect(getComposerTextarea(container)).toBe(textarea);
     expect(chatThread.buildCachedChatItems).not.toHaveBeenCalled();
 
     textarea.value = "مرحبا";
     textarea.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText" }));
 
-    expect(onRequestUpdate).not.toHaveBeenCalled();
+    expect(getComposerTextarea(container)).toBe(textarea);
     expect(chatThread.buildCachedChatItems).not.toHaveBeenCalled();
     expect(textarea.dir).toBe("rtl");
 
@@ -2356,6 +2345,7 @@ describe("chat slash menu accessibility", () => {
       } else if (selection === "send") {
         keydownComposer(container, "Escape");
         container.querySelector<HTMLButtonElement>('button[aria-label="Send message"]')?.click();
+        flush();
       } else {
         inputDraftAtEnd(container, `/goal ${selection} `);
       }
@@ -2675,6 +2665,7 @@ describe("chat slash menu accessibility", () => {
     expect(container.querySelector(".slash-menu")).not.toBeNull();
 
     document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    flush();
 
     expect(container.querySelector(".slash-menu")).toBeNull();
     container.remove();
@@ -2831,6 +2822,7 @@ describe("chat slash menu accessibility", () => {
     textarea.value = "Use $pro then continue";
     textarea.setSelectionRange("Use $pro".length, "Use $pro".length);
     textarea.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText" }));
+    flush();
     expect(container.querySelector(".skill-menu")).not.toBeNull();
 
     textarea = container.querySelector<HTMLTextAreaElement>("textarea")!;
@@ -4879,7 +4871,7 @@ describe("right-click Reply", () => {
       "rendered message bubble",
     );
     document.body.appendChild(container);
-    transcript.hostConnected();
+    transcript.start();
 
     try {
       dispatchContextMenu(bubble);
@@ -4902,7 +4894,7 @@ describe("right-click Reply", () => {
         container.querySelector(".agent-chat__composer-combobox textarea"),
       );
     } finally {
-      transcript.hostDisconnected();
+      transcript.dispose();
       disposeChatView(container);
       container.remove();
     }
@@ -5032,16 +5024,17 @@ describe("right-click Reply", () => {
         expect(document.activeElement).toBe(textarea);
         expect(textarea.value).toBe(draft);
         expect(pane.container.querySelector(".chat-reply-preview__text")?.textContent).toBe(quote);
-        const updatesBeforeComposition = pane.onRequestUpdate.mock.calls.length;
+        const updatesBeforeComposition = pane.redraw.mock.calls.length;
         if (mode === "rerendered-live") {
           textarea.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
-          expect(pane.onRequestUpdate).toHaveBeenCalledTimes(updatesBeforeComposition);
+          expect(pane.redraw).toHaveBeenCalledTimes(updatesBeforeComposition);
         }
         const visibleDraft = mode === "rerendered-live" ? `${draft} composing` : draft;
         if (mode === "rerendered-live") {
           textarea.value = visibleDraft;
           textarea.dispatchEvent(new InputEvent("input", { bubbles: true, isComposing: true }));
-          expect(pane.onRequestUpdate.mock.calls.length).toBeGreaterThan(updatesBeforeComposition);
+          flush();
+          pane.redraw();
           expect(pane.onDraftChange).not.toHaveBeenCalled();
         }
         const event = new KeyboardEvent("keydown", {

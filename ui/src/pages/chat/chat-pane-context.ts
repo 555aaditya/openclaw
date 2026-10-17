@@ -55,7 +55,7 @@ import {
 } from "./chat-state-refresh.ts";
 import { requestChatPageUpdate } from "./chat-state-render.ts";
 import { resolveChatAgentId, selectedChatSessionRow } from "./chat-state-route.ts";
-import { releaseChatMediaResourceSubscriber } from "./components/chat-message-media.ts";
+import { releaseChatMediaResourceOwner } from "./components/chat-message-media.ts";
 import { retireSessionWorkspaceCheckout } from "./components/chat-session-workspace.ts";
 import { retireChatPairingQr } from "./history-merge.ts";
 import {
@@ -149,7 +149,7 @@ export abstract class ChatPaneContext extends ChatPaneLifecycle {
     });
   }
 
-  override disconnectedCallback() {
+  override dispose() {
     if (this.state) {
       retireChatPairingQr(this.state);
       retireCachedPairingQr(this.state.chatMessagesBySession);
@@ -160,7 +160,7 @@ export abstract class ChatPaneContext extends ChatPaneLifecycle {
     this.gatewayConnectionLifecycle?.dispose();
     this.gatewayConnectionLifecycle = undefined;
     this.outboxRecoveryReady = false;
-    super.disconnectedCallback();
+    super.dispose();
   }
 
   protected async changeHeaderPlacement(
@@ -187,6 +187,7 @@ export abstract class ChatPaneContext extends ChatPaneLifecycle {
       // Only the request that still owns the row may clear its progress key.
       if (key !== null || this[property] === row.key) {
         this[property] = key;
+        this.invalidate();
       }
     };
     const params = {
@@ -197,7 +198,6 @@ export abstract class ChatPaneContext extends ChatPaneLifecycle {
       isCurrent: () => this.ownsHeaderOutcomeScope(scope),
       publishError: (error: unknown) => this.publishHeaderError(error, scope.headerOutcomeOwner),
       reconcileMutation: (agentId?: string | null) => scope.sessions.reconcileMutation(agentId),
-      requestUpdate: () => this.requestUpdate(),
     };
     if (mode === "reclaim") {
       const { reclaimChatPanePlacement } = await import("./chat-pane-placement.runtime.ts");
@@ -292,7 +292,7 @@ export abstract class ChatPaneContext extends ChatPaneLifecycle {
       }
     }
     this.syncSessionSuggestionTarget(
-      stateValue.agentId ?? resolveChatAgentId(state) ?? "main",
+      resolveChatAgentId(state) ?? stateValue.agentId ?? "main",
       selectedSession,
     );
     if (selectedSessionDeleted) {
@@ -454,7 +454,7 @@ export abstract class ChatPaneContext extends ChatPaneLifecycle {
       this.continueInTerminalDialog = null;
       this.cancelHeaderRename();
       cancelChatScroll(state);
-      releaseChatMediaResourceSubscriber(state.requestUpdate);
+      releaseChatMediaResourceOwner(state);
       if (wasConnected) {
         if (snapshot.phase === "connected") {
           markQueuedChatSendsWaitingForReconnect(state);
@@ -474,8 +474,7 @@ export abstract class ChatPaneContext extends ChatPaneLifecycle {
       this.resetSessionSuggestions();
       this.resetSessionReactions();
       this.clearTypingActors();
-      this.sessionDiscussionStates.clear();
-      this.sessionDiscussionOpenUrls.clear();
+      this.sessionDiscussion.clear();
       this.sessionDiscussionPanels.clear();
       this.sessionParticipationTracker.reset();
       if (state.client !== snapshot.client) {
@@ -486,7 +485,7 @@ export abstract class ChatPaneContext extends ChatPaneLifecycle {
           clearLocalRun: true,
           clearToolStream: true,
           clearRunStatus: true,
-          requestUpdate: false,
+          publishRunState: false,
         });
         state.pendingAbort = null;
       }
@@ -507,8 +506,8 @@ export abstract class ChatPaneContext extends ChatPaneLifecycle {
         isUiSelectedGlobalSessionKey(state, state.sessionKey))
     ) {
       retireChatModelSelectionOwnership(state);
-      this.swarmHydrator?.dispose();
-      this.swarmHydrator = null;
+      this.swarm.hydrator?.dispose();
+      this.swarm.hydrator = null;
     }
     state.client = snapshot.client;
     state.connected = snapshot.phase === "connected";
@@ -550,7 +549,7 @@ export abstract class ChatPaneContext extends ChatPaneLifecycle {
       retireCachedPairingQr(state.chatMessagesBySession);
     }
     if (!sourceChanged && mediaAuthChanged) {
-      releaseChatMediaResourceSubscriber(state.requestUpdate);
+      releaseChatMediaResourceOwner(state);
     }
     state.canvasPluginSurfaceUrl = snapshot.canvasPluginSurfaceUrl;
     state.terminalAvailable =
@@ -690,7 +689,10 @@ export abstract class ChatPaneContext extends ChatPaneLifecycle {
       });
       void refreshChatModelAuthStatus(state).finally(() => state.requestUpdate?.());
       void state.loadAssistantIdentity();
-      void this.refreshSessionSuggestions();
+      this.syncSessionSuggestionTarget(
+        resolveChatAgentId(state) ?? "main",
+        selectedChatSessionRow(state),
+      );
     }
     // Hello precedes recovery readiness. Wake parked outboxes on that publication;
     // the shared admission check still holds any recovered initial turn.

@@ -4,7 +4,6 @@ import type {
   SessionSuggestion,
   SessionSuggestionEvent,
   SessionTypingEvent,
-  SessionCatalogSession,
   SessionCatalogTranscriptItem,
   TaskSuggestion,
   TaskSuggestionEvent,
@@ -32,7 +31,6 @@ import { loadSettings } from "../../app/settings.ts";
 import type { MarkdownRenderOptions } from "../../components/markdown-render-options.ts";
 import { createAgentIdentityCapability } from "../../lib/agents/identity.ts";
 import { createAgentCapability } from "../../lib/agents/index.ts";
-import type { SolidControllerHost } from "../../lib/reactive/solid-controller-host.ts";
 import type { CatalogSessionKey } from "../../lib/sessions/catalog-key.ts";
 import { createSessionCapability, type SessionCapability } from "../../lib/sessions/index.ts";
 import { createSessionArchiveState } from "../../lib/sessions/session-archive-state.ts";
@@ -55,6 +53,7 @@ import { ChatPaneRuntime } from "./chat-pane-render.ts";
 import {
   createPaneTestHost as createRuntimeTestHost,
   type PaneRuntimeConstructor,
+  type PaneTestLifecycle,
 } from "./chat-pane-runtime.test-support.ts";
 import type { ResolvedBoardView } from "./chat-pane-shared.ts";
 import { ChatBoardPanel } from "./chat-pane-surfaces.tsx";
@@ -74,7 +73,7 @@ import type {
   ChatTaskSuggestionTrayProps,
   TaskSuggestionStartMode,
 } from "./components/chat-task-suggestions.tsx";
-import type { ChatTranscriptController } from "./components/chat-transcript-controller.ts";
+import type { ChatTranscript } from "./components/chat-transcript-controller.ts";
 import type { ChatMessageCache } from "./session-message-cache.ts";
 import type { SessionSnapshotStore } from "./session-snapshot-store.ts";
 
@@ -126,11 +125,14 @@ export function mountBoardPanel(
   };
 }
 
-export interface TestChatPane extends HTMLElement, SolidControllerHost {
+export interface TestChatPane extends HTMLElement, PaneTestLifecycle {
+  readonly updateComplete: Promise<boolean>;
   readonly element: HTMLElement;
   render: ChatPaneRuntime["render"];
-  readonly transcript: ChatTranscriptController;
-  catalogMessages: unknown[];
+  readonly transcript: ChatTranscript;
+  readonly history: ChatPaneRuntime["history"];
+  readonly sessionDiscussion: ChatPaneRuntime["sessionDiscussion"];
+  readonly swarm: ChatPaneRuntime["swarm"];
   active: boolean;
   presented: boolean;
   presentationId: string;
@@ -138,7 +140,11 @@ export interface TestChatPane extends HTMLElement, SolidControllerHost {
   sessionSnapshotStore?: SessionSnapshotStore;
   chatState: Pick<
     ReturnType<typeof createChatState<ChatPageHost>>,
-    "attach" | "composerPersistence" | "createRenderLifecycle" | "requestBackgroundUpdate"
+    | "attach"
+    | "composerDraft"
+    | "composerPersistence"
+    | "createRenderLifecycle"
+    | "requestBackgroundUpdate"
   >;
   context: ApplicationContext;
   state: ChatPageHost;
@@ -218,7 +224,6 @@ export interface TestChatPane extends HTMLElement, SolidControllerHost {
     transcriptLoad: Promise<boolean>,
   ) => void;
   paneLabel: string | undefined;
-  catalogSession: SessionCatalogSession | null;
   catalogItemMessage: (item: SessionCatalogTranscriptItem) => Record<string, unknown> | null;
   handleTranscriptScroll: (event: Event) => void;
   handleTranscriptHistoryIntent: (event: Event) => void;
@@ -232,8 +237,6 @@ export interface TestChatPane extends HTMLElement, SolidControllerHost {
   resetOlderMessagesViewport: () => void;
   readReplyMessage: (messageId: string) => unknown;
   hasOlderMessages: () => boolean;
-  loadingOlder: boolean;
-  catalogCursor: string | undefined;
   olderCursorsSeen: Set<string>;
   headerRenameSession: Pick<GatewaySessionRow, "key" | "sessionId" | "label"> | null;
   headerRenameValue: string;
@@ -580,6 +583,7 @@ export function createTestChatPane(params: {
     sessions: context.sessions,
     sessionsError: null,
     sessionsLoading: false,
+    settings: loadSettings(),
     sidebarContent: null,
     sidebarFocusPanelId: "",
     sidebarFocusVersion: 0,
@@ -699,7 +703,11 @@ class RenderTestChatPane extends ChatPaneRuntime {
     this.state = createPageState(
       context,
       { afterCommit: () => () => {}, invalidate: () => {} },
-      this,
+      {
+        sessionKey: this.sessionKey,
+        dispatchEvent: (event) => this.element.dispatchEvent(event),
+        querySelector: (selector) => this.element.querySelector(selector),
+      },
     );
     return this.state;
   }
