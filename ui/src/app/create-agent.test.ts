@@ -41,6 +41,7 @@ async function fixture(
     scope: "per-sender",
     agents: [{ id: "main", name: "Molty" }],
   };
+  const creationStarted = createDeferred();
   const request = vi.fn(async (method: string, params?: unknown) => {
     if (method === "agents.list") {
       return structuredClone(roster);
@@ -57,6 +58,7 @@ async function fixture(
       };
     }
     if (method === "agents.create") {
+      creationStarted.resolve();
       const verification: { ok: boolean; error?: string } = await (options.verification ?? {
         ok: true,
       });
@@ -162,6 +164,7 @@ async function fixture(
   return {
     context,
     request,
+    creationStarted: creationStarted.promise,
     roster,
     navigate,
     replace,
@@ -195,7 +198,7 @@ describe("application agent creation", () => {
 
   it("opens the new chat before waiting for inference verification", async () => {
     const verification = createDeferred<{ ok: boolean; error?: string }>();
-    const { context, request, roster, navigate } = await fixture({
+    const { context, request, roster, navigate, creationStarted } = await fixture({
       verification: verification.promise,
     });
     const creating = createApplicationAgent(context);
@@ -212,6 +215,7 @@ describe("application agent creation", () => {
       expect(context.chatSubmissions.readCreate()?.displayName).toBe("New agent");
       expect(context.chatSubmissions.readCreate()?.message).toBeNull();
       expect(context.gateway.snapshot.sessionKey).toBe("agent:main:home");
+      await creationStarted;
       expect(request.mock.calls.map(([method]) => method)).toEqual([
         "agents.list",
         "agents.create",
@@ -387,7 +391,15 @@ describe("application agent creation", () => {
 
   it("restores the prior chat if the same Gateway disconnects during verification", async () => {
     const verification = createDeferred<{ ok: boolean }>();
-    const { context, request, roster, replace, publishGateway, settledNavigation } = await fixture({
+    const {
+      context,
+      request,
+      roster,
+      replace,
+      publishGateway,
+      settledNavigation,
+      creationStarted,
+    } = await fixture({
       verification: verification.promise,
     });
     const client = context.gateway.snapshot.client;
@@ -395,6 +407,7 @@ describe("application agent creation", () => {
     await settledNavigation();
     expect(context.router.getState().location.pathname).toMatch(/^\/chat\/bot-/);
 
+    await creationStarted;
     publishGateway({ phase: "reconnecting" });
     expect(context.gateway.snapshot.client).toBe(client);
     verification.resolve({ ok: true });

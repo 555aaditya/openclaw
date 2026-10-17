@@ -30,14 +30,47 @@ function savedAgent(agentId: string) {
 const absentAgent = { exists: true, valid: true, sourceConfig: {} };
 
 describe("agent creation outcome recovery", () => {
+  it("does not retain an unsent attempt after disconnecting before dispatch", async () => {
+    const { agents, request, harness, roster } = fixture();
+    await agents.ensureList();
+    const original = agents.create("New agent");
+    const unsentId = agents.state.pendingAgent!.id;
+    harness.publish(false);
+    await expect(original).resolves.toBeNull();
+    expect(request).toHaveBeenCalledOnce();
+
+    harness.publish(true);
+    request.mockResolvedValueOnce(roster);
+    request.mockImplementationOnce(async (_method, params) => {
+      const { agentId } = params as { agentId: string };
+      return {
+        agentId,
+        name: "New agent",
+        onboarding: { status: "completed", sessionKey: `agent:${agentId}:main` },
+      };
+    });
+    const result = await agents.create("New agent");
+    expect(result?.agentId).not.toBe(unsentId);
+    expect(request.mock.calls.map(([method]) => method)).toEqual([
+      "agents.list",
+      "agents.list",
+      "agents.create",
+    ]);
+  });
+
   it("does not let an old receipt finish a newer recovery of the same agent", async () => {
     const { agents, request, harness } = fixture();
     await agents.ensureList();
     const oldResponse = createDeferred<unknown>();
     const recoveryRead = createDeferred<unknown>();
-    request.mockReturnValueOnce(oldResponse.promise);
+    const creationStarted = createDeferred();
+    request.mockImplementationOnce(() => {
+      creationStarted.resolve();
+      return oldResponse.promise;
+    });
     const original = agents.create("New agent");
     const agentId = agents.state.pendingAgent!.id;
+    await creationStarted.promise;
     harness.publish(false);
     harness.publish(true);
     request.mockResolvedValueOnce({ defaultId: "main", agents: [] });

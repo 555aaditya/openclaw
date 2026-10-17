@@ -713,8 +713,8 @@ describe("agent creation", () => {
       name: "New agent",
     });
     await expect(agents.create("New agent")).resolves.toBeNull();
-    expect(request.mock.calls.map(([method]) => method)).toEqual(["agents.list", "agents.create"]);
     await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(2));
+    expect(request.mock.calls.map(([method]) => method)).toEqual(["agents.list", "agents.create"]);
     const pending = agents.state.pendingAgent;
     expect(pending).toEqual({ id: expect.stringMatching(/^bot-/), name: "New agent" });
     expect(agents.state.agentsList).toEqual(roster);
@@ -806,17 +806,22 @@ describe("agent creation", () => {
 
   it("recovers a disconnected creation receipt without dispatching another attempt", async () => {
     const creation = deferred<unknown>();
+    const creationStarted = deferred();
     const roster = { defaultId: "main", agents: [{ id: "main", name: "Molty" }] };
     const request = vi
       .fn<TestRequest>()
       .mockResolvedValueOnce(roster)
-      .mockReturnValueOnce(creation.promise)
+      .mockImplementationOnce(() => {
+        creationStarted.resolve();
+        return creation.promise;
+      })
       .mockResolvedValueOnce(roster);
     const harness = createGatewayHarness({ request } as unknown as GatewayBrowserClient);
     const agents = createAgentCapability(harness.gateway);
     await agents.ensureList();
     const creating = agents.create("New agent");
     const pending = agents.state.pendingAgent!;
+    await creationStarted.promise;
     harness.publish(false);
     creation.resolve({
       agentId: pending.id,
