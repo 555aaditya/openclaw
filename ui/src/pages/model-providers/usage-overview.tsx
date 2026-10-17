@@ -31,10 +31,6 @@ function formatDate(date: string): string {
   return date ? shortDate.format(new Date(`${date}T00:00:00`)) : "";
 }
 
-function formatTokens(value: number): string {
-  return formatCompactTokenCount(value);
-}
-
 /** Cost text that never renders unpriced usage as free or a subtotal as complete. */
 export function usageCostText(entry: UsageTotals): string {
   if (isUnpriced(entry)) {
@@ -89,7 +85,11 @@ export function UsageOverview(props: {
   );
   const total = () => metricValue(overview()?.totals ?? { tokens: 0, cost: 0 }, by());
   const formatMeasure = (value: number) =>
-    by() === "cost" ? usd.format(value) : formatTokens(value);
+    by() === "cost" ? usd.format(value) : formatCompactTokenCount(value);
+  const dailyLabel = () =>
+    t(by() === "cost" ? "modelProviders.usage.dailyCost" : "modelProviders.usage.dailyTokens");
+  const daily = (entry: { dailyCost: number[]; dailyTokens: number[] }) =>
+    by() === "cost" ? entry.dailyCost : entry.dailyTokens;
   return (
     <SettingsSection
       carapace
@@ -111,9 +111,7 @@ export function UsageOverview(props: {
               { value: "cost", label: t("modelProviders.usage.cost") },
               { value: "tokens", label: t("modelProviders.usage.tokens") },
             ]}
-            onChange={(value) => {
-              setMetric(value);
-            }}
+            onChange={setMetric}
           />
           <SettingsSegmented
             ariaLabel={t("modelProviders.usage.range")}
@@ -161,7 +159,7 @@ export function UsageOverview(props: {
                   <span class="oc-summary-metric-copy">
                     <small>{t("modelProviders.usage.tokens")}</small>
                     <strong class="usage-overview__total">
-                      {formatTokens(value().totals.tokens)}
+                      {formatCompactTokenCount(value().totals.tokens)}
                     </strong>
                     <small>
                       {t("modelProviders.usage.cachedShare", {
@@ -208,21 +206,10 @@ export function UsageOverview(props: {
               <SettingsGroup carapace>
                 <div class="usage-overview__daily">
                   <div class="usage-overview__daily-head">
-                    <span>
-                      {t(
-                        by() === "cost"
-                          ? "modelProviders.usage.dailyCost"
-                          : "modelProviders.usage.dailyTokens",
-                      )}
-                    </span>
+                    <span>{dailyLabel()}</span>
                     <span>
                       {t("modelProviders.usage.peak", {
-                        value: formatMeasure(
-                          Math.max(
-                            0,
-                            ...(by() === "cost" ? value().dailyCost : value().dailyTokens),
-                          ),
-                        ),
+                        value: formatMeasure(Math.max(0, ...daily(value()))),
                       })}
                     </span>
                   </div>
@@ -232,13 +219,9 @@ export function UsageOverview(props: {
                       id: provider.id,
                       label: label(provider.id),
                       color: seriesColor(provider.slot),
-                      values: by() === "cost" ? provider.dailyCost : provider.dailyTokens,
+                      values: daily(provider),
                     }))}
-                    label={t(
-                      by() === "cost"
-                        ? "modelProviders.usage.dailyCost"
-                        : "modelProviders.usage.dailyTokens",
-                    )}
+                    label={dailyLabel()}
                     formatValue={formatMeasure}
                     formatDate={formatDate}
                   />
@@ -262,7 +245,7 @@ export function UsageOverview(props: {
                           <span>{label(provider().id)}</span>
                           <small>
                             {t("modelProviders.usage.providerMeta", {
-                              tokens: formatTokens(provider().tokens),
+                              tokens: formatCompactTokenCount(provider().tokens),
                               messages: provider().messages.toLocaleString(),
                             })}
                           </small>
@@ -285,7 +268,7 @@ export function UsageOverview(props: {
                         <strong class="usage-overview__value">
                           {by() === "cost"
                             ? usageCostText(provider())
-                            : formatTokens(provider().tokens)}
+                            : formatCompactTokenCount(provider().tokens)}
                         </strong>
                       </li>
                     )}
@@ -322,7 +305,7 @@ export function UsageOverview(props: {
                             </th>
                             <td>{usageCostText(model())}</td>
                             <td>{formatShare(model(), by(), total())}</td>
-                            <td>{formatTokens(model().tokens)}</td>
+                            <td>{formatCompactTokenCount(model().tokens)}</td>
                           </tr>
                         )}
                       </For>
