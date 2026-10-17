@@ -26,7 +26,7 @@ import {
 import { rewindChatHistory, switchChatHistoryBranch } from "./chat-history-actions.ts";
 import {
   fetchStagedOlderHistoryPage,
-  isStagedOlderHistoryPageCurrent,
+  consumeStagedOlderHistoryPage,
   loadOlderChatHistoryPage,
   type StagedOlderHistoryPage,
 } from "./chat-history-request.ts";
@@ -435,7 +435,7 @@ export abstract class ChatPaneHistory extends ChatPaneReplyNavigation {
         const requestedOffset = pagination.nextOffset;
         const expectedSessionId =
           typeof state.currentSessionId === "string" ? state.currentSessionId.trim() : "";
-        let result = this.takeStagedOlderPage(state);
+        let result = consumeStagedOlderHistoryPage(state, this.stagedOlder);
         if (!result && this.stagedOlder.load) {
           // Join the in-flight prefetch instead of issuing a duplicate request.
           markLoading();
@@ -443,7 +443,7 @@ export abstract class ChatPaneHistory extends ChatPaneReplyNavigation {
           if (generation !== this.olderLoadGeneration) {
             return false;
           }
-          result = this.takeStagedOlderPage(state);
+          result = consumeStagedOlderHistoryPage(state, this.stagedOlder);
         }
         if (!result) {
           markLoading();
@@ -582,17 +582,6 @@ export abstract class ChatPaneHistory extends ChatPaneReplyNavigation {
         }
       }
     })();
-  }
-
-  // Single-consume: an invalid staged page is discarded rather than retried so
-  // stale prefetches can never shadow the reactive path's fresh cursor.
-  private takeStagedOlderPage(state: ChatState): ChatHistoryResult | null {
-    const staged = this.stagedOlder.page;
-    if (!staged) {
-      return null;
-    }
-    this.stagedOlder.page = null;
-    return isStagedOlderHistoryPageCurrent(state, staged) ? staged.result : null;
   }
 
   protected async continueCatalogSession(key: CatalogSessionKey) {

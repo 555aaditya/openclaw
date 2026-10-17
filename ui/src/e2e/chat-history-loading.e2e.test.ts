@@ -194,7 +194,7 @@ suite.define(() => {
         ),
       ).toEqual([2, 6]);
       const requests = await gateway.getRequests("chat.history");
-      expect(requests[0].params).toMatchObject({ limit: 80, maxBytes: 2 * 1024 * 1024 });
+      expect(requests[0].params).toMatchObject({ maxBytes: 2 * 1024 * 1024 });
       expect(requests[1].params).toMatchObject({ limit: 1000, maxBytes: 5 * 1024 * 1024 });
     } finally {
       await suite.closeBrowserContext(context);

@@ -383,16 +383,19 @@ export async function fetchStagedOlderHistoryPage(state: ChatState, offset: numb
   };
 }
 
-/** A staged page is valid only for the exact connection, session, and the
- * pagination cursor it was fetched at; any drift means the reactive path must
- * refetch (tail reloads rebase offsets, resets reuse session keys). */
-export function isStagedOlderHistoryPageCurrent(
+// Consume even a stale page so it cannot shadow a fresh reader request.
+export function consumeStagedOlderHistoryPage(
   state: ChatState,
-  staged: StagedOlderHistoryPage,
-): boolean {
+  slot: { page: StagedOlderHistoryPage | null },
+): ChatHistoryResult | null {
+  const staged = slot.page;
+  slot.page = null;
+  if (!staged) {
+    return null;
+  }
   const claim = staged.claim;
   const pagination = state.chatHistoryPagination;
-  return (
+  const current =
     state.client === claim.client &&
     state.connected &&
     state.connectionEpoch === claim.connectionEpoch &&
@@ -401,6 +404,6 @@ export function isStagedOlderHistoryPageCurrent(
     (!isUiSelectedGlobalSessionKey(state, claim.sessionKey) ||
       resolveUiSelectedSessionAgentId(state) === claim.agentId) &&
     pagination.hasMore &&
-    pagination.nextOffset === staged.requestedOffset
-  );
+    pagination.nextOffset === staged.requestedOffset;
+  return current ? staged.result : null;
 }
