@@ -487,6 +487,7 @@ describe("worker Gateway tool runtime", () => {
           { type: "text", text: JSON.stringify({ status: "error", error: message }, null, 2) },
         ],
         details: { status: "error", error: message },
+        isError: true,
       });
       expect(execute).toHaveBeenCalledOnce();
     } finally {
