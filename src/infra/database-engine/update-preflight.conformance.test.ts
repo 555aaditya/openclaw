@@ -6,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getEnvironmentData } from "node:worker_threads";
 import { Client } from "pg";
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { createFixtureLifetime } from "../../../test/helpers/fixture-lifetime.js";
 import { parseUpdateRecoveryBackupManifest } from "../../commands/backup-verify-manifest.js";
@@ -55,6 +55,25 @@ import {
   createTeamReportsPortFixture,
   updatePostgresFamilies as families,
 } from "./update-preflight.conformance.test-support.js";
+
+// mock-isolation: Retain native workers and task transport while selecting their prepared artifacts.
+vi.mock("../worker-task-pool.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../worker-task-pool.js")>();
+  const { resolveBackupNativeWorkerTestUrl } =
+    await import("./backup-native-worker.test-support.js");
+  return {
+    ...actual,
+    WorkerTaskPool: new Proxy(actual.WorkerTaskPool, {
+      construct(Target, args: ConstructorParameters<typeof actual.WorkerTaskPool>) {
+        return new Target({
+          ...args[0],
+          workerUrl: resolveBackupNativeWorkerTestUrl(args[0].workerUrl),
+        });
+      },
+    }),
+  };
+});
+
 const configured: unknown = getEnvironmentData("openclaw.test.state.conformance.connection");
 const connection = typeof configured === "string" ? configured : undefined;
 // The suite owns shared inputs so a failed case drain prevents their later removal.
@@ -168,18 +187,23 @@ describe.skipIf(!connection)("PostgreSQL updater preflight and exact recovery", 
       }
       createAnchor(shared, storeId, namespace);
       anchorCreated = true;
-      for (const key of [
-        "HOME",
-        "OPENCLAW_STATE_DIR",
-        "OPENCLAW_CONFIG_PATH",
-        "OPENCLAW_DISABLE_BUNDLED_PLUGINS",
-      ]) {
-        vi.stubEnv(key, env[key]);
-      }
       resetDatabaseEngineSelectionForTest();
       installDatabaseEngineSelection(await resolveDatabaseEngineSelection(config, env));
     }),
   );
+
+  beforeEach(() => {
+    // Vitest resets environment stubs before each case, including those set during fixture setup.
+    for (const key of [
+      "HOME",
+      "OPENCLAW_STATE_DIR",
+      "OPENCLAW_CONFIG_PATH",
+      "OPENCLAW_DISABLE_BUNDLED_PLUGINS",
+      "OPENCLAW_BUNDLED_PLUGINS_DIR",
+    ]) {
+      vi.stubEnv(key, env[key]);
+    }
+  });
 
   // A timeout rejects Vitest's wrapper before the original body releases its owner.
   afterEach(() => suiteLifetime.verifyCleanup(() => caseLifetime.cleanup()));
