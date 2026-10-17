@@ -154,9 +154,6 @@ describe("plugin run context lifecycle", () => {
     expect(
       capturedApi?.runContext.getRunContext({ runId: "stale-run", namespace: "state" }),
     ).toBeUndefined();
-    expect(
-      capturedApi?.runContext.getRunContext({ runId: "stale-run", namespace: "state" }),
-    ).toBeUndefined();
     capturedApi?.runContext?.clearRunContext({ runId: "stale-run", namespace: "state" });
     expect(
       getPluginRunContext({
