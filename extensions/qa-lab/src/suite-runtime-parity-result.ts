@@ -1,4 +1,3 @@
-// QA Lab projects canonical runtime-pair results into suite scenario results.
 import {
   isRuntimeParityResultPass,
   runtimeParityCellStatus,

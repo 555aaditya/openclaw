@@ -1,4 +1,3 @@
-// Qa Matrix plugin module implements message scenario runtime E2EE behavior.
 import { randomUUID } from "node:crypto";
 import {
   buildMatrixQaImageUnderstandingPrompt,

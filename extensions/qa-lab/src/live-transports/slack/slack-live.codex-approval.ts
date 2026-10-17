@@ -1,4 +1,3 @@
-// QA Lab Slack Codex approval helpers and transcript validation.
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";

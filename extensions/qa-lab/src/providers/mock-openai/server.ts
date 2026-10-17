@@ -1,4 +1,3 @@
-// QA Lab mock Responses dispatcher, HTTP transport, and debug endpoints.
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { createServer } from "node:http";
