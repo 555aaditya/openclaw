@@ -89,7 +89,7 @@ function requestedApprovalId(opts: GatewayRequestHandlerOptions) {
   );
 }
 describe("plugin approval signed agent runtime", () => {
-  it.each([
+  it.for([
     { kind: "closed", message: "no longer active" },
     { kind: "ownerless", message: "signed plugin approval owner is unavailable" },
     { kind: "unsigned", message: "requires agent runtime authority" },

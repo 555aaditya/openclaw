@@ -74,7 +74,9 @@ async function finishInputs(...receipts: (SessionPendingInputReceipt | undefined
   for (const receipt of receipts) {
     receipt?.finish("interrupted");
   }
-  await Promise.all(receipts.map((receipt) => receipt?.settled?.()));
+  for (const receipt of receipts) {
+    await receipt?.settled?.();
+  }
 }
 
 function readOnce(
