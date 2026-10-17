@@ -2,8 +2,10 @@ import {
   createEffect,
   createMemo,
   createSignal,
+  getOwner,
   onCleanup,
   onSettled,
+  runWithOwner,
   Show,
   untrack,
 } from "solid-js";
@@ -34,27 +36,15 @@ import { createSolidRenderLifecycle } from "./solid-render-lifecycle.ts";
 
 /** One Solid owner publishes, mounts, and retires the synchronous pane runtime. */
 export function createChatPaneView(runtime: ChatPaneRuntime) {
+  const viewOwner = getOwner();
   const [ready, setReady] = createSignal(false);
-  const [revision, setRevision] = createSignal(0);
+  const [revision, setRevision] = createSignal(0, { ownedWrite: true });
   let disposed = false;
-  let publicationQueued = false;
   let complete: (() => void) | undefined;
   let previousInputs:
     | Pick<ChatPaneRuntime, "sessionKey" | "inputRegion" | "draft" | "focusComposer">
     | undefined;
   let focusPending = false;
-
-  function publish() {
-    if (disposed || !publicationQueued) {
-      return;
-    }
-    runtime.refreshBoardSubscriptions();
-    publicationQueued = false;
-    setRevision((value) => value + 1);
-    if (runtime.presented && document.visibilityState !== "hidden") {
-      notifyRenderLifecycleForTest(runtime.element, "invalidate");
-    }
-  }
 
   runtime.invalidate = () => {
     if (disposed || !runtime.isConnected) {
@@ -65,20 +55,20 @@ export function createChatPaneView(runtime: ChatPaneRuntime) {
         complete = () => resolve(true);
       });
     }
-    if (!publicationQueued) {
-      publicationQueued = true;
-      // Domain mutations stay synchronous; rendering retains its microtask boundary.
-      queueMicrotask(publish);
+    runtime.refreshBoardSubscriptions();
+    // Solid batches this with field publications; a second microtask would render twice.
+    setRevision((value) => value + 1);
+    if (runtime.presented && document.visibilityState !== "hidden") {
+      notifyRenderLifecycleForTest(runtime.element, "invalidate");
     }
   };
 
   onSettled(() => {
     if (!runtime.isConnected) {
-      runtime.start();
+      // Startup creates projections that belong to this retained view, outside the settled callback.
+      runWithOwner(viewOwner, () => runtime.start());
     }
     runtime.invalidate();
-    // Drain startup before mounting children, as the previous pane lifecycle did.
-    publish();
     setReady(true);
   });
   onCleanup(() => {
@@ -100,7 +90,8 @@ export function createChatPaneView(runtime: ChatPaneRuntime) {
     };
     previousInputs = next;
     focusPending ||= changes.focusComposer;
-    runtime.chatState.prepareRender();
+    // Persistence/scroll bookkeeping samples state; it is not a render dependency.
+    untrack(() => runtime.chatState.prepareRender());
     runtime.synchronizeInputs(changes);
   }
   function commitRender() {
@@ -117,6 +108,7 @@ export function createChatPaneView(runtime: ChatPaneRuntime) {
   function MountedPane() {
     const context = runtime.context;
     const gateway = projectGateway(context.gateway);
+    const composerCapabilities = projectOwner(runtime.composerCapabilities, (owner) => owner);
     const realtimeOwner = createMemo(() => {
       revision();
       return runtime.realtimeTalk;
@@ -128,6 +120,7 @@ export function createChatPaneView(runtime: ChatPaneRuntime) {
     const projects = projectOwner(projectsForGateway(context.gateway), (owner) => owner.snapshot);
     const resources = projectOwner(runtime.activeSessionResources, (owner) => owner);
     const discussion = projectOwner(runtime.sessionDiscussion, (owner) => owner.snapshot);
+    const companion = projectOwner(runtime.sessionCompanionThreads, (owner) => owner);
     const boardProvider = createMemo(() => {
       revision();
       return runtime.subscribedBoardProvider;
@@ -192,10 +185,12 @@ export function createChatPaneView(runtime: ChatPaneRuntime) {
       read: () => {
         revision();
         progress.read();
+        composerCapabilities.read();
         realtime()?.read();
         projects.read();
         resources.read();
         discussion.read();
+        companion.read();
         board().forEach((source) => source.read());
         i18nRevision();
         sources.forEach((source) => source?.read());
