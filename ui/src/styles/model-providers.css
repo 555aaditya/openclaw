@@ -525,195 +525,6 @@
   margin: 0 var(--space-4) var(--space-3);
 }
 
-/* Usage overview: Carapace data anatomy (summary strip, stepped sparklines,
- * quiet daily columns, composition bar, meter rows) composed for Models. */
-.usage-overview {
-  display: grid;
-  gap: var(--oc-space-3);
-}
-
-.usage-overview__controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--oc-space-2);
-}
-
-.usage-overview__empty,
-.usage-overview__footnote,
-.usage-overview__daily-head,
-.usage-columns__axis {
-  color: var(--oc-text-muted);
-  font-size: var(--oc-font-size-xs);
-}
-
-.usage-overview__empty {
-  margin: 0;
-  padding: var(--oc-space-4);
-}
-
-.usage-overview__footnote {
-  margin: 0;
-}
-
-.usage-overview__summary {
-  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
-}
-
-.usage-overview__summary .oc-summary-metric {
-  justify-content: space-between;
-  min-height: 4rem;
-}
-
-.usage-overview__summary .oc-sparkline {
-  max-width: 5rem;
-}
-
-.usage-overview__total {
-  color: var(--oc-text-primary);
-  font-family: var(--oc-font-mono);
-  font-size: var(--oc-font-size-lg);
-  font-weight: 600;
-}
-
-.usage-overview__summary .oc-summary-metric[data-tone="warning"] .usage-overview__total {
-  color: var(--oc-status-warning-fg);
-}
-
-/* Stepped trends take the row's series tone; the shared class stays neutral. */
-.usage-overview__daily-head {
-  display: flex;
-  justify-content: space-between;
-  font-family: var(--oc-font-mono);
-}
-
-.usage-overview__daily {
-  display: grid;
-  gap: var(--oc-space-3);
-  padding: var(--oc-space-3) var(--oc-space-4);
-  border-bottom: 1px solid var(--oc-border-subtle);
-}
-
-.usage-columns svg {
-  display: block;
-  inline-size: 100%;
-  block-size: 7.5rem;
-  touch-action: pan-y;
-}
-
-.usage-columns__bar {
-  fill: var(--oc-chart-color, var(--oc-border-strong));
-}
-
-.usage-columns__day {
-  transition: opacity var(--oc-duration-fast, 140ms) var(--oc-ease-out, ease-out);
-}
-
-.usage-columns__day--dim {
-  opacity: 0.35;
-}
-
-.usage-columns__tip {
-  display: grid;
-  gap: 2px;
-}
-
-.usage-columns__tip span {
-  display: flex;
-  align-items: center;
-  gap: var(--oc-space-1);
-  color: var(--oc-text-secondary);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .usage-columns__day {
-    transition: none;
-  }
-}
-
-.usage-columns__axis {
-  display: flex;
-  justify-content: space-between;
-  margin-top: var(--oc-space-1);
-  font-family: var(--oc-font-mono);
-  font-variant-numeric: tabular-nums;
-}
-
-.usage-columns .oc-chart-tip {
-  top: 0;
-}
-
-.usage-share {
-  display: grid;
-  gap: var(--oc-space-2);
-}
-
-.usage-share .oc-split-legend b {
-  color: var(--oc-text-secondary);
-  font-family: var(--oc-font-mono);
-  font-weight: 400;
-}
-
-.usage-overview__icon {
-  inline-size: 16px;
-  block-size: 16px;
-}
-
-.usage-overview__models-scroll {
-  overflow-x: auto;
-}
-
-.usage-overview__models {
-  inline-size: 100%;
-  border-collapse: collapse;
-  font-size: var(--oc-font-size-sm);
-}
-
-.usage-overview__models th,
-.usage-overview__models td {
-  padding: var(--oc-space-2) var(--oc-space-4);
-  border-top: 1px solid var(--oc-border-subtle);
-  font-variant-numeric: tabular-nums;
-  text-align: end;
-  white-space: nowrap;
-}
-
-.usage-overview__models thead th {
-  border-top: 0;
-  color: var(--oc-text-muted);
-  font-size: var(--oc-font-size-xs);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.usage-overview__models th:first-child {
-  inline-size: 100%;
-  text-align: start;
-}
-
-.usage-overview__models tbody th {
-  color: var(--oc-text-primary);
-  font-weight: 400;
-}
-
-.usage-overview__models tbody th > * {
-  vertical-align: middle;
-}
-
-.usage-overview__models tbody th .oc-split-key {
-  display: inline-block;
-  margin-inline-end: var(--oc-space-2);
-}
-
-.usage-overview__models tbody th .usage-overview__icon {
-  margin-inline-end: var(--oc-space-2);
-}
-
-.usage-overview__models td {
-  color: var(--oc-text-secondary);
-  font-family: var(--oc-font-mono);
-}
-
 /* Provider access: one master list. Each connected provider is a dense summary
  * row that expands in place; providers without credentials sit below, quieter. */
 .provider-list {
@@ -742,7 +553,7 @@
 
 .provider-row__summary {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto minmax(7rem, auto) minmax(6.5rem, auto) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto minmax(6.5rem, auto) auto;
   align-items: center;
   gap: var(--oc-space-4);
   inline-size: 100%;
@@ -809,25 +620,6 @@
   font-size: var(--oc-font-size-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.provider-row__usage {
-  display: grid;
-  justify-items: end;
-  gap: 2px;
-  white-space: nowrap;
-}
-
-.provider-row__usage strong {
-  color: var(--oc-text-primary);
-  font-family: var(--oc-font-mono);
-  font-weight: 500;
-}
-
-.provider-row__usage small {
-  color: var(--oc-text-muted);
-  font-family: var(--oc-font-mono);
-  font-size: var(--oc-font-size-xs);
 }
 
 .provider-row__status {
@@ -925,7 +717,7 @@
 
 @media (max-width: 1100px) {
   .provider-row__summary {
-    grid-template-columns: auto minmax(0, 1fr) minmax(6rem, auto) auto auto;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
   }
 
   .provider-row__summary .provider-usage__chips {
@@ -937,10 +729,6 @@
   .provider-row__summary {
     grid-template-columns: auto minmax(0, 1fr) auto auto;
     gap: var(--oc-space-3);
-  }
-
-  .provider-row__usage {
-    display: none;
   }
 
   .provider-row__detail {
@@ -956,9 +744,3 @@
   }
 }
 
-@media (max-width: 640px) {
-  .usage-overview__models th:nth-child(3),
-  .usage-overview__models td:nth-child(3) {
-    display: none;
-  }
-}

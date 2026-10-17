@@ -11,21 +11,13 @@ import {
   ProviderUsagePanel,
 } from "../../components/solid/provider-usage.tsx";
 import { formatUiExternalText } from "../../lib/format-error.ts";
-import { formatCompactTokenCount } from "../../lib/format.ts";
 import { t } from "../../lib/reactive/i18n.ts";
 import type { ModelProviderCard, ModelProviderRemovalTarget } from "./data.ts";
 import { apiKeySource, profileIdentity, ProviderProfiles } from "./profiles-view.tsx";
-import { seriesColor, type OverviewProvider } from "./usage-overview-model.ts";
-import { usageCostText } from "./usage-overview.tsx";
 import { isProviderUsable, renderMutationMessage, renderProviderStatus } from "./view-status.tsx";
 import type { ModelProvidersViewProps } from "./view.tsx";
 
-type ProviderRowProps = ModelProvidersViewProps & {
-  card: ModelProviderCard;
-  /** Local usage for the selected range, when the provider has any. */
-  usage?: OverviewProvider;
-  usageDays: number;
-};
+type ProviderRowProps = ModelProvidersViewProps & { card: ModelProviderCard };
 
 export function configMutationDisabled(state: ModelProvidersViewProps): boolean {
   return !state.canMutate || state.configBusy;
@@ -289,27 +281,6 @@ function ProviderActions(props: ModelProvidersViewProps & { card: ModelProviderC
   );
 }
 
-// Always renders its cell so summary columns line up across rows.
-function ProviderUsageFigure(props: { usage: OverviewProvider | undefined; days: number }) {
-  return (
-    <span class="provider-row__usage">
-      <Show when={props.usage}>
-        {(usage) => (
-          <>
-            <strong>{usageCostText(usage())}</strong>
-            <small>
-              {t("modelProviders.row.usage", {
-                tokens: formatCompactTokenCount(usage().tokens),
-                days: String(props.days),
-              })}
-            </small>
-          </>
-        )}
-      </Show>
-    </span>
-  );
-}
-
 /** Gateways often echo the raw id as the name; the shared label map reads better. */
 function providerName(card: ModelProviderCard): string {
   return card.displayName && card.displayName !== card.id
@@ -361,7 +332,6 @@ export function ProviderRow(props: ProviderRowProps) {
     <li
       class={["provider-row model-providers__row", { "provider-row--open": open() }]}
       data-provider-id={card().id}
-      style={props.usage ? { "--oc-chart-color": seriesColor(props.usage.slot) } : undefined}
     >
       <button
         type="button"
@@ -382,7 +352,6 @@ export function ProviderRow(props: ProviderRowProps) {
         </span>
         {/* The open row shows the full panel below; its empty chip cell collapses. */}
         <ProviderUsageChips usage={open() ? undefined : card().usage} />
-        <ProviderUsageFigure usage={props.usage} days={props.usageDays} />
         <span class="provider-row__status">{renderProviderStatus(card())}</span>
         <Icon name="chevronDown" class="provider-row__chevron" />
       </button>
@@ -420,14 +389,9 @@ export function UnconnectedProviderRow(props: ProviderRowProps) {
   const card = () => props.card;
   const message = () => props.messages[`key:${card().id}`] ?? props.messages[card().id];
   const reason = () =>
-    props.usage
-      ? t("modelProviders.row.seenInUsage", {
-          tokens: formatCompactTokenCount(props.usage.tokens),
-          days: String(props.usageDays),
-        })
-      : card().modelCount > 0
-        ? t("modelProviders.row.catalogOnly", { models: modelsText(card()) ?? "" })
-        : t("modelProviders.row.noCredentials");
+    card().modelCount > 0
+      ? t("modelProviders.row.catalogOnly", { models: modelsText(card()) ?? "" })
+      : t("modelProviders.row.noCredentials");
   return (
     <li class="provider-row provider-row--quiet model-providers__row" data-provider-id={card().id}>
       <div class="provider-row__summary model-providers__head">

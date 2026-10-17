@@ -1,4 +1,4 @@
-import { createMemo, createSignal, For, merge, Show } from "solid-js";
+import { createMemo, createSignal, For, Show } from "solid-js";
 import type { ModelsProbeResult } from "../../api/types.ts";
 import { ShellLayoutBoundary } from "../../app/shell-layout-traits-solid.tsx";
 import { Icon } from "../../components/solid/icon.tsx";
@@ -29,7 +29,6 @@ import type {
   ProviderOption,
 } from "./data.ts";
 import { DefaultModels, type DefaultModelsViewProps } from "./default-models-view.tsx";
-import type { ModelProviderLocalUsage, ModelProvidersUsageRange } from "./load.ts";
 import type { ProviderProfilesViewProps } from "./profiles-view.tsx";
 import {
   ApiKeyInput,
@@ -37,8 +36,6 @@ import {
   ProviderRow,
   UnconnectedProviderRow,
 } from "./provider-row.tsx";
-import { buildUsageOverview, type OverviewProvider } from "./usage-overview-model.ts";
-import { UsageOverview } from "./usage-overview.tsx";
 import {
   hasVerifiedProvider,
   isProviderUsable,
@@ -59,11 +56,8 @@ export type ModelProvidersViewProps = Omit<
     refreshing: boolean;
     error: string | null;
     providerUsageFailed: boolean;
-    supplementalLoading: boolean;
     updatedAt: number | null;
-    localUsage: ModelProviderLocalUsage | null;
-    usageRange: ModelProvidersUsageRange;
-    onUsageRangeChange: (range: ModelProvidersUsageRange) => void;
+    onOpenUsage: () => void;
     credentialAgentLabel: string;
     cards: ModelProviderCard[];
     configuredModels: ModelPickerEntry[];
@@ -225,14 +219,6 @@ export function ModelProviders(props: ModelProvidersViewProps) {
 }
 
 function ConnectedModelProviders(props: ModelProvidersViewProps) {
-  // One derivation feeds both sections, so a provider keeps its tone everywhere.
-  const overview = createMemo(() =>
-    props.localUsage ? buildUsageOverview(props.localUsage) : null,
-  );
-  const usageById = createMemo(
-    () => new Map(overview()?.providers.map((provider) => [provider.id, provider] as const)),
-  );
-  const usageFor = (id: string) => usageById().get(id);
   return (
     <>
       <SettingsPage>
@@ -256,15 +242,8 @@ function ConnectedModelProviders(props: ModelProvidersViewProps) {
               </div>
             }
           >
-            <UsageOverview
-              overview={overview()}
-              cards={props.cards}
-              range={props.usageRange}
-              loading={props.supplementalLoading}
-              onRangeChange={(range) => props.onUsageRangeChange(range)}
-            />
             {props.installedAgents}
-            <ProviderAccess {...props} usageFor={usageFor} />
+            <ProviderAccess {...props} />
             {props.providerUsageStalled ? (
               <div class="callout warning" role="status">
                 {t("usage.providerUsage.stalled")}
@@ -278,11 +257,7 @@ function ConnectedModelProviders(props: ModelProvidersViewProps) {
   );
 }
 
-function ProviderAccess(
-  props: ModelProvidersViewProps & {
-    usageFor: (providerId: string) => OverviewProvider | undefined;
-  },
-) {
+function ProviderAccess(props: ModelProvidersViewProps) {
   // Local draft: typing filters here without a page update. Only a different
   // deep-linked provider from the route re-derives it; the memo drops equal
   // values from page revalidation.
@@ -296,13 +271,9 @@ function ProviderAccess(
       ),
     ),
   );
-  // Most-used first, then alphabetical; usable providers lead, the rest sit below.
+  // Usable providers lead; the rest sit below in a quieter group.
   const groups = createMemo(() => {
-    const usageFor = props.usageFor;
-    const tokens = (card: ModelProviderCard) => usageFor(card.id)?.tokens ?? 0;
-    const ranked = matchingCards().toSorted(
-      (a, b) => tokens(b) - tokens(a) || a.displayName.localeCompare(b.displayName),
-    );
+    const ranked = matchingCards().toSorted((a, b) => a.displayName.localeCompare(b.displayName));
     return {
       connected: ranked.filter(isProviderUsable),
       unconnected: ranked.filter((card) => !isProviderUsable(card)),
@@ -310,17 +281,6 @@ function ProviderAccess(
   });
   const connected = () => groups().connected;
   const unconnected = () => groups().unconnected;
-  // Getters keep usage and range live after a row mounts.
-  const rowProps = (card: ModelProviderCard) =>
-    merge(props, {
-      card,
-      get usage() {
-        return props.usageFor(card.id);
-      },
-      get usageDays() {
-        return props.usageRange;
-      },
-    });
   const providerRows = () => (
     <>
       <label class="field model-providers__search">
@@ -369,7 +329,7 @@ function ProviderAccess(
               <SettingsGroup carapace>
                 <ul class="provider-list">
                   <For each={connected()} keyed={(card) => card.id}>
-                    {(card) => <ProviderRow {...rowProps(card())} />}
+                    {(card) => <ProviderRow {...props} card={card()} />}
                   </For>
                 </ul>
               </SettingsGroup>
@@ -379,7 +339,7 @@ function ProviderAccess(
               <SettingsGroup carapace>
                 <ul class="provider-list provider-list--quiet">
                   <For each={unconnected()} keyed={(card) => card.id}>
-                    {(card) => <UnconnectedProviderRow {...rowProps(card())} />}
+                    {(card) => <UnconnectedProviderRow {...props} card={card()} />}
                   </For>
                 </ul>
               </SettingsGroup>
@@ -402,6 +362,9 @@ function ProviderAccess(
       actions={
         <>
           {props.providerScope}
+          <button type="button" class="btn btn--sm btn--ghost" onClick={() => props.onOpenUsage()}>
+            {t("modelProviders.viewUsage")}
+          </button>
           {props.updatedAt ? (
             <span class="model-providers__updated">
               {t("modelProviders.updated", {

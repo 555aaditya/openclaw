@@ -4,11 +4,7 @@ import { t } from "../../i18n/index.ts";
 import { formatUiError } from "../../lib/format-error.ts";
 import { canonicalModelAuthProviderId } from "../../lib/model-auth.ts";
 import { loadModelCatalog, modelCatalogRefreshError } from "../../lib/model-catalog-store.ts";
-import {
-  loadModelProvidersData,
-  type ModelProvidersData,
-  type ModelProvidersUsageRange,
-} from "./load.ts";
+import { loadModelProvidersData, type ModelProvidersData } from "./load.ts";
 
 export type ModelProviderRefreshReason = "publication" | "replacement" | "forced";
 
@@ -16,8 +12,6 @@ type CoreLoadOptions = {
   onStart: (reason: ModelProviderRefreshReason) => void;
   onComplete: (result: { client: GatewayBrowserClient; data: ModelProvidersData }) => void;
   onCatalogComplete: (result: ModelCatalogResult) => void;
-  /** Days of local usage a forced refresh re-reads with the core sources. */
-  usageDays: () => ModelProvidersUsageRange;
 };
 
 async function loadConnectedProviderData(
@@ -148,8 +142,6 @@ export class ModelProviderCoreLoader {
         : await loadModelProvidersData(client, {
             agentId,
             ...(reason === "forced" ? { refresh: true } : {}),
-            // A publication keeps the current usage; a new owner or a forced refresh re-reads it.
-            ...(reason === "publication" ? {} : { usageDays: this.options.usageDays() }),
             signal: request.signal,
           });
       if (this.request === request) {

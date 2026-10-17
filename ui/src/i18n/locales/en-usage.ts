@@ -4,8 +4,8 @@ import { en } from "./en.ts";
 // Analysis copy loads with Usage; shared labels and Settings search stay eager.
 const enUsage = {
   usage: {
-    unavailable:
-      "Token usage and cost are unknown because a response ended before final usage arrived. Select an unaffected session to view its usage.",
+    lowerBound:
+      "≥ marks a lower bound: some responses ended before their final usage arrived, so their tokens and cost are partly counted.",
     presets: {
       today: "Today",
       last7d: "7d",
@@ -98,6 +98,7 @@ const enUsage = {
       title: "Daily Usage",
       total: "Total",
       byType: "By Type",
+      byProvider: "By Provider",
       tokensTitle: "Daily Token Usage",
       costTitle: "Daily Cost",
       compressedScaleHint: "Square-root scale keeps low-usage days visible.",

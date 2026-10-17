@@ -1893,3 +1893,27 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* "By provider" stacks take each provider's series color; the legend names them. */
+.daily-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+.daily-chart-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.daily-chart-legend__key {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}

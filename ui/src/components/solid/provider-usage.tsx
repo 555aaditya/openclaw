@@ -9,10 +9,8 @@ import { formatUiExternalText } from "../../lib/format-error.ts";
 import { formatCompactTokenCount } from "../../lib/format.ts";
 import { formatRelativeTimestamp } from "../../lib/reactive/format.ts";
 import { t } from "../../lib/reactive/i18n.ts";
-import "../../styles/carapace-data.css";
 import "../../styles/provider-usage.css";
 import { Icon } from "./icon.tsx";
-import { StepSparkline } from "./step-sparkline.tsx";
 
 export type ProviderUsageDetails = Pick<
   ProviderUsageSnapshot,
@@ -21,6 +19,42 @@ export type ProviderUsageDetails = Pick<
 
 type BillingEntry = NonNullable<ProviderUsageDetails["billing"]>[number];
 type CostHistory = NonNullable<ProviderUsageDetails["costHistory"]>;
+
+const SPARK_WIDTH = 120;
+const SPARK_HEIGHT = 28;
+
+function steppedPath(input: number[], width: number, height: number): string {
+  // Provider-reported amounts can be negative or non-finite; they draw as zero.
+  const values = input.map((value) => (Number.isFinite(value) && value > 0 ? value : 0));
+  const max = Math.max(...values, 0);
+  if (values.length === 0 || max <= 0) {
+    return `M0 ${height - 1} H${width}`;
+  }
+  const step = width / values.length;
+  const y = (value: number) => (height - 2 - (value / max) * (height - 4) + 1).toFixed(1);
+  return values
+    .map(
+      (value, index) =>
+        `${index === 0 ? `M0 ${y(value)}` : `V${y(value)}`} H${((index + 1) * step).toFixed(1)}`,
+    )
+    .join(" ");
+}
+
+/** A daily trend beside its totals; the tone is the series color. */
+function StepSparkline(props: { values: number[]; color: string; label: string }) {
+  const path = createMemo(() => steppedPath(props.values, SPARK_WIDTH, SPARK_HEIGHT));
+  return (
+    <svg
+      class="oc-sparkline"
+      viewBox={`0 0 ${SPARK_WIDTH} ${SPARK_HEIGHT}`}
+      preserveAspectRatio="none"
+      role="img"
+      aria-label={props.label}
+    >
+      <path class="oc-sparkline-line" style={{ stroke: props.color }} d={path()} />
+    </svg>
+  );
+}
 
 function windowRank(label: string): number {
   if (/\b\d+(?:m|h)\b/iu.test(label) && !/\b168h\b/iu.test(label)) {

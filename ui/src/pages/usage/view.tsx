@@ -17,6 +17,7 @@ import { formatIsoDate } from "./helpers.ts";
 import { UsageMosaic } from "./metrics-view.tsx";
 import { buildPeakErrorHours, formatUsageCost, formatUsageTokens } from "./metrics.ts";
 import { renderUsageEmptyState, renderUsageLoadingStatus } from "./page-shell.tsx";
+import { buildProviderSeries } from "./provider-series.ts";
 import { buildQuerySuggestions } from "./query.ts";
 import type { UsageProps } from "./types.ts";
 import { DailyChartCompact, CostBreakdownCompact } from "./view-chart.tsx";
@@ -94,6 +95,9 @@ function renderProviderUsage(
 
 export function renderUsage(props: UsageProps) {
   const overview = createMemo(() => resolveUsageOverviewState(props.data));
+  const providerSeries = createMemo(() =>
+    buildProviderSeries(props.data.aggregates?.modelDaily ?? []),
+  );
   const displayTotals = createMemo(() => (overview().hasOverviewData ? props.data.totals : null));
   const filterOptions = createMemo(
     () =>
@@ -466,79 +470,80 @@ export function renderUsage(props: UsageProps) {
           <>
             <Show
               when={
-                !(
-                  displayTotals()?.usageReport?.state === "unavailable" ||
-                  props.data.overview?.usageReport?.state === "unavailable"
-                )
+                displayTotals()?.usageReport?.state === "unavailable" ||
+                props.data.overview?.usageReport?.state === "unavailable"
               }
-              fallback={<div class="callout warning usage-callout">{t("usage.unavailable")}</div>}
             >
-              <div class="settings-group usage-panel usage-left-card usage-trend-section">
-                {
-                  <DailyChartCompact
-                    dailyEntries={props.data.costDaily}
-                    selectedDays={props.filters.selectedDays}
-                    chartMode={props.display.chartMode}
-                    dailyChartMode={props.display.dailyChartMode}
-                    onDailyChartModeChange={(dailyChartMode) =>
-                      props.callbacks.display.onChange({ dailyChartMode })
-                    }
-                    onSelectDay={props.callbacks.filters.onSelectDay}
-                    range={{
-                      startDate: props.filters.startDate,
-                      endDate: props.filters.endDate,
-                      complete: props.data.cacheRefresh === "complete",
-                    }}
-                  />
-                }
-                <Show when={displayTotals()}>
-                  {(totals) => (
-                    <CostBreakdownCompact totals={totals()} mode={props.display.chartMode} />
-                  )}
-                </Show>
-              </div>
-              <UsageCreators
-                groups={activeAggregates().byCreator ?? []}
-                selectedKey={props.filters.creatorKey}
-                mode={props.display.chartMode}
-                onSelect={(creatorKey) => props.callbacks.filters.onScopeChange({ creatorKey })}
-              />
-              <UsageInsights
-                totals={displayTotals()}
-                aggregates={activeAggregates()}
-                stats={insightStats()}
-                showCostHint={(displayTotals()?.missingCostEntries ?? 0) > 0}
-                showCostShares={
-                  /* Daily buckets are exact; category rollups remain full-session totals. */
-                  props.filters.selectedDays.length === 0
-                }
-                errorHours={buildPeakErrorHours(
-                  props.data.overview?.hourlyMessages ?? [],
-                  props.data.overview?.hourlyErrors ?? [],
-                )}
-                sessionCount={displaySessionCount()}
-                totalSessions={totalSessions()}
-              />
-              {renderCostWindowComparison(
-                props.data.costDaily,
-                props.filters.startDate,
-                props.filters.endDate,
-                props.filters.timeZone,
-              )}
-              {renderUsageHeatmap(
-                props.data.costDaily,
-                props.filters.startDate,
-                props.filters.endDate,
-              )}
+              <p class="callout usage-callout" role="note">
+                {t("usage.lowerBound")}
+              </p>
+            </Show>
+            <div class="settings-group usage-panel usage-left-card usage-trend-section">
               {
-                <UsageMosaic
-                  overview={props.data.overview}
-                  timeZone={props.filters.timeZone}
-                  selectedHours={props.filters.selectedHours}
-                  onSelectHour={props.callbacks.filters.onSelectHour}
+                <DailyChartCompact
+                  dailyEntries={props.data.costDaily}
+                  selectedDays={props.filters.selectedDays}
+                  chartMode={props.display.chartMode}
+                  dailyChartMode={props.display.dailyChartMode}
+                  onDailyChartModeChange={(dailyChartMode) =>
+                    props.callbacks.display.onChange({ dailyChartMode })
+                  }
+                  onSelectDay={props.callbacks.filters.onSelectDay}
+                  providerSeries={providerSeries()}
+                  range={{
+                    startDate: props.filters.startDate,
+                    endDate: props.filters.endDate,
+                    complete: props.data.cacheRefresh === "complete",
+                  }}
                 />
               }
-            </Show>
+              <Show when={displayTotals()}>
+                {(totals) => (
+                  <CostBreakdownCompact totals={totals()} mode={props.display.chartMode} />
+                )}
+              </Show>
+            </div>
+            <UsageCreators
+              groups={activeAggregates().byCreator ?? []}
+              selectedKey={props.filters.creatorKey}
+              mode={props.display.chartMode}
+              onSelect={(creatorKey) => props.callbacks.filters.onScopeChange({ creatorKey })}
+            />
+            <UsageInsights
+              totals={displayTotals()}
+              aggregates={activeAggregates()}
+              stats={insightStats()}
+              showCostHint={(displayTotals()?.missingCostEntries ?? 0) > 0}
+              showCostShares={
+                /* Daily buckets are exact; category rollups remain full-session totals. */
+                props.filters.selectedDays.length === 0
+              }
+              errorHours={buildPeakErrorHours(
+                props.data.overview?.hourlyMessages ?? [],
+                props.data.overview?.hourlyErrors ?? [],
+              )}
+              sessionCount={displaySessionCount()}
+              totalSessions={totalSessions()}
+            />
+            {renderCostWindowComparison(
+              props.data.costDaily,
+              props.filters.startDate,
+              props.filters.endDate,
+              props.filters.timeZone,
+            )}
+            {renderUsageHeatmap(
+              props.data.costDaily,
+              props.filters.startDate,
+              props.filters.endDate,
+            )}
+            {
+              <UsageMosaic
+                overview={props.data.overview}
+                timeZone={props.filters.timeZone}
+                selectedHours={props.filters.selectedHours}
+                onSelectHour={props.callbacks.filters.onSelectHour}
+              />
+            }
 
             <div class="usage-grid">
               <div class="usage-grid-column">

@@ -1,6 +1,7 @@
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
 import { createMemo, For, Show } from "solid-js";
 import { createEmptyCostUsageTotals } from "../../../../src/infra/session-cost-usage-totals.js";
+import { providerDisplayLabel } from "../../components/provider-icon.ts";
 import { SettingsSegmented } from "../../components/solid/settings-ui.tsx";
 import { t } from "../../lib/reactive/i18n.ts";
 import "../../components/tooltip.ts";
@@ -11,6 +12,7 @@ import {
   formatDayLabel,
   formatFullDate,
 } from "./metrics.ts";
+import type { ProviderSeries } from "./provider-series.ts";
 import type { CostDailyEntry, UsageProps, UsageTotals } from "./types.ts";
 
 function tokenCategory<Key extends "output" | "input" | "cacheWrite" | "cacheRead">(
@@ -56,8 +58,9 @@ export function DailyChartCompact(props: {
   dailyEntries: CostDailyEntry[];
   selectedDays: string[];
   chartMode: "tokens" | "cost";
-  dailyChartMode: "total" | "by-type";
-  onDailyChartModeChange: (mode: "total" | "by-type") => void;
+  dailyChartMode: UsageProps["display"]["dailyChartMode"];
+  onDailyChartModeChange: (mode: UsageProps["display"]["dailyChartMode"]) => void;
+  providerSeries: ProviderSeries[];
   onSelectDay: UsageProps["callbacks"]["filters"]["onSelectDay"];
   range: UsageChartRange;
 }) {
@@ -72,7 +75,7 @@ export function DailyChartCompact(props: {
     const daily = calendarDaily(dailyEntries, range);
     const orderedDays = daily.map((entry) => entry.date);
     const isTokenMode = chartMode === "tokens";
-    const stacked = dailyChartMode === "by-type";
+    const stacked = dailyChartMode !== "total";
     const values = daily.map((d) => (isTokenMode ? d.totalTokens : d.totalCost));
     const scaleMaximum = Math.max(...values, 0);
     const maxValue = scaleMaximum > 0 ? scaleMaximum : isTokenMode ? 1 : 0.0001;
@@ -98,16 +101,33 @@ export function DailyChartCompact(props: {
       const isSelected = selectedDaySet.has(d.date);
       const showDateLabel =
         daily.length <= 14 || idx % Math.ceil(daily.length / 6) === 0 || idx === daily.length - 1;
-      const segments = stacked
-        ? USAGE_TOKEN_CATEGORIES.map(({ key, className, labelKey }) => ({
-            value: isTokenMode ? d[key] : (d[`${key}Cost`] ?? 0),
-            className,
-            labelKey,
-          }))
-        : [];
+      const segments =
+        dailyChartMode === "by-type"
+          ? USAGE_TOKEN_CATEGORIES.map(({ key, className, labelKey }) => ({
+              value: isTokenMode ? d[key] : (d[`${key}Cost`] ?? 0),
+              className,
+              color: undefined,
+              label: t(labelKey),
+            }))
+          : dailyChartMode === "by-provider"
+            ? props.providerSeries.flatMap((series) => {
+                const day = series.byDate.get(d.date);
+                const value = isTokenMode ? (day?.tokens ?? 0) : (day?.cost ?? 0);
+                return value > 0
+                  ? [
+                      {
+                        value,
+                        className: "",
+                        color: series.color,
+                        label: providerDisplayLabel(series.id),
+                      },
+                    ]
+                  : [];
+              })
+            : [];
       const breakdownLines = segments.map(
-        ({ value, labelKey }) =>
-          `${t(labelKey)} ${isTokenMode ? formatUsageTokens(value) : formatAnalysisCost(value)}`,
+        ({ value, label }) =>
+          `${label} ${isTokenMode ? formatUsageTokens(value) : formatAnalysisCost(value)}`,
       );
       const totalLabel = isTokenMode
         ? formatUsageTokens(d.totalTokens)
@@ -169,6 +189,7 @@ export function DailyChartCompact(props: {
             options={[
               { value: "total", label: t("usage.daily.total") },
               { value: "by-type", label: t("usage.daily.byType") },
+              { value: "by-provider", label: t("usage.daily.byProvider") },
             ]}
           />
           <div class="card-title">
@@ -251,10 +272,13 @@ export function DailyChartCompact(props: {
                             style={{ height: `${bar().heightPx.toFixed(0)}px` }}
                           >
                             <For each={bar().segments}>
-                              {({ className, value }) => (
+                              {({ className, color, value }) => (
                                 <div
                                   class={["cost-segment", className]}
-                                  style={{ height: `${(value / bar().segmentTotal) * 100}%` }}
+                                  style={{
+                                    height: `${(value / bar().segmentTotal) * 100}%`,
+                                    ...(color ? { background: color } : {}),
+                                  }}
                                 />
                               )}
                             </For>
@@ -277,6 +301,18 @@ export function DailyChartCompact(props: {
             </div>
           </div>
         </div>
+        <Show when={state().dailyChartMode === "by-provider"}>
+          <ul class="daily-chart-legend">
+            <For each={props.providerSeries}>
+              {(series) => (
+                <li>
+                  <span class="daily-chart-legend__key" style={{ background: series.color }} />
+                  {providerDisplayLabel(series.id)}
+                </li>
+              )}
+            </For>
+          </ul>
+        </Show>
       </div>
     </Show>
   );

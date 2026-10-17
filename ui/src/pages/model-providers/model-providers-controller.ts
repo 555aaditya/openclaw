@@ -127,7 +127,6 @@ export function createModelProviders(
       core.resetCatalog();
       supplemental.adoptCoreData(client, data);
     },
-    usageDays: () => supplemental.usageRange,
     onCatalogComplete: (result) => {
       if (state.data) {
         setState("data", {
@@ -139,8 +138,7 @@ export function createModelProviders(
     },
   });
   const refreshPolicy = new UsageRefreshPolicy({
-    isLoading: () =>
-      loaderPending || !routeDataObserved || core.loading || supplemental.usageLoading,
+    isLoading: () => loaderPending || !routeDataObserved || core.loading || supplemental.loading,
     // Usage convergence must not restart the independent local-cost request.
     reload: () => supplemental.loadUsage(),
     onIncompleteUsageExhausted: notify,
@@ -697,12 +695,8 @@ export function createModelProviders(
       refreshing: core.loading,
       error: rosterError ?? (noSelectableAgents ? t("agents.noAgents") : data.error),
       providerUsageFailed: data.providerUsage?.ok === false,
-      // The core load reads local usage too, so the overview waits on either.
-      supplementalLoading: loaderPending || core.loading || supplemental.loading,
       updatedAt: data.updatedAt,
-      localUsage: data.localUsage,
-      usageRange: supplemental.usageRange,
-      onUsageRangeChange: (range) => supplemental.setUsageRange(range),
+      onOpenUsage: () => context.navigate("usage"),
       credentialAgentLabel: agentLabel,
       cards: noSelectableAgents ? [] : installedAgents.filterProviders(cards),
       ...values,
