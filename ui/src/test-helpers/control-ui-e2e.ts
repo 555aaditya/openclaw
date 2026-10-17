@@ -906,7 +906,7 @@ function normalizeScenario(
     ],
     hasMultipleSessionSharingIdentities: scenario.hasMultipleSessionSharingIdentities ?? false,
     featureCapabilities: scenario.featureCapabilities ?? [],
-    // Snapshot scenarios explicitly supply their publication; the generic mock serves RPCs.
+    // This fixture answers catalog RPCs; snapshot scenarios publish their own events.
     connectCapabilities: scenario.connectCapabilities ?? [],
     defaultAgentId,
     deferredMethods: scenario.deferredMethods ?? [],

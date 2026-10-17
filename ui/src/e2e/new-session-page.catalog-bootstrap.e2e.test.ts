@@ -1,6 +1,6 @@
 import { gatewayOriginScope } from "@openclaw/gateway-client/browser";
+import { GATEWAY_SERVER_CAPS } from "@openclaw/gateway-protocol/frame-guards";
 import { expect, it } from "vitest";
-import { GATEWAY_SERVER_CAPS } from "../../../packages/gateway-protocol/src/server-capabilities.js";
 import {
   controlUiBundledGatewayUrl,
   controlUiBundledSettingsStorageKey,

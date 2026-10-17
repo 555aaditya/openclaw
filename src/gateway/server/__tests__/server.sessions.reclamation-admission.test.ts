@@ -345,14 +345,14 @@ test.for(["shared", "reclamation"] as const)(
             .mockImplementationOnce((params) => {
               expect(params.plan.kind).toBe("entry");
               expect(params.plan.databaseOptions.path).toBe(database.path);
-              // Shared physical preparation belongs to the executor, not this caller.
-              // Expire proof only after planning, before the request-owned reclaimer opens.
+              // Expire proof only after shared planning completes, before the
+              // request-owned reclaimer opens and checks this caller again.
               invalidateSchema();
               return reclaim(params);
             })
         : undefined;
     if (preparation === "shared") {
-      // Shared preparation repairs the physical store independently of its caller.
+      // Shared preparation needs a live caller before repairing the store.
       invalidateSchema();
     }
     const validation = holdReclamationValidation(
@@ -396,18 +396,17 @@ test.for(["shared", "reclamation"] as const)(
       );
       expect(Atomics.load(validation.gate, 2)).toBeGreaterThan(0);
       expect(Atomics.load(validation.gate, 3)).toBeGreaterThan(0);
-      expect(reclamation.exitCodes).toEqual([]);
+      expect(readLeases()).toEqual(originalLeases);
+      expect(readRepairIndex()).toBeUndefined();
       if (preparation === "shared") {
-        // Caller refusal leaves the shared preparation and its native owner usable.
-        expect(readLeases()).toEqual(preparingLeases);
-        expect(readRepairIndex()).toEqual({ name: "idx_agent_cache_expiry" });
+        // Refused native opening joins broker termination before returning its authority error.
+        expect(reclamation.exitCodes).toEqual([1]);
       } else {
         // Certified refusal releases the unopened lease but retains the healthy carrier.
-        expect(readLeases()).toEqual(originalLeases);
-        expect(readRepairIndex()).toBeUndefined();
+        expect(reclamation.exitCodes).toEqual([]);
       }
       await closeOpenClawAgentDatabasesAsync();
-      // The broker terminates its shared executor; the reclaimer closes normally.
+      // The refused shared worker is already joined; the reclaimer closes normally.
       expect(reclamation.exitCodes).toEqual([preparation === "shared" ? 1 : 0]);
       expect(readLeases()).toEqual([]);
     } finally {

@@ -204,7 +204,7 @@ export async function buildBrowserGatewayConnectPlan({
       device,
       // Tests bind these compact wire literals to the canonical capability registry.
       ...resolveModelCatalogConnect({
-        // Reading the target reserves its publication in the application store.
+        // Reading the target reserves its bootstrap wait, so negotiate support first.
         get modelCatalog() {
           return opts.modelCatalog;
         },

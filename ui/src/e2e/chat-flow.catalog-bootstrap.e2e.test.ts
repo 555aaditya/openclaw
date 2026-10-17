@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
+import { GATEWAY_SERVER_CAPS } from "@openclaw/gateway-protocol/frame-guards";
 import { expect, it } from "vitest";
-import { GATEWAY_SERVER_CAPS } from "../../../packages/gateway-protocol/src/server-capabilities.js";
 import { upsertSessionEntryCore } from "../../../src/config/sessions/session-accessor.js";
 import {
   disconnectGatewayClient,
