@@ -5,7 +5,6 @@ import { expect, it } from "vitest";
 import { evaluateControlUiContext } from "../test-helpers/control-ui-e2e-context.ts";
 import { installMockGateway } from "../test-helpers/control-ui-e2e.ts";
 import { pickerValue } from "../test-helpers/select-picker-e2e.ts";
-import { sessionsUsageResponse } from "../test-helpers/sessions-usage-response.ts";
 import { createControlUiE2eSuite } from "./control-ui-e2e-suite.test-support.ts";
 import { expandProvider } from "./model-providers.test-support.ts";
 
@@ -35,7 +34,6 @@ function providerUsageResponses(usageStatus: unknown) {
         },
       ],
     },
-    "sessions.usage": sessionsUsageResponse(),
     "usage.status": usageStatus,
   };
 }

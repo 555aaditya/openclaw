@@ -17,7 +17,6 @@ import {
   pickerValue as modelPickerValue,
   selectPickerValue as selectModelPicker,
 } from "../test-helpers/select-picker-e2e.ts";
-import { sessionsUsageResponse } from "../test-helpers/sessions-usage-response.ts";
 import {
   requestRaw,
   resolveConfigMutation,
@@ -124,7 +123,6 @@ describeControlUiE2e("Control UI Models mocked Gateway E2E", () => {
           setupComplete: false,
         },
         "usage.status": { updatedAt: NOW, providers: [] },
-        "sessions.usage": sessionsUsageResponse(),
       },
     });
 
@@ -234,7 +232,6 @@ describeControlUiE2e("Control UI Models mocked Gateway E2E", () => {
         },
         "models.authStatus": { ts: NOW, providers: [] },
         "usage.status": { updatedAt: NOW, providers: [] },
-        "sessions.usage": sessionsUsageResponse(),
       },
     });
 
@@ -261,7 +258,7 @@ describeControlUiE2e("Control UI Models mocked Gateway E2E", () => {
     }
   });
 
-  it("lists configured providers with auth state, quota, billing, and local spend", async () => {
+  it("lists configured providers with auth state, quota, and billing", async () => {
     const context = await browser.newContext({
       locale: "en-US",
       serviceWorkers: "block",
@@ -317,45 +314,6 @@ describeControlUiE2e("Control UI Models mocked Gateway E2E", () => {
             },
           ],
         },
-        "sessions.usage": {
-          updatedAt: NOW,
-          sessions: [],
-          totals: sessionsUsageResponse().totals,
-          aggregates: {
-            messages: {
-              total: 0,
-              user: 0,
-              assistant: 0,
-              toolCalls: 0,
-              toolResults: 0,
-              errors: 0,
-            },
-            tools: { totalCalls: 0, uniqueTools: 0, tools: [] },
-            byModel: [],
-            byProvider: [
-              {
-                provider: "anthropic",
-                count: 3,
-                totals: {
-                  input: 100,
-                  output: 50,
-                  cacheRead: 0,
-                  cacheWrite: 0,
-                  totalTokens: 1_500_000,
-                  totalCost: 4.2,
-                  inputCost: 4.2,
-                  outputCost: 0,
-                  cacheReadCost: 0,
-                  cacheWriteCost: 0,
-                  missingCostEntries: 0,
-                },
-              },
-            ],
-            byAgent: [],
-            byChannel: [],
-            daily: [],
-          },
-        },
       },
     });
 
@@ -378,9 +336,6 @@ describeControlUiE2e("Control UI Models mocked Gateway E2E", () => {
       await expect
         .poll(async () => claudeCard.locator(".model-providers__profile").textContent())
         .toContain("Expired");
-      await expect
-        .poll(() => claudeCard.locator(".provider-row__usage strong").textContent())
-        .toContain("$4.20");
       // The open row trades its summary chips for the full window tiles.
       expect(await claudeCard.locator(".provider-usage__chip").count()).toBe(0);
       const fiveHour = claudeCard.locator(".provider-usage__window", { hasText: "5h" });
@@ -603,7 +558,6 @@ describeControlUiE2e("Control UI Models mocked Gateway E2E", () => {
           results: [{ label: "Config API key", status: "ok", latencyMs: 87 }],
         },
         "usage.status": { updatedAt: NOW, providers: [] },
-        "sessions.usage": sessionsUsageResponse(),
       },
     });
 
@@ -787,7 +741,6 @@ describeControlUiE2e("Control UI Models mocked Gateway E2E", () => {
         "config.get": snapshot(),
         "models.authStatus": { ts: NOW, providers: [] },
         "usage.status": { updatedAt: NOW, providers: [] },
-        "sessions.usage": sessionsUsageResponse(),
       },
     });
     const observations: unknown[] = [];
@@ -913,7 +866,6 @@ describeControlUiE2e("Control UI Models mocked Gateway E2E", () => {
           ],
         },
         "usage.status": { updatedAt: NOW, providers: [] },
-        "sessions.usage": sessionsUsageResponse(),
       },
     });
 

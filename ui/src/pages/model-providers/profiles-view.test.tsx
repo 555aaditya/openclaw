@@ -33,8 +33,6 @@ function props(overrides: Partial<ProviderProfilesViewProps> = {}): ProviderProf
     canMutate: true,
     mutationBlockedReason: null,
     profileOrders: {},
-    onAddAccount: () => undefined,
-    addAccountDisabled: false,
     onProfileOrderChange: () => undefined,
     onRequestLogout: () => undefined,
     ...overrides,

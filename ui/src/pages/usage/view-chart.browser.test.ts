@@ -30,6 +30,7 @@ it("keeps token segments proportional and legend markers round beside form style
         chartMode: "tokens",
         dailyChartMode: "by-type",
         onDailyChartModeChange: () => {},
+        providerSeries: [],
         onSelectDay: () => {},
         range: { startDate: "2026-09-18", endDate: "2026-09-18", complete: true },
       }),

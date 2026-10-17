@@ -28,7 +28,6 @@ import {
   advanceUsageRetries,
   expandProvider,
   focusDocument,
-  sessionUsageResult,
 } from "./model-providers-page.test-support.tsx";
 
 afterEach(() => {
@@ -103,7 +102,19 @@ describe("ModelProvidersPage agent scope", () => {
     document.dispatchEvent(new Event("visibilitychange"));
 
     await vi.waitFor(() => expect(requestCount(request, "usage.status")).toBe(2));
-    await waitForSolid(() => expect(page.view.props.supplementalLoading).toBe(false));
+    await waitForSolid(() => expect(page.view.props.providerUsageFailed).toBe(false));
+  });
+
+  it("opens the Usage page from provider access", async () => {
+    const { context } = createHarness("main");
+    const page = appendPage(context);
+    await waitForProviders(page);
+
+    [...page.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "View usage")
+      ?.click();
+
+    expect(context.navigate).toHaveBeenCalledExactlyOnceWith("usage");
   });
 
   it("does not readopt an old route snapshot when only loader pending changes", async () => {
@@ -137,7 +148,9 @@ describe("ModelProvidersPage agent scope", () => {
     vi.spyOn(document, "hasFocus").mockReturnValue(true);
     vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
     const page = appendPage(context);
-    await waitForSolid(() => expect(page.view.props.supplementalLoading).toBe(false));
+    await waitForProviders(page);
+    await vi.waitFor(() => expect(requestCount(request, "usage.status")).toBe(1));
+    await drainPageUpdates(page);
     const previousData = page.view.props.authStatus;
     const originalRequest = request.getMockImplementation()!;
     request.mockImplementation(async (method: string) => {
@@ -795,10 +808,12 @@ describe("ModelProvidersPage usage convergence", () => {
       agentId: "main",
       data: { ...EMPTY_MODEL_PROVIDERS_DATA, updatedAt: Date.now() },
     };
-    await waitForSolid(() => expect(page.view.props.supplementalLoading).toBe(false));
+    await vi.waitFor(() => expect(requestCount(harness.request, "usage.status")).toBe(1));
+    await drainPageUpdates(page);
     expect(requestCount(harness.request, "models.authStatus")).toBe(0);
     expect(requestCount(harness.request, "usage.status")).toBe(1);
-    expect(requestCount(harness.request, "sessions.usage")).toBe(1);
+    // Local session usage belongs to the Usage page.
+    expect(requestCount(harness.request, "sessions.usage")).toBe(0);
   });
 
   it.each(["reconnect", "manual refresh"] as const)(
@@ -841,45 +856,6 @@ describe("ModelProvidersPage usage convergence", () => {
     },
   );
 
-  it("retries incomplete usage without restarting pending cost", async () => {
-    vi.useFakeTimers();
-    focusDocument();
-    const harness = createHarness("main");
-    harness.setUsageStatus({ updatedAt: 1, providers: [], refreshing: true });
-    const pendingCost = deferred<unknown>();
-    const originalRequest = harness.request.getMockImplementation()!;
-    let costSignal: AbortSignal | undefined;
-    harness.request.mockImplementation(
-      async (method: string, _params?: unknown, options?: { signal?: AbortSignal }) => {
-        if (method === "sessions.usage") {
-          // The core read fails, so the supplemental loader owns the local-usage read.
-          if (requestCount(harness.request, method) === 1) {
-            throw new Error("sessions.usage unavailable");
-          }
-          costSignal = options?.signal;
-          return pendingCost.promise;
-        }
-        return originalRequest(method);
-      },
-    );
-
-    const page = appendPage(harness.context);
-    await page.updateComplete;
-    await vi.waitFor(() => expect(requestCount(harness.request, "sessions.usage")).toBe(2));
-    expect(requestCount(harness.request, "usage.status")).toBe(1);
-    await vi.advanceTimersByTimeAsync(5_000);
-
-    expect(requestCount(harness.request, "usage.status")).toBeGreaterThan(1);
-    expect(requestCount(harness.request, "sessions.usage")).toBe(2);
-    expect(costSignal?.aborted).toBe(false);
-
-    expect(page.view.props.localUsage).toBeNull();
-    pendingCost.resolve(sessionUsageResult([]));
-    // The retried provider usage did not retire the original local-usage request.
-    await waitForSolid(() => expect(page.view.props.localUsage?.byProvider).toEqual([]));
-    expect(page.view.props.supplementalLoading).toBe(false);
-  });
-
   it("replaces a pending pre-disconnect load before it can publish", async () => {
     const harness = createHarness("main");
     harness.setUsageStatus({ updatedAt: 1, providers: [] });
@@ -911,34 +887,19 @@ describe("ModelProvidersPage usage convergence", () => {
     );
   });
 
-  it("cancels and replaces supplemental work on forced refresh", async () => {
+  it("cancels and replaces provider usage work on forced refresh", async () => {
     const harness = createHarness("main");
     const oldUsage = deferred<unknown>();
-    const oldCost = deferred<unknown>();
     const originalRequest = harness.request.getMockImplementation()!;
     let firstUsageSignal: AbortSignal | undefined;
-    let firstCostSignal: AbortSignal | undefined;
     const replacementUsage = {
       provider: "openai",
       displayName: "OpenAI",
       windows: [{ label: "replacement", usedPercent: 25 }],
     };
     let usageCall = 0;
-    let costCall = 0;
     harness.request.mockImplementation(
       async (method: string, _params?: unknown, options?: { signal?: AbortSignal }) => {
-        if (method === "sessions.usage") {
-          costCall += 1;
-          // The first core read fails, so supplemental work reads local usage itself.
-          if (costCall === 1) {
-            throw new Error("sessions.usage unavailable");
-          }
-          if (costCall === 2) {
-            firstCostSignal = options?.signal;
-            return oldCost.promise;
-          }
-          return originalRequest(method);
-        }
         if (method === "usage.status") {
           usageCall += 1;
           if (usageCall === 1) {
@@ -952,41 +913,29 @@ describe("ModelProvidersPage usage convergence", () => {
     );
     const page = appendPage(harness.context);
     await vi.waitFor(() => expect(requestCount(harness.request, "usage.status")).toBe(1));
-    await vi.waitFor(() => expect(requestCount(harness.request, "sessions.usage")).toBe(2));
-    expect(page.view.props.localUsage).toBeNull();
 
     const releaseCoreRefresh = harness.deferNextAuthStatus();
     page.view.props.onRefresh();
     expect(firstUsageSignal?.aborted).toBe(true);
-    expect(firstCostSignal?.aborted).toBe(true);
 
     oldUsage.resolve({
       updatedAt: 1,
       providers: [{ ...replacementUsage, windows: [{ label: "stale", usedPercent: 1 }] }],
     });
-    oldCost.resolve({
-      ...sessionUsageResult([{ provider: "stale", totals: { totalCost: 1 } }]),
-    });
     await Promise.resolve();
     expect(page.view.props.cards.every((card) => !card.usage)).toBe(true);
-    expect(page.view.props.localUsage).toBeNull();
 
     releaseCoreRefresh();
     await drainPageUpdates(page);
 
-    await vi.waitFor(() => expect(requestCount(harness.request, "usage.status")).toBe(2));
-    // The forced core refresh re-reads local usage, so supplemental work does not.
-    await vi.waitFor(() => expect(requestCount(harness.request, "sessions.usage")).toBe(3));
     await vi.waitFor(() =>
       expect(page.view.props.cards.find((card) => card.id === "openai")?.usage).toEqual(
         replacementUsage,
       ),
     );
-    await waitForSolid(() => expect(page.view.props.supplementalLoading).toBe(false));
-    expect(page.view.props.localUsage?.byProvider).toEqual([]);
-
+    await drainPageUpdates(page);
     expect(requestCount(harness.request, "usage.status")).toBe(2);
-    expect(requestCount(harness.request, "sessions.usage")).toBe(3);
+    expect(requestCount(harness.request, "sessions.usage")).toBe(0);
     expect(page.view.props.cards.find((card) => card.id === "openai")?.usage).toEqual(
       replacementUsage,
     );

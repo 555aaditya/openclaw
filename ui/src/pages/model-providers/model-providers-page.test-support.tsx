@@ -1,7 +1,6 @@
 import { setImmediate } from "node:timers/promises";
 import { createSignal } from "solid-js";
 import { afterEach, expect, vi } from "vitest";
-import { createEmptyCostUsageTotals } from "../../../../src/infra/session-cost-usage-totals.js";
 import type { GatewayBrowserClient, GatewayEventFrame } from "../../api/gateway.ts";
 import type {
   ModelAuthStatusProvider,
@@ -214,14 +213,6 @@ export async function openApiKeyProvider(page: ModelProvidersPageTestElement, pr
   await page.updateComplete;
 }
 
-/** sessions.usage overview shape with the aggregates the Models page reads. */
-export function sessionUsageResult(byProvider: unknown[]) {
-  return {
-    aggregates: { byProvider, byModel: [], modelDaily: [] },
-    totals: createEmptyCostUsageTotals(),
-  };
-}
-
 export function createHarness(initialScopeId: string) {
   let pendingAuthStatus: Promise<void> | null = null;
   let releaseAuthStatus: (() => void) | null = null;
@@ -262,8 +253,6 @@ export function createHarness(initialScopeId: string) {
           throw new Error("usage.status unavailable");
         }
         return usageStatus;
-      case "sessions.usage":
-        return sessionUsageResult([]);
       default:
         return {};
     }

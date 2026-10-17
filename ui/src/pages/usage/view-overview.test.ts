@@ -1,6 +1,6 @@
 import { createSignal } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { i18n } from "../../i18n/index.ts";
+import { i18n, t } from "../../i18n/index.ts";
 import { captureI18nStateForTesting } from "../../i18n/lib/translate.test-support.ts";
 import { mountSolid } from "../../test-helpers/mount-solid.ts";
 import { flush } from "../../test-helpers/solid-settle.ts";
@@ -302,7 +302,7 @@ describe("SessionsCard", () => {
     expect(onSelectSession).toHaveBeenLastCalledWith("Alpha", true, ["Beta", "Alpha"]);
   });
 
-  it("keeps metadata and unavailable usage labels localized without replacing a row", async () => {
+  it("keeps metadata and lower-bound usage labels localized without replacing a row", async () => {
     const restoreI18n = captureI18nStateForTesting();
     const entry = session("Alpha");
     const sessionUsage = entry.usage!;
@@ -337,8 +337,11 @@ describe("SessionsCard", () => {
       const value = () => row?.querySelector(".session-bar-value")?.textContent;
       const average = () => container.querySelector(".sessions-card-stats > span")?.textContent;
       expect(row?.querySelector(".session-bar-meta")?.textContent).toContain("dur:1m");
-      expect(value()).toBe("unknown");
-      expect(average()).toContain("unknown");
+      // A response that ended before final usage leaves its subtotal as a lower bound.
+      const atLeast = (amount: string) => t("usage.common.atLeast", { value: amount });
+      expect(value()).toBe(atLeast("100"));
+      expect(value()).toBe("≥ 100");
+      expect(average()).toBe(`${atLeast("100")} ${t("usage.sessions.avg")}`);
       await i18n.setLocale("de");
       flush();
       expect(container.querySelector(".session-bar-row")).toBe(row);
@@ -348,16 +351,17 @@ describe("SessionsCard", () => {
         unitDisplay: "narrow",
       }).format(1);
       expect(row?.querySelector(".session-bar-meta")?.textContent).toContain(`dur:${germanMinute}`);
-      expect(value()).toBe("unbekannt");
-      expect(average()).toContain("unbekannt");
+      expect(value()).toBe(atLeast("100"));
+      expect(average()).toBe(`${atLeast("100")} ${t("usage.sessions.avg")}`);
+      expect(t("usage.sessions.avg")).not.toBe("avg");
       setDisplay({ ...base.display, chartMode: "cost" });
       flush();
-      expect(value()).toBe("unbekannt");
+      expect(value()).toBe(atLeast("$0.00"));
       await i18n.setLocale("en");
       flush();
       expect(container.querySelector(".session-bar-row")).toBe(row);
-      expect(value()).toBe("unknown");
-      expect(average()).toContain("unknown");
+      expect(value()).toBe("≥ $0.00");
+      expect(average()).toBe("≥ $0.00 avg");
     } finally {
       await restoreI18n();
     }

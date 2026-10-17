@@ -5,7 +5,7 @@ import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import { peekModelCatalog } from "../../lib/model-catalog-store.ts";
 import { requestProviderUsage } from "../../lib/provider-usage-request.ts";
 import { createTestGatewayClient } from "../../test-helpers/gateway-client.ts";
-import { loadModelProviderUsage, loadModelProvidersData } from "./load.ts";
+import { loadModelProvidersData } from "./load.ts";
 
 describe("loadModelProvidersData", () => {
   it("reads the refreshed catalog after failed auth publication", async () => {
@@ -102,8 +102,6 @@ describe("loadModelProvidersData", () => {
           throw new Error("configured catalog unavailable: OPENAI_API_KEY=sk-1234567890abcdef");
         case "usage.status":
           return { updatedAt: 1, providers: [] };
-        case "sessions.usage":
-          return { aggregates: { byProvider: [] } };
         default:
           return {};
       }
@@ -158,8 +156,6 @@ describe("loadModelProvidersData", () => {
           return { models: [] };
         case "usage.status":
           return { updatedAt: 1, providers: [] };
-        case "sessions.usage":
-          return { aggregates: { byProvider: [] } };
         default:
           return {};
       }
@@ -173,7 +169,6 @@ describe("loadModelProvidersData", () => {
     expect(result.providerOutcomes).toEqual([]);
     expect(result.catalogError).toBeNull();
     expect(result.providerUsage).toBeNull();
-    expect(result.localUsage).toBeNull();
     expect(result.error).toBeNull();
     malformed = false;
     expect((await loadModelProvidersData(client, { agentId: "main" })).authStatus).toEqual({
@@ -183,7 +178,7 @@ describe("loadModelProvidersData", () => {
     expect(request.mock.calls.filter(([method]) => method === "models.authStatus")).toHaveLength(2);
   });
 
-  it("retires both supplemental requests when aborted while pending", async () => {
+  it("retires the provider usage request when aborted while pending", async () => {
     const pending = new GatewayPendingRequests({
       createRequestId: () => "models-test",
       nowMs: () => 0,
@@ -201,19 +196,14 @@ describe("loadModelProvidersData", () => {
     const controller = new AbortController();
     const loading = Promise.allSettled([
       requestProviderUsage(client, { signal: controller.signal }),
-      loadModelProviderUsage(client, controller.signal, 30),
     ]);
     try {
-      expect(sent.map(({ method }) => method)).toEqual(["usage.status", "sessions.usage"]);
+      expect(sent.map(({ method }) => method)).toEqual(["usage.status"]);
       expect(sent[0]?.params).toBeUndefined();
-      // Only the aggregates feed the page, so the session list stays one row.
-      expect(sent[1]?.params).toMatchObject({ agentScope: "all", groupBy: "family", limit: 1 });
-      expect(sent[1]?.params).not.toHaveProperty("agentId");
-      expect(sent[1]?.params).not.toHaveProperty("projection");
       expect(pending.hasPending).toBe(true);
       controller.abort();
       expect(pending.hasPending).toBe(false);
-      expect(await loading).toMatchObject([{ status: "rejected" }, { status: "rejected" }]);
+      expect(await loading).toMatchObject([{ status: "rejected" }]);
     } finally {
       // Release any leaked wait if a cancellation regression makes the assertion fail.
       pending.flush(new Error("test cleanup"));
@@ -221,7 +211,7 @@ describe("loadModelProvidersData", () => {
     }
   });
 
-  it("reads local usage beside the core sources when a range is requested", async () => {
+  it("reads only the provider sources, never local session usage", async () => {
     const pending = new GatewayPendingRequests({
       createRequestId: () => "models-test",
       nowMs: () => 0,
@@ -238,11 +228,10 @@ describe("loadModelProvidersData", () => {
     const loading = loadModelProvidersData(client, {
       agentId: "main",
       signal: controller.signal,
-      usageDays: 7,
     }).catch(() => undefined);
     try {
-      // All three leave before any reply: usage must not wait for the provider list.
-      expect(sent.toSorted()).toEqual(["models.authStatus", "models.list", "sessions.usage"]);
+      // Both leave before any reply; local usage belongs to the Usage page.
+      expect(sent.toSorted()).toEqual(["models.authStatus", "models.list"]);
     } finally {
       controller.abort();
       pending.flush(new Error("test cleanup"));
@@ -264,8 +253,6 @@ describe("loadModelProvidersData", () => {
           };
         case "usage.status":
           return { updatedAt: 1, providers: [] };
-        case "sessions.usage":
-          return { aggregates: { byProvider: [] } };
         default:
           return {};
       }

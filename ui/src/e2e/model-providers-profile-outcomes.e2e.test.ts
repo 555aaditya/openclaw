@@ -5,7 +5,6 @@ import {
   defaultControlUiFeatureMethods,
   installMockGateway,
 } from "../test-helpers/control-ui-e2e.ts";
-import { sessionsUsageResponse } from "../test-helpers/sessions-usage-response.ts";
 import { createControlUiE2eSuite } from "./control-ui-e2e-suite.test-support.ts";
 import { expandProvider } from "./model-providers.test-support.ts";
 
@@ -76,7 +75,6 @@ suite.define(() => {
               ],
             },
             "usage.status": { updatedAt: NOW, providers: [] },
-            "sessions.usage": sessionsUsageResponse(),
           },
         });
         await page.goto(`${suite.server.baseUrl}settings/model-providers`);
@@ -151,7 +149,6 @@ suite.define(() => {
             },
             "models.authStatus": { ts: NOW, providers: [provider] },
             "usage.status": { updatedAt: NOW, providers: [] },
-            "sessions.usage": sessionsUsageResponse(),
           },
         });
         await page.goto(`${suite.server.baseUrl}settings/model-providers`);
@@ -309,7 +306,6 @@ suite.define(() => {
               ],
             },
             "usage.status": { updatedAt: NOW, providers: [] },
-            "sessions.usage": sessionsUsageResponse(),
           },
         });
 

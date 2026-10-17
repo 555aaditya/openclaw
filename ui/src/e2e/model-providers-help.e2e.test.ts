@@ -11,7 +11,6 @@ import {
   type ControlUiE2eServer,
 } from "../test-helpers/control-ui-e2e.ts";
 import { pickerValue as modelPickerValue } from "../test-helpers/select-picker-e2e.ts";
-import { sessionsUsageResponse } from "../test-helpers/sessions-usage-response.ts";
 
 const chromiumExecutablePath = resolvePlaywrightChromiumExecutablePath(chromium.executablePath());
 const chromiumAvailable = canRunPlaywrightChromium(chromiumExecutablePath);
@@ -86,7 +85,6 @@ describeControlUiE2e("Control UI Models help mocked Gateway E2E", () => {
           },
           "models.authStatus": { ts: NOW, providers: [] },
           "usage.status": { updatedAt: NOW, providers: [] },
-          "sessions.usage": sessionsUsageResponse(),
         },
       });
 

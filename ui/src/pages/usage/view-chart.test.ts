@@ -4,6 +4,7 @@ import { createSignal } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mountSolid } from "../../test-helpers/mount-solid.ts";
 import { flush } from "../../test-helpers/solid-settle.ts";
+import { buildProviderSeries, type ProviderSeries } from "./provider-series.ts";
 import type { CostDailyEntry, UsageProps } from "./types.ts";
 import { dailyEntry } from "./usage-chart.test-support.ts";
 import { DailyChartCompact } from "./view-chart.tsx";
@@ -15,7 +16,8 @@ afterEach(() => document.body.replaceChildren());
 function renderDailyChart(
   daily: CostDailyEntry[],
   chartMode: "tokens" | "cost" = "cost",
-  dailyChartMode: "total" | "by-type" = "total",
+  dailyChartMode: UsageProps["display"]["dailyChartMode"] = "total",
+  providerSeries: ProviderSeries[] = [],
 ) {
   const container = document.createElement("div");
   document.body.append(container);
@@ -28,6 +30,7 @@ function renderDailyChart(
         chartMode,
         dailyChartMode,
         onDailyChartModeChange: () => {},
+        providerSeries,
         onSelectDay,
         range: {
           startDate: daily[0]?.date ?? "2026-05-01",
@@ -146,6 +149,51 @@ describe("DailyChartCompact", () => {
       costs.length === 15 ? 15 : 0,
     );
   });
+  it("stacks each day by provider and names every provider in the legend", () => {
+    const daily = [dailyEntry("2026-05-01", 400), dailyEntry("2026-05-02", 100)];
+    const series = buildProviderSeries([
+      { date: "2026-05-01", provider: "openai", model: "a", tokens: 300, cost: 0, count: 1 },
+      { date: "2026-05-01", provider: "anthropic", model: "b", tokens: 100, cost: 0, count: 1 },
+      { date: "2026-05-02", provider: "anthropic", model: "b", tokens: 100, cost: 0, count: 1 },
+    ]);
+    const { container, bars } = renderDailyChart(daily, "tokens", "by-provider", series);
+
+    const segments = (bar: HTMLElement) =>
+      [...bar.querySelectorAll<HTMLElement>(".cost-segment")].map((segment) => ({
+        height: segment.style.height,
+        background: segment.style.background,
+      }));
+    expect(segments(bars[0]!)).toEqual([
+      { height: "75%", background: "var(--oc-accent-primary)" },
+      { height: "25%", background: "var(--oc-accent-secondary)" },
+    ]);
+    // A provider with no usage that day adds no empty segment.
+    expect(segments(bars[1]!)).toEqual([
+      { height: "100%", background: "var(--oc-accent-secondary)" },
+    ]);
+    const tooltip = bars[0]!.closest<HTMLElement & { content: string }>("openclaw-tooltip");
+    expect(tooltip?.content).toContain("OpenAI 300");
+    expect(tooltip?.content).toContain("Anthropic 100");
+    expect(
+      [...container.querySelectorAll(".daily-chart-legend li")].map((item) =>
+        item.textContent?.trim(),
+      ),
+    ).toEqual(["OpenAI", "Anthropic"]);
+  });
+
+  it("shows the provider legend only in the by-provider mode", () => {
+    const series = buildProviderSeries([
+      { date: "2026-05-01", provider: "openai", model: "a", tokens: 1, cost: 0, count: 1 },
+    ]);
+    const { container } = renderDailyChart(
+      [dailyEntry("2026-05-01", 1)],
+      "tokens",
+      "by-type",
+      series,
+    );
+    expect(container.querySelector(".daily-chart-legend")).toBeNull();
+  });
+
   it("keeps a range preset focused while applying its dates", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-05-14T12:00:00.000Z"));
