@@ -35,7 +35,6 @@ import {
   commitCurrentChatHistorySnapshot,
   historySessionId,
   resolveChatHistoryPagination,
-  type ChatHistoryResult,
 } from "./chat-history-snapshot.ts";
 import {
   chatHistoryRequests,
