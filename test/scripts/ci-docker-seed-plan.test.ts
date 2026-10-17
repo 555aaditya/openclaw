@@ -27,6 +27,7 @@ it.each([
   ["src/agents/mcp-docker-custody.ts", ["mcp-docker-custody"]],
   ["src/gateway/server-startup-bootstrap.ts", ["mcp-docker-custody"]],
   ["src/cli/mcp-cli-state-owner.ts", ["mcp-docker-custody"]],
+  ["src/cli/mcp-cli.ts", ["mcp-docker-custody"]],
   ["scripts/e2e/lib/mcp-docker-custody/scenario.mjs", ["mcp-docker-custody"]],
   ["src/state/openclaw-state-schema.ts", []],
 ] as const)("selects only Docker owner lanes for %s", (file, expected) => {

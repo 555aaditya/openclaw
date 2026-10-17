@@ -596,11 +596,13 @@ async function buildMcpStatusEntries(
   );
 }
 
-function createMcpProbeRuntime(
+async function createMcpProbeRuntime(
   sessionId: string,
   config: OpenClawConfig,
   servers: Record<string, Record<string, unknown>>,
 ): Promise<SessionMcpRuntime> {
+  const { recoverMcpDockerServers } = await import("../agents/mcp-docker-recovery.js");
+  await recoverMcpDockerServers(Object.values(servers));
   return createSessionMcpRuntime({
     sessionId,
     workspaceDir: process.cwd(),
@@ -633,11 +635,6 @@ async function probeMcpServersOrFail(params: {
   servers: Record<string, Record<string, unknown>>;
   path: string;
 }): Promise<void> {
-  const { recoverConfiguredMcpDockerServers } = await import("../agents/mcp-docker-recovery.js");
-  await recoverConfiguredMcpDockerServers({
-    ...params.config,
-    mcp: { ...params.config.mcp, servers: params.servers },
-  });
   const probeServers = Object.fromEntries(
     Object.entries(params.servers).map(([name, server]) => [
       name,
