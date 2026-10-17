@@ -95,28 +95,12 @@ describe("GitHub plugin ownership and RPC migration", () => {
     vi.unstubAllGlobals();
   });
 
-  it("advertises only the configured Enterprise host through a session-bound reader", () => {
+  it("keeps read method ownership with an Enterprise host configured", () => {
     const fixture = registered({
       gateway: {
         github: { host: "ghe.example.test", apiBaseUrl: "https://ghe.example.test/api/v3" },
       },
     });
-    expect(fixture.registry.controlUiDescriptors).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          descriptor: expect.objectContaining({
-            id: "github-session",
-            linkReader: expect.objectContaining({
-              hosts: ["ghe.example.test"],
-              sessionScoped: true,
-              progressive: true,
-              previewMethod: "github.sessionPreview",
-              detailMethod: "github.sessionDetail",
-            }),
-          }),
-        }),
-      ]),
-    );
     expect(fixture.registry.gatewayMethodDescriptors).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ name: "github.preview", profileAccess: "independent" }),
@@ -126,7 +110,7 @@ describe("GitHub plugin ownership and RPC migration", () => {
     fixture.rollbackPluginGlobalSideEffects("github", fixture.registry.plugins[0]!);
   });
 
-  it("registers read-scoped methods lazily and removes surfaces on deactivation", () => {
+  it("registers read-scoped methods lazily and removes tools and methods on deactivation", () => {
     const registry = registered();
     expect(manifest.activation.onStartup).toBe(true);
     expect(registry.registry.tools.flatMap((tool) => tool.names)).toEqual([
@@ -148,33 +132,9 @@ describe("GitHub plugin ownership and RPC migration", () => {
     );
     expect(registry.registry.gatewayHandlers).not.toHaveProperty("controlUi.githubDetail");
     expect(registry.registry.gatewayHandlers).not.toHaveProperty("controlUi.githubPreview");
-    expect(registry.registry.controlUiDescriptors).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          pluginId: "github",
-          descriptor: expect.objectContaining({
-            surface: "link-reader",
-            id: "github",
-            requiredScopes: ["operator.read"],
-            linkReader: expect.objectContaining({
-              hosts: ["github.com"],
-              detailMethod: "github.detail",
-              progressive: true,
-              imageMethod: "github.image",
-              previewMethod: "github.preview",
-            }),
-          }),
-        }),
-      ]),
-    );
-    expect(registry.registry.controlUiDescriptors).toHaveLength(2);
-    expect(
-      registry.registry.controlUiDescriptors[1]?.descriptor.linkReader?.previewMethod,
-    ).toBeUndefined();
     expect(fetchMock).not.toHaveBeenCalled();
     expect(dispatchGatewayMethod).not.toHaveBeenCalled();
     registry.rollbackPluginGlobalSideEffects("github", registry.registry.plugins[0]!);
-    expect(registry.registry.controlUiDescriptors).toEqual([]);
     expect(registry.registry.tools).toEqual([]);
     expect(registry.registry.gatewayHandlers).toEqual({});
     expect(registry.registry.gatewayMethodDescriptors).toEqual([]);

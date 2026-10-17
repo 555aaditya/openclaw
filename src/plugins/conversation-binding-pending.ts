@@ -1,7 +1,15 @@
 import { resolveGlobalMap } from "../shared/global-singleton.js";
-import type { PluginConversationBindingResolvedEvent } from "./conversation-binding.types.js";
+import type {
+  PluginConversationBinding,
+  PluginConversationBindingRequestParams,
+} from "./conversation-binding.types.js";
 
-export type PendingPluginBindingRequest = PluginConversationBindingResolvedEvent["request"] & {
+export type PendingPluginBindingRequest = PluginConversationBindingRequestParams & {
+  requestedBySenderId?: string;
+  conversation: Pick<
+    PluginConversationBinding,
+    "channel" | "accountId" | "conversationId" | "parentConversationId" | "threadId"
+  >;
   id: string;
   pluginId: string;
   pluginName?: string;

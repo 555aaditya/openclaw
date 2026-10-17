@@ -88,7 +88,7 @@ export type WorkerSshIdentity =
   | { kind: "material"; contents: string };
 
 /** Durable context supplied when a worker provider resolves the identity it minted. */
-export type WorkerSshIdentityRequest = {
+type WorkerSshIdentityRequest = {
   /** Optional live invocation guard; core supplies it for identity resolution. */
   assertCurrent?: () => void;
   leaseId: string;

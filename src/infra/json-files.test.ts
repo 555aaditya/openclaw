@@ -6,7 +6,7 @@ import { withTestDir } from "../test-helpers/temp-dir.js";
 import {
   JsonFileReadError,
   createAsyncLock,
-  readDurableJsonFile,
+  readJsonIfExists,
   readJsonFile,
   writeJsonAtomic,
   writeTextAtomic,
@@ -60,11 +60,11 @@ describe("json file helpers", () => {
       await fsPromises.writeFile(validPath, '{"ok":true}', "utf8");
       await fsPromises.writeFile(invalidPath, "{not-json}", "utf8");
 
-      await expect(readDurableJsonFile(validPath)).resolves.toEqual({ ok: true });
-      await expect(readDurableJsonFile(missingPath)).resolves.toBeNull();
+      await expect(readJsonIfExists(validPath)).resolves.toEqual({ ok: true });
+      await expect(readJsonIfExists(missingPath)).resolves.toBeNull();
       let readError: unknown;
       try {
-        await readDurableJsonFile(invalidPath);
+        await readJsonIfExists(invalidPath);
       } catch (error) {
         readError = error;
       }

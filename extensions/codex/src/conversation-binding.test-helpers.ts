@@ -3,8 +3,6 @@ import type {
   PluginHookInboundClaimEvent,
 } from "openclaw/plugin-sdk/plugin-entry";
 import type { Mock } from "vitest";
-import type { CodexAppServerBindingStore } from "./app-server/session-binding.js";
-import { handleCodexConversationBindingResolved } from "./conversation-binding-hooks.js";
 
 export function conversationMessage(
   content: string,
@@ -13,10 +11,7 @@ export function conversationMessage(
   return { content, channel: "telegram", isGroup: false, commandAuthorized: true, ...options };
 }
 
-export function createConversationClaimFixtures(
-  getRoot: () => string,
-  bindingStore: CodexAppServerBindingStore,
-) {
+export function createConversationClaimFixtures(getRoot: () => string) {
   function conversationClaimContext(
     data: NonNullable<PluginConversationBinding["data"]>,
     sessionKey?: string,
@@ -61,25 +56,10 @@ export function createConversationClaimFixtures(
     };
   }
 
-  function denyConversationBinding(data: NonNullable<PluginConversationBinding["data"]>) {
-    return handleCodexConversationBindingResolved(
-      {
-        status: "denied",
-        decision: "deny",
-        request: {
-          data,
-          conversation: { channel: "discord", accountId: "default", conversationId: "channel:1" },
-        },
-      },
-      { bindingStore },
-    );
-  }
-
   return {
     conversationClaimContext,
     legacyConversationData,
     boundConversationClaim,
-    denyConversationBinding,
   };
 }
 

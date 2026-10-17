@@ -12,12 +12,12 @@ import * as tar from "tar";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ensureManagedCrabboxBinary } from "../cli-runtime-api.js";
 import {
-  CRABBOX_MIN_VERSION,
-  isCrabboxVersionAtLeast,
-  probeCrabboxVersion,
-  resolveManagedCrabboxBinaryPath,
-} from "./crabbox-managed-binary.js";
-import type { CrabboxCommandRunner } from "./crabbox-worker-command.js";
+  CRABBOX_TEST_VERSION,
+  managedCrabboxFixturePath,
+} from "./crabbox-managed-binary.test-support.js";
+import type { runCrabboxProcess } from "./crabbox-process.js";
+
+type CrabboxCommandRunner = typeof runCrabboxProcess;
 
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
 afterEach(() => {
@@ -39,13 +39,13 @@ async function fixture(version = "0.66.0") {
   const env = { ...process.env, OPENCLAW_STATE_DIR: path.join(root, "state") };
   const candidate = path.join(root, "operator-crabbox");
   await fs.writeFile(candidate, version);
-  const binary = resolveManagedCrabboxBinaryPath(env);
+  const binary = managedCrabboxFixturePath(env.OPENCLAW_STATE_DIR);
   const platform = process.platform === "win32" ? "windows" : process.platform;
   const arch = process.arch === "x64" ? "amd64" : process.arch;
   const extension = platform === "windows" ? "zip" : "tar.gz";
-  const asset = `crabbox_${CRABBOX_MIN_VERSION}_${platform}_${arch}.${extension}`;
+  const asset = `crabbox_${CRABBOX_TEST_VERSION}_${platform}_${arch}.${extension}`;
   const files = {
-    [path.basename(binary)]: CRABBOX_MIN_VERSION,
+    [path.basename(binary)]: CRABBOX_TEST_VERSION,
     "companion-helper": "keep me",
     "crabbox-runtime/manifest.json": '{"runtime":"fixture"}',
     "crabbox-runtime/linux-amd64": "runtime-pack-fixture",
@@ -84,7 +84,7 @@ async function fixture(version = "0.66.0") {
     checksums,
     fetch,
     options: { binary: candidate, env, runCommand },
-    installed: { binary, version: CRABBOX_MIN_VERSION },
+    installed: { binary, version: CRABBOX_TEST_VERSION },
   };
 }
 
@@ -94,7 +94,7 @@ describe("managed Crabbox", () => {
     const binary = path.join(root, "crabbox");
     const env = { PATH: root, OPENCLAW_STATE_DIR: path.join(root, "state") };
     const command = vi.spyOn(processRuntime, "runCommandWithTimeout").mockResolvedValue({
-      stdout: `crabbox ${CRABBOX_MIN_VERSION}`,
+      stdout: `crabbox ${CRABBOX_TEST_VERSION}`,
       stderr: "",
       code: 0,
       signal: null,
@@ -104,7 +104,7 @@ describe("managed Crabbox", () => {
 
     await expect(ensureManagedCrabboxBinary({ binary, env, cwd: root })).resolves.toEqual({
       binary,
-      version: CRABBOX_MIN_VERSION,
+      version: CRABBOX_TEST_VERSION,
     });
     expect(command).toHaveBeenCalledExactlyOnceWith(
       [binary, "--version"],
@@ -284,7 +284,7 @@ describe("managed Crabbox", () => {
         env: test.env,
         runCommand: staleRunner,
       }),
-    ).rejects.toThrow(`does not satisfy ${CRABBOX_MIN_VERSION}`);
+    ).rejects.toThrow(`does not satisfy ${CRABBOX_TEST_VERSION}`);
     expect(await fs.readdir(path.dirname(path.dirname(test.binary)))).toEqual([]);
   });
 
@@ -357,14 +357,14 @@ describe("managed Crabbox", () => {
     vi.spyOn(fs, "rename").mockImplementation(async (source, destination) => {
       if (destination === path.dirname(test.binary) && typeof source === "string") {
         await fs.cp(source, destination, { recursive: true });
-        await fs.writeFile(test.binary, CRABBOX_MIN_VERSION);
+        await fs.writeFile(test.binary, CRABBOX_TEST_VERSION);
         throw Object.assign(new Error("destination exists"), { code: "EEXIST" });
       }
       await rename(source, destination);
     });
     await expect(ensureManagedCrabboxBinary(test.options)).resolves.toEqual({
       binary: test.binary,
-      version: CRABBOX_MIN_VERSION,
+      version: CRABBOX_TEST_VERSION,
     });
     expect(
       await fs.readFile(path.join(path.dirname(test.binary), "companion-helper"), "utf8"),
@@ -382,7 +382,7 @@ describe("managed Crabbox", () => {
       }
       await fs.writeFile(path.join(destination, "operator-note"), "preserve this");
       await expect(ensureManagedCrabboxBinary(test.options)).resolves.toEqual(test.installed);
-      expect(await fs.readFile(test.binary, "utf8")).toBe(CRABBOX_MIN_VERSION);
+      expect(await fs.readFile(test.binary, "utf8")).toBe(CRABBOX_TEST_VERSION);
       expect(await fs.readFile(test.candidate, "utf8")).toBe("0.66.0");
       const parent = path.dirname(destination);
       const entries = await fs.readdir(parent);
@@ -441,7 +441,7 @@ describe("managed Crabbox", () => {
     });
     const params = test.options;
     await expect(ensureManagedCrabboxBinary(params)).rejects.toThrow("cleanup blocked");
-    expect(await fs.readFile(test.binary, "utf8")).toBe(CRABBOX_MIN_VERSION);
+    expect(await fs.readFile(test.binary, "utf8")).toBe(CRABBOX_TEST_VERSION);
     const parent = path.dirname(destination);
     const backup = (await fs.readdir(parent)).find((name) =>
       name.startsWith(`${path.basename(destination)}.recovery-`),
@@ -580,18 +580,29 @@ describe("managed Crabbox", () => {
 
 describe("Crabbox version admission", () => {
   it.each([
+    ["0.77.0", true],
+    ["0.77.0+build.1", true],
+    ["0.77.1", true],
     ["0.78.0", true],
-    ["0.78.0+build", true],
-    ["0.78.1", true],
     ["1.0.0", true],
-    ["0.77.9", false],
-    ["0.78.0-rc.1", false],
+    ["0.76.9", false],
+    ["0.72.0", false],
+    ["0.77.0-rc.1", false],
     ["unparseable", false],
-  ])("compares %s against a release floor (%s)", (version, expected) => {
-    expect(isCrabboxVersionAtLeast(version, "0.78.0")).toBe(expected);
-  });
+    ["0.9007199254740993.0", false],
+  ])(
+    "admits configured version %s without replacement only when supported (%s)",
+    async (version, supported) => {
+      const test = await fixture(version);
+      await expect(ensureManagedCrabboxBinary(test.options)).resolves.toEqual(
+        supported ? { binary: test.candidate, version } : test.installed,
+      );
+      expect(test.fetch).toHaveBeenCalledTimes(supported ? 0 : 2);
+    },
+  );
 
-  it("reports a redacted version failure without retaining private error data", async () => {
+  it("does not expose private version-probe errors when admission fails", async () => {
+    const test = await fixture();
     const token = "synthetic-version-secret-0123456789";
     const cause = Object.assign(
       new Error(`output capture failed token=${token}`, {
@@ -599,38 +610,19 @@ describe("Crabbox version admission", () => {
       }),
       { stdout: token, stderr: token },
     );
-    const probe = await probeCrabboxVersion("crabbox", async () => {
-      throw cause;
-    });
-    expect(probe).toMatchObject({
-      status: "indeterminate",
-      reason: expect.stringContaining(
-        "Crabbox version command execution failed: output capture failed",
-      ),
-    });
-    for (
-      let current: unknown = Object.getOwnPropertyDescriptor(probe, "cause")?.value;
-      current instanceof Error;
-      current = current.cause
-    ) {
-      expect(current.message).not.toContain(token);
-    }
-    expect(inspect(probe, { depth: null })).not.toContain(token);
-    expect(probe).not.toHaveProperty("cause");
-    expect(probe).toHaveProperty("reason", expect.not.stringContaining("synthetic-version-secret"));
-  });
-
-  it.each([
-    ["0.72.0", "outdated"],
-    ["0.77.0", "supported"],
-    ["0.77.0-rc.1", "outdated"],
-    ["0.77.0+build.1", "supported"],
-    ["0.78.0", "supported"],
-    ["0.9007199254740993.0", "indeterminate"],
-  ])("classifies %s as %s", async (version, status) => {
-    const test = await fixture(version);
-    await expect(probeCrabboxVersion(test.candidate, runCommand)).resolves.toMatchObject({
-      status,
-    });
+    const failure = await ensureManagedCrabboxBinary({
+      ...test.options,
+      runCommand: async () => {
+        throw cause;
+      },
+    }).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure).toHaveProperty(
+      "message",
+      `Downloaded Crabbox executable does not satisfy ${CRABBOX_TEST_VERSION}`,
+    );
+    expect(inspect(failure, { depth: null })).not.toContain(token);
+    expect(failure).not.toHaveProperty("cause");
+    expect(await fs.readdir(path.dirname(path.dirname(test.binary)))).toEqual([]);
   });
 });

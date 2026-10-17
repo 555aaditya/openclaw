@@ -99,7 +99,7 @@ export function readCodexConversationBindingData(
   return data ? readCodexConversationBindingDataRecord(data) : undefined;
 }
 
-export function readCodexConversationBindingDataRecord(
+function readCodexConversationBindingDataRecord(
   data: Record<string, unknown>,
 ): CodexConversationBindingData | undefined {
   if (data.kind === "codex-cli-node-session") {

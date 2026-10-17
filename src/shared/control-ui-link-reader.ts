@@ -1,11 +1,3 @@
-export const LINK_READER_BADGE_TONES = [
-  "neutral",
-  "positive",
-  "negative",
-  "attention",
-  "accent",
-] as const;
-
 export type ControlUiLinkReaderPreviewParams = {
   url: string;
   /** Selected agent hint; the receiving owner still authorizes identity selection. */
@@ -13,7 +5,7 @@ export type ControlUiLinkReaderPreviewParams = {
   /** Foreground session context authorized by the receiving owner. */
   sessionKey?: string;
 };
-export type ControlUiLinkReaderDeferredSection = "checks" | "files" | "discussion";
+type ControlUiLinkReaderDeferredSection = "checks" | "files" | "discussion";
 export type ControlUiLinkReaderSection = "overview" | ControlUiLinkReaderDeferredSection;
 
 export type ControlUiLinkReaderDetailParams = ControlUiLinkReaderPreviewParams & {
@@ -21,13 +13,6 @@ export type ControlUiLinkReaderDetailParams = ControlUiLinkReaderPreviewParams &
   /** Omit for the complete document; supported only by progressive readers. */
   section?: ControlUiLinkReaderSection;
 };
-export type ControlUiLinkReaderImage = {
-  /** Echo the validated requested image URL. */
-  url: string;
-  /** Canonical base64 data URL for a bounded, validated raster image; never SVG or HTML. */
-  dataUrl: string;
-};
-
 export type ControlUiLinkReaderPreview = {
   /** Last-known metadata while its bounded refresh is in progress. */
   stale?: boolean;
@@ -37,7 +22,7 @@ export type ControlUiLinkReaderPreview = {
   subtitle?: string;
   badge?: {
     label: string;
-    tone: (typeof LINK_READER_BADGE_TONES)[number];
+    tone: "neutral" | "positive" | "negative" | "attention" | "accent";
     /** Timestamp of the event represented by the badge, displayed instead of creation time. */
     timestamp?: string;
   };

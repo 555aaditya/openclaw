@@ -1,9 +1,5 @@
 import { expectTypeOf } from "vitest";
-import type {
-  OpenClawPluginApi,
-  WorkerMachineOption,
-  WorkerProvider,
-} from "../../src/plugin-sdk/plugin-entry.js";
+import type { OpenClawPluginApi } from "../../src/plugin-sdk/plugin-entry.js";
 import type { PluginHookAgentTrigger } from "../../src/plugin-sdk/types.js";
 
 function registerScopedReplyHook(api: OpenClawPluginApi): void {
@@ -40,19 +36,3 @@ void registerAuthorizedPromptHook;
 // exposes scoped reply and prompt authority options through the public plugin API
 expectTypeOf<OpenClawPluginApi["on"]>().toBeFunction();
 expectTypeOf<PluginHookAgentTrigger>().toEqualTypeOf<"cron" | "heartbeat" | "user">();
-expectTypeOf<WorkerMachineOption>().toEqualTypeOf<{
-  readonly id: string;
-  readonly label: string;
-  readonly cpu?: number;
-  readonly memoryGb?: number;
-  readonly default?: boolean;
-  readonly os?: string;
-}>();
-expectTypeOf<
-  Awaited<ReturnType<NonNullable<WorkerProvider["listOperatingSystems"]>>>[number]
->().toEqualTypeOf<{
-  readonly id: string;
-  readonly label: string;
-  readonly default?: boolean;
-  readonly disabledReason?: string;
-}>();

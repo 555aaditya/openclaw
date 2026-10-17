@@ -17,9 +17,10 @@ import { ensureManagedCrabboxBinary } from "./crabbox-managed-binary.js";
 import { runCrabboxProcess } from "./crabbox-process.js";
 import type { ResolvedCrabboxSandboxConfig } from "./crabbox-sandbox-config.js";
 import { CRABBOX_SANDBOX_LEASE_ID_PATTERN } from "./crabbox-sandbox-lease.js";
-import { CRABBOX_LIFECYCLE_TIMEOUT_MS } from "./crabbox-worker-timeouts.js";
 
 export const CRABBOX_SANDBOX_BACKEND_ID = "crabbox";
+// Allow one minute for coordinator reads and one for process/config/auth startup.
+const CRABBOX_LIFECYCLE_TIMEOUT_MS = 2 * 60_000;
 const CRABBOX_SANDBOX_SLUG = "openclaw-sandbox";
 const READY_STATES = new Set(["started", "running", "ready"]);
 

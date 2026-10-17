@@ -28,6 +28,8 @@ import { log as embeddedAgentLog } from "../src/agents/embedded-agent-runner/log
 import { runAgentHarnessBeforeMessageWriteHook } from "../src/agents/harness/hook-helpers.js";
 import { createAgentHarnessHostCapabilities } from "../src/agents/harness/host-capability.js";
 import { listRegisteredAgentHarnesses } from "../src/agents/harness/registry.js";
+import { requesterMcpOAuthIdentity } from "../src/agents/mcp-oauth-identity.js";
+import * as mcpOAuth from "../src/agents/mcp-oauth.js";
 import { withGatewayToolCallerIdentity } from "../src/agents/tools/gateway-caller-context.js";
 import { setRuntimeConfigSnapshot } from "../src/config/runtime-snapshot.js";
 import {
@@ -72,10 +74,7 @@ import { setPluginRuntimeLoadContext } from "../src/plugins/runtime/load-context
 import { resolvePluginRuntimeLoadContext } from "../src/plugins/runtime/load-context.resolve.js";
 import { createRuntimeAgent } from "../src/plugins/runtime/runtime-agent.js";
 import { createPluginRecord } from "../src/plugins/status.test-helpers.js";
-import type {
-  OpenClawPluginDefinition,
-  OpenClawPluginMcpServerConnectionResolver,
-} from "../src/plugins/types.js";
+import type { OpenClawPluginDefinition } from "../src/plugins/types.js";
 import {
   listSessionStateEventsSince,
   registerSessionStateWatch,
@@ -183,7 +182,7 @@ async function withFixture(
     senderIsOwner?: boolean;
     sessionMutationAuthorization?: GatewayRequestHandlerOptions["sessionMutationAuthorization"];
     transcript?: { display?: false; excludeFromContext?: true };
-    mcpResolver?: OpenClawPluginMcpServerConnectionResolver;
+    mcp?: OpenClawConfig["mcp"];
     isolatedState?: boolean;
   } = {},
 ) {
@@ -196,13 +195,7 @@ async function withFixture(
         entries: { main: { agentDir: state.agentDir(), workspace: state.workspaceDir } },
       },
       tools: { web: { search: { enabled: false } } },
-      ...(options.mcpResolver
-        ? {
-            mcp: {
-              servers: { [options.mcpResolver.serverName]: { transport: "streamable-http" } },
-            },
-          }
-        : {}),
+      ...(options.mcp ? { mcp: options.mcp } : {}),
     };
     setRuntimeAuthProfileStoreSnapshot({ version: 1, profiles: {} }, state.agentDir());
     const runtime = createPluginRuntimeMock({
@@ -449,11 +442,6 @@ async function withFixture(
             }),
           );
         }
-        if (options.mcpResolver) {
-          const record = createPluginRecord({ id: "canonical-requester-mcp" });
-          registry.plugins.push(record);
-          createApi(record, { config }).registerMcpServerConnectionResolver(options.mcpResolver);
-        }
         expect(registry.diagnostics.filter((entry) => entry.level === "error")).toEqual([]);
         const fixtureOwners = createRuntimePluginManifestLookup(registry, metadataSnapshot.plugins);
         expect(
@@ -545,7 +533,7 @@ async function withFixture(
           ),
         );
       } finally {
-        if (options.mcpResolver) {
+        if (options.mcp) {
           for (const { entry } of listSessionEntriesCore({
             agentId: "main",
             storePath: fixture.storePath,
@@ -1495,7 +1483,7 @@ describe("canonical descendant lifecycle through real owners", () => {
   it("keeps requester MCP declarations across fork and restart while reconnecting only the current caller", async () => {
     const sessions = new Set<string>();
     const calls: string[] = [];
-    const resolutions: string[] = [];
+    const credentialReads: string[] = [];
     let initializations = 0;
     const handleRequest = async (request: http.IncomingMessage, response: http.ServerResponse) => {
       const sessionId = request.headers["mcp-session-id"];
@@ -1573,6 +1561,27 @@ describe("canonical descendant lifecycle through real owners", () => {
     if (!address || typeof address === "string") {
       throw new Error("requester MCP server did not bind a TCP port");
     }
+    const serverUrl = `http://127.0.0.1:${address.port}/mcp`;
+    const senderIdentity = requesterMcpOAuthIdentity("requester-proof", serverUrl, {
+      requesterSenderId: "sender-a",
+    });
+    const guestIdentity = requesterMcpOAuthIdentity("requester-proof", serverUrl, {
+      requesterSenderId: "guest",
+    });
+    // The fixture supplies OAuth status at the credential boundary; production
+    // requester partitioning, transport lifetime, and canonical catalog reuse run unchanged.
+    vi.spyOn(mcpOAuth, "readMcpOAuthCredentialsStatuses").mockImplementation(async (identities) =>
+      identities.map((identity) => {
+        credentialReads.push(identity.storeKey);
+        return {
+          state: identity.storeKey === senderIdentity.storeKey ? "authorized" : "unauthenticated",
+        };
+      }),
+    );
+    vi.spyOn(mcpOAuth, "startMcpOAuthAuthorization").mockImplementation(async () => {
+      throw new Error("Unexpected OAuth authorization in the canonical requester fixture");
+    });
+    vi.spyOn(mcpOAuth, "resolveMcpOAuthAccessToken").mockResolvedValue("synthetic-requester-token");
     try {
       await withFixture(
         async (fixture, fork) => {
@@ -1614,7 +1623,7 @@ describe("canonical descendant lifecycle through real owners", () => {
               .dynamicTools,
           );
           const beforeFork = {
-            resolutions: resolutions.length,
+            credentialReads: credentialReads.length,
             initializations,
             calls: calls.length,
           };
@@ -1624,9 +1633,11 @@ describe("canonical descendant lifecycle through real owners", () => {
           );
           const result = await fork(source.sessionKey, selected.entryId);
           expect(result, result.message).toMatchObject({ ok: true });
-          expect({ resolutions: resolutions.length, initializations, calls: calls.length }).toEqual(
-            beforeFork,
-          );
+          expect({
+            credentialReads: credentialReads.length,
+            initializations,
+            calls: calls.length,
+          }).toEqual(beforeFork);
           const childKey = expectDefined(result.key, "requester child key");
           const childBinding = expectDefined(
             fixture.bindingStore.read(fixture.identity(childKey)),
@@ -1643,8 +1654,8 @@ describe("canonical descendant lifecycle through real owners", () => {
             senderIsOwner: false,
             inspectTools: async ({ bridge }) => {
               expect(bridge.specs).toEqual(inherited);
-              expect(bridge.availableTools.some((tool) => tool.name === toolName)).toBe(false);
-              const before = calls.length;
+              expect(bridge.availableTools.some((tool) => tool.name === toolName)).toBe(true);
+              const before = { calls: calls.length, initializations };
               const denied = await bridge.handleToolCall({
                 threadId: childBinding.threadId,
                 turnId: "current",
@@ -1653,8 +1664,10 @@ describe("canonical descendant lifecycle through real owners", () => {
                 tool: toolName,
                 arguments: {},
               });
-              expect(denied).toMatchObject({ success: false, executionStarted: false });
-              expect(calls).toHaveLength(before);
+              // An unconnected OAuth requester receives local sign-in guidance,
+              // never the previously authenticated caller's transport or result.
+              expect(JSON.stringify(denied.contentItems)).toContain("needs requester sign-in");
+              expect({ calls: calls.length, initializations }).toEqual(before);
             },
           });
           expect(guest.threadId).toBe(childBinding.threadId);
@@ -1672,9 +1685,9 @@ describe("canonical descendant lifecycle through real owners", () => {
           );
           expect((await runProbe(childKey, inherited)).threadId).toBe(childBinding.threadId);
           expect(initializations).toBeGreaterThan(beforeRestart);
-          expect(resolutions).toContain("guest");
+          expect(credentialReads).toContain(guestIdentity.storeKey);
           expect(
-            resolutions.filter((sender) => sender === "sender-a").length,
+            credentialReads.filter((key) => key === senderIdentity.storeKey).length,
           ).toBeGreaterThanOrEqual(4);
           expect(calls).toEqual(["probe", "probe", "probe", "probe"]);
           expect(
@@ -1682,13 +1695,14 @@ describe("canonical descendant lifecycle through real owners", () => {
           ).toHaveLength(starts);
         },
         {
-          mcpResolver: {
-            serverName: "requester-proof",
-            resolve: ({ requesterSenderId }) => {
-              resolutions.push(requesterSenderId);
-              return requesterSenderId === "sender-a"
-                ? { url: `http://127.0.0.1:${address.port}/mcp` }
-                : null;
+          mcp: {
+            servers: {
+              "requester-proof": {
+                transport: "streamable-http",
+                url: serverUrl,
+                auth: "oauth",
+                oauth: { identity: "per-requester" },
+              },
             },
           },
         },

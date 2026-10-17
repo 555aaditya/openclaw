@@ -2,7 +2,11 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { readRegularFileSync } from "@openclaw/fs-safe/advanced";
-import { readFileDescriptorBoundedSync } from "../infra/boundary-file-read.js";
+import {
+  isRootFileMissingFailure,
+  readFileDescriptorBoundedSync,
+  type RootFileOpenFailure,
+} from "../infra/boundary-file-read.js";
 import { resolveRootPathSync } from "../infra/boundary-path.js";
 import { materializeErrorStack } from "../infra/error-graph-internal.js";
 import { FsSafeError } from "../infra/fs-safe.js";
@@ -73,6 +77,12 @@ function pathFacts(targetPath: string) {
     root.paths.set(key, facts);
   }
   return facts;
+}
+
+function cachedMissingPathFailure(targetPath: string): RootFileOpenFailure | undefined {
+  const facts = pathFacts(targetPath);
+  const failure: RootFileOpenFailure = { ok: false, reason: "path", error: facts.statError };
+  return facts.stat === null && isRootFileMissingFailure(failure) ? failure : undefined;
 }
 
 export function pluginCacheExistsSync(targetPath: string): boolean {
@@ -262,14 +272,14 @@ export function readPluginCacheFile(params: {
   }
   const requestedPath = path.resolve(lexicalRoot, params.relativePath);
   const checked = root.checkedEntries.get(key);
-  if (pathFacts(requestedPath).exists === false || (checked && (!checked.ok || !checked.exists))) {
-    const entry: PluginFileCacheEntry = {
-      ok: false,
-      failure: checked && !checked.ok ? checked : { ok: false, reason: "path" },
-    };
+  const failure = checked && !checked.ok ? checked : cachedMissingPathFailure(requestedPath);
+  if (failure) {
+    const entry: PluginFileCacheEntry = { ok: false, failure };
     root.files.set(key, entry);
     return entry;
   }
+  // An existence probe does not distinguish absence from an unreadable path.
+  // Preserve the safe-open failure so optional manifest admission can do so.
   const canonicalRoot = params.rootRealPath ?? pluginCacheRealpathSync(lexicalRoot) ?? lexicalRoot;
   const canonicalCached = getPluginCacheRoot(canonicalRoot).files.get(key);
   if (canonicalCached?.ok) {
@@ -288,15 +298,14 @@ export function readPluginCacheFile(params: {
   let entry: PluginFileCacheEntry;
   if (!opened.ok) {
     entry = { ok: false, failure: opened };
-    if (
-      opened.reason === "path" &&
-      opened.error &&
-      typeof opened.error === "object" &&
-      "code" in opened.error &&
-      opened.error.code === "ENOENT"
-    ) {
-      pathFacts(requestedPath).exists = false;
-      pathFacts(absolutePath).exists = false;
+    if (isRootFileMissingFailure(opened)) {
+      for (const filePath of [requestedPath, absolutePath]) {
+        Object.assign(pathFacts(filePath), {
+          exists: false,
+          stat: null,
+          statError: opened.error,
+        });
+      }
     }
   } else {
     root = bindPluginCacheRoot(lexicalRoot, opened.rootRealPath);
@@ -345,9 +354,10 @@ function readPluginCacheRegularFile(params: {
   const key = JSON.stringify(["regular", filename]);
   const limitKey = JSON.stringify(["regular", filename, params.maxBytes]);
   let entry = root.files.get(key) ?? root.files.get(limitKey);
-  // Absence is shared across reader policies; successful reads still require each policy's checks.
-  if (!entry && pathFacts(absolutePath).exists === false) {
-    entry = { ok: false, failure: { ok: false, reason: "path" } };
+  // Share only proven absence, retaining its original error across reader policies.
+  const missing = cachedMissingPathFailure(absolutePath);
+  if (!entry && missing) {
+    entry = { ok: false, failure: missing };
     root.files.set(key, entry);
   }
   if (!entry) {
@@ -367,8 +377,8 @@ function readPluginCacheRegularFile(params: {
         error instanceof FsSafeError && error.code === "too-large" ? limitKey : key,
         entry,
       );
-      if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
-        pathFacts(absolutePath).exists = false;
+      if (isRootFileMissingFailure({ ok: false, reason: "path", error })) {
+        Object.assign(pathFacts(absolutePath), { exists: false, stat: null, statError: error });
       }
     }
   }

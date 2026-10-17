@@ -43,7 +43,6 @@ vi.mock("../../plugins/runtime.js", async (importOriginal) => ({
 }));
 
 type RespondCall = [boolean, unknown?, { code: number; message: string }?];
-type ToolMetadata = PluginRegistry["toolMetadata"][number]["metadata"];
 
 async function invokeCatalog(
   params: Record<string, unknown> = {},
@@ -75,12 +74,6 @@ async function pluginGroups() {
 function makeTool(name: string, description = name, parameters = Type.Object({})) {
   const execute = vi.fn(async () => ({ content: [], details: {} }));
   return { name, label: name, description, parameters, execute };
-}
-
-function metadataRegistry(pluginId: string, metadata: ToolMetadata) {
-  const registry = createEmptyPluginRegistry();
-  registry.toolMetadata.push({ pluginId, source: "fixture", metadata });
-  return registry;
 }
 
 describe("tools.catalog handler", () => {
@@ -152,31 +145,27 @@ describe("tools.catalog handler", () => {
     }
   });
 
-  it.each([false, true])("projects plugin discovery metadata=%s", async (metadata) => {
-    const toolRegistry = metadataRegistry("voice-call", {
-      toolName: "voice_call",
-      displayName: "Voice Call",
-      description: "Place a voice call",
-      risk: "high",
-      tags: ["calling"],
-    });
-    if (metadata) {
-      getActivePluginRegistryMock.mockReturnValue(
-        metadataRegistry("voice-call", {
-          toolName: "voice_call",
-          displayName: "Wrong Workspace Voice Call",
-          risk: "low",
-        }),
-      );
+  it.each([false, true])("projects plugin discovery with registry=%s", async (hasRegistry) => {
+    const toolRegistry = createEmptyPluginRegistry();
+    if (hasRegistry) {
+      const activeRegistry = createEmptyPluginRegistry();
+      activeRegistry.tools.push({
+        pluginId: "foreign-workspace",
+        source: "fixture",
+        names: ["wrong_workspace_tool"],
+        factory: vi.fn(() => null),
+        optional: true,
+      });
+      getActivePluginRegistryMock.mockReturnValue(activeRegistry);
       vi.mocked(loadRegistry).mockReturnValue(toolRegistry);
     }
     const groups = await pluginGroups();
     const tools = groups.flatMap((group) => group.tools);
     expect(tools.find((tool) => tool.id === "voice_call")).toEqual({
       id: "voice_call",
-      label: metadata ? "Voice Call" : "voice_call",
-      description: metadata ? "Place a voice call" : "Plugin calling tool",
-      fullDescription: metadata ? "Place a voice call" : "Plugin calling tool",
+      label: "voice_call",
+      description: "Plugin calling tool",
+      fullDescription: "Plugin calling tool",
       parameters: [
         { name: "destination", required: true, type: "string", description: "Call destination." },
         { name: "note", required: false, type: "string", description: "Optional call note." },
@@ -184,11 +173,10 @@ describe("tools.catalog handler", () => {
       source: "plugin",
       pluginId: "voice-call",
       optional: true,
-      risk: metadata ? "high" : undefined,
-      tags: metadata ? ["calling"] : undefined,
       defaultProfiles: [],
     });
     expect(tools.find((tool) => tool.id === "matrix_room")?.description).toBe("Room summary");
+    expect(tools.map((tool) => tool.id)).toEqual(["matrix_room", "voice_call"]);
     const discovery = {
       context: { config: {}, workspaceDir: "/workspace", agentDir: "/agent", agentId: "main" },
       toolAllowlist: ["group:plugins"],
@@ -199,16 +187,15 @@ describe("tools.catalog handler", () => {
       expect.objectContaining({
         ...discovery,
         suppressNameConflicts: true,
-        runtimeRegistry: metadata ? toolRegistry : undefined,
+        runtimeRegistry: hasRegistry ? toolRegistry : undefined,
         existingToolNames: expect.any(Set),
       }),
     );
     expect(vi.mocked(resolveTools).mock.calls[0]?.[0].existingToolNames?.has("tts")).toBe(true);
   });
 
-  it("sorts private mixed groups without changing source order or metadata aliases", async () => {
-    const tags = ["fixture"];
-    const registry = metadataRegistry("z-resolved", { toolName: "resolved_a", tags });
+  it("sorts private mixed groups without changing source order", async () => {
+    const registry = createEmptyPluginRegistry();
     const tools = ["resolved_z", "resolved_a"].map((name) => {
       const tool = makeTool(name);
       setPluginToolMeta(tool, { pluginId: "z-resolved", optional: true });
@@ -227,7 +214,7 @@ describe("tools.catalog handler", () => {
       Object.freeze(entry.names);
       Object.freeze(entry);
     }
-    [tags, tools, registry.tools].forEach(Object.freeze);
+    [tools, registry.tools].forEach(Object.freeze);
     vi.mocked(resolveTools).mockReturnValue(tools);
     vi.mocked(loadRegistry).mockReturnValue(registry);
     const groups = await pluginGroups();
@@ -237,14 +224,12 @@ describe("tools.catalog handler", () => {
       ["plugin:z-resolved", ["resolved_a", "resolved_z"]],
     ]);
     const resolved = expectDefined(groups[2], "resolved group");
-    expect(expectDefined(resolved.tools[0], "resolved_a").tags).toBe(tags);
     const original = structuredClone(groups);
     resolved.tools.reverse();
     expectDefined(groups[0], "declared group").tools.pop();
     const repeated = await pluginGroups();
     expect(repeated).toEqual(original);
     expect(repeated[0]).not.toBe(groups[0]);
-    expect(expectDefined(repeated[2], "repeated resolved group").tools[0]?.tags).toBe(tags);
     expect(Array.from(registry.tools[1]?.declaredNames ?? [])).toEqual(["b_a", "c_a"]);
     expect(factory).not.toHaveBeenCalled();
     for (const tool of tools) {

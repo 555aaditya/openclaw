@@ -1355,7 +1355,6 @@ describe("maybeCompactCodexAppServerSession", () => {
             defaults: {
               compaction: {
                 model: "openai/gpt-5.4",
-                provider: "custom-summary",
                 thinkingLevel: "ultra",
               },
             },
@@ -1373,7 +1372,6 @@ describe("maybeCompactCodexAppServerSession", () => {
         ignoredConfig: [
           "agents.defaults.compaction.model",
           "agents.defaults.compaction.thinkingLevel",
-          "agents.defaults.compaction.provider",
         ],
       },
     );

@@ -88,9 +88,8 @@ describe("Canvas plugin entry", () => {
   });
 
   it("defers Canvas CLI and tool implementations until use", async () => {
-    const { resolvers, tools, cliFeatures } = registerCanvas();
+    const { tools, cliFeatures } = registerCanvas();
 
-    expect(resolvers).toHaveLength(0);
     expect(tools).toHaveLength(1);
     expect(tools.map(({ opts }) => opts?.name)).toEqual([undefined]);
     expect(cliFeatures).toHaveLength(1);

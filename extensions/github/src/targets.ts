@@ -67,11 +67,11 @@ export function parseGitHubItemTarget(value: unknown): GitHubItemTarget | null {
   return target && target.kind !== "commit" ? target : null;
 }
 
-// Descriptor matches only supported document pages; source/download/check links
-// remain external. RPC validation below independently validates every segment.
-export const GITHUB_ITEM_PATH_PATTERN =
+// Match only supported document pages; source/download/check links remain external.
+// RPC validation below independently validates every segment.
+const GITHUB_ITEM_PATH_PATTERN =
   "^/[^/]+/[^/]+/(?:issues/[1-9][0-9]{0,9}|pull/[1-9][0-9]{0,9}(?:/files)?)/?$";
-export const GITHUB_COMMIT_PATH_PATTERN = "^/[^/]+/[^/]+/commit/[a-fA-F0-9]{7,40}/?$";
+const GITHUB_COMMIT_PATH_PATTERN = "^/[^/]+/[^/]+/commit/[a-fA-F0-9]{7,40}/?$";
 const GITHUB_LINK_PATH = new RegExp(
   GITHUB_ITEM_PATH_PATTERN + "|" + GITHUB_COMMIT_PATH_PATTERN,
   "u",

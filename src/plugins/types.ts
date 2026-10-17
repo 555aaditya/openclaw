@@ -16,7 +16,6 @@ export type {
   PluginConversationBinding,
   PluginConversationBindingRequestParams,
   PluginConversationBindingRequestResult,
-  PluginConversationBindingResolvedEvent,
 } from "./conversation-binding.types.js";
 export * from "./hook-types.js";
 export type {

@@ -8,7 +8,7 @@ import {
   type SolidPanelTabStripTab as PanelTabStripTab,
   type PanelTabStripProps,
 } from "./panel-tab-strip-solid.tsx";
-import { panelTabStripCss } from "./panel-tab-strip-styles.ts";
+import { nativePanelTabStripCss } from "./panel-tab-strip-styles.ts";
 
 type RenderedTab = HTMLButtonElement;
 
@@ -170,9 +170,10 @@ describe.skipIf(!hasBrowserLayout)("panel tab strip browser lifecycle", () => {
   it("keeps arrow and mouse activation controlled and the selected overflow tab visible", async () => {
     const style = document.createElement("style");
     style.id = "panel-tab-strip-browser-test-styles";
-    style.textContent = panelTabStripCss;
+    style.textContent = nativePanelTabStripCss;
     document.head.append(style);
-    const container = document.createElement("div");
+    const container = document.createElement("openclaw-browser-panel");
+    container.style.display = "block";
     container.style.width = "220px";
     document.body.append(container);
     const tabs = Array.from({ length: 8 }, (_, index) => tab(String(index + 1)));

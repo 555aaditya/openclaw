@@ -29,7 +29,6 @@ vi.mock("./setup.shared.js", async (importOriginal) => {
   return {
     ...actual,
     readSetupConfigFileSnapshot: mocks.readSnapshot,
-    readValidSetupConfigFile: vi.fn(),
     requireRiskAcknowledgement: async ({ config }: { config: OpenClawConfig }) => config,
     resolveQuickstartGatewayDefaults: () => ({
       hasExisting: false,

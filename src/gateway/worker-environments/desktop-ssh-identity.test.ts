@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { WorkerSshIdentityRequest } from "../../plugins/types.js";
+import type { WorkerProvider } from "../../plugins/types.js";
 import { createDeferredCore } from "../../shared/deferred.js";
 import { resolveWorkerSshIdentity } from "./identity.js";
 import * as support from "./service.test-support.js";
@@ -11,11 +11,12 @@ import { fakeRunner, success } from "./tunnel.test-support.js";
 const MATERIAL = "synthetic-desktop-identity";
 type Operation = "observe" | "launch";
 type Closure = "stop" | "replace-observe" | "replace-launch" | "timeout";
+type ObservedIdentityRequest = Parameters<NonNullable<WorkerProvider["resolveSshIdentity"]>>[0];
 
 // Only the SSH process boundary is synthetic: service, SQLite lease ownership,
 // provider invocation, desktop registry, identity preparation, and files are real.
 async function fixture() {
-  const entered = createDeferredCore<WorkerSshIdentityRequest>();
+  const entered = createDeferredCore<ObservedIdentityRequest>();
   const release = createDeferredCore();
   const providerSettled = createDeferredCore();
   const provider = support.createProvider({

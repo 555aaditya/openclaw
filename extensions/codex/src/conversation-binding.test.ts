@@ -360,12 +360,8 @@ function prepareTestConversationBinding(params: {
 }
 
 let tempDir: string;
-const {
-  conversationClaimContext,
-  legacyConversationData,
-  boundConversationClaim,
-  denyConversationBinding,
-} = createConversationClaimFixtures(() => tempDir, testCodexAppServerBindingStore);
+const { conversationClaimContext, legacyConversationData, boundConversationClaim } =
+  createConversationClaimFixtures(() => tempDir);
 
 const NETWORK_PROXY_PLUGIN_CONFIG = {
   appServer: {
@@ -814,26 +810,7 @@ describe("codex conversation binding", () => {
             "thread-mixed-source-lifecycle",
           );
           expect(ownership).toEqual(expect.objectContaining({ release: expect.any(Function) }));
-          await expect(
-            retainCodexAppServerLiveThread(
-              client,
-              "thread-mixed-source-lifecycle",
-              ownership?.release,
-              ownership?.configFingerprint,
-              ownership?.serviceTier,
-            ),
-          ).resolves.toBe(true);
         }
-
-        await denyConversationBinding(data);
-
-        expect(operations.at(-1)).toEqual({
-          method: "thread/unsubscribe",
-          params: { threadId: "thread-mixed-source-lifecycle" },
-        });
-        expect(
-          testCodexAppServerBindingStore.read({ kind: "conversation", bindingId }),
-        ).toBeUndefined();
       } finally {
         await deleteSessionEntry({ agentId: "main", sessionKey: sourceSessionKey, storePath });
       }
@@ -1389,125 +1366,6 @@ describe("codex conversation binding", () => {
     ).rejects.toThrow(error);
     expect(execApprovalsRuntimeMocks.loadExecApprovalsReadOnlyAsync).toHaveBeenCalled();
     expect(request).not.toHaveBeenCalled();
-  });
-
-  it("retires an already-evicted conversation without disturbing its live client siblings", async () => {
-    const identity = { kind: "conversation" as const, bindingId: "binding-evicted" };
-    const client = {
-      request: vi.fn(async () => ({})),
-      addCloseHandler: vi.fn(),
-      addNotificationHandler: vi.fn(),
-      addRequestHandler: vi.fn(),
-    } as unknown as CodexAppServerClient;
-    ensureCodexAppServerClientRuntime(client, { agentDir: tempDir });
-    const releaseEvicted = vi.fn(async (_threadId: string) => undefined);
-    await retainCodexAppServerLiveThread(client, "thread-evicted", releaseEvicted);
-    for (let index = 0; index < 64; index += 1) {
-      await retainCodexAppServerLiveThread(
-        client,
-        `thread-sibling-${index}`,
-        async () => undefined,
-      );
-    }
-    expect(releaseEvicted).toHaveBeenCalledExactlyOnceWith("thread-evicted", undefined, undefined);
-    sharedClientMocks.retainSharedCodexAppServerClientByInstanceId.mockReturnValue({
-      client,
-      release: vi.fn(),
-    });
-    await testCodexAppServerBindingStore.mutate(identity, {
-      kind: "set",
-      binding: {
-        threadId: "thread-evicted",
-        clientId: "client-with-siblings",
-        cwd: tempDir,
-        conversationStartId: "start-evicted",
-      },
-    });
-
-    await denyConversationBinding({
-      kind: "codex-app-server-session",
-      version: 2,
-      bindingId: identity.bindingId,
-      workspaceDir: tempDir,
-      start: { id: "start-evicted" },
-    });
-
-    expect(testCodexAppServerBindingStore.read(identity)).toBeUndefined();
-    await expect(consumeCodexAppServerLiveThread(client, "thread-sibling-0")).resolves.toEqual(
-      expect.objectContaining({ release: expect.any(Function) }),
-    );
-  });
-
-  it("keeps a denied conversation binding when native unsubscribe fails", async () => {
-    const identity = { kind: "conversation" as const, bindingId: "binding-failed-denial" };
-    const request = vi.fn(async () => {
-      throw new Error("native unsubscribe failed");
-    });
-    const closeAndWait = vi.fn(async () => true);
-    sharedClientMocks.retainSharedCodexAppServerClientByInstanceId.mockReturnValue({
-      client: { request, closeAndWait },
-      release: vi.fn(),
-    });
-    await testCodexAppServerBindingStore.mutate(identity, {
-      kind: "set",
-      binding: {
-        threadId: "thread-failed-denial",
-        clientId: "client-failed-denial",
-        cwd: tempDir,
-        conversationStartId: "start-failed-denial",
-      },
-    });
-
-    await expect(
-      denyConversationBinding({
-        kind: "codex-app-server-session",
-        version: 2,
-        bindingId: identity.bindingId,
-        workspaceDir: tempDir,
-        source: {
-          agentId: "main",
-          sessionId: "session-incognito",
-          threadId: "thread-source",
-          sessionKey: "agent:main:dashboard:incognito-native-bind",
-        },
-        start: { id: "start-failed-denial" },
-      }),
-    ).rejects.toThrow("subscription could not be released");
-
-    expect(request).toHaveBeenCalledWith(
-      "thread/unsubscribe",
-      { threadId: "thread-failed-denial" },
-      expect.objectContaining({ timeoutMs: expect.any(Number) }),
-    );
-    expect(testCodexAppServerBindingStore.read(identity)).toMatchObject({
-      threadId: "thread-failed-denial",
-    });
-    expect(closeAndWait).toHaveBeenCalledOnce();
-  });
-
-  it("preserves the live conversation generation when a replacement bind is denied", async () => {
-    const identity = { kind: "conversation" as const, bindingId: "binding-data-1" };
-    await testCodexAppServerBindingStore.mutate(identity, {
-      kind: "set",
-      binding: {
-        threadId: "thread-old",
-        cwd: tempDir,
-        conversationStartId: "start-old",
-      },
-    });
-
-    await denyConversationBinding({
-      kind: "codex-app-server-session",
-      version: 2,
-      bindingId: "binding-data-1",
-      workspaceDir: tempDir,
-      start: { id: "start-new", threadId: "thread-new" },
-    });
-
-    expect(testCodexAppServerBindingStore.read(identity)).toMatchObject({
-      threadId: "thread-old",
-      conversationStartId: "start-old",
-    });
   });
 
   it("rejects attaching a conversation to another session's owned thread", async () => {

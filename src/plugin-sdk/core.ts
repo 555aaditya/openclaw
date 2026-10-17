@@ -742,7 +742,6 @@ export function createChannelPluginBase<TResolvedAccount>(
     ...(params.setupContract ? { setupContract: params.setupContract } : {}),
   } as CreatedChannelPluginBase<TResolvedAccount>;
 }
-/* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */
 
 export type {
   ChannelGatewayContextV2,

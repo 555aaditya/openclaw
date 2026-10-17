@@ -12,7 +12,7 @@ export const activityPolishKeys = {
   unavailable: "agent:main:polish-unavailable",
   initial: "agent:main:polish-initial",
 };
-export const activityPolishPullRequest = {
+const activityPolishPullRequest = {
   owner: "example",
   repo: "notification-service",
   number: 42,

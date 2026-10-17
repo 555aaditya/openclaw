@@ -8,8 +8,6 @@ import { createDirectChatContext } from "../server-chat.agent-events.test-helper
 import { coreGatewayHandlers } from "./core-handlers.js";
 import type { RespondFn } from "./types.js";
 
-const pluginInspection = vi.hoisted(() => vi.fn());
-
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
 
 async function invoke(
@@ -34,27 +32,26 @@ async function invoke(
 }
 
 describe("storage Gateway methods", () => {
-  it.each([
-    ["fixture-storage", "error"],
-    ["filesystem", "unavailable"],
-  ])(
-    "probes unavailable %s without creating roots or activating plugins",
-    async (provider, state) => {
-      const root = path.join(tempDirs.make("openclaw-storage-rpc-"), "missing");
-      const respond = await invoke(
-        "storage.locations.probe",
-        {
-          storage: {
-            locations: { archive: { provider, settings: { path: root }, encryption: "none" } },
+  it("probes unavailable filesystem storage without creating roots", async () => {
+    const root = path.join(tempDirs.make("openclaw-storage-rpc-"), "missing");
+    const respond = await invoke(
+      "storage.locations.probe",
+      {
+        storage: {
+          locations: {
+            archive: { provider: "filesystem", settings: { path: root }, encryption: "none" },
           },
         },
-        { name: "archive" },
-      );
-      expect(respond).toHaveBeenCalledWith(true, expect.objectContaining({ state }), undefined);
-      expect(pluginInspection).not.toHaveBeenCalled();
-      await expect(fs.stat(root)).rejects.toMatchObject({ code: "ENOENT" });
-    },
-  );
+      },
+      { name: "archive" },
+    );
+    expect(respond).toHaveBeenCalledWith(
+      true,
+      expect.objectContaining({ state: "unavailable" }),
+      undefined,
+    );
+    await expect(fs.stat(root)).rejects.toMatchObject({ code: "ENOENT" });
+  });
 
   it.each(["storage.locations.list", "storage.locations.probe"] as const)(
     "%s is available with read scope and rejects unknown request properties",

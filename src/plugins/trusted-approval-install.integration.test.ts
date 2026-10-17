@@ -9,6 +9,7 @@ import {
   resetPluginLoaderTestStateForTest,
   useNoBundledPlugins,
 } from "./loader.test-fixtures.js";
+import { pluginCacheExistsSync } from "./plugin-cache-files.js";
 
 const roots = useAutoCleanupTempDirTracker(afterEach);
 afterEach(() => {
@@ -90,6 +91,10 @@ it.each([
   if (manifest !== undefined) {
     fs.writeFileSync(path.join(source, "openclaw.plugin.json"), manifest);
   }
+  // Bundle discovery can warm the existence cache before native admission.
+  expect(pluginCacheExistsSync(path.join(source, "openclaw.plugin.json"))).toBe(
+    manifest !== undefined,
+  );
   const installed = await installPluginFromPath({ path: source, extensionsDir });
   expect(installed.ok).toBe(accepted);
   expect(fs.existsSync(path.join(extensionsDir, "manifest-probe"))).toBe(accepted);

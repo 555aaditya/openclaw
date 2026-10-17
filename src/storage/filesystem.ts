@@ -10,7 +10,7 @@ import {
 } from "../infra/directory-durability.js";
 import { isMissingPathError } from "../infra/errno.js";
 import { validateStorageKey } from "./keys.js";
-import type { StorageBackend, StorageProvider } from "./types.js";
+import type { StorageBackend } from "./types.js";
 
 function validateSettings(settings: Readonly<Record<string, unknown>>): string | undefined {
   if (typeof settings.path !== "string" || !path.isAbsolute(settings.path)) {
@@ -28,12 +28,22 @@ function ignoreMissingPath(error: unknown): undefined {
   }
 }
 
-export const filesystemStorageProvider: StorageProvider = {
+export const filesystemStorageProvider = {
   id: "filesystem",
   label: "Filesystem",
   validateSettings,
-  describeTarget: (settings) => (typeof settings.path === "string" ? settings.path : undefined),
-  async open({ settings, signal }) {
+  describeTarget: (settings: Readonly<Record<string, unknown>>) =>
+    typeof settings.path === "string" ? settings.path : undefined,
+  async open(
+    this: void,
+    {
+      settings,
+      signal,
+    }: {
+      settings: Readonly<Record<string, unknown>>;
+      signal?: AbortSignal;
+    },
+  ): Promise<StorageBackend> {
     const settingsError = validateSettings(settings);
     if (settingsError || typeof settings.path !== "string") {
       throw new Error(settingsError ?? "Filesystem storage requires a path.");

@@ -3731,7 +3731,6 @@ export const PR_PROTECTED_RUNTIME_TEST_FILES: readonly string[] = [
   "test/plugins/codex-model-catalog.gateway.test.ts",
   "test/plugins/codex-model-runtime-choice.test.ts",
   "test/plugins/codex-session-catalog-naming.test.ts",
-  "test/plugins/crabbox-allocation-authority.gateway.test.ts",
   "test/plugins/native-reasoning-subscription.test.ts",
   "test/plugins/team-reports-http.gateway.test.ts",
   "test/provider-auth-method.openai-siwc.integration.test.ts",

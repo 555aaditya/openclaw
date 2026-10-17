@@ -78,6 +78,7 @@ export const PLUGIN_CAPABILITY_RETIREMENT_RECORD = {
     "openclaw/plugin-sdk/feature-contract.FeatureRequestOptions",
     "openclaw/plugin-sdk/feature-contract.FeatureTransport",
     "openclaw/plugin-sdk/feature-contract.createFeatureClient",
+    "openclaw/plugin-sdk/plugin-entry.PluginConversationBindingResolvedEvent",
     "openclaw/plugin-sdk/plugin-entry.MigrationApplyResult",
     "openclaw/plugin-sdk/plugin-entry.MigrationDetection",
     "openclaw/plugin-sdk/plugin-entry.MigrationItem",
@@ -137,4 +138,4 @@ export const PLUGIN_CAPABILITY_RETIREMENT_RECORD = {
   ],
   releaseNote:
     "Deliberate breaking removal of 31 plugin capabilities and their owned implementations on 2026-10-17. This is not completion of the earlier alias migration: observed external consumers remain and artifact coverage is incomplete. No deprecation window or zero-consumer claim is implied.",
-} satisfies PluginCompatRecord;
+} as const satisfies PluginCompatRecord;

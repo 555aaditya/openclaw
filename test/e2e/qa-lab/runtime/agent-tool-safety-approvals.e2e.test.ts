@@ -14,10 +14,17 @@ import {
   EmbeddedPluginApprovalBroker,
   setEmbeddedPluginApprovalBroker,
 } from "../../../../src/infra/embedded-plugin-approval-broker.js";
-import { resetGlobalHookRunner } from "../../../../src/plugins/hook-runner-global.js";
+import {
+  initializeGlobalHookRunner,
+  resetGlobalHookRunner,
+} from "../../../../src/plugins/hook-runner-global.js";
+import { addTestHook } from "../../../../src/plugins/hooks.test-fixtures.js";
 import { createEmptyPluginRegistry } from "../../../../src/plugins/registry-empty.js";
 import { setActivePluginRegistry } from "../../../../src/plugins/runtime.js";
-import { PluginApprovalResolutions } from "../../../../src/plugins/types.js";
+import {
+  PluginApprovalResolutions,
+  type PluginHookHandlerMap,
+} from "../../../../src/plugins/types.js";
 
 type BrokerEvent = Parameters<Parameters<EmbeddedPluginApprovalBroker["subscribe"]>[0]>[0];
 
@@ -49,34 +56,25 @@ describe("agent tool safety approvals", () => {
     setEmbeddedPluginApprovalBroker(broker);
 
     const registry = createEmptyPluginRegistry();
-    registry.trustedToolPolicies = [
-      {
+    const handler: PluginHookHandlerMap["before_tool_call"] = (event) => ({
+      params: {
+        value: `rewritten:${event.toolCallId}`,
+        marker: "APPROVED-SENTINEL",
+      },
+      requireApproval: {
         pluginId: "qa-safety-policy",
-        pluginName: "QA Safety Policy",
-        source: "test",
-        policy: {
-          id: "approval-gate",
-          description: "Gate sentinel execution",
-          evaluate: (event) => ({
-            params: {
-              value: `rewritten:${event.toolCallId}`,
-              marker: "APPROVED-SENTINEL",
-            },
-            requireApproval: {
-              pluginId: "qa-safety-policy",
-              title: "Approve sentinel tool",
-              description: "Allow this exact sentinel invocation?",
-              severity: "warning",
-              allowedDecisions: [...ALLOWED_DECISIONS],
-              onResolution: (resolution) => {
-                resolutions.push({ toolCallId: event.toolCallId, resolution });
-              },
-            },
-          }),
+        title: "Approve sentinel tool",
+        description: "Allow this exact sentinel invocation?",
+        severity: "warning",
+        allowedDecisions: [...ALLOWED_DECISIONS],
+        onResolution: (resolution) => {
+          resolutions.push({ toolCallId: event.toolCallId, resolution });
         },
       },
-    ];
+    });
+    addTestHook({ registry, pluginId: "qa-safety-policy", hookName: "before_tool_call", handler });
     setActivePluginRegistry(registry);
+    initializeGlobalHookRunner(registry);
 
     execute = vi.fn(async (_toolCallId: string, params: unknown) => ({
       content: [{ type: "text" as const, text: "APPROVED-SENTINEL" }],

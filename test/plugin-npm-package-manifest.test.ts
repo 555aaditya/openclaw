@@ -231,7 +231,7 @@ function writeQaGatewayFixture(id: "qa-lab" | "qa-channel") {
           contracts: {
             tools: ["qa_restart_wait", "qa_restart_unsafe_probe"],
             webSearchProviders: ["qa-lab-search"],
-            workerProviders: ["static-ssh"],
+            webFetchProviders: ["qa-lab-fetch"],
           },
           toolMetadata: { qa_restart_wait: { replaySafe: true } },
         }

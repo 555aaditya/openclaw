@@ -966,13 +966,6 @@ async function startInitializedCodexAppServerClientOnce(
   throw new Error("Managed Codex app-server fallback candidates were exhausted.");
 }
 
-function detachCurrentSharedClient(
-  client: CodexAppServerClient | undefined,
-): client is CodexAppServerClient {
-  const entry = client && getCurrentSharedClientEntry(client);
-  return Boolean(entry && getSharedCodexAppServerClientState().clients.delete(entry.key));
-}
-
 /** Captures the physical client lifetime for passive catalog reads. */
 export function captureSharedCodexAppServerCatalogLifetime(
   client: CodexAppServerClient,
@@ -1032,17 +1025,6 @@ export function captureCodexAppServerClientLifetime(
   };
   assertCurrent();
   return assertCurrent;
-}
-
-export async function clearSharedCodexAppServerClientIfCurrentAndWait(
-  client: CodexAppServerClient | undefined,
-  options?: Parameters<CodexAppServerClient["closeAndWait"]>[0],
-): Promise<boolean> {
-  if (!detachCurrentSharedClient(client)) {
-    return false;
-  }
-  await client.closeAndWait(options);
-  return true;
 }
 
 export async function clearSharedCodexAppServerClientAndWait(

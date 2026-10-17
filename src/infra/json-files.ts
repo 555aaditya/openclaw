@@ -4,7 +4,6 @@ export {
   JsonFileReadError,
   readJson,
   readJsonIfExists,
-  readJsonIfExists as readDurableJsonFile, // Sanctioned domain alias.
   readJsonSync,
   readRootJsonObjectSync,
   tryReadJson,

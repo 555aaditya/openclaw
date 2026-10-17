@@ -228,8 +228,6 @@ describe("resolveEffectiveCompactionMode", () => {
     [{}, "default"],
     [{ mode: "default" }, "default"],
     [{ mode: "safeguard" }, "safeguard"],
-    [{ provider: "deepseek" }, "safeguard"],
-    [{ mode: "default", provider: "deepseek" }, "safeguard"],
   ])("resolves %j to %s", (compaction, expected) => {
     expect(resolveEffectiveCompactionMode(compaction && compactionConfig(compaction))).toBe(
       expected,

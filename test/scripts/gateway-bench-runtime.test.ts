@@ -12,13 +12,17 @@ import {
 } from "../../scripts/lib/gateway-bench-runtime.js";
 import type { OpenClawConfig } from "../../src/config/types.openclaw.js";
 import { startGatewayDiscovery } from "../../src/gateway/server-discovery-runtime.js";
-import { createGatewayPluginRuntimeGeneration } from "../../src/gateway/server-plugin-runtime-generation.js";
 import {
   resolveWideAreaDiscoveryDomain,
   writeWideAreaGatewayZone,
 } from "../../src/infra/widearea-dns.js";
-import { createEmptyPluginRegistry } from "../../src/plugins/registry-empty.js";
 import { useAutoCleanupTempDirTracker } from "../helpers/temp-dir.js";
+
+vi.mock("../../src/infra/tailnet.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/infra/tailnet.js")>()),
+  pickPrimaryTailnetIPv4: vi.fn(() => "100.64.0.10"),
+  pickPrimaryTailnetIPv6: vi.fn(() => undefined),
+}));
 
 vi.mock("../../src/infra/widearea-dns.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/infra/widearea-dns.js")>();
@@ -101,14 +105,21 @@ afterEach(() => {
 describe("gateway benchmark discovery isolation", () => {
   it.each([
     { name: "benchmark fixture", enabled: false },
-    { name: "enabled minimal-discovery control", enabled: true },
+    { name: "explicit wide-area discovery control", enabled: true },
   ])("$name reaches the publication boundary with the expected policy", async ({ enabled }) => {
     const root = tempDirs.make("openclaw-bench-discovery-");
     const configPath = writeGatewayBenchConfig(
       root,
       {
         ...BASE_GATEWAY_BENCH_CONFIG,
-        ...(enabled ? { discovery: { mdns: { mode: "minimal" } } } : {}),
+        ...(enabled
+          ? {
+              discovery: {
+                mdns: { mode: "minimal" },
+                wideArea: { domain: "explicit.example.test" },
+              },
+            }
+          : {}),
       },
       {},
     );
@@ -131,43 +142,33 @@ describe("gateway benchmark discovery isolation", () => {
       vi.stubEnv(key, childEnv[key]);
     }
     const cfgAtStart: OpenClawConfig = JSON.parse(readFileSync(configPath, "utf8"));
-    const stop = vi.fn();
-    const advertise = vi.fn(async () => ({ stop }));
-    const pluginRegistry = createEmptyPluginRegistry();
-    pluginRegistry.gatewayDiscoveryServices.push({
-      pluginId: "fixture-discovery",
-      source: "test",
-      id: "fixture-discovery",
-      service: { id: "fixture-discovery", advertise },
-    });
-
     const discovery = await startGatewayDiscovery({
       machineDisplayName: "Benchmark fixture",
       discovery: cfgAtStart.discovery,
-      pluginRuntimeClaim: createGatewayPluginRuntimeGeneration({
-        getServices: () => null,
-        setServices: () => {},
-      }).currentClaim(),
       port: 18789,
       gatewayTls: { enabled: false },
       gatewayDirectReachable: false,
       tailscaleMode: "off",
       logDiscovery: { info: vi.fn(), warn: vi.fn() },
-      gatewayDiscoveryServices: pluginRegistry.gatewayDiscoveryServices,
     });
     await discovery.stop();
 
     expect(childEnv.OPENCLAW_WIDE_AREA_DOMAIN).toBeUndefined();
-    expect(resolveWideAreaDiscoveryDomain).not.toHaveBeenCalled();
-    expect(writeWideAreaGatewayZone).not.toHaveBeenCalled();
     if (enabled) {
-      expect(advertise).toHaveBeenCalledExactlyOnceWith(
-        expect.objectContaining({ gatewayDirectReachable: false, minimal: true }),
+      expect(resolveWideAreaDiscoveryDomain).toHaveBeenCalledExactlyOnceWith({
+        configDomain: "explicit.example.test",
+      });
+      expect(writeWideAreaGatewayZone).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          domain: "explicit.example.test.",
+          gatewayDirectReachable: false,
+          minimal: true,
+          tailnetIPv4: "100.64.0.10",
+        }),
       );
-      expect(stop).toHaveBeenCalledOnce();
     } else {
-      expect(advertise).not.toHaveBeenCalled();
-      expect(stop).not.toHaveBeenCalled();
+      expect(resolveWideAreaDiscoveryDomain).not.toHaveBeenCalled();
+      expect(writeWideAreaGatewayZone).not.toHaveBeenCalled();
     }
   });
 });

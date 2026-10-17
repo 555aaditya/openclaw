@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../test/helpers/promise.js";
 import type { GatewayBrowserClient } from "../api/gateway.ts";
-import { clearLinkPreviews, loadLinkPreview } from "./link-preview.ts";
+import { loadLinkPreview } from "./link-preview.ts";
 
 function fixture() {
   const request = vi.fn().mockResolvedValue({ title: "Field guide" });
@@ -11,7 +11,7 @@ function fixture() {
 afterEach(() => vi.useRealTimers());
 
 describe("shared public link metadata", () => {
-  it("shares browser-card and hover subscribers without sharing navigation fragments", async () => {
+  it("shares subscribers without sharing navigation fragments", async () => {
     const { client, request } = fixture();
     const pending = createDeferred<unknown>();
     request.mockReturnValue(pending.promise);
@@ -31,7 +31,7 @@ describe("shared public link metadata", () => {
     expect(request.mock.calls[0]?.[1]).toEqual({ url: "https://example.com/page" });
   });
 
-  it.each(["connectionGeneration", "recoveryScope", "policy"])(
+  it.each(["connectionGeneration", "recoveryScope"])(
     "retires late replies after %s changes",
     async (change) => {
       const { client, request, state } = fixture();
@@ -40,10 +40,8 @@ describe("shared public link metadata", () => {
       const old = loadLinkPreview(client, "https://example.com/page");
       if (change === "connectionGeneration") {
         state.connectionGeneration++;
-      } else if (change === "recoveryScope") {
-        state.recoveryScope = "new";
       } else {
-        clearLinkPreviews(client);
+        state.recoveryScope = "new";
       }
       expect(await loadLinkPreview(client, "https://example.com/page")).toMatchObject({
         title: "Field guide",

@@ -411,15 +411,39 @@ it.each(["regular", "boundary"] as const)(
       regular: () => readPluginCacheJsonFile(filePath),
       boundary: () => readFile(root, "catalog.json"),
     };
-    expect(readers[firstPolicy]().ok).toBe(false);
+    const initial = readers[firstPolicy]();
+    assert(!initial.ok);
+    const originalError = "failure" in initial ? initial.failure.error : initial.error;
+    expect(originalError).toMatchObject({ code: "ENOENT" });
     fs.writeFileSync(filePath, "{}");
-    expect(readers.regular().ok).toBe(false);
-    expect(readers.boundary().ok).toBe(false);
+    const regular = readers.regular();
+    const boundary = readers.boundary();
+    assert(!regular.ok);
+    assert(!boundary.ok);
+    expect(regular.error).toBe(originalError);
+    expect(boundary.failure.error).toBe(originalError);
     withPluginCache(createPluginCache(), () => {
       expect(readers.regular().ok).toBe(true);
       expect(readers.boundary().ok).toBe(true);
     });
     expect(readers[firstPolicy]().ok).toBe(false);
+  },
+);
+
+it.each(["regular", "boundary"] as const)(
+  "does not treat an existence probe as proven absence for the %s reader",
+  (policy) => {
+    const { root, file } = fixture({ "catalog.json": "{}" });
+    const filePath = file("catalog.json");
+    const exists = vi.spyOn(fs, "existsSync").mockReturnValue(false);
+    try {
+      expect(pluginCacheExistsSync(filePath)).toBe(false);
+    } finally {
+      exists.mockRestore();
+    }
+    const result =
+      policy === "regular" ? readPluginCacheJsonFile(filePath) : readFile(root, "catalog.json");
+    expect(result.ok).toBe(true);
   },
 );
 

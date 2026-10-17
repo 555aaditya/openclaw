@@ -12,7 +12,7 @@ type CanvasNodeDescriptor = Pick<
 
 export const CANVAS_PRESENT_COMMAND = "canvas.present";
 
-export function isEligibleCanvasNode(node: CanvasNodeDescriptor): boolean {
+function isEligibleCanvasNode(node: CanvasNodeDescriptor): boolean {
   const commands = node.invocableCommands ?? node.commands ?? [];
   return (
     /^macos(?:\s|$)/i.test(node.platform ?? "") &&

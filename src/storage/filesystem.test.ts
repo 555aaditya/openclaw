@@ -33,11 +33,7 @@ async function listKeys(backend: StorageBackend, prefix: string): Promise<string
 
 async function openBackend(directory: string): Promise<StorageBackend> {
   return await filesystemStorageProvider.open({
-    locationName: "archive",
     settings: { path: directory },
-    resolveSecret: async () => {
-      throw new Error("Filesystem storage has no credentials");
-    },
   });
 }
 

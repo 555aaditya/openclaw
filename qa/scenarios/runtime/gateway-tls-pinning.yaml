@@ -9,19 +9,18 @@ scenario:
       - gateway.tls-pinning
     secondary:
       - gateway.config-reload-hot-apply
-  objective: Verify the real Gateway TLS listener and public Node client enforce the advertised certificate fingerprint.
+  objective: Verify the real Gateway TLS listener and public Node client enforce the accepted certificate fingerprint.
   successCriteria:
     - A real loopback Gateway starts with generated TLS certificate material.
-    - The Gateway-advertised SHA-256 fingerprint matches the certificate presented by the live listener.
+    - The Gateway runtime's accepted SHA-256 fingerprint matches the certificate presented by the live listener.
     - The public GatewayClient completes hello and a health request with the exact pin.
     - A wrong pin fails before hello completes.
     - Supplying a TLS pin to a plaintext Gateway URL fails with an explicit transport-policy error.
     - Same-path renewal updates existing and future HTTPS siblings while a pinned connection stays open.
     - Atomic certificate symlink retargeting is detected while previous target files remain present.
-    - Incomplete pairs retain serving and advertised material; reload off defers renewal until re-enabled.
+    - Incomplete pairs retain serving and accepted enrollment material; reload off defers renewal until re-enabled.
   docsRefs:
     - docs/gateway/index.md
-    - docs/gateway/discovery.md
     - docs/gateway/protocol.md
   codeRefs:
     - src/infra/tls/gateway.ts
@@ -33,7 +32,7 @@ scenario:
     kind: script
     parallelSafe: true
     path: test/e2e/qa-lab/runtime/gateway-tls-pinning.ts
-    summary: Starts a real TLS Gateway, renews its accepted certificate paths, and verifies retained connections, sibling listeners, discovery, reload-off policy, and public client pinning.
+    summary: Starts a real TLS Gateway, renews its accepted certificate paths, and verifies retained connections, sibling listeners, accepted enrollment fingerprints, reload-off policy, and public client pinning.
     args:
       - --artifact-base
       - ${outputDir}

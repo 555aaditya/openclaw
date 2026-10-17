@@ -235,14 +235,13 @@ describe("dashboard tool", () => {
     const widget = (
       name: string,
       contentKind: BoardSnapshot["widgets"][number]["contentKind"],
-      contentOwner: "html" | "mcp-app" | "plugin" | "registered",
+      contentOwner: NonNullable<BoardSnapshot["widgets"][number]["contentOwner"]>,
       instanceId?: string,
     ): BoardSnapshot["widgets"][number] => ({
       name,
       tabId: "main",
       contentKind,
       contentOwner,
-      ...(contentOwner === "registered" ? { registeredContentKind: "diagram" } : {}),
       ...(contentKind === "plugin" ? { pluginKind: `${name}:card` } : {}),
       ...(instanceId ? { instanceId } : {}),
       sizeW: 6,
@@ -256,7 +255,6 @@ describe("dashboard tool", () => {
       widgets: [
         widget("custom-html", "html", "html", "html-instance"),
         widget("trusted-plugin", "plugin", "plugin", "incidental-instance"),
-        widget("registered-source", "plugin", "registered"),
         widget("mcp-app", "mcp-app", "mcp-app", "mcp-instance"),
       ],
     };
@@ -272,23 +270,17 @@ describe("dashboard tool", () => {
       widgets: [
         { name: "custom-html", contentOwner: "html" },
         { name: "trusted-plugin", contentOwner: "plugin" },
-        {
-          name: "registered-source",
-          contentOwner: "registered",
-          registeredContentKind: "diagram",
-        },
         { name: "mcp-app", contentOwner: "mcp-app" },
       ],
       contentUpdatePaths: {
         html: expect.stringMatching(/authoring.*tool catalog.*same name/i),
         plugin: expect.stringMatching(/widget_put.*same name.*pluginKind/i),
-        registered: expect.stringMatching(/authoring.*tool catalog.*same source kind/i),
         "mcp-app": expect.stringMatching(/MCP app/i),
       },
     });
     expect(result.content[0]).toMatchObject({
       type: "text",
-      text: expect.stringContaining('"contentOwner":"registered"'),
+      text: expect.stringContaining('"contentOwner":"plugin"'),
     });
     expect(JSON.stringify(result.details)).not.toMatch(/show_widget|widget_code|\bpin\b/);
   });

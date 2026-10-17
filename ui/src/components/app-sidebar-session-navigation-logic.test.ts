@@ -34,7 +34,6 @@ it("does not manufacture personal pins from plugin defaults", () => {
     buildReconciledSidebarZone({
       sidebarEntries,
       pluginNavigation,
-      pluginTabs: undefined,
       rows: [],
     });
   const initial = reconcile(["route:usage"]);

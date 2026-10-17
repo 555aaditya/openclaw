@@ -16,7 +16,7 @@ const COMPILED_CACHE_MAX_BYTES = 512 * 1024 * 1024;
 const COMPILED_CACHE_VERSION = 3;
 export const MEMORY_WIKI_DASHBOARD_ITEM_LIMIT = 2_500;
 
-export type MemoryWikiCompiledDigestClaim = {
+type MemoryWikiCompiledDigestClaim = {
   id?: string;
   text: string;
   status: string;

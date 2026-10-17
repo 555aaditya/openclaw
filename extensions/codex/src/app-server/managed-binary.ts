@@ -591,7 +591,7 @@ function resolveManagedCodexAppServerCommandCandidates(
     : [...packageCommandPaths, ...desktopCommandPaths];
 }
 
-export function resolveManagedCodexPackageEntrypoint(pluginRoot: string): string | undefined {
+function resolveManagedCodexPackageEntrypoint(pluginRoot: string): string | undefined {
   try {
     // Use the pinned package's official launcher on every OS. It owns platform
     // selection, manager environment markers, signal forwarding, and exit status.

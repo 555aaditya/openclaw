@@ -125,7 +125,6 @@ export type {
 
 export type {
   PluginConversationBinding,
-  PluginConversationBindingResolvedEvent,
   PluginConversationBindingRequestParams,
   PluginConversationBindingRequestResult,
 } from "../plugins/conversation-binding.types.js";

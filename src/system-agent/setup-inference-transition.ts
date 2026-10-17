@@ -51,7 +51,7 @@ export function setupConfigPatchConflicts(
   );
 }
 
-export function restoreSetupInferenceConfig(
+function restoreSetupInferenceConfig(
   current: OpenClawConfig,
   before: OpenClawConfig,
   after: OpenClawConfig,

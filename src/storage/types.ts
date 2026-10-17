@@ -1,22 +1,3 @@
-/** Plugin-provided transport for one kind of storage location. */
-export type StorageProvider = {
-  id: string;
-  label: string;
-  /** Return a user-facing settings error, or undefined when valid. */
-  validateSettings?: (settings: Readonly<Record<string, unknown>>) => string | undefined;
-  /** Pure, synchronous, non-secret display target from settings; no I/O or secret resolution. */
-  describeTarget?: (settings: Readonly<Record<string, unknown>>) => string | undefined;
-  open: (params: StorageProviderOpenParams) => Promise<StorageBackend>;
-};
-
-export type StorageProviderOpenParams = {
-  locationName: string;
-  settings: Readonly<Record<string, unknown>>;
-  /** Resolves a SecretRef through the core secret owner. */
-  resolveSecret: (ref: unknown) => Promise<string>;
-  signal?: AbortSignal;
-};
-
 export type StorageObjectInfo = { key: string; sizeBytes: number; modifiedAt?: number };
 
 export type StorageBackend = {

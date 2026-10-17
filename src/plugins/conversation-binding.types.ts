@@ -43,23 +43,3 @@ export type PluginConversationBindingRequestResult =
       status: "error";
       message: string;
     };
-
-/** Event emitted after a pending conversation binding request is resolved. */
-export type PluginConversationBindingResolvedEvent = {
-  status: "approved" | "denied";
-  binding?: PluginConversationBinding;
-  decision: PluginConversationBindingResolutionDecision;
-  request: {
-    summary?: string;
-    detachHint?: string;
-    data?: Record<string, unknown>;
-    requestedBySenderId?: string;
-    conversation: {
-      channel: string;
-      accountId: string;
-      conversationId: string;
-      parentConversationId?: string;
-      threadId?: string | number;
-    };
-  };
-};

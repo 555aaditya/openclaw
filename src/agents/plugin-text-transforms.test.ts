@@ -10,7 +10,6 @@ import {
 import { describe, expect, it } from "vitest";
 import {
   applyPluginTextReplacements,
-  mergePluginTextTransforms,
   wrapStreamFnTextTransforms,
 } from "./plugin-text-transforms.js";
 
@@ -50,25 +49,6 @@ function makeAssistantToolMessage(toolCall: ToolCall): AssistantMessage {
 }
 
 describe("plugin text transforms", () => {
-  it("merges registered transform groups in order", () => {
-    const merged = mergePluginTextTransforms(
-      { input: [{ from: /red basket/g, to: "blue basket" }] },
-      { output: [{ from: /blue basket/g, to: "red basket" }] },
-      { input: [{ from: /paper ticket/g, to: "digital ticket" }] },
-    );
-
-    expect(merged).toStrictEqual({
-      input: [
-        { from: /red basket/g, to: "blue basket" },
-        { from: /paper ticket/g, to: "digital ticket" },
-      ],
-      output: [{ from: /blue basket/g, to: "red basket" }],
-    });
-    expect(applyPluginTextReplacements("red basket paper ticket", merged?.input)).toBe(
-      "blue basket digital ticket",
-    );
-  });
-
   it("applies ordered string and regexp replacements", () => {
     expect(
       applyPluginTextReplacements("paper ticket on the left shelf", [

@@ -692,4 +692,3 @@ describe("host-hook fixture plugin contract", () => {
     expect(handlerCalls).toEqual(["resume-text", "resume"]);
   });
 });
-/* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */

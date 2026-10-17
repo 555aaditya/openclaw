@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
-// Setup inference verification owns the shared verify/repair loop used by onboarding imports.
+// Setup inference verification owns the verify/repair loop used by model/auth onboarding.
 import { resolveAmbientOwnerAgentId } from "../agents/agent-scope-config.js";
 import {
   resolveAgentDir,
@@ -11,11 +11,9 @@ import { loadAuthProfileStoreWithoutExternalProfilesAsync } from "../agents/auth
 import type { AuthProfileCredential } from "../agents/auth-profiles/types.js";
 import { splitTrailingAuthProfile } from "../agents/model-ref-profile.js";
 import { resolveDefaultModelForAgent } from "../agents/model-selection-config.js";
-import { resolveOnboardingSetupTarget } from "../commands/onboard-agent-target.js";
 import type { OnboardOptions } from "../commands/onboard-types.js";
 import { applyImplicitAgentRosterDefaults } from "../config/implicit-agent-roster.js";
 import { materializeRuntimeConfig } from "../config/materialize.js";
-import { applyMergePatch, createMergePatch } from "../config/merge-patch.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { withConsoleSubsystemsSuppressed } from "../logging/console.js";
 import type { RuntimeEnv } from "../runtime.js";
@@ -34,70 +32,6 @@ import type { SystemAgentVerifiedInferenceBinding } from "../system-agent/verifi
 import { t } from "./i18n/index.js";
 import type { WizardPrompter } from "./prompts.js";
 import { runSetupModelAuthStep, type SetupModelAuthCandidate } from "./setup.model-auth.js";
-
-export async function completeSetupModelAuth(params: {
-  config: OpenClawConfig;
-  baseConfig: OpenClawConfig;
-  stagedCandidate?: SetupModelAuthCandidate;
-  opts: OnboardOptions;
-  prompter: WizardPrompter;
-  runtime: RuntimeEnv;
-  keepExistingModelConfig: boolean;
-  configTarget: SetupInferenceConfigTarget;
-}): Promise<{ config: OpenClawConfig; verified: boolean; persisted: boolean }> {
-  const { stagedCandidate, opts, baseConfig } = params;
-  const replacementTarget = resolveOnboardingSetupTarget(baseConfig);
-  let replacesCredential = false;
-  for (const { credential } of stagedCandidate?.authProfiles ?? []) {
-    if (
-      await isSetupCredentialReplacement({
-        provider: credential.provider,
-        baseConfig,
-        agentDir: replacementTarget.agentDir,
-      })
-    ) {
-      replacesCredential = true;
-      break;
-    }
-  }
-  // The keep-model choice predates auth setup, distinguishing an imported route
-  // from one selected normally after the import.
-  if (
-    replacesCredential ||
-    (opts.nonInteractive !== true &&
-      resolveAgentEffectiveModelPrimary(
-        params.config,
-        resolveAmbientOwnerAgentId(params.config),
-      ) !== undefined &&
-      opts.authChoice !== "skip")
-  ) {
-    const verification = await offerLiveModelVerification({
-      config: params.config,
-      baseConfig,
-      ...(stagedCandidate
-        ? { initialCandidate: { ...stagedCandidate, config: params.config } }
-        : {}),
-      opts,
-      prompter: params.prompter,
-      runtime: params.runtime,
-      configTarget: params.configTarget,
-      required: false,
-    });
-    let config = verification.config;
-    if (!verification.verified && verification.attempted && stagedCandidate) {
-      // Keep gateway/roster decisions while removing the unverified model/auth delta.
-      const inversePatch = createMergePatch(stagedCandidate.config, baseConfig);
-      // SAFETY: The inverse patch comes from typed configs and restores their model/auth fields.
-      config = applyMergePatch(config, inversePatch) as OpenClawConfig;
-    } else if (!verification.verified && stagedCandidate) {
-      // Declining an optional probe still saves the user's first sign-in.
-      await stagedCandidate.persistAuthProfiles();
-    }
-    return { config, verified: verification.verified, persisted: verification.persisted };
-  }
-  await stagedCandidate?.persistAuthProfiles();
-  return { config: params.config, verified: false, persisted: false };
-}
 
 export async function offerLiveModelVerification(params: {
   config: OpenClawConfig;

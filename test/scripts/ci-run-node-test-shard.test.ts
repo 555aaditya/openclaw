@@ -1030,10 +1030,7 @@ describe("scripts/ci-run-node-test-shard.mts", () => {
     {
       config: "test/vitest/vitest.gateway-methods.config.ts",
       ownerIncludePatterns: ["src/gateway/server-methods/**/*.test.ts"],
-      targets: [
-        "test/plugins/crabbox-allocation-authority.gateway.test.ts",
-        "test/plugins/team-reports-http.gateway.test.ts",
-      ],
+      targets: ["test/plugins/team-reports-http.gateway.test.ts"],
       otherOwner: "src/gateway/server-methods/transcripts.test.ts",
     },
   ])("admits the complete $config owner without changing adjacent ownership", (row) => {

@@ -71,15 +71,6 @@ export function buildPluginAgentTurnPrepareContext(params: {
   };
 }
 
-// Shared normalization keeps all host-hook registration surfaces consistent.
-export function normalizeHostHookString(value: unknown): string {
-  return typeof value === "string" ? normalizePluginHostHookId(value) : "";
-}
-
-export function normalizeOptionalHostHookString(value: unknown): string | undefined {
-  return value === undefined ? undefined : normalizeHostHookString(value);
-}
-
 export function normalizeHostHookStringList(value: unknown): string[] | undefined | null {
   if (value === undefined) {
     return undefined;
@@ -89,7 +80,7 @@ export function normalizeHostHookStringList(value: unknown): string[] | undefine
   }
   const normalized: string[] = [];
   for (const item of value) {
-    const text = normalizeOptionalHostHookString(item);
+    const text = typeof item === "string" ? item.trim() : "";
     if (!text) {
       return null;
     }

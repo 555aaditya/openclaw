@@ -6,24 +6,10 @@ import { isRecord } from "@openclaw/normalization-core/record-coerce";
  */
 import type { AssistantMessage, AssistantMessageEvent } from "../llm/types.js";
 import { mapAssistantMessageStream } from "../llm/utils/stream-wrapper.js";
-import type { PluginTextReplacement, PluginTextTransforms } from "../plugins/cli-backend.types.js";
+import type { PluginTextReplacement } from "../plugins/cli-backend.types.js";
 import type { StreamFn } from "./runtime/index.js";
 import type { MutableAssistantMessageEventStream } from "./stream-compat.js";
 import { createStreamIteratorWrapper } from "./stream-iterator-wrapper.js";
-
-export function mergePluginTextTransforms(
-  ...transforms: Array<PluginTextTransforms | undefined>
-): PluginTextTransforms | undefined {
-  const input = transforms.flatMap((entry) => entry?.input ?? []);
-  const output = transforms.flatMap((entry) => entry?.output ?? []);
-  if (input.length === 0 && output.length === 0) {
-    return undefined;
-  }
-  return {
-    ...(input.length > 0 ? { input } : {}),
-    ...(output.length > 0 ? { output } : {}),
-  };
-}
 
 export function applyPluginTextReplacements(
   text: string,

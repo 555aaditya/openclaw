@@ -139,7 +139,6 @@ import { resolveCodexAppServerSpawnIdentity } from "./spawn-identity.js";
 let listCodexAppServerModels: typeof import("./models.js").listCodexAppServerModels;
 let clearSharedCodexAppServerClientAndWait: typeof import("./shared-client.js").clearSharedCodexAppServerClientAndWait;
 let clearSharedCodexAppServerClientIfCurrentAndUnclaimed: typeof import("./shared-client.js").clearSharedCodexAppServerClientIfCurrentAndUnclaimed;
-let clearSharedCodexAppServerClientIfCurrentAndWait: typeof import("./shared-client.js").clearSharedCodexAppServerClientIfCurrentAndWait;
 let createIsolatedCodexAppServerClient: typeof import("./shared-client.js").createIsolatedCodexAppServerClient;
 let getLeasedSharedCodexAppServerClient: typeof import("./shared-client.js").getLeasedSharedCodexAppServerClient;
 let retainSharedCodexAppServerClientIfCurrent: typeof import("./shared-client.js").retainSharedCodexAppServerClientIfCurrent;
@@ -273,7 +272,6 @@ describe("shared Codex app-server client", () => {
     ({
       clearSharedCodexAppServerClientAndWait,
       clearSharedCodexAppServerClientIfCurrentAndUnclaimed,
-      clearSharedCodexAppServerClientIfCurrentAndWait,
       createIsolatedCodexAppServerClient,
       getLeasedSharedCodexAppServerClient,
       retainSharedCodexAppServerClientIfCurrent,
@@ -2430,40 +2428,6 @@ describe("shared Codex app-server client", () => {
     } finally {
       await client.closeAndWait();
     }
-  });
-
-  it("waits only for the shared client that is still current", async () => {
-    const first = createClientHarness();
-    const second = createClientHarness();
-    vi.spyOn(CodexAppServerClient, "start")
-      .mockResolvedValueOnce(first.client)
-      .mockResolvedValueOnce(second.client);
-    const firstCloseAndWait = vi.spyOn(first.client, "closeAndWait");
-    const secondCloseAndWait = vi.spyOn(second.client, "closeAndWait");
-
-    const firstList = listCodexAppServerModels({
-      timeoutMs: 1000,
-      agentDir: "/tmp/openclaw-agent-one",
-    });
-    await completeModelList(first, firstList);
-
-    const secondList = listCodexAppServerModels({
-      timeoutMs: 1000,
-      agentDir: "/tmp/openclaw-agent-two",
-    });
-    await completeModelList(second, secondList);
-
-    await expect(
-      clearSharedCodexAppServerClientIfCurrentAndWait(first.client, {
-        exitTimeoutMs: 25,
-        forceKillDelayMs: 5,
-      }),
-    ).resolves.toBe(true);
-
-    expect(firstCloseAndWait).toHaveBeenCalledTimes(1);
-    expect(secondCloseAndWait).not.toHaveBeenCalled();
-    expect(first.process.stdin.destroyed).toBe(true);
-    expect(second.process.stdin.destroyed).toBe(false);
   });
 
   it("uses a fresh websocket Authorization header after shared-client token rotation", async () => {

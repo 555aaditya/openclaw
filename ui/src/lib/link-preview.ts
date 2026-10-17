@@ -15,11 +15,11 @@ type PreviewCache = {
   recoveryScope: string;
   entries: Map<string, Entry>;
 };
-// Browser cards and hovercards share one bounded projection of the Gateway's
+// Browser cards share one bounded projection of the Gateway's
 // anonymous metadata cache. A reconnect cannot reuse an old authority's flight.
 const previews = new WeakMap<GatewayBrowserClient, PreviewCache>();
 
-export function clearLinkPreviews(client: GatewayBrowserClient): void {
+function clearLinkPreviews(client: GatewayBrowserClient): void {
   for (const entry of previews.get(client)?.entries.values() ?? []) {
     entry.controller.abort();
   }

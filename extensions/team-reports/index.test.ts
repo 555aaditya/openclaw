@@ -231,21 +231,8 @@ describe("Team Reports registration", () => {
     },
   );
 
-  it("exposes reports through the authenticated tab, read methods, and admin generation method", () => {
+  it("exposes reports through the authenticated route, read methods, and admin generation method", () => {
     const { captured, services, routes, methods } = captureReports();
-    expect(captured.controlUiDescriptors).toEqual([
-      {
-        surface: "tab",
-        id: "team-reports",
-        label: "Reports",
-        slug: "reports",
-        description: "Team activity reports from GitHub and Discord.",
-        icon: "chart",
-        group: "control",
-        requiredScopes: ["operator.read"],
-        path: "/team/activity/",
-      },
-    ]);
     expect(routes).toHaveLength(1);
     expect(routes[0]).toMatchObject({
       path: "/team/activity",

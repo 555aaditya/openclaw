@@ -18,7 +18,7 @@ import { resolveUserPath } from "../utils.js";
 import { t } from "./i18n/index.js";
 import { runWizardWithPromptNavigation } from "./navigation-prompter.js";
 import type { WizardPrompter } from "./prompts.js";
-import { completeSetupModelAuth } from "./setup.inference-verification.js";
+import { completeSetupModelAuth } from "./setup.model-auth-completion.js";
 import { runSetupModelAuthStep, type SetupModelAuthCandidate } from "./setup.model-auth.js";
 import { resolveSetupSecretInputString } from "./setup.secret-input.js";
 import {
@@ -454,7 +454,6 @@ async function runSetupWizardOnce(
     opts,
     prompter,
     runtime,
-    keepExistingModelConfig,
     configTarget: createWizardInferenceConfigTarget(commitSetupConfigFile),
   });
   nextConfig = modelAuth.config;

@@ -218,7 +218,6 @@ function trackSharedClient(cleanups: Cleanup[]) {
     const client = await sharedClients.getLeasedSharedCodexAppServerClient(options);
     if (client !== current) {
       cleanups.push(async () => {
-        await sharedClients.clearSharedCodexAppServerClientIfCurrentAndWait(client);
         await closeNativeClient(client);
       });
       current = client;

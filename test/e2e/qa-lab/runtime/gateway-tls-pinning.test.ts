@@ -36,15 +36,15 @@ describe("Gateway TLS pinning evidence", () => {
     const proof = JSON.parse(
       await fs.readFile(path.join(artifactBase, "gateway-tls-pinning-summary.json"), "utf8"),
     ) as {
-      advertisedFingerprint: string;
+      acceptedFingerprint: string;
       cleartextMismatch: string;
       healthResponded: boolean;
       peerFingerprint: string;
       wrongPinFailure: string;
       wrongPinHelloObserved: boolean;
     };
-    expect(proof.advertisedFingerprint).toMatch(/^[a-f0-9]{64}$/u);
-    expect(proof.peerFingerprint).toBe(proof.advertisedFingerprint);
+    expect(proof.acceptedFingerprint).toMatch(/^[a-f0-9]{64}$/u);
+    expect(proof.peerFingerprint).toBe(proof.acceptedFingerprint);
     expect(proof.healthResponded).toBe(true);
     expect(proof.wrongPinFailure).toMatch(/fingerprint mismatch/iu);
     expect(proof.wrongPinHelloObserved).toBe(false);

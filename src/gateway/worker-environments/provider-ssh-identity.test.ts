@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import type { WorkerSshIdentity, WorkerSshIdentityRequest } from "../../plugins/types.js";
+import type { WorkerProvider, WorkerSshIdentity } from "../../plugins/types.js";
 import { createDeferredCore } from "../../shared/deferred.js";
 import { resolveWorkerSshIdentity } from "./identity.js";
 import * as support from "./service.test-support.js";
 import { createWorkerTunnelManager } from "./tunnel.js";
 import { fakeRunner, success } from "./tunnel.test-support.js";
 
-type ObservedIdentityRequest = WorkerSshIdentityRequest & { assertCurrent?: () => void };
+type ObservedIdentityRequest = Parameters<NonNullable<WorkerProvider["resolveSshIdentity"]>>[0];
 
 describe("worker SSH identity invocation lifetime", () => {
   support.setupWorkerEnvironmentServiceSuite();

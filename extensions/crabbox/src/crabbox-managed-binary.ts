@@ -5,10 +5,8 @@ import type { root } from "openclaw/plugin-sdk/file-access-runtime";
 import type { SpawnResult } from "openclaw/plugin-sdk/process-runtime";
 import { resolveStateDir } from "openclaw/plugin-sdk/state-paths";
 import { runCrabboxProcess } from "./crabbox-process.js";
-import { crabboxExecutionError, type CrabboxCommandRunner } from "./crabbox-worker-command.js";
 
-export const CRABBOX_MIN_VERSION = "0.77.0";
-export const CRABBOX_NONBLOCKING_CAPTURE_VERSION = "0.79.0";
+const CRABBOX_MIN_VERSION = "0.77.0";
 const RELEASE_URL = `https://github.com/openclaw/crabbox/releases/download/v${CRABBOX_MIN_VERSION}`;
 const MAX_ARCHIVE_BYTES = 128 * 1024 * 1024;
 // Gateway startup contention can delay an otherwise healthy executable probe.
@@ -16,14 +14,16 @@ const VERSION_TIMEOUT_MS = 30_000;
 const DOWNLOAD_IDLE_TIMEOUT_MS = 30_000;
 const DOWNLOAD_TOTAL_TIMEOUT_MS = 10 * 60_000;
 
+type CrabboxCommandRunner = typeof runCrabboxProcess;
+
 export type CrabboxBinary = { binary: string; version: string };
 
 type CrabboxVersionProbe =
   | { status: "supported"; version: string }
   | { status: "outdated"; version: string }
-  | { status: "indeterminate"; reason: string };
+  | { status: "indeterminate" };
 
-export function isCrabboxVersionAtLeast(version: string, minimum: string): boolean {
+function isCrabboxVersionAtLeast(version: string, minimum: string): boolean {
   const [currentMatch, minimumMatch] = [version, minimum].map((value) =>
     /^(\d+)\.(\d+)\.(\d+)(-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u.exec(value),
   );
@@ -39,7 +39,7 @@ export function isCrabboxVersionAtLeast(version: string, minimum: string): boole
   return difference === -1 ? !currentMatch[4] : current[difference]! > floor[difference]!;
 }
 
-export async function probeCrabboxVersion(
+async function probeCrabboxVersion(
   binary: string,
   runCommand: CrabboxCommandRunner = runCrabboxProcess,
   signal?: AbortSignal,
@@ -53,34 +53,24 @@ export async function probeCrabboxVersion(
       timeoutMs: VERSION_TIMEOUT_MS,
       ...(signal ? { signal } : {}),
     });
-  } catch (error) {
+  } catch {
     signal?.throwIfAborted();
-    return {
-      status: "indeterminate",
-      reason: crabboxExecutionError("version command", error).message,
-    };
+    return { status: "indeterminate" };
   }
   signal?.throwIfAborted();
   if (result.termination !== "exit" || result.code !== 0 || result.outputLimitExceeded) {
-    return {
-      status: "indeterminate",
-      reason: result.outputLimitExceeded
-        ? "version output exceeded 64 KiB"
-        : result.termination === "timeout"
-          ? `version command timed out after ${VERSION_TIMEOUT_MS} ms`
-          : `version command failed (${result.termination}, code ${result.code ?? "unknown"})`,
-    };
+    return { status: "indeterminate" };
   }
   const match =
     /(?:^|\s)v?((\d+)\.(\d+)\.(\d+)(-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)(?:\s|$)/u.exec(
       `${result.stdout}\n${result.stderr}`,
     );
   if (!match) {
-    return { status: "indeterminate", reason: "version output was not recognized" };
+    return { status: "indeterminate" };
   }
   const current = [Number(match[2]), Number(match[3]), Number(match[4])];
   if (current.some((part) => !Number.isSafeInteger(part))) {
-    return { status: "indeterminate", reason: "version output was not recognized" };
+    return { status: "indeterminate" };
   }
   const supported = isCrabboxVersionAtLeast(match[1]!, CRABBOX_MIN_VERSION);
   return { status: supported ? "supported" : "outdated", version: match[1]! };
@@ -101,7 +91,7 @@ function releaseTarget() {
   };
 }
 
-export function resolveManagedCrabboxBinaryPath(env: NodeJS.ProcessEnv = process.env): string {
+function resolveManagedCrabboxBinaryPath(env: NodeJS.ProcessEnv = process.env): string {
   const target = releaseTarget();
   return path.join(
     resolveStateDir(env),
@@ -186,7 +176,7 @@ async function probeInstallation(
   return result.status === "supported" ? { binary, version: result.version } : undefined;
 }
 
-export async function findManagedCrabboxBinary(
+async function findManagedCrabboxBinary(
   params: {
     env?: NodeJS.ProcessEnv;
     runCommand?: CrabboxCommandRunner;

@@ -76,7 +76,7 @@ export async function externalSessionFixture(state: { stateDir: string; env: Nod
   };
 }
 
-export function requireExecutorHarness(runtime: PluginRuntime) {
+function requireExecutorHarness(runtime: PluginRuntime) {
   const registerAgentHarness = vi.fn<OpenClawPluginApi["registerAgentHarness"]>();
   plugin.register(createTestPluginApi({ id: "agentsapi", runtime, registerAgentHarness }));
   const harness = registerAgentHarness.mock.calls[0]?.[0];
@@ -117,7 +117,7 @@ function createBindingRuntime(env: NodeJS.ProcessEnv, current: () => OpenClawCon
   return runtime;
 }
 
-export function connectedEnvironment(): Awaited<ReturnType<AgentsApiClient["environment"]>> {
+function connectedEnvironment(): Awaited<ReturnType<AgentsApiClient["environment"]>> {
   return {
     id: "executor-environment",
     type: "self_hosted",

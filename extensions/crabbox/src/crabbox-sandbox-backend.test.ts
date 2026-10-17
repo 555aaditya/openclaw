@@ -16,7 +16,10 @@ import {
   createSandboxTestContext,
 } from "openclaw/plugin-sdk/test-fixtures";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CRABBOX_MIN_VERSION, resolveManagedCrabboxBinaryPath } from "./crabbox-managed-binary.js";
+import {
+  CRABBOX_TEST_VERSION,
+  managedCrabboxFixturePath,
+} from "./crabbox-managed-binary.test-support.js";
 import {
   createCrabboxSandboxBackendFactory,
   createCrabboxSandboxBackendManager,
@@ -98,7 +101,7 @@ function setup(handler: (argv: string[]) => SpawnResult | Promise<SpawnResult> =
   const runCommand = vi
     .mocked(runCommandWithTimeout)
     .mockImplementation(async (argv) =>
-      argv[1] === "--version" ? result(CRABBOX_MIN_VERSION) : await handler(argv),
+      argv[1] === "--version" ? result(CRABBOX_TEST_VERSION) : await handler(argv),
     );
   const dependencies = {
     openclawRoot: temporaryRoot,
@@ -154,14 +157,15 @@ describe("Crabbox sandbox provider lifecycle", () => {
   });
 
   it("uses a supported managed binary for an outdated sandbox executable", async () => {
-    vi.stubEnv("OPENCLAW_STATE_DIR", path.join(temporaryRoot, "managed-state"));
-    const binary = resolveManagedCrabboxBinaryPath();
+    const stateDir = path.join(temporaryRoot, "managed-state");
+    vi.stubEnv("OPENCLAW_STATE_DIR", stateDir);
+    const binary = managedCrabboxFixturePath(stateDir);
     await fs.mkdir(path.dirname(binary), { recursive: true });
-    await fs.writeFile(binary, CRABBOX_MIN_VERSION);
+    await fs.writeFile(binary, CRABBOX_TEST_VERSION);
     const { factory, runCommand } = setup();
     runCommand.mockImplementation(async (argv) =>
       argv[1] === "--version"
-        ? result(argv[0] === "/fixture/crabbox" ? "0.76.0" : CRABBOX_MIN_VERSION)
+        ? result(argv[0] === "/fixture/crabbox" ? "0.76.0" : CRABBOX_TEST_VERSION)
         : respond(argv),
     );
     const handle = await factory(params());

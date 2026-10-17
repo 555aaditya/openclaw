@@ -45,6 +45,22 @@ const MODEL_CATALOG_METADATA = {
   maxTokens: 4096,
 } satisfies Omit<ModelDefinitionConfig, "id">;
 
+// Doctor reads persisted legacy fields before current config validation rejects them.
+// This fixture shape belongs only to upgrade handling, never to runtime config.
+type DoctorLegacyAgents = NonNullable<OpenClawConfigWithLegacyRoster["agents"]>;
+type DoctorLegacyCompaction = NonNullable<
+  NonNullable<DoctorLegacyAgents["defaults"]>["compaction"]
+> & { provider?: string };
+type DoctorLegacyCompactionOwner<T> = Omit<T, "compaction"> & {
+  compaction?: DoctorLegacyCompaction;
+};
+type DoctorLegacyConfig = Omit<OpenClawConfigWithLegacyRoster, "agents"> & {
+  agents?: Omit<DoctorLegacyAgents, "defaults" | "list"> & {
+    defaults?: DoctorLegacyCompactionOwner<NonNullable<DoctorLegacyAgents["defaults"]>>;
+    list?: DoctorLegacyCompactionOwner<NonNullable<DoctorLegacyAgents["list"]>[number]>[];
+  };
+};
+
 type CodexRouteWarningOptions = Omit<
   Parameters<typeof collectCodexRouteWarningsUnderTest>[0],
   "cfg"
@@ -55,16 +71,13 @@ type CodexRouteRepairOptions = Omit<
 >;
 
 function collectCodexRouteWarnings(
-  cfg: OpenClawConfigWithLegacyRoster,
+  cfg: DoctorLegacyConfig,
   options: CodexRouteWarningOptions = {},
 ): string[] {
   return collectCodexRouteWarningsUnderTest({ cfg, ...options });
 }
 
-function maybeRepairCodexRoutes(
-  cfg: OpenClawConfigWithLegacyRoster,
-  options: CodexRouteRepairOptions = {},
-) {
+function maybeRepairCodexRoutes(cfg: DoctorLegacyConfig, options: CodexRouteRepairOptions = {}) {
   return maybeRepairCodexRoutesUnderTest({
     cfg,
     shouldRepair: true,
@@ -72,9 +85,7 @@ function maybeRepairCodexRoutes(
   });
 }
 
-function repairDefaultAgent(
-  defaults: NonNullable<OpenClawConfigWithLegacyRoster["agents"]>["defaults"],
-) {
+function repairDefaultAgent(defaults: NonNullable<DoctorLegacyConfig["agents"]>["defaults"]) {
   return maybeRepairCodexRoutes({ agents: { defaults } });
 }
 
@@ -528,10 +539,11 @@ describe("collectCodexRouteWarnings", () => {
       agents: {
         defaults: {
           model: "anthropic/claude-sonnet-4-6",
-          compaction: { model: "openai/gpt-5.4", provider: "custom-summary" },
+          compaction: { model: "openai/gpt-5.4" },
         },
         list: [
           { id: "codex", model: "openai/gpt-5.5", compaction: { model: "openai/gpt-5.4" } },
+          { id: "codex-inherited", model: "openai/gpt-5.5" },
           { id: "worker", model: "anthropic/claude-sonnet-4-6" },
         ],
       },
@@ -539,7 +551,7 @@ describe("collectCodexRouteWarnings", () => {
 
     expect(warnings).toStrictEqual([
       codexCompactionWarning(
-        "- agents.defaults.compaction.provider: custom-summary is ignored while this agent uses Codex runtime.",
+        "- agents.defaults.compaction.model: openai/gpt-5.4 is ignored while this agent uses Codex runtime.",
         "- Move or remove shared `agents.defaults.compaction.model/provider` settings manually; doctor keeps shared defaults while non-Codex agents can inherit them.",
       ),
       codexCompactionWarning(
@@ -564,7 +576,7 @@ describe("collectCodexRouteWarnings", () => {
         defaults: {
           model: "openai-codex/gpt-5.5",
           heartbeat: { model: "openai/gpt-5.4" },
-          compaction: { model: "openai-codex/gpt-5.4", provider: "custom-summary" },
+          compaction: { model: "openai-codex/gpt-5.4" },
         },
         list: [{ id: "worker", model: "anthropic/claude-sonnet-4-6" }],
       },
@@ -574,7 +586,6 @@ describe("collectCodexRouteWarnings", () => {
     expect(result.cfg.agents?.defaults?.heartbeat?.model).toBe("openai/gpt-5.4");
     expect(result.cfg.agents?.defaults?.compaction).toEqual({
       model: "openai/gpt-5.4",
-      provider: "custom-summary",
     });
     expect(result.cfg.agents?.defaults?.models?.["openai/gpt-5.4"]).toBeUndefined();
     expectAgentRuntime(result.cfg, "openclaw");

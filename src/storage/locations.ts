@@ -1,6 +1,5 @@
 import { validateProviderSettings } from "../config/provider-settings.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { parseSecretRef } from "../config/types.secrets.js";
 import type { StorageLocationConfig } from "../config/types.storage.js";
 import { hasErrnoCode, isMissingPathError } from "../infra/errno.js";
 import { formatErrorMessage } from "../infra/errors.js";
@@ -140,17 +139,8 @@ async function prepare(params: StorageLocationParams) {
       );
     }
     const backend = await filesystemStorageProvider.open({
-      locationName: params.name,
       settings: location.settings,
       signal: params.signal,
-      resolveSecret: async (value) => {
-        const ref = parseSecretRef(value, params.config.secrets?.defaults);
-        if (!ref) {
-          throw new Error("Storage provider credentials must use SecretRefs.");
-        }
-        const { resolveSecretRefString } = await import("../secrets/resolve.js");
-        return await resolveSecretRefString(ref, { config: params.config, env });
-      },
     });
     let closed = false;
     const close = async () => {

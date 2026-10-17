@@ -184,7 +184,6 @@ describe("resolveMcpTransport", () => {
     expect(Object.keys(partition.staticServers)).toEqual(["shared"]);
     expect(partition.requesterScopedServerNames).toEqual(["calendar"]);
     expect(partition.oauthRequesterServerNames).toEqual(["calendar"]);
-    expect(partition.resolverRequesterServerNames).toEqual([]);
   });
 
   it("does not create an operator transport for per-requester OAuth", () => {
