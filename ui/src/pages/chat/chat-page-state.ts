@@ -599,28 +599,18 @@ export function createChatPageState(
   }
 
   function render() {
-    if (pendingCreate()) {
-      return mcpAppUnmountGate.render(
-        "pending-create",
-        () => {
-          if (!conversationPresented()) {
-            return null;
-          }
-          const layout = classicLayout();
-          return createSnapshot(
-            layout,
-            false,
-            new Map([[layout.activePaneId, [props.data.sessionKey]]]),
-          );
-        },
-        () => [...host.querySelectorAll<ChatPaneElement>("openclaw-chat-pane")],
-      );
-    }
-    const layout = routeLayout();
-    const retained = retainedSessions.retain(panesOf(layout));
+    // Pending creation hides retained chats without remounting their startup owners on admission.
+    const layout = pendingCreate() ? classicLayout() : routeLayout();
+    const retained = pendingCreate()
+      ? retainedSessions.retainProvisional(panesOf(layout))
+      : retainedSessions.retain(panesOf(layout));
     const nextPaneKeys = chatPagePaneOwnerKeys(context(), layout, retained);
     const renderValue = () =>
-      createSnapshot(layout, Boolean(splitLayout && !singleBoundPane()), retained);
+      createSnapshot(
+        layout,
+        !pendingCreate() && Boolean(splitLayout && !singleBoundPane()),
+        retained,
+      );
     return mcpAppUnmountGate.render(JSON.stringify([...nextPaneKeys]), renderValue, () =>
       [...host.querySelectorAll<ChatPaneElement>("openclaw-chat-pane")].filter(
         (pane) => !nextPaneKeys.has(pane.dataset.mcpAppOwnerKey ?? ""),

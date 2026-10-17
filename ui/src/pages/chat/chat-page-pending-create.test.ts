@@ -8,7 +8,7 @@ vi.mock("./chat-pane.tsx", async () => {
   return { ChatPaneView: mockChatPagePane };
 });
 
-import { patchSettings } from "../../app/settings.ts";
+import { loadSettings, patchSettings } from "../../app/settings.ts";
 import { createStorageMock } from "../../test-helpers/storage.ts";
 import {
   createSplitLayout,
@@ -100,7 +100,9 @@ it.each([
       expect(page.textContent).not.toContain("Creating new agent…");
     }
     expect(page.textContent).not.toContain("Reconnecting");
-    expect(page.textContent).not.toContain("Transcript:");
+    expect(page.querySelector(".chat-pane-cache__pane--visible")?.textContent).not.toContain(
+      "Transcript:",
+    );
     expect(page.textContent).not.toContain(agentId);
     expect(page.querySelector(".chat-group.user")).toBeNull();
 
@@ -115,5 +117,85 @@ it.each([
     expect(presentedSessions).toContain(sessionKey);
     expect(presentedSessions).not.toContain(previousKey);
     expect(context.gateway.setSessionKey).toHaveBeenLastCalledWith(sessionKey);
+  },
+);
+
+it.each(["rollback", "admission"] as const)(
+  "preserves restored unbound panes through pending creation and %s",
+  async (outcome) => {
+    vi.stubGlobal("localStorage", createStorageMock());
+    vi.stubGlobal("sessionStorage", createStorageMock());
+    stubMatchMedia(false);
+    const previousKey = outcome === "rollback" ? "global" : "agent:main:main";
+    const unboundPaneId = outcome === "rollback" ? "p1" : "p2";
+    patchSettings({
+      chatSplitLayout: {
+        activePaneId: "p1",
+        columnWeights: outcome === "rollback" ? [1] : [0.5, 0.5],
+        columns: [
+          { id: "c1", paneWeights: [1], panes: [{ id: "p1", sessionKey: previousKey }] },
+          ...(outcome === "admission"
+            ? [{ id: "c2", paneWeights: [1], panes: [{ id: "p2", sessionKey: "global" }] }]
+            : []),
+        ],
+      },
+    });
+    const page = new ChatPage();
+    const { context } = setNavigationContext(page);
+    Object.assign(context, { theme: { subscribe: () => () => undefined } });
+    Object.assign(context.gateway.snapshot, { phase: "connected" });
+    context.agents.state.agentsList = {
+      defaultId: "main",
+      mainKey: "main",
+      scope: "per-sender",
+      agents: [{ id: "main", name: "Previous agent" }],
+    };
+    const previousRoute = { sessionKey: previousKey };
+    page.data = previousRoute;
+    document.body.append(page);
+    await settleChatPage(page);
+    expect(page.querySelector(`[data-unbound-pane-id="${unboundPaneId}"]`)).not.toBeNull();
+
+    const agentId = "bot-new-agent";
+    const sessionKey = `agent:${agentId}:main`;
+    const creation = { sessionKey, admitted: false };
+    context.agents.state.pendingAgent = { id: agentId, name: "New agent" };
+    const clear = context.chatSubmissions.beginCreate({
+      creation,
+      displayName: "New agent",
+      message: null,
+      canDisplay: () => true,
+    });
+    page.data = { sessionKey, agentId, creation, face: "chat" };
+    await settleChatPage(page);
+    expect(page.querySelector("openclaw-pending-session-create")).not.toBeNull();
+    expect(page.querySelector(".chat-pane-cache__pane--visible")?.textContent).not.toContain(
+      "Transcript:",
+    );
+
+    context.agents.state.pendingAgent = undefined;
+    if (outcome === "admission") {
+      context.agents.state.agentsList.agents.push({ id: agentId, name: "New agent" });
+      creation.admitted = true;
+    } else {
+      page.data = previousRoute;
+    }
+    clear();
+    await settleChatPage(page);
+    await settleChatPage(page);
+    expect(page.querySelector("openclaw-pending-session-create")).toBeNull();
+    expect(page.querySelector(`[data-unbound-pane-id="${unboundPaneId}"]`)).not.toBeNull();
+    expect(
+      loadSettings()
+        .chatSplitLayout?.columns.flatMap((column) => column.panes)
+        .find((pane) => pane.id === unboundPaneId)?.sessionKey,
+    ).toBe("global");
+    if (outcome === "rollback") {
+      expect(page.querySelector("openclaw-chat-pane")).toBeNull();
+    } else {
+      expect(page.querySelector(".chat-pane-cache__pane--visible")?.textContent).toContain(
+        `Transcript: ${sessionKey}`,
+      );
+    }
   },
 );
