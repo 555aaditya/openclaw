@@ -173,9 +173,11 @@ export function createSessionManagedListRefresh(
         publishManagedList(entry, { ...entry.snapshot, loading: true, error: null }, isCurrent);
         try {
           const generation = entry.readGeneration;
+          // Single-page reads reconcile newer facts; only multi-page refills retire as a unit.
           const readIsCurrent = () =>
             isCurrent() &&
             (!requestParams.pageSize ||
+              requestParams.limit <= requestParams.pageSize ||
               (generation === entry.readGeneration &&
                 (!requiresView || (isPageActive() && entry.listeners.size > 0))));
           const response = await requestSessionListParams(
