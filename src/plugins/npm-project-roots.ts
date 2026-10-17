@@ -59,7 +59,6 @@ export function listManagedPluginNpmProjectsSync(npmRoot: string): ManagedNpmPro
   return readManagedProjects(listPluginNpmProjectCandidatesSync(npmRoot), npmRoot);
 }
 
-/** Async variant of project-level managed npm root discovery. */
 async function listManagedPluginNpmProjectRoots(npmRoot: string): Promise<string[]> {
   const projectsDir = resolvePluginNpmProjectsDir(npmRoot);
   try {
@@ -85,7 +84,6 @@ export function listManagedPluginNpmRootsSync(npmRoot: string): string[] {
   ];
 }
 
-/** Async variant of managed npm root discovery. */
 export async function listManagedPluginNpmRoots(npmRoot: string): Promise<string[]> {
   return [npmRoot, ...(await listManagedPluginNpmProjectRoots(npmRoot))];
 }
