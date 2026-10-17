@@ -125,12 +125,12 @@ describe("cross-region Home composer ownership", () => {
     current.connected = false;
     const persistence = new ChatComposerPersistence(() => current);
     const controller = createChatState<ChatPageHost>({
-      invalidate: () => {},
-      updateComplete: Promise.resolve(true),
+      awaitDomCommit: async () => true,
     });
     current.canRestoreComposer = () => persistence.active;
     const notify = vi.fn(() => persistence.persistChangedState());
-    current.requestUpdate = notify;
+    const unsubscribeDraft = controller.composerDraft.subscribe(notify);
+    current.composerDraftChanged = notify;
     persistence.start();
     const unsubscribe = chatOutboxOwner(current).subscribe(current);
     const view = { presented: true, owner };
@@ -154,6 +154,7 @@ describe("cross-region Home composer ownership", () => {
     disposals.push(() => {
       handoff.dispose();
       unsubscribe();
+      unsubscribeDraft();
       persistence.stop();
       controller.dispose();
       discardStateStagedAttachments(current);
@@ -480,7 +481,7 @@ describe("cross-region Home composer ownership", () => {
 
     // Relinquished persistence cannot overwrite the current presentation's edit.
     page.current.chatMessage = "stale retained draft";
-    page.current.requestUpdate();
+    page.current.composerDraftChanged?.();
     expect(loadChatComposerState(dock.current, sessionKey).snapshot?.draft).toBe(
       "Edited in the dock",
     );
@@ -575,10 +576,9 @@ describe("staged chat attachment pane handoff", () => {
   }
 
   function retainedSessions(context: ApplicationContext, ...panes: HTMLElement[]) {
-    const host = Object.assign(document.createElement("div"), { requestUpdate: () => {} });
+    const host = document.createElement("div");
     host.append(...panes);
     return new ChatPageRetainedSessions(host, {
-      invalidate: () => host.requestUpdate(),
       context: () => context,
       presented: () => true,
       routeHref: () => window.location.href,

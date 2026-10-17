@@ -62,6 +62,7 @@ function createQuestionPage(context: ApplicationContext, props: QuestionPageProp
   const prompt = () => questions.read().find((candidate) => candidate.id === props.questionId);
   const previousDocumentTitle = document.title;
   let activeDocumentTitle: string | undefined;
+  // Gateway receipts retire question operations and rebind the prompt client synchronously before reconnect.
   const stopGateway = context.gateway.subscribe(applyGatewaySnapshot);
   const stopGatewayEvents = context.gateway.subscribeEvents((event) => {
     if (isRecord(event.payload) && event.payload.id === questionId()) {
@@ -155,16 +156,12 @@ function createQuestionPage(context: ApplicationContext, props: QuestionPageProp
       if (clientOwner !== client || operationGeneration !== generation || questionId() !== id) {
         return;
       }
-      if (!isRecord(result) || !isRecord(result.question) || result.question.id !== id) {
+      if (result.question.id !== id) {
         setRequestError("unavailable");
         return;
       }
       const record = result.question;
       if (
-        (record.status !== "pending" &&
-          record.status !== "answered" &&
-          record.status !== "cancelled" &&
-          record.status !== "expired") ||
         !handleQuestionPromptEvent(questionState, {
           event: "question.requested",
           payload: { ...record, status: "pending" },

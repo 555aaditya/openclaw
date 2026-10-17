@@ -5183,14 +5183,14 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
       label: "current",
       frozenTarget: false,
       compatibilityTarget: false,
-      policy: "bun-compatible",
+      policy: "bun-all",
       shards: [1, 2, 3],
     },
     {
       label: "frozen current",
       frozenTarget: true,
       compatibilityTarget: false,
-      policy: "dual",
+      policy: "dual-all",
       shards: [1, 2, 3],
     },
   ])("executes the $label standalone UI envelope", (scenario) => {
@@ -5258,8 +5258,9 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
     // Hosted rows (full-release dispatches, github backend, hybrid retries,
     // fork PRs) run the Control UI suites slower than Blacksmith; a frozen
     // full-release dispatch measured 15-20 min per shard against a 20 min cap.
+    const runtimePasses = scenario.policy === "dual-all" ? 2 : 1;
     expect(evaluateWorkflowExpression(ui["timeout-minutes"], context)).toBe(
-      scenario.frozenTarget ? 35 : 20,
+      (scenario.frozenTarget ? 35 : 20) * runtimePasses,
     );
     for (const override of [
       { runnerBackend: "github" },
@@ -5267,7 +5268,7 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
       { eventName: "pull_request", headRepository: "contributor/openclaw" },
     ] as const) {
       expect(evaluateWorkflowExpression(ui["timeout-minutes"], { ...context, ...override })).toBe(
-        35,
+        35 * runtimePasses,
       );
     }
     expect(
@@ -5276,7 +5277,7 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
         eventName: "workflow_dispatch",
         preflightOutputs: { ...context.preflightOutputs, ci_shape: "main" },
       }),
-    ).toBe(20);
+    ).toBe(20 * runtimePasses);
     expect(workflow.jobs["ci-gate"].needs).toContain("checks-ui");
 
     const root = tempDirs.make("openclaw-ui-workflow-");
@@ -6091,7 +6092,7 @@ function expectProcessExit<
 it("pins generated publisher and maturity owners before credentials and selected checkout", () => {
   const pinned = {
     name: "Prepare Git owner",
-    uses: "openclaw/openclaw/.github/actions/git-owner@dd4528b6393e7d00063067a080ca7241b48ce475",
+    uses: "openclaw/openclaw/.github/actions/git-owner@88095dc00eef288c3829909d4dc64a9e249fa7ef",
   };
   const action = readWorkflow(PUBLISH_GENERATED_PR_ACTION);
   expect(action.runs.steps.map(({ name }: WorkflowStep) => name)).toEqual([
@@ -6727,7 +6728,7 @@ it("retains exact completed Linux bundle bytes after packaging fails without adm
 it("isolates release credentials and verifies trusted AppImage and signing tools", () => {
   const pinned = {
     name: "Prepare Git owner",
-    uses: "openclaw/openclaw/.github/actions/git-owner@dd4528b6393e7d00063067a080ca7241b48ce475",
+    uses: "openclaw/openclaw/.github/actions/git-owner@88095dc00eef288c3829909d4dc64a9e249fa7ef",
   };
   for (const [file, job, checkoutName] of [
     ["linux-app-release.yml", "validate_release", "Checkout selected tag"],
@@ -7674,7 +7675,7 @@ it("pins trusted Performance Git owners before checkout", () => {
     }
     expect(steps[index]).toEqual({
       name: "Prepare Git owner",
-      uses: "openclaw/openclaw/.github/actions/git-owner@a379bbd73e30b84a89aca4d54744ab9ca19082e7",
+      uses: "openclaw/openclaw/.github/actions/git-owner@88095dc00eef288c3829909d4dc64a9e249fa7ef",
       ...(decision ? { if: "steps.lane.outputs.run == 'true'" } : {}),
     });
   }

@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { requireNativeDatabaseFile } from "../infra/database-engine/physical-facts.js";
 import { hasErrnoCode } from "../infra/errno.js";
 import {
   executeSqliteQuerySync,
@@ -47,6 +46,7 @@ import type {
   OpenClawStateDatabaseOptions,
   OpenClawStateSchemaReadAdmission,
 } from "./openclaw-state-db-contract.js";
+import { isStatePostgres } from "./openclaw-state-db-engine.js";
 import { withOpenClawStateReadOnlyLocation } from "./openclaw-state-db-read-connection.js";
 import { ensureAgentDatabaseLeaseSchema } from "./openclaw-state-db-schema-additive.js";
 import { tableExists } from "./openclaw-state-db-schema-helpers.js";
@@ -71,7 +71,11 @@ export const AGENT_DATABASE_MAINTENANCE_LEASE = {
 } as const;
 
 export class OpenClawAgentDatabaseLeaseActiveError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    /** Live owner PIDs observed by a read-only check; diagnostic evidence, never authority. */
+    readonly ownerPids: readonly number[] = [],
+  ) {
     super(message);
     this.name = "OpenClawAgentDatabaseLeaseActiveError";
   }
@@ -545,15 +549,14 @@ export function readActiveOpenClawAgentDatabaseLeasesReadOnly(
     return withOpenClawStateReadOnlyLocation(
       ({ db }) => readActiveLeases(db),
       pathname,
-      prepareSqliteReadOnlyLocationSync(pathname),
+      isStatePostgres() ? pathname : prepareSqliteReadOnlyLocationSync(pathname),
       openStateSchemaReadAdmission,
     );
   }
-  const closeSchemaReadAdmission = openStateSchemaReadAdmission
-    ? isPostgresSqlConnection(cached.db)
-      ? requireNativeDatabaseFile("postgres", "repair")
-      : openStateSchemaReadAdmission(cached.db)
-    : undefined;
+  const closeSchemaReadAdmission =
+    !isPostgresSqlConnection(cached.db) && openStateSchemaReadAdmission
+      ? openStateSchemaReadAdmission(cached.db)
+      : undefined;
   try {
     return readActiveLeases(cached.db);
   } finally {
@@ -566,13 +569,15 @@ export function assertNoOpenClawAgentDatabaseLeasesReadOnly(
   options: OpenClawStateDatabaseOptions = {},
   openStateSchemaReadAdmission?: OpenClawStateSchemaReadAdmission,
 ): void {
-  const [owner] = readActiveOpenClawAgentDatabaseLeasesReadOnly(
+  const owners = readActiveOpenClawAgentDatabaseLeasesReadOnly(
     options,
     openStateSchemaReadAdmission,
   );
+  const [owner] = owners;
   if (owner) {
     throw new OpenClawAgentDatabaseLeaseActiveError(
       `Agent ${owner.agent_id} database is still open in process ${owner.owner_pid}; stop that process before Doctor repair.`,
+      [...new Set(owners.map((row) => row.owner_pid))],
     );
   }
 }
