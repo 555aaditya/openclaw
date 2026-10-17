@@ -1,1 +1,1 @@
-export { analyzeConfigSchema, type ConfigSchemaAnalysis } from "./config-form.analyze.ts";
+export { analyzeConfigSchema } from "./config-form.analyze.ts";
