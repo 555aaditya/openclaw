@@ -25,6 +25,7 @@ import {
 import { resolveCronJobConfigRevision } from "./config-revision.js";
 import { CronService } from "./service.js";
 import {
+  createFinishedBarrier,
   createCronServiceWithStateForTest,
   setupCronServiceSuite,
 } from "./service.test-harness.js";
@@ -56,6 +57,98 @@ function commandJob(id: string, nextRunAtMs = NOW + 60_000): CronJob {
     payload: { kind: "command", argv: ["synthetic", id] },
   };
 }
+
+it("finishes cron initialization while missed command jobs await their agents", async ({
+  signal,
+}) => {
+  const { storePath } = await makeStorePath();
+  const jobs = ["never-ready", "later-ready"].map((agentId) =>
+    Object.assign(commandJob(agentId, NOW - 1_000), { agentId }),
+  );
+  await saveCronStore(storePath, { version: 1, jobs });
+  await withAgentDatabaseStartupAdmission(async (admission) => {
+    const env = { ...process.env };
+    const inspections = jobs.map(() => createDeferred<OpenClawDatabaseSchemaPreflight>());
+    const refusals = admission.defer({
+      env,
+      inspections: jobs.map((job, index) => ({
+        target: {
+          agentId: job.agentId,
+          path: openOpenClawAgentDatabase({ agentId: job.agentId, env }).path,
+        },
+        result: inspections[index]!.promise,
+      })),
+      reason: "synthetic missed command startup admission",
+    });
+    recordAgentDatabaseAdmissions(refusals, { env, source: "startup" });
+    const lifetime = admission.adopt();
+    admission.activate({
+      isCurrent: () => true,
+      preparationReady: Promise.resolve(),
+      openAgent: async () => {},
+      migrateAgent: async () => {},
+      publishAgent: async () => {},
+    });
+    const finished = createFinishedBarrier();
+    const laterFinished = finished.waitForOk("later-ready");
+    const runCommandJob = vi.fn(async () => ({ status: "ok" as const }));
+    const { cron, state } = createCronServiceWithStateForTest({
+      scheduler: createTestGatewayScheduler(),
+      nowMs: () => NOW,
+      storePath,
+      cronEnabled: true,
+      defaultAgentId: "main",
+      log: logger,
+      enqueueSystemEvent() {},
+      requestHeartbeat() {},
+      runIsolatedAgentJob: async () => ({ status: "ok" }),
+      runCommandJob,
+      onEvent: finished.onEvent,
+    });
+    const receipts = () =>
+      runOpenClawStateWriteTransaction(({ db }) =>
+        db
+          .prepare(
+            "SELECT job_id, receipt_id, status FROM cron_run_receipts WHERE store_key = ? ORDER BY job_id",
+          )
+          .all(storePath),
+      );
+    const starting = cron.start();
+    try {
+      await withinTest(starting, signal);
+      expect(runCommandJob).not.toHaveBeenCalled();
+      expect((await loadCronStore(storePath)).jobs.map((job) => job.state)).toEqual([
+        expect.objectContaining({ queuedAtMs: NOW }),
+        expect.objectContaining({ queuedAtMs: NOW }),
+      ]);
+      const queuedReceipts = receipts();
+      expect(queuedReceipts).toEqual([
+        { job_id: "later-ready", receipt_id: expect.any(String), status: "running" },
+        { job_id: "never-ready", receipt_id: expect.any(String), status: "running" },
+      ]);
+
+      inspections[1]!.resolve({ incompatible: [], indeterminate: [] });
+      await withinTest(laterFinished, signal);
+      await drainCronRunQueue(state);
+      expect(runCommandJob).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ job: expect.objectContaining({ id: "later-ready" }) }),
+      );
+      expect(receipts()).toEqual([{ ...queuedReceipts[0], status: "ok" }, queuedReceipts[1]]);
+      const neverReady = (await loadCronStore(storePath)).jobs.find(
+        (job) => job.id === "never-ready",
+      );
+      expect(neverReady?.state.queuedAtMs).toBe(NOW);
+      expect(neverReady?.state.runningAtMs).toBeUndefined();
+    } finally {
+      cron.stop();
+      for (const inspection of inspections) {
+        inspection.resolve({ incompatible: [], indeterminate: [] });
+      }
+      await Promise.all([starting, cron.waitForIdle(), lifetime.stop()]);
+      recordAgentDatabaseAdmissions([], { env, source: "startup" });
+    }
+  });
+});
 
 it.for(["manual", "scheduled"] as const)(
   "keeps eight preparing-agent jobs queued while a healthy agent runs: %s",

@@ -41,6 +41,11 @@ using that generation through finalization, rollback, and CLI cleanup, even when
 the new build has different chunk filenames. The new Gateway starts from the
 activated build.
 
+After a Doctor child settles, the updater drains its retained handles for the
+affected shared-state database and revokes their schema admission, even when
+Doctor exits unsuccessfully. The next parent access admits the resulting schema
+again and refuses a version newer than the running updater supports.
+
 ### Migration integrity checks
 
 SQLite upgrades default to a whole-database `quick_check`, a full
@@ -81,6 +86,10 @@ Doctor's held-store warning remains visible. Configured agents required by the
 Gateway must still pass runtime admission: Doctor fails if a recovery hold
 leaves a required store unusable. Active databases and pending deletions require
 the candidate schema, and held stores remain part of rollback verification.
+Retained plugin databases, including plugin shared-state stores, are not checked
+against the agent schema. Their plugin owns migration; they remain in the
+snapshot and rollback inventory even when the plugin is disabled. The primary
+shared-state database is checked against the shared-state schema.
 
 OpenClaw.app runs plugin convergence through the selected runtime's Doctor while
 the app owns Gateway activation. This aligns managed official npm plugins with the new

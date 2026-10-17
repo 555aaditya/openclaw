@@ -54,6 +54,7 @@ function disconnectSidebarOwner(host: HTMLElement): void {
   if (owner) {
     sidebarOwners.delete(host);
     owner.detach();
+    owner.disposeMenus();
   }
 }
 
@@ -62,6 +63,7 @@ function AppSidebarContent(props: AppSidebarProps, host: HTMLElement): JSX.Eleme
   const context = useApplication();
   const catalog = createSidebarNavigationCatalog(context, () => props.navigationView, host);
   const owner = sidebarOwners.get(host) ?? new AppSidebarOwner(catalog, props, context, host);
+  sidebarOwners.set(host, owner);
   owner.navigationCatalog = catalog;
   owner.bindInputs(props, context);
   owner.attention = createSessionAttention(
@@ -109,6 +111,8 @@ function AppSidebarContent(props: AppSidebarProps, host: HTMLElement): JSX.Eleme
       Object.values(props);
       // Snapshot capture keeps observing Pages after its navigation view closes.
       void catalog.dashboards;
+      // Arm presence deadlines before preparation can project a row.
+      people.capture();
       // Synchronous owners release boot snapshots and restore query state before row consumers read.
       snapshot.synchronize();
       owner.prepareRender();
@@ -121,6 +125,29 @@ function AppSidebarContent(props: AppSidebarProps, host: HTMLElement): JSX.Eleme
   createSessionOwnerFilterQuery(owner.sessionOwnerFilter, prepared, () =>
     context.sessions.listSnapshot(owner.sessionData.sessionListQuery(owner.expandedAgentId())),
   );
+  const narrationEnabled = createMemo(() => {
+    // Preparation reads narration while synchronizing the session projection.
+    projection.revision();
+    snapshotModel();
+    Object.values(props);
+    return owner.narrationEnabled();
+  });
+  const narration = createMemo(() => {
+    if (!narrationEnabled()) {
+      return null;
+    }
+    const loaded = createMemo(() => owner.loadNarration(), { loadingValue: null });
+    return loaded;
+  });
+  const narrationProjection = createMemo(() => {
+    const source = narration()?.();
+    return source ? projectOwner(source, (current) => current.read()) : null;
+  });
+  owner.readNarration = createParkedProjection(
+    () => narrationProjection()?.read(),
+    () => props.navigationVisible,
+  );
+  onSettled(() => context.gateway.subscribeEvents((event) => owner.narration?.handleEvent(event)));
   const presentationRevision = createParkedProjection(
     () => {
       Object.values(props);
@@ -145,8 +172,10 @@ function AppSidebarContent(props: AppSidebarProps, host: HTMLElement): JSX.Eleme
     return proxy;
   };
   const hostView = observe(owner);
-  owner.sidebarMenus.catalogMenuView = owner.sidebarMenus.catalogMenu.createView(hostView);
-  [owner.sidebarMenus, owner.sessionData, owner.sessionOrganizer, owner.people].forEach(observe);
+  onCleanup(
+    owner.sidebarMenus.bindCatalogMenuView(owner.sidebarMenus.catalogMenu.createView(hostView)),
+  );
+  [owner.sessionData, owner.sessionOrganizer, owner.people].forEach(observe);
   owner.sessionPullRequests = createSessionPullRequestIndicators({
     getConnected: () => prepared().isConnected && props.connected,
     getPresented: () => props.navigationVisible,
@@ -188,20 +217,24 @@ function AppSidebarContent(props: AppSidebarProps, host: HTMLElement): JSX.Eleme
     pending: snapshotPending,
     saved: () => {
       // Preparation can clear a receipt without publishing another model.
-      projection.revision();
+      prepared();
       return snapshotProjection.read().saved;
     },
   });
   createEffect(
     () => {
       prepared();
-      people.capture();
+      narration()?.();
+      owner.readNarration();
       scroll.capture();
     },
     () =>
       untrack(() => {
         owner.sessionData.refreshPresentation();
         owner.commitRender();
+        if (owner.isConnected) {
+          owner.narration?.sync(owner.narrationSyncInput());
+        }
         snapshot.capture();
         people.syncRendered();
         scroll.restore();
@@ -221,7 +254,6 @@ function AppSidebarContent(props: AppSidebarProps, host: HTMLElement): JSX.Eleme
       }),
   );
   onSettled(() => {
-    sidebarOwners.set(host, owner);
     if (host.isConnected && !owner.isConnected) {
       owner.attach();
     } else {

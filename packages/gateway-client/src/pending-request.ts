@@ -11,7 +11,7 @@ import {
   retainGatewayResponsePayload,
   type GatewayProtocolRequestOptions,
 } from "./protocol-request.js";
-import { resolveSafeTimeoutDelayMs } from "./timeouts.js";
+import { resolveFiniteTimeoutDelayMs, resolveSafeTimeoutDelayMs } from "./timeouts.js";
 
 export type GatewayProtocolRequestTiming = {
   id: string;
@@ -38,7 +38,7 @@ type GatewayPendingRequest = {
   method: string;
   startedAtMs: number;
   resend?: () => void;
-  retryStartup?: () => void;
+  retryStartup?: (retryAfterMs?: number) => void;
   waitingForResume?: boolean;
 };
 
@@ -156,6 +156,7 @@ export class GatewayPendingRequests {
         : undefined;
     return new Promise<T>((resolve, reject) => {
       let timeout: ReturnType<typeof setTimeout> | undefined;
+      let startupRetry: ReturnType<typeof setTimeout> | undefined;
       let requestSent = false;
       const pending: GatewayPendingRequest = {
         resolve: (value) => resolve(value as T),
@@ -168,6 +169,7 @@ export class GatewayPendingRequests {
         startedAtMs: this.opts.nowMs(),
       };
       const cleanup = () => {
+        clearTimeout(startupRetry);
         if (timeout !== undefined) {
           clearTimeout(timeout);
         }
@@ -223,7 +225,7 @@ export class GatewayPendingRequests {
           if (
             this.pending.get(id) !== pending ||
             options?.signal?.aborted ||
-            (pending.waitingForResume &&
+            ((requestSent || pending.waitingForResume) &&
               timeoutMs !== undefined &&
               this.opts.nowMs() - pending.startedAtMs >= timeoutMs)
           ) {
@@ -254,7 +256,14 @@ export class GatewayPendingRequests {
         };
         // A startup refusal proves dispatch never reached the handler. Retain the
         // exact frame for that retry only; ordinary writes still send synchronously.
-        pending.retryStartup = send;
+        pending.retryStartup = (retryAfterMs) => {
+          clearTimeout(startupRetry);
+          startupRetry = setTimeout(
+            send,
+            resolveFiniteTimeoutDelayMs(retryAfterMs, GATEWAY_SUSPEND_IDENTITY_RETRY_AFTER_MS),
+          );
+          startupRetry.unref?.();
+        };
         if (
           method === "agent.identity.get" ||
           method === "sessions.subscribe" ||
@@ -291,7 +300,8 @@ export class GatewayPendingRequests {
       isRetryableGatewayStartupUnavailableError(frame.error) &&
       (frame.error?.details as { method?: unknown } | undefined)?.method === pending.method;
     if (startupRefusal && !pending.acceptedNotified) {
-      pending.resend ??= pending.retryStartup;
+      pending.retryStartup?.(frame.error?.retryAfterMs);
+      return;
     }
     if (
       !frame.ok &&
@@ -299,8 +309,7 @@ export class GatewayPendingRequests {
       !pending.acceptedNotified &&
       frame.error?.code === "UNAVAILABLE" &&
       frame.error.retryable === true &&
-      (startupRefusal ||
-        isGatewaySuspendUnavailableError(frame.error) ||
+      (isGatewaySuspendUnavailableError(frame.error) ||
         isGatewayRestartUnavailableError(frame.error))
     ) {
       // The admission fence refused execution. Keep the original deadline and cancellation.

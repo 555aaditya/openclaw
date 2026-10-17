@@ -72,6 +72,7 @@ export type ChatRunUiStatus = {
   runId: string | null;
   sessionKey: string;
   occurredAt: number;
+  localModelMayStillBeFinishing?: boolean;
 };
 
 type TerminalSessionRunStatus = Exclude<SessionRunStatus, "running">;
@@ -108,6 +109,7 @@ type ReconcileOptions = {
   errorMessage?: string;
   suppressErrorNotice?: boolean;
   runId?: string | null;
+  localModelMayStillBeFinishing?: boolean;
   sessionKey?: string | null;
   agentId?: string;
   sessionKeys?: readonly (string | null | undefined)[];
@@ -539,6 +541,7 @@ export function reconcileChatRunLifecycle(host: RunLifecycleHost, options: Recon
       runId,
       sessionKey,
       occurredAt,
+      ...(options.localModelMayStillBeFinishing ? { localModelMayStillBeFinishing: true } : {}),
     };
     reconcileSessionRows(host, sessionOptions, occurredAt);
     if (options.armLocalTerminalReconcile) {
