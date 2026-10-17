@@ -1,5 +1,4 @@
 // @vitest-environment node
-import { expectDefined } from "@openclaw/normalization-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TestHost } from "./controller.test-support.ts";
 import { SubscriptionsController } from "./subscriptions-controller.ts";
@@ -29,39 +28,6 @@ class TestSource {
 }
 
 describe("SubscriptionsController", () => {
-  it.each(["replace", "disconnect"])("retires a queued frame on %s", (retirement) => {
-    const host = new TestHost();
-    const controller = new SubscriptionsController(host);
-    let source = new TestSource();
-    const commit = vi.fn();
-    const synchronize = vi.fn();
-    const frames: FrameRequestCallback[] = [];
-    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) =>
-      frames.push(callback),
-    );
-    const cancelFrame = vi.fn();
-    vi.stubGlobal("cancelAnimationFrame", cancelFrame);
-    controller.watchStore(() => source, synchronize, commit);
-    host.connect();
-    host.requestUpdate.mockClear();
-    synchronize.mockClear();
-
-    source.notify();
-    expect(synchronize).toHaveBeenCalledOnce();
-    expect(host.requestUpdate).not.toHaveBeenCalled();
-    expect(frames).toHaveLength(1);
-    if (retirement === "replace") {
-      source = new TestSource();
-      host.update();
-    } else {
-      host.disconnect();
-    }
-    expect(cancelFrame).toHaveBeenCalledWith(1);
-    expectDefined(frames[0], "retired render frame")(0);
-    expect(host.requestUpdate).not.toHaveBeenCalled();
-    expect(commit).not.toHaveBeenCalled();
-  });
-
   it("waits for a source, synchronizes once, and does not subscribe twice", () => {
     const host = new TestHost();
     const controller = new SubscriptionsController(host);

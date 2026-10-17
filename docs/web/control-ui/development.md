@@ -151,13 +151,10 @@ between settlement and transport.
 
 Streaming deltas and session-roster notifications must not trigger unrelated
 renders. The shell processes session deletion and document-title updates directly,
-without rendering for roster publications. The chat stream owns its frame queue;
-chat-page session subscriptions coalesce presentation updates through
-`SubscriptionsController`. State synchronization stays immediate, while the Lit
-commit runs inside the scheduled frame so child property bindings do not escape
-into a later microtask. Disconnecting or replacing a subscription retires its
-queued frame. Hidden documents retain immediate invalidation because animation
-frames may be suspended.
+without rendering for roster publications. The chat stream owns its frame queue.
+The sidebar's `SubscriptionsController` synchronizes current subscription state
+and requests a host update immediately; disconnecting or replacing a source
+retires its listener.
 
 The `chat-stream-runtime-budgets.e2e.test.ts` suite protects streaming with
 structural update counts; chat-page unit tests cover intervening roster publications.
