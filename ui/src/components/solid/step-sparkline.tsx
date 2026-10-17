@@ -6,7 +6,9 @@ import "../../styles/carapace-data.css";
 const SPARK_WIDTH = 120;
 const SPARK_HEIGHT = 28;
 
-function steppedPath(values: number[], width: number, height: number): string {
+function steppedPath(input: number[], width: number, height: number): string {
+  // Provider-reported amounts can be negative or non-finite; they draw as zero.
+  const values = input.map((value) => (Number.isFinite(value) && value > 0 ? value : 0));
   const max = Math.max(...values, 0);
   if (values.length === 0 || max <= 0) {
     return `M0 ${height - 1} H${width}`;

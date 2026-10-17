@@ -432,10 +432,10 @@ describe("renderUsage", () => {
     expect(card?.textContent).toContain("$5.00 / $20.00");
     expect(
       Array.from(
-        container.querySelectorAll(".provider-usage-billing-row strong"),
+        container.querySelectorAll(".provider-usage__row .oc-menu-panel-usage-value"),
         (value) => value.textContent,
       ),
-    ).toEqual(["$64.50", "$5.00 / $20.00", "¥13 / ¥20", "1.5  Credits  / 3  Credits "]);
+    ).toEqual(["75% left", "$64.50", "$5.00 / $20.00", "¥13 / ¥20", "1.5  Credits  / 3  Credits "]);
   });
 
   it("keeps complete insights and history beyond the visible page", () => {

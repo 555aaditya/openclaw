@@ -156,6 +156,30 @@ function BilledCost(props: { history: CostHistory }) {
           </div>
         )}
       </For>
+      <Show when={props.history.models.length > 0}>
+        <div class="oc-menu-panel-usage-row provider-usage__row">
+          <span class="oc-menu-panel-usage-label">{t("usage.providerUsage.topModels")}</span>
+          <span />
+          <span class="oc-menu-panel-usage-value">
+            {props.history.models
+              .slice(0, 3)
+              .map((model) => `${model.name} ${formatCompactTokenCount(model.totalTokens)}`)
+              .join(", ")}
+          </span>
+        </div>
+      </Show>
+      <Show when={props.history.categories.length > 0}>
+        <div class="oc-menu-panel-usage-row provider-usage__row">
+          <span class="oc-menu-panel-usage-label">{t("usage.providerUsage.costCategories")}</span>
+          <span />
+          <span class="oc-menu-panel-usage-value">
+            {props.history.categories
+              .slice(0, 3)
+              .map((category) => `${category.name} ${format()(category.amount)}`)
+              .join(", ")}
+          </span>
+        </div>
+      </Show>
       <div class="provider-usage__trend">
         <StepSparkline
           values={props.history.daily.map((day) => day.amount)}

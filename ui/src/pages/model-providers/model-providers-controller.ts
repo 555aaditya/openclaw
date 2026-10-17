@@ -689,13 +689,8 @@ export function createModelProviders(
       refreshing: core.loading,
       error: rosterError ?? (noSelectableAgents ? t("agents.noAgents") : data.error),
       providerUsageFailed: data.providerUsage?.ok === false,
-      // A refreshing Gateway snapshot is still being collected, not "no usage data".
-      supplementalLoading:
-        loaderPending ||
-        supplemental.loading ||
-        (data.providerUsage?.ok === true &&
-          data.providerUsage.value.refreshing === true &&
-          !refreshPolicy.incompleteUsageExhausted),
+      // The core load reads local usage too, so the overview waits on either.
+      supplementalLoading: loaderPending || core.loading || supplemental.loading,
       updatedAt: data.updatedAt,
       localUsage: data.localUsage,
       usageRange: supplemental.usageRange,

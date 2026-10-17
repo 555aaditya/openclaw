@@ -206,19 +206,45 @@ describe("loadModelProvidersData", () => {
     try {
       expect(sent.map(({ method }) => method)).toEqual(["usage.status", "sessions.usage"]);
       expect(sent[0]?.params).toBeUndefined();
-      expect(sent[1]?.params).toMatchObject({
-        agentScope: "all",
-        groupBy: "family",
-        projection: "overview",
-        limit: 50,
-      });
+      // Only the aggregates feed the page, so the session list stays one row.
+      expect(sent[1]?.params).toMatchObject({ agentScope: "all", groupBy: "family", limit: 1 });
       expect(sent[1]?.params).not.toHaveProperty("agentId");
+      expect(sent[1]?.params).not.toHaveProperty("projection");
       expect(pending.hasPending).toBe(true);
       controller.abort();
       expect(pending.hasPending).toBe(false);
       expect(await loading).toMatchObject([{ status: "rejected" }, { status: "rejected" }]);
     } finally {
       // Release any leaked wait if a cancellation regression makes the assertion fail.
+      pending.flush(new Error("test cleanup"));
+      await loading;
+    }
+  });
+
+  it("reads local usage beside the core sources when a range is requested", async () => {
+    const pending = new GatewayPendingRequests({
+      createRequestId: () => "models-test",
+      nowMs: () => 0,
+    });
+    const sent: string[] = [];
+    const client = {
+      request: <T>(...args: Parameters<GatewayBrowserClient["request"]>) =>
+        pending.request<T>(
+          { send: (frame: string) => sent.push(JSON.parse(frame).method) },
+          ...args,
+        ),
+    } as GatewayBrowserClient;
+    const controller = new AbortController();
+    const loading = loadModelProvidersData(client, {
+      agentId: "main",
+      signal: controller.signal,
+      usageDays: 7,
+    }).catch(() => undefined);
+    try {
+      // All three leave before any reply: usage must not wait for the provider list.
+      expect(sent.toSorted()).toEqual(["models.authStatus", "models.list", "sessions.usage"]);
+    } finally {
+      controller.abort();
       pending.flush(new Error("test cleanup"));
       await loading;
     }

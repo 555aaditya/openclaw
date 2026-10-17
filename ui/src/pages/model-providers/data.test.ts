@@ -14,7 +14,6 @@ import {
   resolveDefaultModelPresentation,
 } from "./data.ts";
 // @vitest-environment node
-import type { ModelProviderLocalUsage } from "./load.ts";
 
 function catalogEntry(overrides: Partial<ModelCatalogEntry> & { provider: string }) {
   return {
@@ -58,19 +57,8 @@ const EMPTY_INPUT = {
   authStatus: null,
   models: null,
   providerUsage: null,
-  localUsage: null,
 };
 
-function localUsage(byProvider: ModelProviderLocalUsage["byProvider"]): ModelProviderLocalUsage {
-  return {
-    days: 30,
-    dates: [],
-    byProvider,
-    byModel: [],
-    modelDaily: [],
-    totals: byProvider[0]!.totals,
-  };
-}
 const redactedConfigValue = "[redacted]";
 
 describe("buildModelProviderCards", () => {
@@ -323,44 +311,6 @@ describe("buildModelProviderCards", () => {
     expect(cards).toHaveLength(1);
     expect(firstCard(cards).usage?.windows).toEqual([{ label: "5h", usedPercent: 55 }]);
     expect(firstCard(cards).usage?.costHistory?.periodDays).toBe(30);
-  });
-
-  it("attaches local session spend via alias ids and includes cost-only providers", () => {
-    const totals = {
-      input: 100,
-      output: 50,
-      cacheRead: 0,
-      cacheWrite: 0,
-      totalTokens: 150,
-      totalCost: 0.42,
-      inputCost: 0.3,
-      outputCost: 0.12,
-      cacheReadCost: 0,
-      cacheWriteCost: 0,
-      missingCostEntries: 0,
-    };
-    const cards = buildModelProviderCards({
-      ...EMPTY_INPUT,
-      authStatus: authStatus([
-        {
-          provider: "claude-cli",
-          displayName: "Claude",
-          status: "ok",
-          profiles: [],
-          usage: { providerId: "anthropic", windows: [] },
-        },
-      ]),
-      localUsage: localUsage([
-        { provider: "anthropic", count: 3, totals },
-        { provider: "openrouter", count: 1, totals },
-      ]),
-    });
-    expect(cards.map((card) => card.id)).toEqual(["anthropic", "openrouter"]);
-    expect(firstCard(cards).localCost).toEqual({
-      totalTokens: 150,
-      messageCount: 3,
-      incomplete: false,
-    });
   });
 
   it("keeps API key provenance and config-only providers", () => {

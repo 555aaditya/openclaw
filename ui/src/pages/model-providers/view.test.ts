@@ -113,6 +113,15 @@ it("shows utility chain selections and edits their fallback independently", asyn
   expect(onUtilityFallbackChange).toHaveBeenLastCalledWith("fixture/last");
 });
 
+/** Connected rows start collapsed; their accounts and actions live in the detail. */
+function expand(container: Element, providerId = "openai"): Element {
+  container
+    .querySelector<HTMLButtonElement>(`[data-provider-id="${providerId}"] .provider-row__summary`)!
+    .click();
+  flush();
+  return container;
+}
+
 function button(container: Element, label: string): HTMLButtonElement | undefined {
   return [...container.querySelectorAll<HTMLButtonElement>("button")].find((entry) =>
     text(entry).includes(label),
@@ -571,6 +580,31 @@ describe("renderModelProviders", () => {
     },
   );
 
+  it("collapses settled rows and keeps rows that need attention open", () => {
+    const container = mount(
+      props({
+        cards: [card(), card({ id: "anthropic", catalogStatus: "auth-rejected" })],
+      }),
+    );
+    const summary = (id: string) =>
+      container.querySelector<HTMLButtonElement>(
+        `[data-provider-id="${id}"] .provider-row__summary`,
+      )!;
+    const detail = (id: string) =>
+      container.querySelector(`[data-provider-id="${id}"] .provider-row__detail`);
+    expect(summary("openai").getAttribute("aria-expanded")).toBe("false");
+    expect(detail("openai")).toBeNull();
+    expect(summary("anthropic").getAttribute("aria-expanded")).toBe("true");
+    expect(detail("anthropic")).not.toBeNull();
+
+    expand(container, "openai");
+    expect(summary("openai").getAttribute("aria-expanded")).toBe("true");
+    expect(detail("openai")?.id).toBe(summary("openai").getAttribute("aria-controls"));
+    // A rejected credential stays visible until it is fixed.
+    expand(container, "anthropic");
+    expect(detail("anthropic")).not.toBeNull();
+  });
+
   it("does not invent config key provenance when auth status is unavailable", () => {
     const container = mount(
       props({
@@ -578,9 +612,10 @@ describe("renderModelProviders", () => {
       }),
     );
 
-    const provider = container.querySelector('[data-provider-id="openai"]');
+    const provider = expand(container).querySelector('[data-provider-id="openai"]');
     expect(text(provider)).not.toContain("API key set in config");
-    expect(text(provider)).toContain("Not configured");
+    // Models are available, so the provider works with credentials OpenClaw does not hold.
+    expect(text(provider)).toContain("Credentials managed outside OpenClaw");
   });
 
   it("renders mixed credential probes as connected with warnings", () => {
@@ -757,7 +792,7 @@ describe("renderModelProviders", () => {
 
   it("disables probing when the gateway does not advertise the method", () => {
     const onProbe = vi.fn();
-    const container = mount(props({ probeAvailable: false, onProbe }));
+    const container = expand(mount(props({ probeAvailable: false, onProbe })));
     const testButton = button(container, "Test connection");
     expect(testButton?.disabled).toBe(true);
     expect(testButton?.title).toContain("newer gateway");
@@ -773,7 +808,7 @@ describe("renderModelProviders", () => {
         onProbe,
       }),
     );
-    button(container, "Test connection")?.click();
+    button(expand(container), "Test connection")!.click();
     expect(onProbe).toHaveBeenCalledWith("openai", ["anthropic", "claude-cli"]);
   });
 
@@ -833,7 +868,7 @@ describe("renderModelProviders", () => {
         cards: [card({ configAuthMode: "oauth" })],
       }),
     );
-    const setKey = button(container, "Set API key");
+    const setKey = button(expand(container), "Set API key");
     expect(setKey?.disabled).toBe(true);
     expect(setKey?.title).toContain('auth mode is "oauth"');
   });
