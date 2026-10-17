@@ -111,6 +111,13 @@ export async function captureSource(checkoutRoot) {
         }
         plugin.packageName = packageJson.name;
       }
+      if (
+        !Array.isArray(packageJson?.openclaw?.extensions) ||
+        packageJson.openclaw.extensions.length === 0
+      ) {
+        plugin.error =
+          "Plugin has no nonempty package.json openclaw.extensions declaration; Plugin Inspector cannot establish the implicit host entrypoint, so untyped SDK usage may be missing.";
+      }
     } catch (error) {
       plugin.error = `Plugin metadata could not be read: ${error.message}`;
     }

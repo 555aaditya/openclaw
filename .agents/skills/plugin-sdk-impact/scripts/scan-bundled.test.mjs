@@ -33,7 +33,10 @@ async function checkout(t) {
   t.after(() => rm(root, { recursive: true, force: true }));
   await mkdir(path.join(root, "extensions", "local"), { recursive: true });
   await writeFile(path.join(root, "extensions/local/openclaw.plugin.json"), '{"id":"local"}');
-  await writeFile(path.join(root, "extensions/local/package.json"), '{"name":"@example/local"}');
+  await writeFile(
+    path.join(root, "extensions/local/package.json"),
+    '{"name":"@example/local","openclaw":{"extensions":["./index.ts"]}}',
+  );
   await writeFile(path.join(root, "extensions/local/index.ts"), "export default {};\n");
   await exec("git", ["init", "--quiet", root]);
   await commit(root, "fixture");
@@ -72,7 +75,11 @@ test("malformed plugin metadata stays visible and symlinked plugins cannot disap
   await commit(root, "manifest-only plugin");
   const manifestOnly = await captureSource(root);
   assert.equal(manifestOnly.plugins[0].packageName, null);
-  assert.equal(manifestOnly.plugins[0].error, undefined);
+  assert.match(manifestOnly.plugins[0].error, /cannot establish the implicit host entrypoint/);
+  await assert.rejects(
+    verifySource(manifestOnly.source, [{ ...manifestOnly.plugins[0], error: undefined }]),
+    /metadata failure/,
+  );
   await writeFile(path.join(root, "extensions/local/package.json"), "{}");
   await commit(root, "missing package identity");
   const { source, plugins } = await captureSource(root);
