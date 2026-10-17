@@ -97,7 +97,7 @@ it("refreshes every agent from admitted metadata without inventory fallback in a
   vi.stubEnv("OPENCLAW_BUNDLED_SKILLS_DIR", path.join(root, "bundled"));
   pinConfigDir();
   const pluginRoot = path.join(root, "plugin");
-  const workspaces = [path.join(root, "first"), path.join(root, "second")];
+  const workspaceDirs = [path.join(root, "first"), path.join(root, "second")];
   const pluginMetadataSnapshot = createPluginMetadataSnapshotFixture({
     plugins: [
       { id: "fixture", origin: "config", rootDir: pluginRoot, skills: ["guide"] },
@@ -107,7 +107,7 @@ it("refreshes every agent from admitted metadata without inventory fallback in a
   for (const name of ["guide", "acp"]) {
     await writeSkill({ dir: path.join(pluginRoot, name), name, description: name });
   }
-  for (const [index, workspaceDir] of workspaces.entries()) {
+  for (const [index, workspaceDir] of workspaceDirs.entries()) {
     await writeSkill({
       dir: path.join(workspaceDir, "skills", `local-${index}`),
       name: `local-${index}`,
@@ -116,26 +116,26 @@ it("refreshes every agent from admitted metadata without inventory fallback in a
   }
   // Only replace the thread transport; refresh and the worker execute their real owners.
   vi.spyOn(WorkerTaskPool.prototype, "run").mockImplementation(async (input) =>
-    worker.handle(structuredClone(input)),
+    worker(structuredClone(input)),
   );
   const fallback = vi.spyOn(pluginSkills, "resolvePluginSkillRoots");
   for (const enabled of [true, false]) {
     const config: OpenClawConfig = {
       agents: {
         entries: {
-          main: { workspace: workspaces[0] },
-          second: { workspace: workspaces[1] },
+          main: { workspace: workspaceDirs[0] },
+          second: { workspace: workspaceDirs[1] },
         },
       },
       plugins: { entries: { fixture: { enabled }, acpx: { enabled: true } } },
       acp: { enabled: false },
     };
     const params = { config, reason: "config-change" as const, pluginMetadataSnapshot };
-    worker.handle.mockClear();
+    worker.mockClear();
     await withPluginCache(createPluginCache(), () => refreshSkillsDiscovery(params));
     expect(fallback.mock.calls.length).toBe(0);
-    expect(worker.handle.mock.calls.length).toBe(1);
-    const result: SkillsDiscoveryOutput = await worker.handle.mock.results[0]!.value;
+    expect(worker.mock.calls.length).toBe(1);
+    const result: SkillsDiscoveryOutput = await worker.mock.results[0]!.value;
     expect(result.kind).toBe("scan");
     if (result.kind !== "scan") {
       throw new Error("Expected scan results");
@@ -147,7 +147,7 @@ it("refreshes every agent from admitted metadata without inventory fallback in a
           .toSorted(),
       ),
     ).toEqual(
-      workspaces.map((_, index) => [...(enabled ? ["guide"] : []), `local-${index}`].toSorted()),
+      workspaceDirs.map((_, index) => [...(enabled ? ["guide"] : []), `local-${index}`].toSorted()),
     );
   }
 });
