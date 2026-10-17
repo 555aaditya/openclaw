@@ -22,6 +22,7 @@ import { createTempDirTracker } from "../../test/helpers/temp-dir.js";
 import { resetConfigRuntimeState, setRuntimeConfigSnapshot } from "../config/config.js";
 import * as sessionAccessor from "../config/sessions/session-accessor.js";
 import { readSessionIdentityEvidenceInDatabase as readEvidence } from "../config/sessions/session-accessor.sqlite-entry-availability.js";
+import * as placementEvidence from "../config/sessions/session-placement-evidence.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { requireNodeSqlite } from "../infra/node-sqlite.js";
 import * as registryListing from "../state/openclaw-agent-db-registry-listing.js";
@@ -287,29 +288,25 @@ describe("worker placement session evidence", () => {
   it("warns instead of silently swallowing resolver pipeline failures", () =>
     withEvidenceState(async () => {
       setRuntimeConfigSnapshot({});
-      const prepareRegistry = registryListing.prepareOpenClawAgentDatabaseRegistrySnapshotRead;
-      const registry = vi
-        .spyOn(registryListing, "prepareOpenClawAgentDatabaseRegistrySnapshotRead")
-        .mockImplementationOnce((...args) => ({
-          ...prepareRegistry(...args),
-          assertCurrent() {},
-          read: async () => {
-            throw new Error("evidence pipeline exploded");
-          },
-        }));
+      const evidenceRead = vi
+        .spyOn(placementEvidence, "readPlacementSessionIdentityEvidence")
+        .mockRejectedValueOnce(new Error("evidence pipeline exploded"));
       const placement = localPlacement(
         "session-pipeline-failure",
         "agent:retired:pipeline-failure",
         "retired",
       );
 
-      await expect(resolvePlacementEvidence(placement)).resolves.toBe("unknown");
-      expect(evidenceWarnSpy).toHaveBeenCalledOnce();
-      expect(evidenceWarnSpy).toHaveBeenCalledWith(
-        expect.stringContaining("session evidence resolution failed"),
-        { error: expect.objectContaining({ message: "evidence pipeline exploded" }) },
-      );
-      registry.mockRestore();
+      try {
+        await expect(resolvePlacementEvidence(placement)).resolves.toBe("unknown");
+        expect(evidenceWarnSpy).toHaveBeenCalledOnce();
+        expect(evidenceWarnSpy).toHaveBeenCalledWith(
+          expect.stringContaining("session evidence resolution failed"),
+          { error: expect.objectContaining({ message: "evidence pipeline exploded" }) },
+        );
+      } finally {
+        evidenceRead.mockRestore();
+      }
     }));
 
   it.each(["cold", "warm"] as const)(

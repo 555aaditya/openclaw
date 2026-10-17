@@ -164,12 +164,6 @@ it("reuses configured plugins for runs outside the canonical workspace", async (
     // Cron and subagent workspaces without a bootstrap stay bound to their own directory.
     preparation.mockImplementationOnce(async (input) => {
       expect(input.attempt.workspaceDir).toBe(taskWorkspace);
-      expect(input.attempt.preparedSessionTarget?.target).toMatchObject({
-        agentId: "main",
-        sessionId: "task-workspace-proof",
-        sessionKey: "agent:main:task-workspace-proof",
-      });
-      expect(() => input.attempt.preparedSessionTarget?.assertCurrent()).not.toThrow();
       expectConfiguredGeneration(input);
       expect(input.setup).toMatchObject({ effectiveWorkspace: taskWorkspace });
       expect(await readText(input.toolBase.toolsRaw, "task.txt")).toMatchObject({

@@ -462,6 +462,7 @@ vi.mock("node:fs/promises", async (importOriginal) => {
   return { ...patched, default: patched };
 });
 
+// mock-isolation: exercise creation ordering without model calls or a second transcript writer.
 vi.mock(import("./agents-onboarding.js"), () => ({
   prepareAgentOnboarding: mocks.prepareAgentOnboarding,
   completeAgentOnboarding: mocks.completeAgentOnboarding,

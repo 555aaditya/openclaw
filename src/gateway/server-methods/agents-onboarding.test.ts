@@ -1,3 +1,4 @@
+import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import * as config from "../../config/config.js";
 import * as snapshots from "../../config/runtime-snapshot.js";
@@ -12,9 +13,11 @@ import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
 import { prepareAgentOnboarding, completeAgentOnboarding } from "./agents-onboarding.js";
 import type { GatewayRequestHandlerOptions } from "./types.js";
 
+// mock-isolation: control inference availability without contacting a real provider.
 vi.mock(import("../../system-agent/setup-inference-turn.js"), () => ({
   verifySetupInferenceConfig: vi.fn(),
 }));
+// mock-isolation: test durable transcript publication without a running Gateway event broadcaster.
 vi.mock(import("./session-change-event.js"), () => ({ emitSessionsChanged: vi.fn() }));
 
 const cfg: OpenClawConfig = {
@@ -100,9 +103,11 @@ it("atomically publishes a saved greeting that remains in the agent's conversati
     const runtimeConfig: OpenClawConfig = { ...cfg, agents: { entries: { main: {} } } };
     const options = invocation(runtimeConfig);
     const recordCreatedSession = vi.fn();
-    options.sessionMutationAuthorization = { recordCreatedSession } as NonNullable<
-      GatewayRequestHandlerOptions["sessionMutationAuthorization"]
-    >;
+    options.sessionMutationAuthorization = {
+      assertCurrent: vi.fn(),
+      assertTargetCurrent: vi.fn(),
+      recordCreatedSession,
+    };
     const receipt = await completeAgentOnboarding(options, "main");
     expect(receipt).toEqual({ status: "completed", sessionKey: "agent:main:home" });
     const entry = loadSessionEntryReadOnly({ agentId: "main", sessionKey: receipt.sessionKey });
@@ -116,6 +121,7 @@ it("atomically publishes a saved greeting that remains in the agent's conversati
       sessionId: entry!.sessionId,
     });
     const messages = events
+      .filter(isRecord)
       .filter((event) => event.type === "message")
       .map((event) => event.message);
     expect(messages).toEqual([
@@ -128,7 +134,7 @@ it("atomically publishes a saved greeting that remains in the agent's conversati
         usage: expect.objectContaining({ input: 0, output: 0, totalTokens: 0 }),
       }),
     ]);
-    expect(messages.some((message) => message.role === "user")).toBe(false);
+    expect(messages.some((message) => isRecord(message) && message.role === "user")).toBe(false);
     expect(isTranscriptOnlyOpenClawAssistantMessage(messages[0])).toBe(false);
   });
 });

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { resolveTimestampMsToIsoString } from "@openclaw/normalization-core/number-coercion";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
+import type { AssistantMessage } from "../../llm/types.js";
 import { canonicalizePersistedUserMessageMedia } from "../../media/media-facts.js";
 import type { OpenClawAgentDatabase } from "../../state/openclaw-agent-db.js";
 import type {
@@ -40,7 +41,6 @@ import { createSessionTranscriptHeader } from "./transcript-header.js";
 import { normalizeTranscriptJsonValue } from "./transcript-json.js";
 import { messagesMatchForIdempotentReplay } from "./transcript-message-equality.js";
 import { readMessageIdempotencyKey } from "./transcript-message-identity.js";
-import type { SessionTranscriptAssistantMessage } from "./transcript.js";
 
 export type { PreparedTranscriptMessageAppend } from "./session-accessor.sqlite-transcript-message-append.types.js";
 
@@ -112,7 +112,7 @@ function createTranscriptMessageEvent<TMessage>(params: {
 export function prepareInitialAssistantTranscript(params: {
   sessionId: string;
   cwd?: string;
-  message: SessionTranscriptAssistantMessage;
+  message: AssistantMessage;
   idempotencyKey?: string;
 }) {
   const prepared = prepareTranscriptMessageAppendForWorker({

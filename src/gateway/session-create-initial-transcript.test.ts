@@ -1,3 +1,4 @@
+import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { expect, it, vi } from "vitest";
 import { buildAssistantMessage, buildUsageWithNoCost } from "../agents/stream-message-shared.js";
 import {
@@ -134,7 +135,7 @@ it("creates a seeded child instead of taking the legacy main-session reset short
       sessionKey: child.key,
       sessionId: child.entry.sessionId,
     });
-    expect(events.filter((event) => event.type === "message")).toEqual([
+    expect(events.filter((event) => isRecord(event) && event.type === "message")).toEqual([
       expect.objectContaining({ message: { ...message, idempotencyKey: "opening" } }),
     ]);
   });

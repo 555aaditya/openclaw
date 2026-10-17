@@ -100,7 +100,7 @@ it("refreshes every agent from admitted metadata without inventory fallback in a
     await withPluginCache(createPluginCache(), () => refreshSkillsDiscovery(params));
     expect(fallback.mock.calls.length).toBe(0);
     expect(worker.handle.mock.calls.length).toBe(1);
-    const result = await worker.handle.mock.results[0]!.value;
+    const result: SkillsDiscoveryOutput = await worker.handle.mock.results[0]!.value;
     expect(result.kind).toBe("scan");
     if (result.kind !== "scan") {
       throw new Error("Expected scan results");

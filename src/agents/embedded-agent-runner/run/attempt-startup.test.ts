@@ -23,6 +23,7 @@ vi.mock("../../../skills/runtime/env-overrides.js", () => ({
   applySkillEnvOverridesFromSnapshot: mocks.applySkillEnvOverridesFromSnapshot,
 }));
 
+// mock-isolation: inject skill entries without filesystem discovery while testing startup cleanup.
 vi.mock("../../../skills/runtime/embedded-run-entries.js", () => ({
   resolveEmbeddedRunSkillEntries: mocks.resolveEmbeddedRunSkillEntries,
 }));

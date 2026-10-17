@@ -14,7 +14,7 @@ import { runEmbeddedAgent } from "./run-orchestrator.js";
 
 const loop = vi.hoisted(() => vi.fn<(typeof import("./run-loop.js"))["runPreparedEmbeddedLoop"]>());
 // Keep orchestration, metadata, plugin selection, registration, and resource ownership real.
-// Stop before provider inference; this regression concerns which plugin sources execute.
+// mock-isolation: stop before provider inference; plugin selection and ownership remain real.
 vi.mock("./run-loop.js", () => ({ runPreparedEmbeddedLoop: loop }));
 
 const evaluationKey = "__openclawInferencePluginEvaluations";

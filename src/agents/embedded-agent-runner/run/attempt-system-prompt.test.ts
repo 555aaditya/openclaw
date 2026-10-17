@@ -431,6 +431,7 @@ describe("buildAttemptSystemPrompt", () => {
       }),
       config,
       admittedRunContext: await admitPrompt(config),
+      runId: "raw-prompt-run",
       sessionId: "raw-prompt",
       sessionKey: "agent:main:raw-prompt",
       sessionPersistence: mode.detached ? "detached" : "durable",
