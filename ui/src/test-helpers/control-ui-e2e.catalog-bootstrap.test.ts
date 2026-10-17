@@ -29,7 +29,7 @@ it.for([
     gatewayPage.execute(
       createControlUiMockGatewayInitScript({
         defaultAgentId: "ops",
-        models: [{ id: "wrong-default", provider: "fixture" }],
+        models: [{ id: "wrong-default", provider: "fixture", name: "Wrong default" }],
         methodResponses: { "models.list": catalog },
       }),
     );
