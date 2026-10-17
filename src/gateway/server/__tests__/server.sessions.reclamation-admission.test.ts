@@ -226,6 +226,13 @@ test("sessions.delete admits unrelated same-store patches during Worker validati
     },
     storePath,
   });
+  await seedLinearSessionTranscript({
+    agentId: "main",
+    sessionKey: targetKey,
+    sessionId: "validation-delete",
+    storePath,
+    contents: ["transcript requiring reclamation"],
+  });
   const { ws } = await openClient();
   const databasePath = resolveSqliteTargetFromSessionStorePath(storePath, { agentId: "main" }).path;
   // Seed a host handle; the worker interceptor expires proof after executor preparation.
