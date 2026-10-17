@@ -2,6 +2,7 @@ import type {
   AgentsCreateParams,
   AgentsCreateResult,
 } from "../../../packages/gateway-protocol/src/schema/agents-models-skills.js";
+import { buildAssistantMessage, buildUsageWithNoCost } from "../../agents/stream-message-shared.js";
 import { applyAgentConfig } from "../../commands/agents.config.js";
 import { readConfigFileSnapshot } from "../../config/config.js";
 import {
@@ -9,13 +10,12 @@ import {
   hashRuntimeConfigValue,
 } from "../../config/runtime-snapshot.js";
 import { resolveAgentMainSessionKey } from "../../config/sessions/main-session.js";
-import {
-  appendAssistantMessageToSessionTranscript,
-  appendExactAssistantMessageToSessionTranscript,
-} from "../../config/sessions/transcript.js";
 import { formatErrorMessage } from "../../infra/errors.js";
-import { completeSetupInferenceConfig } from "../../system-agent/setup-inference-completion.js";
-import type { SetupInferenceAssistantReply } from "../../system-agent/setup-inference-core.js";
+import {
+  OPENCLAW_TRANSCRIPT_ARTIFACT_API,
+  OPENCLAW_TRANSCRIPT_ARTIFACT_PROVIDER,
+} from "../../shared/transcript-only-openclaw-assistant.js";
+import { verifySetupInferenceConfig } from "../../system-agent/setup-inference-turn.js";
 import { resolveGatewayOperatorRoleActor } from "../operator-role-policy.js";
 import { startSessionCreateDiagnostics } from "../session-create-diagnostics.js";
 import { createGatewaySession } from "../session-create-service.js";
@@ -25,16 +25,12 @@ import { readGatewayRequestMutationAuthority } from "./session-mutation-guards.j
 import { createSystemAgentGatewayRuntime } from "./system-agent-execution.js";
 import type { GatewayRequestHandlerOptions } from "./types.js";
 
-const OPENING_PROMPT =
-  "Begin your first conversation as the user's new assistant. Briefly introduce yourself, then ask what they would like to call you. Do not choose, invent, or suggest a name. Ask only that first question and wait for their answer. This is the first step of your normal BOOTSTRAP.md onboarding; identity and preferences will be established in the following conversation. Keep your reply to one or two short sentences.";
-
 export type PreparedAgentOnboarding = {
-  reply: SetupInferenceAssistantReply;
   expectedConfigHash: string | null;
   assertCurrent: () => void;
 };
 
-/** The real opening reply proves inference before the creation owner writes any agent state. */
+/** Verify the primary route before the creation owner writes any agent state. */
 export async function prepareAgentOnboarding(
   options: GatewayRequestHandlerOptions,
   agentId: string,
@@ -74,23 +70,18 @@ export async function prepareAgentOnboarding(
     ...(params.model ? { model: params.model } : {}),
     ...(params.workspace ? { workspace: params.workspace } : {}),
   });
-  const opening = await completeSetupInferenceConfig({
+  const verification = await verifySetupInferenceConfig({
     config: candidate,
     agentId,
     modelTarget: "primary",
-    prompt: OPENING_PROMPT,
-    maxTokens: 128,
+    requireExecutionOwner: false,
     runtime: createSystemAgentGatewayRuntime(),
   });
   assertCurrent();
-  if (!opening.ok) {
-    throw new Error(opening.error);
-  }
-  if (!opening.assistantReply) {
-    throw new Error("The model did not return a replayable opening reply. Retry agent creation.");
+  if (!verification.ok) {
+    throw new Error(verification.error);
   }
   return {
-    reply: opening.assistantReply,
     expectedConfigHash: snapshot.hash ?? null,
     assertCurrent,
   };
@@ -100,7 +91,6 @@ export async function prepareAgentOnboarding(
 export async function completeAgentOnboarding(
   options: GatewayRequestHandlerOptions,
   agentId: string,
-  opening: PreparedAgentOnboarding,
 ): Promise<NonNullable<AgentsCreateResult["onboarding"]>> {
   using diagnostics = startSessionCreateDiagnostics();
   const cfg = options.context.getRuntimeConfig();
@@ -118,7 +108,20 @@ export async function completeAgentOnboarding(
       requestingOperatorProfileId: options.client?.authenticatedUserProfile?.profileId,
       operatorRoleActor: resolveGatewayOperatorRoleActor(options.client),
       commitGuard: authority.assertCurrent,
-      atomicInitialization: true,
+      initialAssistantMessage: {
+        // This is saved conversation, not model output or a delivery-only mirror.
+        message: buildAssistantMessage({
+          model: {
+            api: OPENCLAW_TRANSCRIPT_ARTIFACT_API,
+            provider: OPENCLAW_TRANSCRIPT_ARTIFACT_PROVIDER,
+            id: "onboarding",
+          },
+          content: [{ type: "text", text: "Hi! What would you like to call me?" }],
+          stopReason: "stop",
+          usage: buildUsageWithNoCost({}),
+        }),
+        idempotencyKey: `agents.create:${agentId}:opening`,
+      },
       onPhase: diagnostics?.mark,
       onCreatedSessionCommitted: (session) =>
         options.sessionMutationAuthorization?.recordCreatedSession?.({
@@ -129,33 +132,6 @@ export async function completeAgentOnboarding(
           entry: session.entry,
           lifecycleRevision: session.entry.lifecycleRevision,
         }),
-      afterCreate: async (session) => {
-        const target = {
-          agentId,
-          sessionKey,
-          storePath: session.storePath,
-          expectedSessionId: session.entry.sessionId,
-          config: cfg,
-          idempotencyKey: `agents.create:${agentId}:opening`,
-          assertCurrent: authority.assertCurrent,
-          // Atomic initialization owns entry publication until the transcript is ready.
-          touchSessionEntry: false,
-          updateMode: "none" as const,
-        };
-        const appended =
-          opening.reply.kind === "native"
-            ? await appendExactAssistantMessageToSessionTranscript({
-                ...target,
-                message: opening.reply.message,
-              })
-            : await appendAssistantMessageToSessionTranscript({
-                ...target,
-                text: opening.reply.text,
-              });
-        if (!appended.ok) {
-          throw new Error(appended.reason ?? "The opening reply could not be saved.");
-        }
-      },
     });
     if (!created.ok) {
       throw new Error(created.error.message);

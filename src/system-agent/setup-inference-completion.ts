@@ -80,6 +80,5 @@ export async function completeSetupInferenceConfig(
     modelRef: route.modelLabel,
     latencyMs: turn.latencyMs,
     text: turn.text,
-    ...(turn.assistantReply ? { assistantReply: turn.assistantReply } : {}),
   };
 }

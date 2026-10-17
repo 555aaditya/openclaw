@@ -710,7 +710,7 @@ describe("agents.create", () => {
           : { status, sessionKey: "agent:test-agent:home", error: "inference unavailable" };
       mocks.prepareAgentOnboarding.mockImplementation(async () => {
         expect(mocks.writeConfigFile).not.toHaveBeenCalled();
-        return { expectedConfigHash: "test-hash", assertCurrent: vi.fn(), reply: {} };
+        return { expectedConfigHash: "test-hash", assertCurrent: vi.fn() };
       });
       mocks.completeAgentOnboarding.mockImplementation(async (_options, agentId) => {
         expect(agentId).toBe("test-agent");
@@ -725,7 +725,7 @@ describe("agents.create", () => {
       expect(mocks.completeAgentOnboarding).toHaveBeenCalledOnce();
     },
   );
-  it("does not create an agent or workspace when the real opening inference fails", async () => {
+  it("does not create an agent or workspace when inference verification fails", async () => {
     mocks.prepareAgentOnboarding.mockRejectedValueOnce(new Error("Inference unavailable"));
     expectRespondErrorContaining(
       await create({ agentId: "bot-unavailable", name: "New agent", onboarding: true }),

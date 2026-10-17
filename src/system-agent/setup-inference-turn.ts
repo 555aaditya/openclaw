@@ -228,20 +228,8 @@ export async function runSetupInferenceTurn(params: {
         "Inference succeeded, but its runtime did not report an owner that OpenClaw can safely reuse.",
       );
     }
-    const assistant = shared.sessionManager
-      .getBranch()
-      .findLast((entry) => entry.type === "message" && entry.message.role === "assistant");
-    // CLI adapters may return text without a native transcript message. Keep
-    // that distinction so publication uses a delivery mirror, not invented usage.
-    const assistantReply: SetupTurnSuccess["assistantReply"] =
-      assistant?.type === "message" && assistant.message.role === "assistant"
-        ? { kind: "native", message: assistant.message }
-        : route.runner === "cli"
-          ? { kind: "cli-text", text }
-          : undefined;
     return {
       ok: true,
-      ...(assistantReply ? { assistantReply } : {}),
       latencyMs: Date.now() - started,
       text,
       auth: successfulAuth ?? (route.authProfileId ? { authProfileId: route.authProfileId } : {}),

@@ -117,7 +117,7 @@ export const agentsHandlers: GatewayRequestHandlers = {
       respond(false, undefined, localStateOwnerChangedError(error));
       return;
     }
-    let opening: PreparedAgentOnboarding | undefined;
+    let preparation: PreparedAgentOnboarding | undefined;
     if (params.onboarding) {
       const identity = validateAgentIdInput(params.agentId ?? params.name, {
         displayName: params.name,
@@ -128,7 +128,7 @@ export const agentsHandlers: GatewayRequestHandlers = {
       }
       try {
         diagnostics?.mark("inference");
-        opening = await prepareAgentOnboarding(options, identity.agentId, params);
+        preparation = await prepareAgentOnboarding(options, identity.agentId, params);
       } catch (error) {
         respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, formatErrorMessage(error)));
         return;
@@ -147,9 +147,9 @@ export const agentsHandlers: GatewayRequestHandlers = {
           avatar: params.avatar,
           beforePersistentApply: () => {
             assertOwnerCurrent?.();
-            opening?.assertCurrent();
+            preparation?.assertCurrent();
           },
-          ...(opening ? { expectedConfigHash: opening.expectedConfigHash } : {}),
+          ...(preparation ? { expectedConfigHash: preparation.expectedConfigHash } : {}),
           assertIdentityInputAllowed: captureGatewayClientUploadCommitGuard({
             method: "agents.create",
             requestParams: params,
@@ -172,8 +172,8 @@ export const agentsHandlers: GatewayRequestHandlers = {
         return;
       }
       diagnostics?.mark("createChat");
-      const onboarding = opening
-        ? await completeAgentOnboarding(options, result.agentId, opening)
+      const onboarding = preparation
+        ? await completeAgentOnboarding(options, result.agentId)
         : undefined;
       diagnostics?.mark("response");
       respond(

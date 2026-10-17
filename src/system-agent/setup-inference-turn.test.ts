@@ -70,7 +70,7 @@ function embeddedRoute(runtime: "codex" | "openclaw" = "codex"): SystemAgentConf
 }
 
 describe("setup inference plugin ownership", () => {
-  it("retains the exact generated assistant message from a bounded read-only completion", async () => {
+  it("runs a bounded read-only completion with a detached transcript", async () => {
     const route = embeddedRoute("openclaw");
     const assistant = buildAssistantMessage({
       model: { api: "openai-responses", provider: route.provider, id: route.model },
@@ -110,7 +110,7 @@ describe("setup inference plugin ownership", () => {
     });
     expect(result).toMatchObject({
       ok: true,
-      assistantReply: { kind: "native", message: assistant },
+      text: "What would you like to call me?",
     });
   });
 
