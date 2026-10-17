@@ -1,23 +1,21 @@
 import { createServer } from "node:http";
-import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { msteamsPlugin } from "../extensions/msteams/api.js";
 import { dispatchChannelMessageAction } from "../src/channels/plugins/message-action-dispatch.js";
 import type { ChannelThreadingToolContext } from "../src/channels/plugins/types.public.js";
-import { createDefaultDeps } from "../src/cli/deps.js";
-import { createMessageCliHelpers } from "../src/cli/program/message/helpers.js";
 import { registerMessageDiscordAdminCommands } from "../src/cli/program/message/register.discord-admin.js";
 import { registerMessageSearchCommand } from "../src/cli/program/message/register.permissions-search.js";
 import { registerMessageReadEditDeleteCommands } from "../src/cli/program/message/register.read-edit-delete.js";
-import { messageCommand } from "../src/commands/message.js";
 import { clearRuntimeConfigSnapshot, setRuntimeConfigSnapshot } from "../src/config/config.js";
-import type { OpenClawConfig } from "../src/config/types.js";
 import { getPluginInstance } from "../src/plugins/plugin-instance-scope.js";
-import { createPluginRegistry } from "../src/plugins/registry.js";
-import { resetPluginRuntimeStateForTest, setActivePluginRegistry } from "../src/plugins/runtime.js";
-import type { PluginRuntime } from "../src/plugins/runtime/types.js";
-import { createPluginRecord } from "../src/plugins/status.test-fixtures.js";
-import { createTeamsReadCaller } from "./msteams-read.test-support.js";
+import { resetPluginRuntimeStateForTest } from "../src/plugins/runtime.js";
+import {
+  createTeamsReadCaller,
+  createTeamsReadConfig,
+  createReadPluginRegistration,
+  runReadCli,
+} from "./channel-read.test-support.js";
+import { listenLoopback, respondJson } from "./helpers/gateway-integration-fixtures.js";
 
 const graph = vi.hoisted(() => ({
   endpoint: undefined as { origin: string; signal: AbortSignal } | undefined,
@@ -108,39 +106,16 @@ async function createFixture(
   origin: "bundled" | "global" = "bundled",
   searchMatches = 1,
 ) {
-  const cfg: OpenClawConfig = {
-    channels: {
-      msteams: {
-        enabled: true,
-        authType: "secret",
-        appId: "44444444-4444-4444-4444-444444444444",
-        appPassword: "synthetic-app-password",
-        tenantId: "55555555-5555-5555-5555-555555555555",
-        dmPolicy: "open",
-        allowFrom: ["*"],
-        groupPolicy: currentContext === "chat" ? "open" : "allowlist",
-        teams: {
-          [current.teamId]: { channels: { [current.channelId]: {} } },
-          [other.teamId]: { channels: { [other.channelId]: {} } },
-        },
-      },
+  const cfg = createTeamsReadConfig({
+    groupPolicy: currentContext === "chat" ? "open" : "allowlist",
+    teams: {
+      [current.teamId]: { channels: { [current.channelId]: {} } },
+      [other.teamId]: { channels: { [other.channelId]: {} } },
     },
-  };
-  const owner = createPluginRegistry({
-    logger: { info() {}, warn() {}, error() {}, debug() {} },
-    runtime: {} as PluginRuntime,
-    activateGlobalSideEffects: false,
   });
-  const record = createPluginRecord({
-    id: "msteams",
-    origin,
-    trustedOfficialInstall: origin === "global",
-  });
-  owner.registry.plugins.push(record);
-  owner.createApi(record, { config: cfg, registrationMode: "full" }).registerChannel({
-    plugin: { ...msteamsPlugin, status: undefined },
-  });
-  setActivePluginRegistry(owner.registry);
+  const { record, api, activate } = createReadPluginRegistration(cfg, "msteams", origin);
+  api.registerChannel({ plugin: { ...msteamsPlugin, status: undefined } });
+  activate();
   setRuntimeConfigSnapshot(cfg, cfg);
 
   const toolContext: ChannelThreadingToolContext | undefined =
@@ -170,6 +145,14 @@ async function createFixture(
     const destination = [current, other].find((candidate) =>
       path.startsWith(`/v1.0/teams/${candidate.teamId}/`),
     );
+    const channelPath =
+      destination && `/v1.0/teams/${destination.teamId}/channels/${destination.channelId}`;
+    const rawMessage = (id: string) => ({
+      id,
+      body: { content: destination?.text, contentType: "text" },
+      from: messageSender,
+      createdDateTime: messageCreatedAt,
+    });
     let body: unknown;
     if (destination && path === `/v1.0/teams/${destination.teamId}/members`) {
       body = {
@@ -182,40 +165,21 @@ async function createFixture(
           },
         ],
       };
-    } else if (
-      destination &&
-      path === `/v1.0/teams/${destination.teamId}/channels/${destination.channelId}`
-    ) {
+    } else if (destination && path === channelPath) {
       body = { id: destination.channelId, membershipType: "standard" };
-    } else if (
-      destination &&
-      path === `/v1.0/teams/${destination.teamId}/channels/${destination.channelId}/messages`
-    ) {
+    } else if (destination && path === `${channelPath}/messages`) {
       body = {
-        value: Array.from({ length: searchMatches }, (_, index) => ({
-          id: index === 0 ? destination.messageId : `${destination.messageId}-${index}`,
-          body: { content: destination.text, contentType: "text" },
-          from: messageSender,
-          createdDateTime: messageCreatedAt,
-        })),
+        value: Array.from({ length: searchMatches }, (_, index) =>
+          rawMessage(index === 0 ? destination.messageId : `${destination.messageId}-${index}`),
+        ),
       };
-    } else if (
-      destination &&
-      path ===
-        `/v1.0/teams/${destination.teamId}/channels/${destination.channelId}/messages/${destination.messageId}`
-    ) {
-      body = {
-        id: destination.messageId,
-        body: { content: destination.text, contentType: "text" },
-        from: messageSender,
-        createdDateTime: messageCreatedAt,
-      };
+    } else if (destination && path === `${channelPath}/messages/${destination.messageId}`) {
+      body = rawMessage(destination.messageId);
     } else {
       response.statusCode = 404;
       body = { error: { message: "Unexpected Graph fixture route" } };
     }
-    response.setHeader("content-type", "application/json");
-    response.end(JSON.stringify(body));
+    respondJson(response, body, response.statusCode);
   });
   cleanups.push(async () => {
     controller.abort(new Error("Teams fixture closed"));
@@ -228,14 +192,7 @@ async function createFixture(
     await getPluginInstance(record)?.dispose();
     graph.endpoint = undefined;
   });
-  await new Promise<void>((resolve) => {
-    server.listen(0, "127.0.0.1", resolve);
-  });
-  const address = server.address();
-  if (!address || typeof address === "string") {
-    throw new Error("Expected a loopback Graph fixture address");
-  }
-  graph.endpoint = { origin: `http://127.0.0.1:${address.port}`, signal: controller.signal };
+  graph.endpoint = { origin: await listenLoopback(server), signal: controller.signal };
   function retain<T>(operation: () => Promise<T>): Promise<T> {
     const result = Promise.resolve().then(() => {
       controller.signal.throwIfAborted();
@@ -310,40 +267,12 @@ function expectGraphRequests(requests: GraphRequest[], action: Action, destinati
 }
 
 describe("Teams message CLI", () => {
-  async function runCli(
+  const runCli = (
     register: typeof registerMessageDiscordAdminCommands,
     args: string[],
     action: Action | "read",
     json = true,
-  ) {
-    const runtime = { log: vi.fn(), error: vi.fn(), exit: vi.fn() };
-    const command = new Command().name("message").exitOverride();
-    register(command, {
-      ...createMessageCliHelpers("msteams"),
-      runMessageAction: async (name, opts) => {
-        await messageCommand({ ...opts, action: name }, createDefaultDeps(), runtime);
-      },
-    });
-
-    await command.parseAsync([...args, "--channel", "msteams", ...(json ? ["--json"] : [])], {
-      from: "user",
-    });
-
-    expect(runtime.error).not.toHaveBeenCalled();
-    if (!json) {
-      expect(runtime.log).toHaveBeenCalled();
-      return runtime.log.mock.calls.map(([line]) => String(line)).join("\n");
-    }
-    expect(runtime.log).toHaveBeenCalledTimes(1);
-    const result = JSON.parse(String(runtime.log.mock.calls[0]?.[0]));
-    expect(result).toMatchObject({
-      action,
-      channel: "msteams",
-      dryRun: false,
-      handledBy: "plugin",
-    });
-    return result.payload;
-  }
+  ) => runReadCli("msteams", register, args, action, json);
 
   it("renders Graph read and search messages while preserving JSON results", async () => {
     await createFixture("none");
@@ -411,9 +340,8 @@ describe("Teams message CLI", () => {
         ["search", "--channel-id", otherTarget, "--query", "planning", "--limit", String(limit)],
         "search",
       );
-      expect(payload).toMatchObject({ ok: true, channel: "msteams", action: "search" });
+      expect(payload).toMatchObject({ ok: true, channel: "msteams", action: "search", truncated });
       expect(payload.messages).toHaveLength(count);
-      expect(payload.truncated).toBe(truncated);
       expectGraphRequests(fixture.requests, "search", other);
     },
   );
@@ -450,26 +378,19 @@ describe.each([
 
 describe.each(["tool", "gateway"] as const)("Teams %s read target selection", (route) => {
   describe.each(["search", "member-info"] as const)("%s", (action) => {
-    it("reads the current channel when the target is omitted", async () => {
-      const fixture = await createFixture();
-      const result = await fixture.invoke(route, action);
-      expectReadResult(result, action, current);
-      expectGraphRequests(fixture.requests, action, current);
-    });
-
-    it("uses an explicit permitted channelId instead of the current channel", async () => {
-      const fixture = await createFixture();
-      const result = await fixture.invoke(route, action, { channelId: otherTarget });
-      expectReadResult(result, action, other);
-      expectGraphRequests(fixture.requests, action, other);
-    });
-
-    it("uses an explicit channelId without current conversation context", async () => {
-      const fixture = await createFixture("none");
-      const result = await fixture.invoke(route, action, { channelId: otherTarget });
-      expectReadResult(result, action, other);
-      expectGraphRequests(fixture.requests, action, other);
-    });
+    it.each([
+      { context: "channel", channelId: undefined, destination: current },
+      { context: "channel", channelId: otherTarget, destination: other },
+      { context: "none", channelId: otherTarget, destination: other },
+    ] as const)(
+      "reads $destination.channelId from $context with target=$channelId",
+      async ({ context, channelId, destination }) => {
+        const fixture = await createFixture(context);
+        const result = await fixture.invoke(route, action, channelId ? { channelId } : {});
+        expectReadResult(result, action, destination);
+        expectGraphRequests(fixture.requests, action, destination);
+      },
+    );
 
     it("preserves the missing-target error when no current context exists", async () => {
       const fixture = await createFixture("none");
