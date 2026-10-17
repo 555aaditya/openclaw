@@ -15,7 +15,7 @@ SubQ Snap typed decisions (not a conversational model).
 ## Distribution
 
 - Package: `@openclaw/subq`
-- Install route: included in OpenClaw, and also from npm or ClawHub: `clawhub:@openclaw/subq`
+- Install route: npm or ClawHub: `@openclaw/subq`
 
 ## Surface
 

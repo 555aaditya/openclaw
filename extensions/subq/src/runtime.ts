@@ -83,7 +83,7 @@ function parseResult(payload: unknown, batch: DecisionBatch): DecisionBatchResul
   ) {
     throw new Error("Invalid SubQ result.");
   }
-  const answers: Record<string, DecisionBatchResult["answers"][string]> = {};
+  const answers: Record<string, DecisionBatchResult["answers"][string]> = Object.create(null);
   for (const [id, question] of Object.entries(batch.questions)) {
     const answer = record(wireAnswers[id]);
     if (question.type === "boolean") {
