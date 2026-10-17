@@ -123,7 +123,7 @@ export async function resolveSystemAgentConfiguredRouteFromConfig(
   const [modelSelection, modelRuntimeAliases, simpleCompletion, harnessPolicy] = await Promise.all([
     import("../agents/model-selection.js"),
     import("../agents/model-runtime-aliases.js"),
-    import("../agents/simple-completion-runtime.js"),
+    import("../agents/simple-completion-selection.js"),
     import("../agents/harness/policy.js"),
   ]);
   const modelOwnerAgentId = resolveAmbientOwnerAgentId(runConfig, requestedAgentId);
