@@ -51,7 +51,7 @@ suite.define(() => {
     await expectHistoryBoundaryState(page, false);
     await page.close();
   });
-  it("automatically fills an underfilled native transcript and stops once scrollable", async () => {
+  it("fills startup once and requires reader intent for further native history", async () => {
     const artifactRoot = process.env.OPENCLAW_UI_E2E_ARTIFACT_DIR?.trim();
     const artifactDir = artifactRoot
       ? createControlUiE2eArtifactDir("chat-history-underfill", artifactRoot)
@@ -118,8 +118,7 @@ suite.define(() => {
               match: { offset: 6 },
               response: {
                 messages: secondOlderPage,
-                hasMore: true,
-                nextOffset: 22,
+                hasMore: false,
                 totalMessages: 30,
                 sessionId: "native-underfill-pagination",
                 thinkingLevel: null,
@@ -134,8 +133,6 @@ suite.define(() => {
       await page.goto(`${suite.server.baseUrl}chat`);
       const pane = page.locator('openclaw-chat-pane[aria-hidden="false"]');
       const thread = pane.locator(".chat-thread");
-      await page.getByText("Recent answer", { exact: true }).waitFor();
-      await expectTranscriptLayoutCommitted(thread);
       await expect
         .poll(async () =>
           (await gateway.getRequests("chat.history")).map(
@@ -143,21 +140,18 @@ suite.define(() => {
           ),
         )
         .toEqual([2]);
-      await expectHistoryBoundaryState(pane, true);
-      expect(await thread.evaluate((element) => element.scrollHeight <= element.clientHeight)).toBe(
-        true,
-      );
-      if (artifactDir) {
-        await writeFile(
-          path.join(artifactDir, "00-native-history-initial-underfill-loading.png"),
-          await takeControlUiViewportScreenshot(page, pane.locator(".chat-main"), [
-            pane.locator('.chat-history-boundary__action[aria-busy="true"]'),
-          ]),
-        );
-      }
+      expect(await page.getByText("Recent answer", { exact: true }).count()).toBe(0);
 
       await gateway.deferNext("chat.history", { offset: 6 });
       await gateway.resolveDeferred("chat.history");
+      await page.getByText("Recent answer", { exact: true }).waitFor();
+      await expectTranscriptLayoutCommitted(thread);
+      const earlier = await expectHistoryBoundaryState(pane, false);
+      expect(await gateway.getRequests("chat.history")).toHaveLength(1);
+      expect(await thread.evaluate((element) => element.scrollHeight <= element.clientHeight)).toBe(
+        true,
+      );
+      await earlier.click();
       await expect
         .poll(async () =>
           (await gateway.getRequests("chat.history")).map(
@@ -183,15 +177,14 @@ suite.define(() => {
       await expect
         .poll(() => pane.locator('.chat-history-boundary__action[aria-busy="true"]').count())
         .toBe(0);
-      await expectHistoryBoundaryState(pane, false);
-      expect(await pane.locator(".chat-history-sentinel").count()).toBe(1);
+      expect(await pane.locator(".chat-history-sentinel").count()).toBe(0);
       if (artifactDir) {
         await writeFile(
           path.join(artifactDir, "02-native-history-final-scrollable.png"),
           await takeControlUiViewportScreenshot(page, pane.locator(".chat-main"), [thread]),
         );
       }
-      // Filling the viewport must not stage an unused automatic page.
+      // Exhausting reader history must not stage another page.
       await expect
         .poll(() => gateway.getRequests("chat.history").then((requests) => requests.length))
         .toBe(2);
@@ -200,9 +193,9 @@ suite.define(() => {
           (request) => (request.params as { offset?: number } | undefined)?.offset,
         ),
       ).toEqual([2, 6]);
-      for (const request of await gateway.getRequests("chat.history")) {
-        expect(request.params).toMatchObject({ limit: 1000, maxBytes: 5 * 1024 * 1024 });
-      }
+      const requests = await gateway.getRequests("chat.history");
+      expect(requests[0].params).toMatchObject({ limit: 80, maxBytes: 2 * 1024 * 1024 });
+      expect(requests[1].params).toMatchObject({ limit: 1000, maxBytes: 5 * 1024 * 1024 });
     } finally {
       await suite.closeBrowserContext(context);
       if (artifactDir && proofVideo) {

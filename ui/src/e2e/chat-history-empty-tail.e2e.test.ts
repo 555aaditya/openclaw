@@ -31,18 +31,32 @@ const hiddenActivity = Array.from({ length: 80 }, (_, index) => ({
 
 suite.define(() => {
   it.each([
-    { name: "empty projection", messages: [], height: 720 },
+    { name: "empty projection", messages: [], height: 720, emptyPage: false },
     {
       name: "short visible tail",
       messages: [
         { role: "assistant", content: "Latest update", __openclaw: { id: "latest", seq: 200 } },
       ],
       height: 720,
+      emptyPage: false,
     },
-    { name: "hidden activity in a short viewport", messages: hiddenActivity, height: 480 },
+    {
+      name: "hidden activity in a short viewport",
+      messages: hiddenActivity,
+      height: 480,
+      emptyPage: false,
+    },
+    {
+      name: "empty intermediate page",
+      messages: [
+        { role: "assistant", content: "Latest update", __openclaw: { id: "latest", seq: 200 } },
+      ],
+      height: 720,
+      emptyPage: true,
+    },
   ])(
-    "automatically loads earlier conversation through a $name",
-    async ({ name, messages, height }) => {
+    "loads earlier conversation through a $name with at most one automatic fill",
+    async ({ name, messages, height, emptyPage }) => {
       await suite.withPage({ viewport: { width: 1280, height } }, async ({ page }) => {
         const artifactDir = process.env.OPENCLAW_UI_E2E_ARTIFACT_DIR
           ? createControlUiE2eArtifactDir(name)
@@ -51,9 +65,9 @@ suite.define(() => {
           {
             match: { offset: 80 },
             response: {
-              messages: [],
-              hasMore: true,
-              nextOffset: 160,
+              messages: emptyPage ? [] : olderMessages,
+              hasMore: emptyPage,
+              ...(emptyPage ? { nextOffset: 160 } : {}),
               totalMessages: 200,
               sessionId,
               sessionInfo,
@@ -90,6 +104,13 @@ suite.define(() => {
         await page.goto(`${suite.server.baseUrl}chat`);
         const thread = page.locator(".chat-pane-cache__pane--active .chat-thread");
         await gateway.waitForRequest("chat.startup");
+        if (emptyPage) {
+          await thread.getByText("Latest update", { exact: true }).waitFor();
+          expect(await gateway.getRequests("chat.history")).toMatchObject([
+            { params: { offset: 80 } },
+          ]);
+          await thread.getByRole("button", { name: "Show earlier", exact: true }).click();
+        }
         const reply = page
           .locator(".chat-text")
           .getByText("The report is ready for review.", { exact: true });
@@ -101,7 +122,7 @@ suite.define(() => {
         expect(await page.locator(".agent-chat__welcome").count()).toBe(0);
         expect(await gateway.getRequests("chat.history")).toMatchObject([
           { params: { offset: 80 } },
-          { params: { offset: 160 } },
+          ...(emptyPage ? [{ params: { offset: 160 } }] : []),
         ]);
         if (artifactDir) {
           const frame = await takeControlUiScreenshotFrame(page, thread, [reply], {
