@@ -9,7 +9,7 @@ import type { ChatPageHost } from "./chat-state-host.ts";
 import { createSessionEventState, renderedTranscript } from "./chat-state.test-support.ts";
 import { reduceChatSessionProjection } from "./history-merge.ts";
 
-const historyBudget = { limit: 80, maxBytes: 256 * 1024, toolResultMaxChars: 2_000 };
+const historyBudget = { limit: 80, maxBytes: 2 * 1024 * 1024, toolResultMaxChars: 2_000 };
 
 function emitGatewayEvent(
   state: ChatPageHost,

@@ -108,7 +108,7 @@ import { handleAgentEvent } from "./tool-stream.ts";
 type ExecuteSlashCommand = typeof executeSlashCommand;
 type TestChatHost = ReturnType<typeof makeChatHost>;
 
-const historyBudget = { limit: 80, maxBytes: 256 * 1024, toolResultMaxChars: 2_000 };
+const historyBudget = { limit: 80, maxBytes: 2 * 1024 * 1024, toolResultMaxChars: 2_000 };
 
 function sendAck(params: unknown, label: string, status: string, messageSeq?: number) {
   return {

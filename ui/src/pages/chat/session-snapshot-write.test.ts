@@ -2,7 +2,12 @@
 import { IDBFactory } from "fake-indexeddb";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { requestResult, transactionComplete } from "../../lib/chat/control-ui-database.runtime.ts";
-import type { ChatSessionSnapshot } from "./session-message-cache.ts";
+import {
+  cacheChatSessionSnapshot,
+  observeChatCache,
+  type ChatMessageCache,
+  type ChatSessionSnapshot,
+} from "./session-message-cache.ts";
 import {
   CHAT_SNAPSHOT_METADATA_STORE_NAME,
   CHAT_SNAPSHOT_STORE_NAME,
@@ -61,19 +66,22 @@ describe("snapshot write serialization and scheduling", () => {
   ])("persists a resumable first-screen tail from %j", async (pagination) => {
     const firstSeq = pagination.totalMessages - 1_100 + 1;
     const messages = Array.from({ length: 1_100 }, (_, index) => ({
-      role: "assistant",
+      role: index % 2 ? "assistant" : "user",
       content: [
         { type: "text", text: "Synthetic tool output. ".repeat(100) },
-        {
-          type: "toolCall",
-          name: "example",
-          arguments: { openclawResponsesInputReplay: "user-supplied argument" },
-        },
+        ...(index % 2
+          ? [
+              {
+                type: "toolCall",
+                id: `tool-${index}`,
+                name: "example",
+                arguments: { openclawResponsesInputReplay: "user-supplied argument" },
+              },
+            ]
+          : []),
       ],
-      __openclaw: { id: `message-${index}`, seq: firstSeq + index },
+      __openclaw: { id: `message-${index}`, seq: firstSeq + index, runId: `run-${index >> 1}` },
       idempotencyKey: `turn-${index}`,
-      toolCallId: `tool-${index}`,
-      activity: [{ kind: "tool", status: "completed" }],
       usage: { input: 1_200, output: 400 },
       openclawResponsesInputReplay: { text: "Server replay only" },
     }));
@@ -82,7 +90,7 @@ describe("snapshot write serialization and scheduling", () => {
     await store.flush();
     const restored = await store.read(sessionKey);
     expect(restored?.messages).toEqual(
-      messages.slice(-80).map(({ openclawResponsesInputReplay: _replay, ...message }) => message),
+      messages.slice(-16).map(({ openclawResponsesInputReplay: _replay, ...message }) => message),
     );
     expect(restored?.pagination).toEqual({
       hasMore: true,
@@ -96,7 +104,7 @@ describe("snapshot write serialization and scheduling", () => {
 
   it("keeps projected siblings at the tail boundary together", async () => {
     const messages = Array.from({ length: 100 }, (_, index) => ({
-      role: "assistant",
+      role: index % 2 ? "assistant" : "user",
       content: `Message ${index}`,
       __openclaw: { id: `message-${index}`, seq: Math.floor(index / 3) + 1 },
     }));
@@ -107,7 +115,7 @@ describe("snapshot write serialization and scheduling", () => {
     });
     await store.flush();
     const restored = await store.read(sessionKey);
-    expect(restored?.messages).toEqual(messages.slice(18));
+    expect(restored?.messages).toEqual(messages.slice(84));
     expect(restored?.pagination).toEqual({ hasMore: true, nextOffset: 0, totalMessages: 34 });
   });
 
@@ -115,7 +123,7 @@ describe("snapshot write serialization and scheduling", () => {
     "bounds imported history and refills its Gateway window on upward scroll (mixed=%s)",
     async (mixed) => {
       const messages = Array.from({ length: 120 }, (_, index) => ({
-        role: "assistant",
+        role: index % 2 ? "assistant" : "user",
         content: `Imported message ${index}`,
         __openclaw:
           mixed && index % 2
@@ -131,11 +139,76 @@ describe("snapshot write serialization and scheduling", () => {
       await store.flush();
       expect(await store.read(sessionKey)).toEqual({
         ...value,
-        messages: messages.slice(-80),
+        messages: messages.slice(-16),
         pagination: { hasMore: true, nextOffset: 0, totalMessages: 200 },
       });
     },
   );
+
+  it("restores full display turns through a tool-heavy tail instead of 80 raw rows", async () => {
+    const earlier = Array.from({ length: 24 }, (_, index) => ({
+      role: index % 2 ? "assistant" : "user",
+      content: `Earlier message ${index}`,
+      __openclaw: { id: `earlier-${index}`, seq: index + 1, runId: `earlier-${index >> 1}` },
+    }));
+    const tail = Array.from({ length: 801 }, (_, index) => ({
+      role: index === 0 ? "user" : index % 2 ? "toolResult" : "assistant",
+      content: `Long turn ${index}`,
+      ...(index % 2 ? { toolCallId: `call-${index}` } : {}),
+      __openclaw: { id: `tail-${index}`, seq: index + 25, runId: "long-turn" },
+    }));
+    const messages = [...earlier, ...tail];
+    const value = {
+      ...snapshot(),
+      messages,
+      pagination: { hasMore: false as const, totalMessages: messages.length },
+    };
+    store.write(sessionKey, value);
+    await store.flush();
+    const restored = await store.read(sessionKey);
+    expect(restored?.messages).toEqual([...earlier.slice(-14), ...tail]);
+    expect(restored?.pagination).toEqual({ hasMore: true, nextOffset: 0, totalMessages: 825 });
+    expect(value.messages).toHaveLength(825);
+  });
+
+  it("lets the UTF-8 byte cap retain fewer whole turns without splitting the newest one", async () => {
+    const messages = Array.from({ length: 20 }, (_, index) => ({
+      role: index % 2 ? "assistant" : "user",
+      content: "🦞".repeat(96_000),
+      __openclaw: { id: `large-${index}`, seq: index + 1, runId: `large-${index >> 1}` },
+    }));
+    store.write(sessionKey, { ...snapshot(), messages });
+    await store.flush();
+    const restored = await store.read(sessionKey);
+    expect(restored?.messages).toEqual(messages.slice(-4));
+    expect(new TextEncoder().encode(JSON.stringify(restored)).byteLength).toBeLessThanOrEqual(
+      2_097_152,
+    );
+    expect(restored?.pagination).toEqual({ hasMore: true, nextOffset: 0 });
+  });
+
+  it("skips an oversized newest turn on disk while retaining the entire live snapshot", async () => {
+    const memory: ChatMessageCache = new Map();
+    const writer = new SessionSnapshotStore(memory);
+    const host = {
+      settings: { gatewayUrl: "wss://cache.example" },
+      client: { recoveryScope: "account-a", recoveryScopeReady: true },
+      assistantAgentId: "main",
+      agentsList: null,
+      hello: null,
+    };
+    observeChatCache(memory, writer);
+    const target = { sessionKey: "agent:main:oversized" };
+    const value = {
+      ...snapshot(),
+      messages: [{ role: "assistant", content: "🦞".repeat(530_000) }],
+    };
+    cacheChatSessionSnapshot(memory, host, target, value);
+    await writer.flush();
+    expect(memory.size).toBe(1);
+    expect([...memory.values()][0]?.snapshot).toBe(value);
+    expect(await writer.read([...memory.keys()][0]!)).toBeNull();
+  });
 
   it("keeps pairing QR credentials in memory without writing them to the browser cache", async () => {
     const content = [
@@ -247,30 +320,16 @@ describe("snapshot write serialization and scheduling", () => {
       // eslint-disable-next-line unicorn/prefer-structured-clone -- JSON omission/conversion is the persisted storage contract.
       const sanitized: ChatSessionSnapshot = JSON.parse(JSON.stringify(value));
       const envelope = {
-        projectionVersion: 3,
+        projectionVersion: 4,
         savedAt: Date.now(),
         sessionId: value.sessionId,
         sessionKey,
       };
-      // Previous persistence measured each sanitized array item, then both envelopes.
-      const messageWeight = sanitized.messages.reduce<number>(
-        (sum, message) => sum + JSON.stringify([message]).length - 2,
-        0,
-      );
       const expectedWeight =
-        messageWeight +
-        Math.max(0, sanitized.messages.length - 1) +
-        JSON.stringify({ ...sanitized, messages: [] }).length +
-        JSON.stringify(envelope).length;
+        new TextEncoder().encode(JSON.stringify(sanitized)).byteLength +
+        new TextEncoder().encode(JSON.stringify(envelope)).byteLength;
       store.write(sessionKey, value);
-      const stringify = vi.spyOn(JSON, "stringify");
       await store.flush();
-      // One transcript serialization plus its small record envelope; no per-message remeasurement.
-      expect(
-        stringify.mock.calls.filter(([input]) => input !== null && typeof input === "object"),
-      ).toHaveLength(2);
-      expect(stringify.mock.calls[0]?.[0]).toBe(value);
-      stringify.mockRestore();
       expect(await readStoredChatSnapshotRecord(sessionKey)).toEqual({
         ...envelope,
         snapshot: sanitized,
@@ -328,7 +387,7 @@ describe("snapshot write serialization and scheduling", () => {
       const transaction = database.transaction(CHAT_SNAPSHOT_STORE_NAME, "readwrite");
       const completed = transactionComplete(transaction);
       transaction.objectStore(CHAT_SNAPSHOT_STORE_NAME).put({
-        projectionVersion: 3,
+        projectionVersion: 4,
         savedAt: 1,
         sessionId: "session-1",
         sessionKey,
@@ -368,7 +427,6 @@ describe("snapshot write serialization and scheduling", () => {
     vi.advanceTimersByTime(999);
     expect(stringify).not.toHaveBeenCalled();
     vi.advanceTimersByTime(1);
-    expect(stringify.mock.calls[0]?.[0]).toBe(value);
     await store.whenIdle();
     expect(await store.read(sessionKey)).toEqual(value);
   });
@@ -395,13 +453,12 @@ describe("snapshot write serialization and scheduling", () => {
   });
 
   it.each(["pagehide", "visibilitychange", "disconnect"])(
-    "%s starts flushing synchronously and cancels the pending idle callback",
+    "%s flushes the latest snapshot and cancels the pending idle callback",
     async (event) => {
       const idle = idleScheduler();
       const value = snapshot();
       store.write(sessionKey, value);
       vi.advanceTimersByTime(500);
-      const stringify = vi.spyOn(JSON, "stringify");
       if (event === "visibilitychange") {
         vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
         document.dispatchEvent(new Event(event));
@@ -410,7 +467,6 @@ describe("snapshot write serialization and scheduling", () => {
       } else {
         window.dispatchEvent(new Event(event));
       }
-      expect(stringify.mock.calls[0]?.[0]).toBe(value);
       expect(idle.cancel).toHaveBeenCalledOnce();
       await store.whenIdle();
       expect(await store.read(sessionKey)).toEqual(value);

@@ -155,6 +155,116 @@ afterEach(() => {
 });
 
 describe("first chat startup snapshot ordering", () => {
+  it.each(["overlap", "disjoint", "branch-switch"] as const)(
+    "uses only retained cached rows for startup coverage (%s)",
+    async (mode) => {
+      const h = mountPane();
+      const older = Array.from({ length: 16 }, (_, index) => ({
+        ...nativeHistoryMessage(index + 725),
+        role: index % 2 === 0 ? "user" : "assistant",
+      }));
+      const newest = Array.from({ length: 80 }, (_, index) => ({
+        ...nativeHistoryMessage(index + 741),
+        role: "assistant",
+      }));
+      const cached = [...older, ...newest].map((message, index) =>
+        mode === "disjoint" ? { ...message, __openclaw: { seq: index + 1 } } : message,
+      );
+      h.read.resolve({
+        ...stored,
+        deltaCursor: undefined,
+        messages: cached,
+        displayedLeafEntryId: mode === "branch-switch" ? "old-leaf" : undefined,
+        pagination: { hasMore: true, nextOffset: 0, totalMessages: 820 },
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      const initial = {
+        ...h.liveResult,
+        messages: newest,
+        sessionInfo: {
+          ...h.liveResult.sessionInfo,
+          ...(mode === "branch-switch" ? { activeLeafEntryId: "new-leaf" } : {}),
+        },
+        hasMore: true,
+        nextOffset: 80,
+        totalMessages: 820,
+      };
+      h.request.mockImplementation(async (method) =>
+        method === "chat.history"
+          ? { ...initial, messages: [...older, ...newest], nextOffset: 96 }
+          : initial,
+      );
+      h.connect();
+      await h.start();
+      expect(h.request.mock.calls.filter(([method]) => method === "chat.history")).toHaveLength(
+        mode === "overlap" ? 0 : 1,
+      );
+      expect(h.state.chatMessages).toEqual([...older, ...newest]);
+    },
+  );
+
+  it.each(["complete", "failure", "session-switch"] as const)(
+    "expands a short display window once before publishing (%s)",
+    async (outcome) => {
+      const h = mountPane(false);
+      const newest = Array.from({ length: 80 }, (_, index) => ({
+        ...nativeHistoryMessage(index + 741),
+        role: "assistant",
+      }));
+      const initial = {
+        ...h.liveResult,
+        messages: newest,
+        hasMore: true,
+        nextOffset: 80,
+        totalMessages: 820,
+      };
+      const olderMessages = Array.from({ length: 16 }, (_, index) => ({
+        ...nativeHistoryMessage(index + 725),
+        role: index % 2 === 0 ? "user" : "assistant",
+      }));
+      const fill = createDeferred<ChatHistoryResult>();
+      const requested = createDeferred<boolean>();
+      h.request.mockImplementation((method) => {
+        if (method === "chat.history") {
+          requested.resolve(true);
+          return fill.promise;
+        }
+        return Promise.resolve(initial);
+      });
+      h.connect();
+      const loading = h.start();
+      expect(await Promise.race([requested.promise, loading.then(() => false)])).toBe(true);
+      expect(h.state.chatMessages).toEqual([]);
+      expect(
+        h.request.mock.calls
+          .filter(([method]) => method === "chat.history")
+          .map(([, params]) => params),
+      ).toMatchObject([{ offset: 80, limit: 1000, maxBytes: 2097152 }]);
+      if (outcome === "session-switch") {
+        h.state.sessionKey = "agent:main:other-session";
+        resetChatHistoryProjection(h.state);
+      }
+      if (outcome === "failure") {
+        fill.reject(new Error("older history unavailable"));
+      } else {
+        fill.resolve({
+          ...initial,
+          messages: [...olderMessages, newest[0]],
+          nextOffset: 96,
+        });
+      }
+      await loading;
+      expect(h.state.chatMessages).toEqual(
+        outcome === "complete"
+          ? [...olderMessages, ...newest]
+          : outcome === "failure"
+            ? newest
+            : [],
+      );
+      expect(h.request.mock.calls.filter(([method]) => method === "chat.history")).toHaveLength(1);
+    },
+  );
+
   it("rejects transcript and progress hydration when the Gateway account changes ahead of pane state", async () => {
     const h = mountPane();
     const progressCard = { sessionKey, revision: 2, updatedAt: 100, markdown: "Old account" };
@@ -231,7 +341,7 @@ describe("first chat startup snapshot ordering", () => {
         expect(h.state.chatMessages).toEqual([]);
       }
       record.resolve({
-        projectionVersion: 3,
+        projectionVersion: 4,
         savedAt: Date.now(),
         sessionKey: resolveChatSnapshotKey(h.state, { sessionKey }),
         sessionId: snapshot.sessionId,
@@ -398,7 +508,7 @@ describe("first chat startup snapshot ordering", () => {
     const loading = h.start();
     expect(h.request).toHaveBeenCalledOnce();
     record.resolve({
-      projectionVersion: 3,
+      projectionVersion: 4,
       savedAt: Date.now(),
       sessionKey: resolveChatSnapshotKey(h.state, { sessionKey }),
       sessionId: stored.sessionId,

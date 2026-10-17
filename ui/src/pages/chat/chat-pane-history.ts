@@ -229,7 +229,9 @@ export abstract class ChatPaneHistory extends ChatPaneReplyNavigation {
       document.visibilityState === "hidden" ||
       !this.state?.connected ||
       !this.hasOlderMessages() ||
-      (!this.historyObserverArmed && this.historyViewportFillPages >= 3) ||
+      (!this.historyObserverArmed &&
+        (this.historyViewportFillPages >= 1 ||
+          chatHistoryRequests(this.state).initialWindowFillAttempted)) ||
       !this.transcript.isPositionSettled ||
       this.transcript.isProgrammaticScroll ||
       this.transcript.isMaintenanceScroll ||
@@ -273,13 +275,13 @@ export abstract class ChatPaneHistory extends ChatPaneReplyNavigation {
         }
         const readerIntent = this.historyObserverArmed;
         if (!readerIntent) {
-          // Start only with a genuinely short settled window. Subsequent pages
-          // fill the prefetch margin too, without staging a fourth boot request.
-          const edge = this.historyViewportFillPages > 0 ? CHAT_HISTORY_PREFETCH_EDGE_PX : 0;
+          // A short initial window gets one fill; further pages require reader intent.
           if (
-            this.historyViewportFillPages >= 3 ||
+            this.historyViewportFillPages >= 1 ||
+            !this.state ||
+            chatHistoryRequests(this.state).initialWindowFillAttempted ||
             root.clientHeight <= 0 ||
-            root.scrollHeight > root.clientHeight + edge
+            root.scrollHeight > root.clientHeight
           ) {
             this.clearHistoryObserver();
             return;

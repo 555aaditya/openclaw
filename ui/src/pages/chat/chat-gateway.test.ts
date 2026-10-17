@@ -38,7 +38,7 @@ import {
 import type { ToolStreamHost } from "./tool-stream-contract.ts";
 import { buildToolStreamIdentity } from "./tool-stream-identity.ts";
 
-const historyBudget = { limit: 80, maxBytes: 256 * 1024, toolResultMaxChars: 2_000 };
+const historyBudget = { limit: 80, maxBytes: 2 * 1024 * 1024, toolResultMaxChars: 2_000 };
 
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => {

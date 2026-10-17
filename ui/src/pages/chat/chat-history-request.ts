@@ -41,14 +41,14 @@ import {
 } from "./session-message-cache.ts";
 
 export const CHAT_HISTORY_REQUEST_LIMIT = 80;
-const CHAT_HISTORY_REQUEST_MAX_BYTES = 256 * 1024;
+export const CHAT_HISTORY_REQUEST_MAX_BYTES = 2 * 1024 * 1024;
 const CHAT_HISTORY_TOOL_RESULT_MAX_CHARS = 2_000;
 const CHAT_HISTORY_PREFETCH_BUDGET = { limit: 20, maxBytes: 64 * 1024 };
 
 // Keep startup small, then amortize older-history reads and prepend work across
 // larger pages. The Gateway owns the response byte and single-message limits.
 const CHAT_HISTORY_OLDER_PAGE_LIMIT = 1000;
-const CHAT_HISTORY_OLDER_PAGE_MAX_BYTES = 1024 * 1024;
+const CHAT_HISTORY_OLDER_PAGE_MAX_BYTES = 5 * 1024 * 1024;
 
 export function attachHistoryActivity<Result extends ChatHistoryResponse>(result: Result): Result {
   if (isHistoryCursor(result) && result.kind === "reset") {
@@ -110,7 +110,7 @@ type SharedChatHistoryArgs = [
   consumerObservation: Pick<SharedChatHistoryConsumer, "isCurrent" | "captureRun" | "onRetry">,
   cursor?: string,
   inputRunIds?: string[],
-  budget?: { limit: number; maxBytes: number },
+  budget?: { limit: number; maxBytes: number; offset?: number },
 ];
 
 export function requestSharedHistory(

@@ -374,7 +374,7 @@ describe("persistent chat session snapshots", () => {
     expect(store.readSavedAt(key("agent:main:newer-0"))).not.toBeNull();
   });
 
-  it("evicts the oldest sessions by count and total serialized weight", async () => {
+  it("evicts the oldest sessions by count", async () => {
     let now = 0;
     vi.spyOn(Date, "now").mockImplementation(() => ++now);
     const writer = new SessionSnapshotStore();
@@ -386,16 +386,6 @@ describe("persistent chat session snapshots", () => {
     expect(writer.readSavedAt(key("agent:main:count-0"))).toBeNull();
     expect(await reader.read(key("agent:main:count-0"))).toBeNull();
     expect(await reader.read(key("agent:main:count-20"))).not.toBeNull();
-
-    await clearStoredChatSnapshots();
-    const large = "x".repeat(9 * 1024 * 1024);
-    for (let index = 0; index < 3; index += 1) {
-      writer.write(key(`agent:main:weight-${index}`), snapshot(large, `weight-${index}`));
-      await writer.flush();
-    }
-    const weightReader = new SessionSnapshotStore();
-    expect(await weightReader.read(key("agent:main:weight-0"))).toBeNull();
-    expect(await weightReader.read(key("agent:main:weight-2"))).not.toBeNull();
   });
 
   it.each(["snapshot", "metadata"] as const)(
@@ -408,7 +398,7 @@ describe("persistent chat session snapshots", () => {
       await writer.flush();
       await putRawRecord(
         {
-          projectionVersion: 3,
+          projectionVersion: 4,
           sessionKey: corrupt,
           sessionId: "session-1",
           savedAt: Date.now(),

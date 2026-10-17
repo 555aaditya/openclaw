@@ -69,6 +69,8 @@ type FixtureOptions = {
   duplicateBootReads?: boolean;
   closedMenuMembers?: boolean;
   largeSnapshot?: boolean;
+  historyWindow?: "normal" | "tool-heavy";
+  historyPageCurve?: boolean;
 };
 
 function widgetHtml(index: number) {
@@ -82,7 +84,13 @@ function widgetHtml(index: number) {
 export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
   const counts = {
     ...TEAM_SCALE_COUNTS,
-    transcriptMessages: options.largeSnapshot ? 1_100 : TEAM_SCALE_COUNTS.transcriptMessages,
+    transcriptMessages: options.historyPageCurve
+      ? 4_000
+      : options.historyWindow === "tool-heavy"
+        ? 820
+        : options.largeSnapshot
+          ? 1_100
+          : TEAM_SCALE_COUNTS.transcriptMessages,
   };
   const now = options.now ?? Date.now();
   const baseUrl = options.baseUrl ?? "http://127.0.0.1:19626/";
@@ -225,6 +233,8 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
     inlineWidgets: counts.inlineWidgets,
     now,
     largeSnapshot: options.largeSnapshot,
+    toolHeavy: options.historyWindow === "tool-heavy",
+    largeHistoryPages: options.historyPageCurve,
     attachments: duplicateReads?.attachments,
   });
   const largeHistory = options.largeSnapshot
@@ -365,10 +375,10 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
     sessionKey: selectedSessionKey,
     sessions,
     presenceUsers: people,
-    historyMessages,
+    historyMessages: options.historyPageCurve ? [] : historyMessages,
     sessionReactions: {
       [selectedSessionKey]: Object.fromEntries(
-        messageIds.map((id) => [
+        (options.historyPageCurve ? messageIds.slice(-240) : messageIds).map((id) => [
           id,
           [{ emoji: "👍", count: 1, identities: [{ id: people[1]!.id, label: people[1]!.name! }] }],
         ]),
@@ -681,6 +691,9 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
         }
       : undefined,
     counts,
+    historyWindow: options.historyWindow
+      ? { messages: historyMessages, sessionInfo: pinnedRows[0]! }
+      : undefined,
     assets,
   };
 }

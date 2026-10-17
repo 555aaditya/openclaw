@@ -5,6 +5,8 @@ export function createTeamScaleHistoryFixture(options: {
   inlineWidgets: number;
   now: number;
   largeSnapshot?: boolean;
+  toolHeavy?: boolean;
+  largeHistoryPages?: boolean;
   attachments?: ReturnType<typeof createTeamScaleDuplicateReadFixture>["attachments"];
 }) {
   const messageIds = Array.from(
@@ -12,6 +14,65 @@ export function createTeamScaleHistoryFixture(options: {
     (_, index) => `team-message-${index + 1}`,
   );
   const messagesPerWidget = Math.ceil(options.messageCount / options.inlineWidgets);
+  const pageCurveText = (index: number) =>
+    Array.from(
+      { length: 120 },
+      (_, line) =>
+        `Synthetic history record ${index}, item ${line}: verification evidence ${(Math.imul(index + 1, 2654435761) ^ Math.imul(line + 1, 1597334677)) >>> 0}.`,
+    ).join("\n");
+  if (options.toolHeavy) {
+    const historyMessages = messageIds.map((id, index) => {
+      const tailStart = options.messageCount - 130;
+      if (options.largeHistoryPages && index < tailStart) {
+        return {
+          role: index % 2 ? "assistant" : "user",
+          __openclaw: { id, seq: index + 1 },
+          timestamp: options.now - (options.messageCount - index) * 1000,
+          content: [{ type: "text", text: pageCurveText(index) }],
+        };
+      }
+      const turnStart = index < tailStart ? Math.floor(index / 69) * 69 : tailStart;
+      const completedTurn = index < tailStart && index === turnStart + 68;
+      const toolCallId = `synthetic-tool-${index - ((index - turnStart) % 2 ? 0 : 1)}`;
+      const role =
+        index === turnStart
+          ? "user"
+          : completedTurn || (index - turnStart) % 2
+            ? "assistant"
+            : "toolResult";
+      return {
+        role,
+        __openclaw: { id, seq: index + 1 },
+        timestamp: options.now - (options.messageCount - index) * 1_000,
+        ...(role === "toolResult" ? { toolCallId, toolName: "read" } : {}),
+        ...(role === "assistant" && !completedTurn ? { stopReason: "toolUse" } : {}),
+        content:
+          role === "assistant" && !completedTurn
+            ? [
+                {
+                  type: "toolCall",
+                  id: toolCallId,
+                  name: "read",
+                  arguments: { path: "synthetic.txt" },
+                },
+              ]
+            : [
+                {
+                  type: "text",
+                  text:
+                    index === turnStart
+                      ? `Check synthetic work package ${turnStart}.`
+                      : completedTurn
+                        ? `Synthetic work package ${turnStart} is verified. All checks passed.`
+                        : "Synthetic tool output: the workspace check completed successfully. ".repeat(
+                            87,
+                          ),
+                },
+              ],
+      };
+    });
+    return { messageIds, historyMessages };
+  }
   const historyMessages = messageIds.map((id, index) => ({
     role:
       options.largeSnapshot && index % 4 === 2 ? "toolResult" : index % 2 ? "assistant" : "user",
@@ -30,7 +91,7 @@ export function createTeamScaleHistoryFixture(options: {
       {
         type: "text",
         text: [
-          `### Project checkpoint ${index + 1}`,
+          options.largeHistoryPages ? pageCurveText(index) : `### Project checkpoint ${index + 1}`,
           "Review the synthetic work queue, confirm the dependency order, and record the owner of the next action. The fixture contains no real conversations or account data.",
           index % 2
             ? "The current implementation is ready for verification. Coverage includes the normal path, a recoverable failure, and the final user-visible result."

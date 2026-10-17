@@ -30,6 +30,11 @@ import {
   summarizeColdLoadTrace,
   summarizeCpuProfile,
 } from "./lib/control-ui-cold-load-trace.ts";
+import {
+  createBenchHistoryWindow,
+  estimateBenchHistoryCompression,
+  measureBenchOlderHistoryPage,
+} from "./lib/control-ui-history-window.ts";
 import { probeColdLoadOverlays } from "./lib/control-ui-overlay-probe.ts";
 import { warmReloadProbe } from "./lib/control-ui-warm-reload-probe.ts";
 
@@ -205,6 +210,9 @@ function summarizeSidebarWindows(
 const { values } = parseArgs({
   options: {
     "warm-reload": { type: "boolean", default: false },
+    "cold-reload": { type: "boolean", default: false },
+    "history-window": { type: "string" },
+    "history-page-mb": { type: "string" },
     "large-snapshot": { type: "boolean", default: false },
     "overlay-probe": { type: "boolean", default: false },
     untraced: { type: "boolean", default: false },
@@ -232,6 +240,24 @@ if (values["streaming-reply"] && values["live-events"]) {
 }
 if (values["warm-reload"] && !values["probe-dir"]) {
   throw new Error("warm-reload requires probe-dir with LoAF/mutation and RPC census init scripts");
+}
+if (values["warm-reload"] && values["cold-reload"]) {
+  throw new Error("Choose warm-reload or cold-reload");
+}
+const historyWindow = values["history-window"];
+const historyPageMb =
+  values["history-page-mb"] === undefined ? undefined : Number(values["history-page-mb"]);
+if (historyPageMb !== undefined && (!historyWindow || ![1, 2, 3, 5].includes(historyPageMb))) {
+  throw new Error("history-page-mb requires history-window and a value of 1, 2, 3, or 5");
+}
+if (historyWindow !== undefined && historyWindow !== "normal" && historyWindow !== "tool-heavy") {
+  throw new Error("Expected history-window normal or tool-heavy");
+}
+if (
+  historyWindow &&
+  (values["large-snapshot"] || values["live-events"] || values["streaming-reply"])
+) {
+  throw new Error("history-window excludes large-snapshot, live-events and streaming-reply");
 }
 if (values["sidebar-list-churn"] && !values["live-events"]) {
   throw new Error("sidebar-list-churn requires live-events");
@@ -303,6 +329,8 @@ const fixture = createControlUiTeamScaleFixture({
   duplicateBootReads: values["duplicate-boot-reads"],
   closedMenuMembers: values["closed-menu-members"],
   largeSnapshot: values["large-snapshot"],
+  historyWindow,
+  historyPageCurve: historyPageMb !== undefined,
 });
 const streamingReply = values["streaming-reply"] ? createControlUiStreamingReply() : undefined;
 const extraInitScripts = await Promise.all(
@@ -313,6 +341,7 @@ let sidebarLists = fixture.sidebarListChurn
   : undefined;
 let runTransfer: "full" | "delta" = sidebarRowTransfer === "delta" ? "delta" : "full";
 let browser: Browser | undefined;
+let olderPageResponseMaxBytes: number | undefined;
 const results = [];
 try {
   const prepared = await prepareControlUiMockGatewayScenario({
@@ -330,6 +359,22 @@ try {
     permissions: ["local-network-access"],
   });
   const page = await context.newPage();
+  if (fixture.historyWindow) {
+    const read = createBenchHistoryWindow(fixture.historyWindow);
+    await context.exposeBinding(
+      "__teamScaleHistory",
+      (_source, method: string, params: Parameters<typeof read>[1]) =>
+        read(
+          method,
+          olderPageResponseMaxBytes === undefined
+            ? params
+            : {
+                ...params,
+                maxBytes: Math.min(params.maxBytes ?? Infinity, olderPageResponseMaxBytes),
+              },
+        ),
+    );
+  }
   const rigProbeScript = values["probe-dir"]
     ? (
         await Promise.all(
@@ -432,9 +477,12 @@ try {
       pins: fixture.sidebarEntries,
     },
   );
-  const warmProbes = values["warm-reload"] ? `\n(${warmReloadProbe.toString()})();` : "";
+  const warmProbes =
+    values["warm-reload"] || values["cold-reload"] || historyWindow
+      ? `\n(${warmReloadProbe.toString()})();`
+      : "";
   await page.addInitScript({
-    content: `;(() => { if (window !== window.top) return; const __name = (fn) => fn; (${installWidgetReadiness.toString()})(); ${createControlUiMockGatewayInitScript(prepared.scenario)}\n${rigProbeScript}\n${fixture.sidebarListChurn ? `window.__teamScaleSidebarLists = { apply: (mutation) => window.__teamScaleMutate(mutation) }; window.openclawControlUiE2eGateway.setRequestHandler("sessions.list", async ({ params, respond }) => respond(await window.__teamScaleList(params)));` : ""}\n${createColdLoadProbeInitScript({ latencyMs, frameGapMs, events: fixture.events, liveEvents: fixture.liveEvents, liveHistory: fixture.liveHistory, ownerProbes: !values["session-event-churn"] })}\n${streamingReply ? createStreamingReplyProbeInitScript() : ""}\n${extraInitScripts.join("\n")}\n${warmProbes} })();`,
+    content: `;(() => { if (window !== window.top) return; const __name = (fn) => fn; (${installWidgetReadiness.toString()})(); ${createControlUiMockGatewayInitScript(prepared.scenario)}\n${rigProbeScript}\n${fixture.sidebarListChurn ? `window.__teamScaleSidebarLists = { apply: (mutation) => window.__teamScaleMutate(mutation) }; window.openclawControlUiE2eGateway.setRequestHandler("sessions.list", async ({ params, respond }) => respond(await window.__teamScaleList(params)));` : ""}\n${fixture.historyWindow ? `for (const method of ["chat.startup", "chat.history"]) window.openclawControlUiE2eGateway.setRequestHandler(method, async ({params, respond}) => respond(await window.__teamScaleHistory(method, params)));` : ""}\n${createColdLoadProbeInitScript({ latencyMs, frameGapMs, events: fixture.events, liveEvents: fixture.liveEvents, liveHistory: fixture.liveHistory, ownerProbes: !values["session-event-churn"] })}\n${streamingReply ? createStreamingReplyProbeInitScript() : ""}\n${extraInitScripts.join("\n")}\n${warmProbes} })();`,
   });
   const url = controlUiSessionUrl(server.baseUrl, fixture.selectedSessionKey, "dashboard");
   async function settle() {
@@ -455,12 +503,13 @@ try {
         .frameLocator("iframe")
         .getByText("Team metric 1", { exact: true })
         .waitFor();
-      await page
-        .frameLocator(".chat-tool-card__preview-frame")
-        .last()
-        .frameLocator("iframe")
-        .getByText("Team metric 12", { exact: true })
-        .waitFor();
+      if (!historyWindow)
+        await page
+          .frameLocator(".chat-tool-card__preview-frame")
+          .last()
+          .frameLocator("iframe")
+          .getByText("Team metric 12", { exact: true })
+          .waitFor();
       await page.waitForFunction(() => {
         const ready = Reflect.get(window, "__readWidgetReadiness")();
         return ready.firstBoardReadyMs !== null;
@@ -576,6 +625,16 @@ try {
           }
         }, fixture.selectedSessionKey);
     }
+    if (values["cold-reload"]) {
+      await page.locator(".chat-pane-cache__pane--active").evaluate(async (element, sessionKey) => {
+        const store = Reflect.get(element, "sessionSnapshotStore");
+        const cache = Reflect.get(element, "chatMessagesBySession");
+        const entry = [...cache.entries()].find(([key]) => key.endsWith(`\u0000${sessionKey}`));
+        if (!entry) throw new Error("Missing live transcript snapshot");
+        await store.flush();
+        await store.delete(entry[0], "cache-eviction");
+      }, fixture.selectedSessionKey);
+    }
     runTransfer =
       sidebarRowTransfer === "delta" || (sidebarRowTransfer === "interleaved" && run % 2 === 1)
         ? "delta"
@@ -606,7 +665,7 @@ try {
       ...Reflect.get(window, "__coldLoad").read(),
       widgetReadiness: Reflect.get(window, "__readWidgetReadiness")(),
     }));
-    const warmReload = values["warm-reload"]
+    const warmReload = warmProbes
       ? await page.evaluate(() => Reflect.get(window, "__warmReload").read())
       : undefined;
     await writeFile(path.join(artifactDir, `run-${run + 1}.metrics.json`), JSON.stringify(metrics));
@@ -618,6 +677,12 @@ try {
       await cdp.send("Tracing.end");
       await complete;
     }
+    const bootHistoryFrames = historyWindow
+      ? await page.evaluate(() => Reflect.get(window, "__warmReload").frames())
+      : [];
+    const historyCompression = historyWindow
+      ? estimateBenchHistoryCompression(bootHistoryFrames)
+      : undefined;
     await page.screenshot({ path: path.join(artifactDir, `run-${run + 1}.png`) });
     await writeFile(
       path.join(artifactDir, `run-${run + 1}.trace.json`),
@@ -979,6 +1044,32 @@ try {
             : undefined,
         )
       : undefined;
+    let historyPage;
+    if (historyPageMb !== undefined) {
+      olderPageResponseMaxBytes = historyPageMb * 1024 * 1024;
+      try {
+        const measured = await page.evaluate<
+          Awaited<ReturnType<typeof measureBenchOlderHistoryPage>>
+        >(
+          `(() => { const __name = (fn) => fn; return (${measureBenchOlderHistoryPage.toString()})(); })()`,
+        );
+        const frames = await page.evaluate(
+          (offset) => Reflect.get(window, "__warmReload").frames().slice(offset),
+          bootHistoryFrames.length,
+        );
+        historyPage = {
+          fixtureResponseCapBytes: olderPageResponseMaxBytes,
+          ...measured,
+          compression: estimateBenchHistoryCompression(frames),
+        };
+        await writeFile(
+          path.join(artifactDir, `run-${run + 1}.history-page.json`),
+          JSON.stringify(historyPage, null, 2),
+        );
+      } finally {
+        olderPageResponseMaxBytes = undefined;
+      }
+    }
     await cdp.detach();
     const result = {
       run: run + 1,
@@ -995,6 +1086,8 @@ try {
       streaming,
       warmReload,
       snapshotSave,
+      historyCompression,
+      historyPage,
       overlays,
     };
     results.push(result);
@@ -1019,6 +1112,9 @@ try {
         dirty,
         bundleDir,
         fixture: fixture.counts,
+        historyWindow,
+        historyPageMb,
+        reloadCache: values["cold-reload"] ? "cold" : values["warm-reload"] ? "warm" : "natural",
         sidebarView,
         streamingReply: values["streaming-reply"],
         sidebarListChurn: values["sidebar-list-churn"],

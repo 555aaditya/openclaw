@@ -158,6 +158,25 @@ export function reconcileHistoryTail(options: {
     return (identity ? previousByIdentity.get(identity)?.shift() : undefined) ?? message;
   });
   const reconciled = { messages, pagination: options.nextPagination };
+  if (
+    options.previousPagination.hasMore &&
+    options.previousPagination.nextOffset === 0 &&
+    options.nextPagination.hasMore
+  ) {
+    const overlap = options.previousMessages.indexOf(messages[0]);
+    if (overlap > 0) {
+      // A bounded display cache has no raw page depth. Exact tail overlap
+      // retains its older rows without inventing a Gateway offset.
+      return {
+        messages: [...options.previousMessages.slice(0, overlap), ...messages],
+        pagination: {
+          ...options.previousPagination,
+          totalMessages:
+            options.nextPagination.totalMessages ?? options.previousPagination.totalMessages,
+        },
+      };
+    }
+  }
   const previousTotal = options.previousPagination.totalMessages;
   const nextTotal = options.nextPagination.totalMessages;
   const previousStart = retainedRawHistoryStart(options.previousPagination);

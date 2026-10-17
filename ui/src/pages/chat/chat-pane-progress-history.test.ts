@@ -126,7 +126,7 @@ describe("retained bare pane progress follows accepted history ownership", () =>
       {
         sessionKey: "notes",
         limit: 80,
-        maxBytes: 256 * 1024,
+        maxBytes: 2 * 1024 * 1024,
         toolResultMaxChars: 2_000,
       },
       { signal: expect.any(AbortSignal), timeoutMs: 30_000 },

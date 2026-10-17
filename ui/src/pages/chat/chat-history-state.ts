@@ -66,6 +66,7 @@ type ChatHistoryPaneRequests = {
   historyLoad: ChatHistoryLoadState;
   acceptedHistory?: Extract<ChatHistoryLoadState, { phase: "committed" }>;
   initialSnapshotHydration?: InitialChatSnapshotHydration;
+  initialWindowFillAttempted?: boolean;
 };
 
 export type InitialChatSnapshotHydration = {
@@ -345,6 +346,7 @@ export function resetChatHistoryProjection(state: ChatState, agentId?: string): 
   // snapshot owner and its coalesced request before creating the next epoch.
   requests.historyVersion += 1;
   delete requests.acceptedHistory;
+  delete requests.initialWindowFillAttempted;
   setChatHistoryLoad(state, { phase: "idle" });
   state.chatLoading = false;
   const scope = readChatSessionProjectionScope(state, { agentId });

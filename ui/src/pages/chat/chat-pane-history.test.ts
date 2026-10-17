@@ -65,7 +65,7 @@ function historyPane(request = vi.fn(async () => historyPage())) {
 }
 
 function olderRequest(sessionKey: string, offset = 2) {
-  return { sessionKey, limit: 1000, maxBytes: 1024 * 1024, toolResultMaxChars: 2_000, offset };
+  return { sessionKey, limit: 1000, maxBytes: 5 * 1024 * 1024, toolResultMaxChars: 2_000, offset };
 }
 
 function pagination(totalMessages = 4, nextOffset?: number): ChatHistoryPagination {
@@ -684,7 +684,7 @@ it("refreshes the tail instead of mixing an older page from a replacement sessio
   expect(request).toHaveBeenNthCalledWith(
     2,
     "chat.history",
-    expect.objectContaining({ sessionKey: state.sessionKey, limit: 80, maxBytes: 256 * 1024 }),
+    expect.objectContaining({ sessionKey: state.sessionKey, limit: 80, maxBytes: 2 * 1024 * 1024 }),
     { signal: expect.any(AbortSignal), timeoutMs: 30_000 },
   );
   expect(state.currentSessionId).toBe("session-new");

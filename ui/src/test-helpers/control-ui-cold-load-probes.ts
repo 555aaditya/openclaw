@@ -525,6 +525,24 @@ function installColdLoadProbes(
   });
   observer.observe({ type: "longtask", buffered: true });
   Reflect.set(window, "__coldLoad", {
+    async loadOneOlderHistoryPage() {
+      const host = document.querySelector(".chat-pane-cache__pane--active");
+      const owner = host ? chatOwners.get(host)?.owner : undefined;
+      const load = owner && Reflect.get(owner, "loadOlderMessages");
+      const pagination = owner && Reflect.get(owner, "state")?.chatHistoryPagination;
+      if (
+        !owner ||
+        typeof load !== "function" ||
+        !pagination?.hasMore ||
+        pagination.nextOffset === 0
+      ) {
+        throw new Error(
+          "Older-page measurement requires the active pane owner and an authoritative nonzero older offset",
+        );
+      }
+      // Non-reader invocation exercises the native owner without staging another page.
+      return load.call(owner, false);
+    },
     startLive() {
       liveStartedAt = performance.now();
       liveRpcOffset = rpcs.length;

@@ -57,7 +57,7 @@ import { applySessionMessagePayload } from "./session-message-apply.ts";
 import { buildToolStreamIdentity } from "./tool-stream-identity.ts";
 import { createHost as createToolStreamHost } from "./tool-stream.test-helpers.ts";
 
-const historyBudget = { limit: 80, maxBytes: 256 * 1024, toolResultMaxChars: 2_000 };
+const historyBudget = { limit: 80, maxBytes: 2 * 1024 * 1024, toolResultMaxChars: 2_000 };
 
 function emitGatewayEvent(
   state: ChatPageHost,

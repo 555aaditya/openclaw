@@ -58,6 +58,78 @@ measure a large native IndexedDB restore. `snapshotSave` reports the persisted
 row count and UTF-8 bytes, synchronous serialization time, and total flush time
 for a save through the live cache owner before each reload.
 
+`--history-window normal` opts the normal 240-message chat into bounded history
+responses. `--history-window tool-heavy` uses 820 synthetic source messages,
+ending in 130 messages of one assistant activity turn; its newest 80 messages
+render as one display row. These modes honor each request's `limit`, `offset`,
+`maxBytes`, `maxChars`, and `toolResultMaxChars`, using the production Gateway
+display sanitizer and response-page byte budget. They exclude `--large-snapshot`,
+`--live-events`, and `--streaming-reply`; all existing fixture modes are unchanged.
+The source is synthetic and does not reproduce private message contents or their
+role distribution. Source selection is in memory, and the Playwright binding
+adds a Node round trip: this measures client history behavior, not Gateway disk
+selection or projection CPU.
+
+Use `--warm-reload` to flush the live snapshot owner before every measured reload,
+or `--cold-reload` to delete only the selected synthetic transcript through that
+owner before reloading. The flags are mutually exclusive. Both preserve sidebar
+and other browser caches. History-window runs always include the reload probe;
+`warmReload.rowCounts` records visible DOM row-count changes,
+`warmReload.transcriptSizes` records ResizeObserver heights without forced layout,
+and `warmReload.historyRequests` records request parameters, response times, message
+counts, and UTF-8 WebSocket response-frame bytes. `warmReload.bootHistory` totals
+the `chat.history` count and bytes before the settled capture. Existing milestones,
+CLS, LoAF, CPU-profile, and trace output remain available.
+
+For example, reuse a matching production bundle and run either cache state:
+
+```sh
+node --import tsx scripts/bench-control-ui-cold-load.ts \
+  --history-window tool-heavy --warm-reload --probe-dir /path/to/probes \
+  --bundle-dir /path/to/bundle --runs 7 --output /path/to/output
+node --import tsx scripts/bench-control-ui-cold-load.ts \
+  --history-window normal --cold-reload --probe-dir /path/to/probes \
+  --bundle-dir /path/to/bundle --runs 7 --output /path/to/output
+```
+
+Keep the same flags for baseline and candidate; alternate matching invocations
+on the same quiet host. Omit `--untraced` for a separate CPU-attribution capture;
+use it for timing comparisons without CPU/trace instrumentation.
+
+`--history-page-mb 1|2|3|5` adds a separate older-page phase after all reload
+metrics, trace, CPU profile, and screenshot have been captured. It requires
+`--history-window` and switches to a 4,000-message synthetic source with enough
+projected history to fill a 5 MiB response. The large source stays in Node rather
+than being serialized into the browser init script. The tool-heavy variant keeps
+its final 130-message activity turn; earlier source rows contain larger normal
+chat messages. This payload curve is synthetic, not a claim about live transcript
+size or compression ratio.
+
+The existing pane history owner commits one older page with reader prefetch
+disabled. The synthetic response owner caps that response at the selected MiB
+budget; the original client request parameters remain recorded, so a client
+requesting 5 MiB still shows 5 MiB. A missing authoritative nonzero older offset
+fails the capture. `run-N.history-page.json` reports response arrival, owner apply
+time, message count, dispatch time, LoAF entries overlapping arrival, the longest
+page-phase LoAF, and the 200 ms arrival-frame gate. If arrival has no LoAF, the
+supported browser observer bounds that frame below its 50 ms reporting threshold.
+
+`historyCompression` reports raw boot history message bytes and a **compression
+estimate**, calculated after reload capture using Node zlib level 1, a 4 KiB
+threshold, and a new compression context for every message. Page-phase estimates
+appear under `historyPage.compression`. These use the actual uncompressed mock
+response JSON. The mock WebSocket does not negotiate compression: these are not
+actual compressed wire measurements and exclude WebSocket framing and TLS.
+
+For the page-size curve, repeat the same paired procedure with each budget:
+
+```sh
+node --import tsx scripts/bench-control-ui-cold-load.ts \
+  --history-window tool-heavy --history-page-mb 5 --cold-reload \
+  --probe-dir /path/to/probes --bundle-dir /path/to/bundle \
+  --runs 1 --untraced --output /path/to/output
+```
+
 The dashboard fixture includes reaction pickers, widget actions, context usage,
 and viewers. Use `--warm-reload` to measure its cached restore. Transaction labels
 in diagnostic traces distinguish transcript, sidebar, and composer cache

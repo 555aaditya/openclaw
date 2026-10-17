@@ -1,4 +1,5 @@
 import { GatewayRequestError } from "../../api/gateway.ts";
+import { prependUniqueNativeMessages } from "../../lib/chat/history-message-identity.ts";
 import {
   isHiddenAssistantStreamText,
   isVisibleChatHistoryMessage,
@@ -10,7 +11,11 @@ import {
   isMissingOperatorReadScopeError,
 } from "../../lib/gateway-errors.ts";
 import { isSessionRunActive } from "../../lib/session-run-state.ts";
-import { requestSharedHistory } from "./chat-history-request.ts";
+import {
+  CHAT_HISTORY_REQUEST_LIMIT,
+  CHAT_HISTORY_REQUEST_MAX_BYTES,
+  requestSharedHistory,
+} from "./chat-history-request.ts";
 import { formatChatHistoryLoadError, isRetryableChatReadError } from "./chat-history-retry.ts";
 import {
   type ObservedChatHistoryResult,
@@ -100,6 +105,9 @@ export async function hydrateChatHistory(
   // Any pending input-history snapshot becomes invalid once we start reloading transcript state.
   state.resetChatInputHistoryNavigation?.();
   state.chatLoading = true;
+  if (method === "chat.startup") {
+    chatHistoryRequests(state).initialWindowFillAttempted = false;
+  }
   const request = (cursor?: string) =>
     requestSharedHistory(
       sessions,
@@ -162,10 +170,96 @@ export async function hydrateChatHistory(
         return undefined;
       }
     }
-    // Fetch in parallel with IndexedDB, then reconcile against the cached paint.
-    // Joining at publication keeps a fast response from retiring the local read.
+    // The request and cache read run in parallel; join them before deciding
+    // whether a bounded startup response actually leaves the first screen short.
     const hydration = waitForInitialChatSnapshot(state);
     if ((hydration && !(await hydration)) || !isCurrent()) {
+      return undefined;
+    }
+    let startupTail: ReturnType<typeof reconcileHistoryTail> | undefined;
+    if (method === "chat.startup" && !isHistoryCursor(response) && response.hasMore) {
+      const { CHAT_HISTORY_DISPLAY_ROW_TARGET, historyDisplayRowCount } =
+        await import("./chat-history-display-window.ts");
+      if (!isCurrent()) {
+        return undefined;
+      }
+      const messages = visibleChatHistoryMessages(response.messages);
+      const nextLeaf = Object.hasOwn(response.sessionInfo ?? {}, "activeLeafEntryId")
+        ? response.sessionInfo?.activeLeafEntryId?.trim() || null
+        : state.chatDisplayedLeafEntryId;
+      if (
+        !response.windowReset &&
+        (state.chatDisplayedLeafEntryId === undefined ||
+          state.chatDisplayedLeafEntryId === nextLeaf)
+      ) {
+        startupTail = reconcileHistoryTail({
+          nextMessages: messages,
+          nextPagination: resolveChatHistoryPagination(response),
+          nextSessionId: historySessionId(response),
+          previousMessages: state.chatMessages,
+          previousPagination: state.chatHistoryPagination,
+          previousSessionId: state.currentSessionId ?? null,
+        });
+      }
+      const rows = historyDisplayRowCount(startupTail?.messages ?? messages, sessionKey);
+      const offset = response.nextOffset;
+      if (rows < CHAT_HISTORY_DISPLAY_ROW_TARGET && offset !== undefined && offset > 0) {
+        requests.initialWindowFillAttempted = true;
+        startupTail = undefined;
+        try {
+          const older = await requestSharedHistory(
+            sessions,
+            client,
+            `${requestKeyPrefix}fill:${offset}`,
+            "chat.history",
+            sessionKey,
+            requestAgentId,
+            state,
+            { isCurrent },
+            undefined,
+            [],
+            {
+              offset,
+              limit: Math.min(
+                1000,
+                Math.max(
+                  CHAT_HISTORY_REQUEST_LIMIT,
+                  Math.ceil(
+                    (Math.max(messages.length, CHAT_HISTORY_REQUEST_LIMIT) *
+                      (CHAT_HISTORY_DISPLAY_ROW_TARGET - rows)) /
+                      Math.max(1, rows),
+                  ),
+                ),
+              ),
+              maxBytes: CHAT_HISTORY_REQUEST_MAX_BYTES,
+            },
+          );
+          if (!isCurrent()) {
+            return undefined;
+          }
+          if (
+            !isHistoryCursor(older) &&
+            !older.windowReset &&
+            historySessionId(older) === historySessionId(response)
+          ) {
+            response = {
+              ...response,
+              messages: prependUniqueNativeMessages(
+                visibleChatHistoryMessages(older.messages),
+                messages,
+              ),
+              hasMore: older.hasMore,
+              nextOffset: older.nextOffset,
+              totalMessages: older.totalMessages ?? response.totalMessages,
+            };
+          }
+        } catch {
+          // Optional first-screen context must not retire a successful startup.
+          // Reader navigation can retry it through the ordinary history owner.
+        }
+      }
+    }
+    if (!isCurrent()) {
       return undefined;
     }
     const previousMessages = state.chatMessages;
@@ -247,14 +341,19 @@ export async function hydrateChatHistory(
       (!previousSessionId || !nextSessionId || previousSessionId === nextSessionId) &&
       (previousDisplayedLeafEntryId === undefined ||
         previousDisplayedLeafEntryId === nextDisplayedLeafEntryId);
-    const reconciledHistory = reconcileHistoryTail({
-      nextMessages: visibleMessages,
-      nextPagination,
-      nextSessionId,
-      previousMessages: retainsTranscriptIdentity ? previousTerminalMessages : [],
-      previousPagination,
-      previousSessionId,
-    });
+    const reconciledHistory =
+      startupTail !== undefined &&
+      previousTerminalMessages === previousMessages &&
+      retainsTranscriptIdentity
+        ? startupTail
+        : reconcileHistoryTail({
+            nextMessages: visibleMessages,
+            nextPagination,
+            nextSessionId,
+            previousMessages: retainsTranscriptIdentity ? previousTerminalMessages : [],
+            previousPagination,
+            previousSessionId,
+          });
     const authoritativeMessages = reconciledHistory?.messages ?? visibleMessages;
     const scope = readChatSessionProjectionScope(state, {
       sessionKey,

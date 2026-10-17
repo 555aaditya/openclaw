@@ -25,6 +25,7 @@ import {
   CHAT_SNAPSHOT_METADATA_STORE_NAME,
   CHAT_SNAPSHOT_STORE_NAME,
   debugSnapshotStore,
+  deleteSessionSnapshotEntries,
   openSessionSnapshotDatabase,
   readStoredChatSnapshotRecord,
   resetSessionSnapshotDatabase,
@@ -42,8 +43,8 @@ import {
   consumePrewarmedChatSnapshot,
   discardPrewarmedChatSnapshot,
 } from "./session-snapshot-prewarm.ts";
-const CHAT_SNAPSHOT_PROJECTION_VERSION = 3;
-const CHAT_SNAPSHOT_MESSAGE_LIMIT = 80;
+const CHAT_SNAPSHOT_PROJECTION_VERSION = 4;
+const CHAT_SNAPSHOT_MAX_BYTES = 2 * 1024 * 1024;
 const CHAT_SNAPSHOT_WRITE_DELAY_MS = 500;
 const CHAT_SNAPSHOT_IDLE_TIMEOUT_MS = 1000;
 
@@ -135,56 +136,68 @@ function parseSnapshotRecord(value: unknown, sessionKey?: string): SessionSnapsh
     : null;
 }
 
-function createSnapshotRecord(
+async function createSnapshotRecord(
   sessionKey: string,
   pending: PendingSessionState,
-): PreparedSnapshotRecord | null {
+): Promise<PreparedSnapshotRecord | null> {
   let snapshot: ChatSessionSnapshot;
-  let weight: number;
+  let weight = 0;
   try {
-    let projected = pending.snapshot;
-    const messages = projected.messages;
-    let start = Math.max(0, messages.length - CHAT_SNAPSHOT_MESSAGE_LIMIT);
-    // A history entry can project multiple rows; retain its whole sequence group.
-    while (start > 0) {
-      const seq = readSessionMessageSequence(messages[start]);
-      if (seq === null || seq !== readSessionMessageSequence(messages[start - 1])) {
+    const { historyDisplayWindowStarts } = await import("./chat-history-display-window.ts");
+    const messages = pending.snapshot.messages;
+    let json: string | undefined;
+    const transcriptKey = sessionKey.slice(sessionKey.indexOf("\u0000") + 1);
+    for (let start of historyDisplayWindowStarts(messages, transcriptKey)) {
+      // A history entry can project multiple rows; retain its whole sequence group.
+      while (start > 0) {
+        const seq = readSessionMessageSequence(messages[start]);
+        if (seq === null || seq !== readSessionMessageSequence(messages[start - 1])) {
+          break;
+        }
+        start--;
+      }
+      const projected =
+        start === 0
+          ? pending.snapshot
+          : {
+              ...pending.snapshot,
+              messages: messages.slice(start),
+              // Display turns are not Gateway page boundaries; reader backscroll
+              // refills from zero and the history owner deduplicates the overlap.
+              pagination: {
+                hasMore: true,
+                nextOffset: 0,
+                ...(pending.snapshot.pagination.totalMessages !== undefined
+                  ? { totalMessages: pending.snapshot.pagination.totalMessages }
+                  : {}),
+              },
+            };
+      // Pairing credentials stay in the live projection, never the browser's disk cache.
+      const candidate = JSON.stringify(projected, (_key, value: unknown) => {
+        if (value === projected.messages) {
+          return projected.messages.map((message) => {
+            const record = asOptionalRecord(message);
+            if (!record || !Object.hasOwn(record, "openclawResponsesInputReplay")) {
+              return message;
+            }
+            const { openclawResponsesInputReplay: _replay, ...display } = record;
+            return display;
+          });
+        }
+        return removePairingQrContent(value);
+      });
+      weight = new TextEncoder().encode(candidate).byteLength;
+      if (weight <= CHAT_SNAPSHOT_MAX_BYTES) {
+        json = candidate;
         break;
       }
-      start--;
     }
-    if (start > 0) {
-      // Display rows are not Gateway page boundaries. Refill from zero on the
-      // first upward scroll; the history owner deduplicates the overlap and
-      // returns the next authoritative offset, including merged CLI histories.
-      projected = {
-        ...projected,
-        messages: messages.slice(start),
-        pagination: {
-          hasMore: true,
-          nextOffset: 0,
-          ...(projected.pagination.totalMessages !== undefined
-            ? { totalMessages: projected.pagination.totalMessages }
-            : {}),
-        },
-      };
+    // A single oversized final turn has no whole-turn disk projection. Keep it
+    // live and let startup provide its bounded window on the next reload.
+    if (json === undefined) {
+      return null;
     }
-    // Pairing credentials stay in the live projection, never the browser's disk cache.
-    const json = JSON.stringify(projected, (_key, value: unknown) => {
-      if (value === projected.messages) {
-        return projected.messages.map((message) => {
-          const record = asOptionalRecord(message);
-          if (!record || !Object.hasOwn(record, "openclawResponsesInputReplay")) {
-            return message;
-          }
-          const { openclawResponsesInputReplay: _replay, ...display } = record;
-          return display;
-        });
-      }
-      return removePairingQrContent(value);
-    });
     snapshot = JSON.parse(json);
-    weight = json.length;
   } catch {
     return null;
   }
@@ -199,7 +212,7 @@ function createSnapshotRecord(
     metadata: {
       savedAt: pending.savedAt,
       sessionKey,
-      weight: weight + JSON.stringify(envelope).length,
+      weight: weight + new TextEncoder().encode(JSON.stringify(envelope)).byteLength,
     },
   };
 }
@@ -517,17 +530,24 @@ export class SessionSnapshotStore implements ChatCacheObserver {
       pending.map(([sessionKey]) => [sessionKey, this.revisions.get(sessionKey) ?? 0]),
     );
     this.pending.clear();
-    const records: PreparedSnapshotRecord[] = [];
-    for (const [sessionKey, state] of pending) {
-      const record = createSnapshotRecord(sessionKey, state);
-      if (record) {
-        records.push(record);
-      } else {
-        await this.delete(sessionKey, "cache-eviction");
-      }
-    }
     const generation = snapshotStoreGeneration;
     this.writeChain = this.writeChain.then(async () => {
+      const records: PreparedSnapshotRecord[] = [];
+      for (const [sessionKey, state] of pending) {
+        const record = await createSnapshotRecord(sessionKey, state);
+        if (
+          generation !== snapshotStoreGeneration ||
+          pendingRevisions.get(sessionKey) !== (this.revisions.get(sessionKey) ?? 0)
+        ) {
+          continue;
+        }
+        if (record) {
+          records.push(record);
+        } else {
+          this.savedAtBySession.delete(sessionKey);
+          await deleteSessionSnapshotEntries(sessionKey, "key", "cache-eviction");
+        }
+      }
       const currentRecords = records.filter(
         ({ record: { sessionKey } }) =>
           pendingRevisions.get(sessionKey) === (this.revisions.get(sessionKey) ?? 0),

@@ -85,8 +85,12 @@ rows, pinned destinations, and selected view for display while connecting. The
 Pages view saves and restores its dashboard catalog without waiting for the
 inactive Sessions roster.
 
-Boot and roster records retain the existing 30-day expiry, and transcripts keep
-up to 80 recent rows (plus rows from the same history entry) for a warm reload.
+Boot and roster records retain the existing 30-day expiry. Transcript snapshots
+keep complete display turns toward a target of 16 visible rows, within a 2 MiB
+byte budget. A turn larger than that budget stays in memory without a disk snapshot.
+Initial history with too few display rows gets one bounded older-context request
+before publication. Automatic viewport filling can request at most one page and
+does not repeat an initial context request.
 Older history loads from the Gateway as you scroll up. Cache upgrades discard
 older, unbounded transcript records; a connected visit fills the new cache.
 The first upward scroll or **Show earlier** refills the Gateway's current history
