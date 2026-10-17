@@ -4,42 +4,8 @@
  * art tiles, row messages, catalog details, and install/consent dialogs.
  * Structural layout comes from .settings-page/.settings-row. */
 
-.plugins-hub-header .page-title {
-  margin: 0;
-  font-size: 26px;
-}
-
-.content-header.hub-page-header.plugins-hub-header {
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas:
-    "title actions"
-    "tabs tabs";
-  align-items: end;
-  row-gap: var(--space-2);
-  width: 100%;
-  max-width: 1120px;
-  max-height: none;
-  margin-inline: auto;
-  padding-inline: var(--settings-header-inline-padding, var(--space-4));
-}
-
-.content-header.plugins-hub-header .hub-page-header__tabs {
-  grid-area: tabs;
-  justify-self: start;
-  padding-block: var(--space-2);
-}
-
 .plugins-hub-header .hub-tabs--sub .hub-tab {
   padding-block: var(--space-2);
-}
-
-.content-header.plugins-hub-header .hub-page-header__title {
-  grid-area: title;
-  justify-self: start;
-}
-
-.content-header.plugins-hub-header .hub-page-header__actions {
-  grid-area: actions;
 }
 
 .plugins-hub-header + .settings-workspace {
@@ -49,12 +15,6 @@
 
 .plugins-hub-header__secondary {
   flex: 0 0 auto;
-}
-
-@media (max-width: 768px) {
-  .plugins-hub-header .page-title {
-    font-size: 22px;
-  }
 }
 
 .installed-plugins-card__head {

@@ -70,6 +70,9 @@ describe("Claws discovery", () => {
   it("shows official Claws and opens their dedicated route", async () => {
     const { page, navigate, request } = createPage({ clawsEnabled: true });
     await vi.waitFor(() => expect(page.querySelectorAll("[data-claws-entry]")).toHaveLength(1));
+    expect(page.querySelector(".catalog-page-header h1.page-title")?.textContent).toBe("Claws");
+    expect(page.querySelector(".catalog-page-header [data-claws-search]")).not.toBeNull();
+    expect(page.querySelector(".settings-page .catalog-page-header")).toBeNull();
     expect(page.querySelector(".agents-home__card")).toBeNull();
     expect(page.textContent).not.toContain("Manage agents");
     expect(request.mock.calls.some(([method]) => method === "sessions.list")).toBe(false);

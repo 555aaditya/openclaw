@@ -240,7 +240,7 @@ export function ClawsDetailView(props: { view: ClawsCatalogViewProps }) {
                 backHref={pathForRoute("claws", view().basePath)}
                 backLabel={t("tabs.claws")}
                 onBack={view().onBack}
-                icon={<Icon name="box" />}
+                icon={<Icon name="agentsConnected" />}
                 identity={renderPublisherIdentity({
                   name: "OpenClaw",
                   handle: t("clawsCatalog.publisher"),

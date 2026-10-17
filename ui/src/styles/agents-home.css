@@ -1,38 +1,8 @@
-.agents-home {
-  padding: 0 24px 24px;
-}
-
-.agents-home__explore {
-  padding-top: 8px;
-}
-
-.agents-home__explore-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 16px;
-}
-
-.agents-home__explore-heading {
-  min-width: 0;
-}
-
-.agents-home__explore-heading h2 {
-  margin: 0;
-  font-size: 18px;
-}
-
-.agents-home__explore-heading p {
-  margin: 4px 0 0;
-  color: var(--muted);
-  font-size: var(--control-ui-text-sm);
-}
-
 .agents-home__claw-search {
   position: relative;
-  width: min(100%, 320px);
-  flex: 0 1 320px;
+  display: block;
+  width: clamp(160px, 28vw, 320px);
+  max-width: 100%;
 }
 
 .agents-home__claw-search > span {
@@ -167,17 +137,18 @@
 }
 
 @media (max-width: 560px) {
-  .agents-home {
-    padding: 0 16px 16px;
+  .content-header.hub-page-header.claws-catalog-header {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "title"
+      "actions";
   }
 
-  .agents-home__explore-toolbar {
-    flex-direction: column;
-    align-items: stretch;
+  .claws-catalog-header .hub-page-header__actions {
+    width: 100%;
   }
 
   .agents-home__claw-search {
     width: 100%;
-    flex: 0 0 auto;
   }
 }

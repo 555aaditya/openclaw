@@ -62,17 +62,13 @@ export function ClawsPage(props: { routeData: ClawsRouteData | undefined }) {
             onAdded={() => void context.agents.refreshList()}
           />
         ) : (
-          <SettingsPage wide carapace>
-            <div class="agents-home">
-              <ClawsExplore
-                onSelect={(entry) =>
-                  context.navigate("claws", {
-                    pathname: pathForClawCatalogEntry(entry.packageName, context.basePath),
-                  })
-                }
-              />
-            </div>
-          </SettingsPage>
+          <ClawsExplore
+            onSelect={(entry) =>
+              context.navigate("claws", {
+                pathname: pathForClawCatalogEntry(entry.packageName, context.basePath),
+              })
+            }
+          />
         )}
       </Show>
     </Show>
