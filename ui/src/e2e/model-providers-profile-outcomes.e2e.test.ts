@@ -7,6 +7,7 @@ import {
 } from "../test-helpers/control-ui-e2e.ts";
 import { sessionsUsageResponse } from "../test-helpers/sessions-usage-response.ts";
 import { createControlUiE2eSuite } from "./control-ui-e2e-suite.test-support.ts";
+import { expandProvider } from "./model-providers.test-support.ts";
 
 const suite = createControlUiE2eSuite({ name: "Control UI model provider profile outcomes" });
 const NOW = Date.now();
@@ -81,8 +82,8 @@ suite.define(() => {
         await page.goto(`${suite.server.baseUrl}settings/model-providers`);
         const xaiCard = page.locator('[data-provider-id="xai"]');
         const minimaxCard = page.locator('[data-provider-id="minimax"]');
-        await xaiCard.waitFor();
-        await minimaxCard.waitFor();
+        await expandProvider(page, "xai");
+        await expandProvider(page, "minimax");
         await xaiCard.screenshot({ path: path.join(suite.artifactDir, "account-status.png") });
         await minimaxCard.screenshot({ path: path.join(suite.artifactDir, "catalog-status.png") });
         await expect
@@ -153,12 +154,13 @@ suite.define(() => {
           },
         });
         await page.goto(`${suite.server.baseUrl}settings/model-providers`);
-        const card = page.locator('[data-provider-id="openai"]');
+        const card = await expandProvider(page, "openai");
         const alex = card.locator('[data-profile-id="openai:alex"]');
         const blair = card.locator('[data-profile-id="openai:blair"]');
         const grip = alex.locator(".model-providers__profile-grip");
         await expect.poll(() => grip.isEnabled()).toBe(true);
-        await grip.scrollIntoViewIfNeeded();
+        // The drag ends over the lower account, so keep both rows inside the viewport.
+        await blair.scrollIntoViewIfNeeded();
         const start = await grip.boundingBox();
         const first = await alex.boundingBox();
         const second = await blair.boundingBox();
@@ -359,6 +361,13 @@ suite.define(() => {
             )?.trim(),
           )
           .toBe(status);
+        if (!available) {
+          // A rejected credential opens its row without a click.
+          expect(
+            await openaiCard.locator(".provider-row__summary").getAttribute("aria-expanded"),
+          ).toBe("true");
+        }
+        await expandProvider(page, "openai");
         if (!available) {
           await openaiCard.screenshot({
             path: path.join(suite.artifactDir, "provider-auth-rejected.png"),

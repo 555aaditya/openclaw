@@ -7,6 +7,7 @@ import { installMockGateway } from "../test-helpers/control-ui-e2e.ts";
 import { pickerValue } from "../test-helpers/select-picker-e2e.ts";
 import { sessionsUsageResponse } from "../test-helpers/sessions-usage-response.ts";
 import { createControlUiE2eSuite } from "./control-ui-e2e-suite.test-support.ts";
+import { expandProvider } from "./model-providers.test-support.ts";
 
 const suite = createControlUiE2eSuite({
   name: "Control UI Model Provider operator outcomes mocked Gateway E2E",
@@ -281,7 +282,12 @@ suite.define(() => {
 
         await page.goto(`${suite.server.baseUrl}settings/model-providers`);
         const openaiCard = page.locator('[data-provider-id="openai"]');
-        await expect.poll(async () => openaiCard.textContent()).toContain("Credentials for Main");
+        // An agent switch reloads the list, so open the row again on each read.
+        const credentials = async () =>
+          (await expandProvider(page, "openai"))
+            .locator(".model-providers__credentials")
+            .textContent();
+        await expect.poll(credentials).toContain("Credentials for Main");
         await openaiCard.getByRole("button", { name: "Set API key" }).click();
         if (recordVisuals) {
           await mkdir(path.join(suite.artifactDir, "model-providers"), { recursive: true });
@@ -298,7 +304,7 @@ suite.define(() => {
         const agentPicker = page.locator(".settings-sidebar__agent openclaw-agent-select");
         await agentPicker.locator(".agent-select__trigger").click();
         await agentPicker.getByRole("menuitemradio", { name: "Writer", exact: true }).click();
-        await expect.poll(async () => openaiCard.textContent()).toContain("Credentials for Writer");
+        await expect.poll(credentials).toContain("Credentials for Writer");
         await expect.poll(async () => openaiCard.locator('input[type="password"]').count()).toBe(0);
         expect(await gateway.getRequests("config.patch")).toHaveLength(0);
         if (recordVisuals) {
@@ -321,7 +327,7 @@ suite.define(() => {
         await evaluateControlUiContext(page, (context) => {
           context.settingsAgentSelection.set("main");
         });
-        await expect.poll(async () => openaiCard.textContent()).toContain("Credentials for Main");
+        await expect.poll(credentials).toContain("Credentials for Main");
         await expect.poll(async () => page.locator("[data-models-key-dialog]").count()).toBe(0);
         await expect.poll(async () => openaiCard.locator('input[type="password"]').count()).toBe(0);
         expect(await gateway.getRequests("config.patch")).toHaveLength(0);

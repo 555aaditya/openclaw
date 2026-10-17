@@ -23,6 +23,7 @@ import {
   resolveConfigMutation,
   providerConfig,
   createProviderProofCapture,
+  expandProvider,
 } from "./model-providers.test-support.ts";
 
 const chromiumExecutablePath = resolvePlaywrightChromiumExecutablePath(chromium.executablePath());
@@ -143,6 +144,7 @@ describeControlUiE2e("Control UI Models mocked Gateway E2E", () => {
         .poll(async () => providerReadiness.textContent())
         .toContain("Credentials configured");
       await expect.poll(async () => providerReadiness.textContent()).not.toContain("Signed in");
+      await expandProvider(page, "openai");
       await expect.poll(async () => (await profileStatus.textContent())?.trim()).toBe("Signed in");
       expect(
         (await gateway.getRequests("models.list")).filter(
@@ -169,7 +171,7 @@ describeControlUiE2e("Control UI Models mocked Gateway E2E", () => {
             page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
           )
           .toBe(true);
-        const providerTitle = openaiCard.locator(".settings-row__title").first();
+        const providerTitle = openaiCard.locator(".provider-row__name").first();
         await expect
           .poll(() => providerTitle.evaluate((node) => node.getBoundingClientRect().width))
           .toBeGreaterThan(40);
@@ -365,25 +367,32 @@ describeControlUiE2e("Control UI Models mocked Gateway E2E", () => {
       const claudeCard = page.locator(".model-providers__row", { hasText: "Claude" });
       await claudeCard.waitFor();
       // Alias auth row (claude-cli) merges onto the canonical anthropic card.
-      await expect
-        .poll(async () => claudeCard.locator(".settings-row__desc").first().textContent())
-        .toContain("anthropic");
+      await expect.poll(async () => claudeCard.getAttribute("data-provider-id")).toBe("anthropic");
       await expect.poll(async () => claudeCard.textContent()).toContain("Max 20x");
       await expect.poll(async () => claudeCard.textContent()).toContain("Credentials configured");
       const claudeReadiness = claudeCard.locator(".model-providers__head");
       await expect.poll(async () => claudeReadiness.textContent()).not.toContain("Expired");
       await expect.poll(async () => claudeReadiness.textContent()).not.toContain("Expiring");
       await expect.poll(async () => claudeReadiness.textContent()).not.toContain("Not signed in");
+      await expandProvider(page, "anthropic");
       await expect
         .poll(async () => claudeCard.locator(".model-providers__profile").textContent())
         .toContain("Expired");
       const usageRow = (name: string) =>
         page.locator(".usage-overview__providers li", { hasText: name });
       await expect.poll(async () => usageRow("Claude").textContent()).toContain("$4.20");
-      await page
-        .locator('.provider-row[data-provider-id="anthropic"] .provider-limit')
-        .first()
-        .waitFor();
+      // Plan headroom shows beside the name and in full inside the open row.
+      await expect
+        .poll(() =>
+          page
+            .locator('.provider-row[data-provider-id="anthropic"] .provider-limit-chip')
+            .first()
+            .textContent(),
+        )
+        .toContain("62% left");
+      await expect
+        .poll(() => claudeCard.locator(".provider-usage__row", { hasText: "5h" }).textContent())
+        .toContain("Resets");
       await expect.poll(() => page.getByText("Model auth expired: Claude").count()).toBe(0);
 
       if (recordVisuals) {
@@ -392,6 +401,7 @@ describeControlUiE2e("Control UI Models mocked Gateway E2E", () => {
 
       const openrouterCard = page.locator(".model-providers__row", { hasText: "OpenRouter" });
       await openrouterCard.waitFor();
+      await expandProvider(page, "openrouter");
       await openrouterCard.getByRole("button", { name: "Set API key", exact: true }).waitFor();
       expect(await openrouterCard.locator(".model-providers__profile").textContent()).toContain(
         "openrouter:default",
@@ -413,6 +423,12 @@ describeControlUiE2e("Control UI Models mocked Gateway E2E", () => {
       const googleCard = page.locator(".model-providers__row", { hasText: "Google" });
       await googleCard.waitFor();
       await expect.poll(async () => googleCard.textContent()).toContain("0 of 1 models available");
+      // Without credentials or a usable model it sits in the quiet group.
+      expect(
+        await page
+          .locator(".provider-list--quiet .provider-row")
+          .evaluateAll((rows) => rows.map((row) => row.getAttribute("data-provider-id"))),
+      ).toEqual(["google"]);
       const fallback = page.locator(
         '[data-provider-id="ß-provider"] .provider-brand-icon--fallback',
       );
@@ -624,6 +640,7 @@ describeControlUiE2e("Control UI Models mocked Gateway E2E", () => {
         await captureProviderProof("01-configured.png", openaiCard);
       }
 
+      await expandProvider(page, "openai");
       await openaiCard.getByRole("button", { name: "Set API key" }).click();
       await openaiCard.getByLabel("API key").fill(openaiInputValue);
       const keyWriteCount = (await gateway.getRequests("models.authSetApiKey")).length;

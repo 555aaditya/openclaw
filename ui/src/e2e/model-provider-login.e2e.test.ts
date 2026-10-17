@@ -14,6 +14,7 @@ import {
 } from "../test-helpers/select-picker-e2e.ts";
 import { sessionsUsageResponse } from "../test-helpers/sessions-usage-response.ts";
 import { createControlUiE2eSuite } from "./control-ui-e2e-suite.test-support.ts";
+import { expandProvider } from "./model-providers.test-support.ts";
 
 const suite = createControlUiE2eSuite({
   name: "Control UI model provider login mocked Gateway E2E",
@@ -258,7 +259,7 @@ suite.define(() => {
           expect(search.get("provider")).toBe("openai");
           expect(search.has("connect")).toBe(false);
           await gateway.waitForRequest("models.authStatus", { match: { agentId: "writer" } });
-          const card = page.locator('[data-provider-id="openai"]');
+          const card = await expandProvider(page, "openai");
           await card.getByText("alex@example.invalid", { exact: true }).waitFor();
           expect(await page.locator('[data-provider-id="anthropic"]').count()).toBe(0);
           expect(await page.locator("openclaw-modal-dialog").count()).toBe(0);
@@ -574,7 +575,8 @@ suite.define(() => {
         await saved.waitFor();
         await captureProviderProof(`login-after-saved-${modelAccess.value}.png`, dialog);
         await dialog.getByRole("button", { name: "Close", exact: true }).click();
-        await page.getByText("signed-in@example.invalid", { exact: true }).waitFor();
+        const example = await expandProvider(page, "example");
+        await example.getByText("signed-in@example.invalid", { exact: true }).waitFor();
         await expect
           .poll(async () => (await gateway.getRequests("models.authStatus")).length)
           .toBeGreaterThan(authReads);

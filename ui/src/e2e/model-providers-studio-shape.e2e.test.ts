@@ -6,6 +6,7 @@ import { expect, it } from "vitest";
 import { installMockGateway } from "../test-helpers/control-ui-e2e.ts";
 import { createControlUiE2eSuite } from "./control-ui-e2e-suite.test-support.ts";
 import studio from "./model-providers-studio-shape.fixture.json" with { type: "json" };
+import { expandProvider } from "./model-providers.test-support.ts";
 
 const suite = createControlUiE2eSuite({
   name: "Control UI Model providers studio-shaped data mocked Gateway E2E",
@@ -95,20 +96,33 @@ suite.define(() => {
         await page.getByRole("radio", { name: "Tokens", exact: true }).check();
         await expect.poll(() => segments.count()).toBe(5);
 
-        const copilot = page.locator('.provider-row[data-provider-id="github-copilot"]');
+        // An exhausted plan window reads as no headroom, beside the name and in the open row.
+        const copilot = await expandProvider(page, "github-copilot");
         expect(
-          await copilot.locator(".provider-limit", { hasText: "Premium" }).textContent(),
-        ).toContain("100% used");
-        expect(await copilot.textContent()).toContain("Reset time not reported");
+          await copilot
+            .locator(".provider-limit-chip", { hasText: "Premium" })
+            .locator(".provider-limit-chip__value")
+            .textContent(),
+        ).toBe("0% left");
+        const premium = copilot.locator(".provider-usage__row", { hasText: "Premium" });
+        expect(await premium.getByRole("meter").getAttribute("aria-valuenow")).toBe("0");
+        expect(await premium.locator(".oc-menu-panel-usage-value").textContent()).toBe("0% left");
+        // Copilot reports no reset time, so the row claims none.
+        expect(await premium.locator(".provider-usage__reset").count()).toBe(0);
         expect(await page.locator('.provider-row[data-provider-id="xai"]').textContent()).toContain(
           "Prepaid balance",
         );
-        // Providers without saved credentials sit in their own quieter group.
+        // Usable providers lead, most-used first. Anthropic has ready catalog models
+        // without a credential OpenClaw holds; usage-only providers stay in the overview.
         expect(
           await page
-            .locator(".provider-list--quiet .provider-row")
+            .locator(".provider-list:not(.provider-list--quiet) > .provider-row")
             .evaluateAll((rows) => rows.map((row) => row.getAttribute("data-provider-id"))),
-        ).toEqual(expect.arrayContaining(["***", "anthropic"]));
+        ).toEqual(["openai", "xai", "anthropic", "github-copilot"]);
+        expect(await page.locator(".provider-list--quiet").count()).toBe(0);
+        expect(
+          await page.locator('[data-provider-id="anthropic"] .provider-row__meta').textContent(),
+        ).toContain("Credentials managed outside OpenClaw");
         expect(
           await page
             .locator('[data-provider-id="github-copilot"] .model-providers__profile-copy strong')

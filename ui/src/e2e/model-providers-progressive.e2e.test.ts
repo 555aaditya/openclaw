@@ -667,6 +667,9 @@ describeControlUiE2e("Control UI progressive Model Providers loading", () => {
         expect(await routeCatalogRequests()).toHaveLength(1);
 
         await gateway.resolveDeferred("models.authStatus");
+        // Local usage loads with the provider core, so the route settles with both.
+        await gateway.waitForRequest("sessions.usage");
+        await gateway.resolveDeferred("sessions.usage", sessionsUsageResponse());
         await waitForControlUiRoute(page, { routeId: "model-providers" });
         expect(await trigger.getAttribute("aria-expanded")).toBe("true");
 
@@ -701,7 +704,7 @@ describeControlUiE2e("Control UI progressive Model Providers loading", () => {
   );
 
   it.each(["cold", "prewarmed", "cached"] as const)(
-    "renders provider controls before usage and cost settle (%s module)",
+    "renders provider controls with local usage before provider usage settles (%s module)",
     async (moduleState) => {
       const context = await browser.newContext({
         locale: "en-US",
@@ -798,14 +801,24 @@ describeControlUiE2e("Control UI progressive Model Providers loading", () => {
             .poll(async () => (await gateway.getRequests("models.authStatus")).length)
             .toBeGreaterThan(previousAuthLoads);
         }
+        // Local usage is part of the core load; provider usage waits for it to settle.
+        await expect
+          .poll(async () => (await gateway.getRequests("sessions.usage")).length)
+          .toBe(previousLoads + 1);
+        const localUsageParams = asNullableRecord(
+          (await gateway.getRequests("sessions.usage")).at(-1)?.params,
+        );
+        expect(localUsageParams).toMatchObject({ limit: 1 });
+        expect(localUsageParams).not.toHaveProperty("projection");
         await page.locator("openclaw-model-providers-page").waitFor();
         if (moduleState === "cached") {
+          // The previous snapshot stays in place while its replacement loads.
           await expect
             .poll(() => page.locator('[data-provider-id="openai"]').textContent())
             .toContain("Credentials configured");
-          await expect
-            .poll(() => page.locator(".usage-overview").textContent())
-            .toContain("Loading");
+          const cachedOverview = page.locator(".usage-overview");
+          await expect.poll(() => cachedOverview.getAttribute("aria-busy")).toBe("true");
+          expect(await cachedOverview.textContent()).toContain("$1.25");
         }
         if (recordVisuals) {
           await writeFile(
@@ -816,18 +829,18 @@ describeControlUiE2e("Control UI progressive Model Providers loading", () => {
           );
         }
         expect(await gateway.getRequests("usage.status")).toHaveLength(previousLoads);
-        expect(await gateway.getRequests("sessions.usage")).toHaveLength(previousLoads);
         await gateway.resolveDeferred("models.authStatus");
+        await gateway.resolveDeferred("sessions.usage");
         await waitForControlUiRoute(page, { routeId: "model-providers" });
-        await gateway.waitForRequest("usage.status");
-        await gateway.waitForRequest("sessions.usage");
         const provider = page.locator('[data-provider-id="openai"]');
         await provider.waitFor();
         await expect.poll(async () => provider.textContent()).toContain("Credentials configured");
         const overview = page.locator(".usage-overview");
-        await expect.poll(async () => overview.textContent()).toContain("Loading");
-        expect(await gateway.getRequests("usage.status")).toHaveLength(previousLoads + 1);
-        expect(await gateway.getRequests("sessions.usage")).toHaveLength(previousLoads + 1);
+        await expect.poll(async () => overview.textContent()).toContain("$1.25");
+        await expect
+          .poll(async () => (await gateway.getRequests("usage.status")).length)
+          .toBe(previousLoads + 1);
+        expect(await provider.locator(".provider-row__plan").count()).toBe(0);
         if (recordVisuals) {
           await writeFile(
             path.join(artifactDir, "before.png"),
@@ -836,17 +849,16 @@ describeControlUiE2e("Control UI progressive Model Providers loading", () => {
         }
 
         await gateway.resolveDeferred("usage.status");
-        await expect.poll(async () => provider.textContent()).toContain("Pro");
-        expect(await overview.textContent()).not.toContain("$1.25");
+        await expect
+          .poll(async () => provider.locator(".provider-row__plan").textContent())
+          .toBe("Pro");
+        expect(await overview.textContent()).toContain("$1.25");
         if (recordVisuals) {
           await writeFile(
             path.join(artifactDir, "usage-ready.png"),
             await takeControlUiViewportScreenshot(page, page.locator(".shell"), [provider]),
           );
         }
-
-        await gateway.resolveDeferred("sessions.usage");
-        await expect.poll(async () => overview.textContent()).toContain("$1.25");
         expect(await gateway.getRequests("usage.status")).toHaveLength(previousLoads + 1);
         expect(await gateway.getRequests("sessions.usage")).toHaveLength(previousLoads + 1);
         expect(await page.locator('[data-provider-id="unknown-provider"]').count()).toBe(0);
