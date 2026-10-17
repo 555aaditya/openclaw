@@ -121,17 +121,103 @@ it("produces the shared Swift wire fixture from actual typed owner operations", 
       observedToken: token.token,
     }),
   ).toEqual({ kind: "changed", changed: false });
-  expect(
-    record("token trim-equivalent observation revokes", {
-      kind: "token.remove",
-      key,
-      observedToken: " refreshed/é ",
-    }),
-  ).toEqual({ kind: "changed", changed: true });
-  expect(record("revoked token absent", { kind: "token.read", key })).toEqual({
-    kind: "token",
-    token: null,
-  });
+  const removals: {
+    name: string;
+    persistedToken: string;
+    expectedToken?: string | null;
+    observedToken?: string;
+    changed: boolean;
+  }[] = [
+    {
+      name: "normalized expected accepts exact raw observation",
+      persistedToken: " cached-token ",
+      expectedToken: "cached-token",
+      observedToken: " cached-token ",
+      changed: true,
+    },
+    {
+      name: "normalized expected rejects a different raw token with the same trim",
+      persistedToken: "\tcached-token\n",
+      expectedToken: "cached-token",
+      observedToken: " cached-token ",
+      changed: false,
+    },
+    {
+      name: "raw observation must normalize to expected",
+      persistedToken: "unrelated-token",
+      expectedToken: "cached-token",
+      observedToken: "unrelated-token",
+      changed: false,
+    },
+    {
+      name: "exact expected does not require a matching observation",
+      persistedToken: "cached-token",
+      expectedToken: "cached-token",
+      observedToken: "unrelated-token",
+      changed: true,
+    },
+    {
+      name: "observed-only removal rejects trim-equivalent bytes",
+      persistedToken: "cached-token",
+      observedToken: " cached-token ",
+      changed: false,
+    },
+    {
+      name: "observed-only removal accepts exact bytes",
+      persistedToken: " cached-token ",
+      observedToken: " cached-token ",
+      changed: true,
+    },
+    {
+      name: "explicit null does not allow a raw observation fallback",
+      persistedToken: " cached-token ",
+      expectedToken: null,
+      observedToken: " cached-token ",
+      changed: false,
+    },
+    {
+      name: "omitted expected and observation remove unconditionally",
+      persistedToken: " cached-token ",
+      changed: true,
+    },
+    {
+      name: "normalization preserves composed and decomposed UTF8 bytes",
+      persistedToken: " e\u0301 ",
+      expectedToken: "\u00e9",
+      observedToken: " e\u0301 ",
+      changed: false,
+    },
+    {
+      name: "raw observation uses ECMAScript BOM trimming",
+      persistedToken: "\ufeffcached-token\ufeff",
+      expectedToken: "cached-token",
+      observedToken: "\ufeffcached-token\ufeff",
+      changed: true,
+    },
+    {
+      name: "raw observation does not trim Unicode next-line",
+      persistedToken: "\u0085cached-token\u0085",
+      expectedToken: "cached-token",
+      observedToken: "\u0085cached-token\u0085",
+      changed: false,
+    },
+  ];
+  for (const removal of removals) {
+    const persisted = { ...token, token: removal.persistedToken };
+    record(`${removal.name}: seed`, { kind: "token.replace", key, token: persisted });
+    expect(
+      record(removal.name, {
+        kind: "token.remove",
+        key,
+        expectedToken: removal.expectedToken,
+        observedToken: removal.observedToken,
+      }),
+    ).toEqual({ kind: "changed", changed: removal.changed });
+    expect(record(`${removal.name}: durable result`, { kind: "token.read", key })).toEqual({
+      kind: "token",
+      token: removal.changed ? null : persisted,
+    });
+  }
   const native = { ...token, role: "opérateur", token: "native/token/雪", updated_at_ms: 50 };
   const nativeKey = { device_id: native.device_id, role: native.role };
   const scopedKey = { ...nativeKey, role: "v2.d3NzOi8v5L6LLmludmFsaWQvw6k.b3DDqXJhdGV1cg" };

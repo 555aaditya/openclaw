@@ -2,6 +2,12 @@ import Foundation
 import SQLite3
 
 extension OpenClawClientCredentialStore {
+    /// Match ECMAScript String.trim for raw observations received from TypeScript.
+    private static let tokenTrimCharacters = CharacterSet(charactersIn:
+        "\u{0009}\u{000A}\u{000B}\u{000C}\u{000D}\u{0020}\u{00A0}\u{1680}" +
+            "\u{2000}\u{2001}\u{2002}\u{2003}\u{2004}\u{2005}\u{2006}\u{2007}\u{2008}\u{2009}\u{200A}" +
+            "\u{2028}\u{2029}\u{202F}\u{205F}\u{3000}\u{FEFF}")
+
     public func execute(_ operation: ClientCredentialOperation) throws -> ClientCredentialResult {
         func missing() -> OpenClawNativeStateError {
             .init("Invalid local credential operation")
@@ -122,13 +128,15 @@ extension OpenClawClientCredentialStore {
                     let current = try self.query(
                         "SELECT token FROM \(table) WHERE \(predicate)",
                         values) { try Self.text($0, 0) }
-                    if operation.hasExpectedToken,
-                       !Self.sameUTF8Bytes(current, operation.expectedToken) { return false }
-                    if let observed = operation.observedToken,
-                       !Self.sameUTF8Bytes(
-                           current?.trimmingCharacters(in: .whitespacesAndNewlines),
-                           observed.trimmingCharacters(in: .whitespacesAndNewlines)) { return false }
-                    guard let current else { return false }
+                    let matchesExpected = operation.hasExpectedToken &&
+                        Self.sameUTF8Bytes(current, operation.expectedToken)
+                    let matchesObserved = operation.observedToken.map { observed in
+                        Self.sameUTF8Bytes(current, observed) &&
+                            (!operation.hasExpectedToken || Self.sameUTF8Bytes(
+                                observed.trimmingCharacters(in: Self.tokenTrimCharacters),
+                                operation.expectedToken))
+                    } ?? false
+                    guard matchesExpected || matchesObserved, let current else { return false }
                     predicate += " AND token=?"
                     values.append(.text(current))
                 }

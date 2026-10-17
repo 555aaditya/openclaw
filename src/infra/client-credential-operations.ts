@@ -208,13 +208,17 @@ export function performClientCredentialOperation(
       }
       const current = executeSqliteQueryTakeFirstSync(database, match);
       const matchesExpected =
-        operation.expectedToken === undefined ||
-        (current?.token ?? null) === operation.expectedToken;
+        operation.expectedToken === undefined
+          ? operation.kind !== "token.remove" || operation.observedToken === undefined
+          : (current?.token ?? null) === operation.expectedToken;
       const matchesObserved =
-        operation.kind !== "token.remove" ||
-        operation.observedToken === undefined ||
-        current?.token.trim() === operation.observedToken.trim();
-      const matches = matchesExpected && matchesObserved;
+        operation.kind === "token.remove" &&
+        operation.observedToken !== undefined &&
+        current?.token === operation.observedToken &&
+        (operation.expectedToken === undefined ||
+          (typeof operation.expectedToken === "string" &&
+            operation.observedToken.trim() === operation.expectedToken));
+      const matches = matchesExpected || matchesObserved;
       if (!matches) {
         return { kind: "changed", changed: false };
       }

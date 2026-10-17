@@ -26,23 +26,21 @@ struct DeviceAuthStoreFile: Codable, Equatable {
 public enum DeviceAuthStore {
     static let maximumLegacyAuthBytes = 4 * 1024 * 1024
 
-    private static func perform(
-        _ operation: ClientCredentialOperation,
-        profile: GatewayDeviceIdentityProfile) throws -> ClientCredentialResult
-    {
+    private static func perform(_ operation: ClientCredentialOperation) throws -> ClientCredentialResult {
         try DeviceCredentialAccess.execute(root: DeviceIdentityPaths.stateDirURL(), operation: operation)
     }
 
+    /// Shipped profile labels remain source compatible; local token rows are keyed by device ID.
     public static func loadToken(
         deviceId: String,
         role: String,
         gatewayID: String? = nil,
-        profile: GatewayDeviceIdentityProfile = .primary) -> DeviceAuthEntry?
+        profile _: GatewayDeviceIdentityProfile = .primary) -> DeviceAuthEntry?
     {
         guard let key = tokenKey(role: role, gatewayID: gatewayID) else { return nil }
         var operation = ClientCredentialOperation(kind: .tokenRead)
         operation.key = .init(deviceID: deviceId, role: key)
-        guard let row = try? perform(operation, profile: profile).token,
+        guard let row = try? perform(operation).token,
               let scopes = decodeScopes(row.scopesJSON) else { return nil }
         let decoded = self.decodeTokenKey(row.role)
         return DeviceAuthEntry(
@@ -55,8 +53,7 @@ public enum DeviceAuthStore {
 
     public static func observeTokens(
         deviceId: String,
-        gatewayID: String?,
-        profile: GatewayDeviceIdentityProfile = .primary) -> [String: String]
+        gatewayID: String?) -> [String: String]
     {
         var observed: [String: String] = [:]
         var afterRole: String?
@@ -64,7 +61,7 @@ public enum DeviceAuthStore {
             var operation = ClientCredentialOperation(kind: .tokenList)
             operation.device_id = deviceId
             operation.afterRole = afterRole
-            guard let result = try? perform(operation, profile: profile) else { return observed }
+            guard let result = try? perform(operation) else { return observed }
             for row in result.tokens ?? [] {
                 let decoded = self.decodeTokenKey(row.role)
                 if decoded.gatewayID.map({ Data($0.utf8) }) == gatewayID.map({ Data($0.utf8) }) {
@@ -82,15 +79,14 @@ public enum DeviceAuthStore {
         token: String,
         scopes: [String] = [],
         gatewayID: String? = nil,
-        profile: GatewayDeviceIdentityProfile = .primary) -> DeviceAuthEntry
+        profile _: GatewayDeviceIdentityProfile = .primary) -> DeviceAuthEntry
     {
         self.storeTokenResult(
             deviceId: deviceId,
             role: role,
             token: token,
             scopes: scopes,
-            gatewayID: gatewayID,
-            profile: profile).entry
+            gatewayID: gatewayID).entry
     }
 
     @discardableResult public static func storeTokenPersisted(
@@ -99,7 +95,7 @@ public enum DeviceAuthStore {
         token: String,
         scopes: [String] = [],
         gatewayID: String? = nil,
-        profile: GatewayDeviceIdentityProfile = .primary,
+        profile _: GatewayDeviceIdentityProfile = .primary,
         expectedToken: String? = nil,
         onlyIfUnchanged: Bool = false) -> Bool
     {
@@ -109,7 +105,6 @@ public enum DeviceAuthStore {
             token: token,
             scopes: scopes,
             gatewayID: gatewayID,
-            profile: profile,
             expectedToken: expectedToken,
             onlyIfUnchanged: onlyIfUnchanged).persisted
     }
@@ -120,7 +115,6 @@ public enum DeviceAuthStore {
         token: String,
         scopes: [String] = [],
         gatewayID: String? = nil,
-        profile: GatewayDeviceIdentityProfile = .primary,
         expectedToken: String? = nil,
         onlyIfUnchanged: Bool = false) -> (entry: DeviceAuthEntry, persisted: Bool)
     {
@@ -142,28 +136,27 @@ public enum DeviceAuthStore {
             updatedAtMs: entry.updatedAtMs)
         operation.hasExpectedToken = onlyIfUnchanged
         operation.expectedToken = expectedToken
-        return (entry, (try? self.perform(operation, profile: profile).changed) == true)
+        return (entry, (try? self.perform(operation).changed) == true)
     }
 
     public static func clearToken(
         deviceId: String,
         role: String,
         gatewayID: String? = nil,
-        profile: GatewayDeviceIdentityProfile = .primary,
+        profile _: GatewayDeviceIdentityProfile = .primary,
         observedToken: String? = nil)
     {
         if gatewayID == nil, observedToken == nil {
             _ = self.clear(
                 deviceId: deviceId,
-                selector: .init(kind: .role, role: self.normalizeRole(role)),
-                profile: profile)
+                selector: .init(kind: .role, role: self.normalizeRole(role)))
             return
         }
         guard let key = tokenKey(role: role, gatewayID: gatewayID) else { return }
         var operation = ClientCredentialOperation(kind: .tokenRemove)
         operation.key = .init(deviceID: deviceId, role: key)
         operation.observedToken = observedToken
-        _ = try? self.perform(operation, profile: profile)
+        _ = try? self.perform(operation)
     }
 
     public static func clearAll(profile: GatewayDeviceIdentityProfile = .primary) {
@@ -172,47 +165,46 @@ public enum DeviceAuthStore {
         guard let identity = try? DeviceCredentialAccess.execute(
             root: DeviceIdentityPaths.stateDirURL(),
             operation: operation).identity else { return }
-        _ = self.clear(deviceId: identity.deviceID, selector: .init(kind: .all), profile: profile)
+        _ = self.clear(deviceId: identity.deviceID, selector: .init(kind: .all))
     }
 
     public static func clearGatewayTokensPersisted(
         deviceId: String,
         gatewayID: String,
-        profile: GatewayDeviceIdentityProfile = .primary) -> Bool
+        profile _: GatewayDeviceIdentityProfile = .primary) -> Bool
     {
-        self.clear(deviceId: deviceId, selector: .init(kind: .gateway, gateway: gatewayID), profile: profile) != nil
+        self.clear(deviceId: deviceId, selector: .init(kind: .gateway, gateway: gatewayID)) != nil
     }
 
     @discardableResult public static func migrateUnscopedToken(
         deviceId: String,
         role: String,
         toGatewayID gatewayID: String,
-        profile: GatewayDeviceIdentityProfile = .primary) -> Bool
+        profile _: GatewayDeviceIdentityProfile = .primary) -> Bool
     {
         guard !gatewayID.isEmpty else { return false }
         var operation = ClientCredentialOperation(kind: .nativeTokenClaim)
         operation.device_id = deviceId
         operation.role = self.normalizeRole(role)
         operation.gateway = gatewayID
-        return (try? self.perform(operation, profile: profile).changed) == true
+        return (try? self.perform(operation).changed) == true
     }
 
     @discardableResult public static func discardUnscopedTokens(
         deviceId: String,
-        profile: GatewayDeviceIdentityProfile = .primary) -> Int
+        profile _: GatewayDeviceIdentityProfile = .primary) -> Int
     {
-        self.clear(deviceId: deviceId, selector: .init(kind: .unscoped), profile: profile) ?? 0
+        self.clear(deviceId: deviceId, selector: .init(kind: .unscoped)) ?? 0
     }
 
     private static func clear(
         deviceId: String,
-        selector: ClientCredentialOperation.Selector,
-        profile: GatewayDeviceIdentityProfile) -> Int?
+        selector: ClientCredentialOperation.Selector) -> Int?
     {
         var operation = ClientCredentialOperation(kind: .nativeTokensClear)
         operation.device_id = deviceId
         operation.selector = selector
-        return try? self.perform(operation, profile: profile).count
+        return try? self.perform(operation).count
     }
 
     static func prepareLegacy(
@@ -324,13 +316,5 @@ public enum DeviceAuthStore {
         stateDirectoryURL
             .appendingPathComponent("identity", isDirectory: true)
             .appendingPathComponent(profile.authFileName, isDirectory: false)
-    }
-
-    static func isMissingFileError(_ error: Error) -> Bool {
-        let error = error as NSError
-        return (error.domain == NSCocoaErrorDomain
-            && (error.code == NSFileNoSuchFileError || error.code == NSFileReadNoSuchFileError))
-            || (error.domain == NSPOSIXErrorDomain
-                && error.code == Int(POSIXErrorCode.ENOENT.rawValue))
     }
 }

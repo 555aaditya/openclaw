@@ -125,25 +125,6 @@ public final class OpenClawClientCredentialStore: @unchecked Sendable {
         }
     }
 
-    /// App-absent CLI/maintenance and iOS app/extension operations acquire the same
-    /// exclusive SQLite custody and close before returning. Never await in `operation`.
-    public static func withExclusiveOperation<T>(
-        rootURL: URL,
-        createIfMissing: Bool = true,
-        busyTimeoutMilliseconds: Int32 = 5000,
-        operation: (OpenClawClientCredentialStore) throws -> T) throws -> T?
-    {
-        if !createIfMissing, !FileManager.default.fileExists(atPath: self.databaseURL(rootURL: rootURL).path) {
-            return nil
-        }
-        let owner = try self.init(
-            rootURL: rootURL,
-            createIfMissing: createIfMissing,
-            busyTimeoutMilliseconds: busyTimeoutMilliseconds)
-        defer { owner.close() }
-        return try operation(owner)
-    }
-
     /// Opens physical custody for one bounded operation. The active macOS app keeps
     /// its logical root ownership between operations; clients route through it.
     /// App-absent and iOS callers use the same store and close before returning.
@@ -291,16 +272,6 @@ public final class OpenClawClientCredentialStore: @unchecked Sendable {
                         "ON CONFLICT(device_id, role) DO UPDATE SET \(update)", values)
             }
             return true
-        }
-    }
-
-    public func removeToken(
-        deviceID: String, role: String, gatewayScope: String? = nil, observedToken: String) throws -> Bool
-    {
-        try self.transaction {
-            let (table, predicate, values) = Self.tokenKey(deviceID: deviceID, role: role, gatewayScope: gatewayScope)
-            try self.run("DELETE FROM \(table) WHERE \(predicate) AND token=?", values + [.text(observedToken)])
-            return try sqlite3_changes(self.connection()) != 0
         }
     }
 

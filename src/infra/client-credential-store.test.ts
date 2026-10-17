@@ -341,7 +341,7 @@ it("consumes a legacy import atomically and cannot resurrect a revoked token", (
       }),
     ).toBe(true);
   }
-  expect(run({ kind: "token.remove", key: token, observedToken: ` ${token.token} ` })).toEqual({
+  expect(run({ kind: "token.remove", key: token, observedToken: token.token })).toEqual({
     kind: "changed",
     changed: true,
   });
