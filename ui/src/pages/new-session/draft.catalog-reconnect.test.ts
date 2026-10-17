@@ -5,8 +5,8 @@ import { createAgentCapability } from "../../lib/agents/index.ts";
 import { createApplicationGateway } from "../../test-helpers/application-context-fixtures.ts";
 import { createTestGatewayClient } from "../../test-helpers/gateway-client.ts";
 import { gatewayHelloForMethods } from "../../test-helpers/gateway-methods.ts";
-import { NewSessionDraft } from "./draft-controller.ts";
 import { createDraftFixture } from "./draft-submission-flow.test-support.ts";
+import { NewSessionDraft } from "./draft.ts";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -57,9 +57,7 @@ it.each([false, true])(
       changed: vi.fn(),
       updateComplete: () => Promise.resolve(),
       closeTransientUi: vi.fn(),
-      querySelector: () => null,
       activeElement: () => null,
-      body: () => null,
       onInvalidate: vi.fn(),
       onRecoveryReady: vi.fn(),
     });

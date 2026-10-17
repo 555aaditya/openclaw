@@ -19,7 +19,7 @@ const modelsHello = {
   ...GATEWAY_STORE_TEST_HELLO,
   auth: { role: "operator", scopes: ["operator.read"] },
   snapshot: {
-    presence: [{ instanceId: "models-route-client", user: { id: "models-route-user" } }],
+    presence: [{ ts: 1, instanceId: "models-route-client", user: { id: "models-route-user" } }],
   },
 };
 const roster = {

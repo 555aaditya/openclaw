@@ -81,7 +81,9 @@ describe("chat pane composer controls", () => {
       const hello = {
         ...gatewayHelloForMethods(["chat.metadata", "chat.startup", "models.list"]),
         snapshot: {
-          presence: [{ instanceId: store.current().instanceId, user: { id: "catalog-user" } }],
+          presence: [
+            { ts: 1, instanceId: store.current().instanceId, user: { id: "catalog-user" } },
+          ],
         },
       };
       store.current().opts.onHello?.(hello);
