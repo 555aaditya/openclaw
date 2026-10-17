@@ -7,6 +7,7 @@ import type {
 import * as harnessRuntime from "openclaw/plugin-sdk/agent-harness-runtime";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/plugin-entry";
 import type { PluginRuntime } from "openclaw/plugin-sdk/plugin-runtime";
+import type { PluginStateKeyedStore } from "openclaw/plugin-sdk/plugin-state-runtime";
 import {
   createPluginStateKeyedStoreForTests,
   resetPluginStateStoreForTests,
@@ -133,7 +134,7 @@ function createBindingRuntime(env: NodeJS.ProcessEnv, current: () => OpenClawCon
   runtime.state.openKeyedStoreV2 = <T>(
     options: Parameters<typeof runtime.state.openKeyedStoreV2>[0],
     authority?: Parameters<typeof runtime.state.openKeyedStoreV2>[1],
-  ) => {
+  ): PluginStateKeyedStore<T, 2> => {
     const store = createPluginStateKeyedStoreForTests<T>("agentsapi", { ...options, env });
     return authority ? store.withCurrent(authority) : store;
   };
