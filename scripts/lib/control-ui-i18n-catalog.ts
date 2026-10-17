@@ -127,7 +127,7 @@ export function loadControlUiSourceCatalog(): TranslationMap {
   const agentChip: TranslationMap = {};
   for (const [key, value] of Object.entries(en.agentChip)) {
     agentChip[key] = value;
-    if (key === "creationUnavailable") {
+    if (key === "creatingAgent") {
       Object.assign(agentChip, registerAgentCreationEnglish.catalog.agentChip);
     }
   }

@@ -4,6 +4,7 @@ import { createApplicationAgent } from "../app/create-agent.ts";
 import { gatewayPresentationScope } from "../app/gateway-presentation-scope.ts";
 import { isMobileNavLayout } from "../app/mobile-nav-layout.ts";
 import { patchSettings } from "../app/settings.ts";
+import { registerAgentCreationEnglish } from "../i18n/locales/en-agent-creation.ts";
 import { openEditor } from "../lib/editor-links.ts";
 import { canCallGatewayMethod, isGatewayMethodAdvertised } from "../lib/gateway-methods.ts";
 import type { IdentityAvatars } from "../lib/identity-avatar-loader.ts";
@@ -42,6 +43,8 @@ import { isUpdateAttentionForced } from "./sidebar-attention-dismissals.ts";
 import { isReleaseUpdateAvailable } from "./sidebar-attention-update.ts";
 import type { SidebarMenusOwner } from "./sidebar-menus-types.ts";
 import type { SidebarMenus } from "./sidebar-menus.tsx";
+
+registerAgentCreationEnglish();
 
 export { focusSidebarAgentMenu } from "./app-sidebar-agent-menu.tsx";
 

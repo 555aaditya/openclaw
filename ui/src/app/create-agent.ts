@@ -1,5 +1,6 @@
 import { routeIdFromPath } from "../app-route-paths.ts";
 import { t } from "../i18n/index.ts";
+import { registerAgentCreationEnglish } from "../i18n/locales/en-agent-creation.ts";
 import { AgentCreationUncertainError } from "../lib/agents/creation-recovery.runtime.ts";
 import { formatUiError } from "../lib/format-error.ts";
 import { canCallGatewayMethod } from "../lib/gateway-methods.ts";
@@ -12,6 +13,8 @@ import { showToast } from "../lib/toast.ts";
 import { selectApplicationSession } from "./agent-selection.ts";
 import type { ApplicationContext } from "./context.ts";
 import { patchSettings } from "./settings.ts";
+
+registerAgentCreationEnglish();
 
 /** Creation belongs to the application, so closing the selector cannot cancel it. */
 export async function createApplicationAgent(context: ApplicationContext): Promise<void> {

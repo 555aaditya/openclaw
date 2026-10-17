@@ -6,12 +6,6 @@ export const agentChip = {
   createAgent: "Create new agent",
   newAgent: "New agent",
   creatingAgent: "Creating new agent…",
-  creationUnavailable:
-    "Creating an agent requires agents.create with operator.admin access. Pair this browser with operator.admin scope, then reconnect.",
-  creationFailed:
-    "Couldn't create an agent: {error} Check your AI connection in Models and try again.",
-  chatStartFailed:
-    "Your agent was created, but its first message couldn't be sent: {error} Open its chat to continue.",
   namedSettings: "{name} settings",
   newConversation: "New conversation",
   workspaceMenuLabel: "Workspace menu",
