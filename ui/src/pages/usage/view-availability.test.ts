@@ -43,7 +43,9 @@ it("shows lower-bound totals after interruption while keeping completed session 
   ).toEqual(["≥ 2.6K", "≥ $0.00", "2"]);
   // Analytics stay visible; the note explains the lower bound instead of hiding them.
   expect(container.querySelector(".usage-trend-section")).not.toBeNull();
-  expect(container.querySelector(".usage-lower-bound")?.textContent).toContain("lower bound");
+  expect(
+    container.querySelector(".usage-lower-bound:not(.usage-lower-bound--off)")?.textContent,
+  ).toContain("lower bound");
   expect(container.querySelector('[title="interrupted"] .session-bar-value')?.textContent).toBe(
     "≥ 0",
   );
@@ -60,6 +62,10 @@ it("shows lower-bound totals after interruption while keeping completed session 
   ).toEqual(["2.6K", "$0.00", "1"]);
   expect(container.querySelector(".usage-trend-section")).not.toBeNull();
   expect(container.querySelector(".usage-callout")).toBeNull();
+  // Exact totals keep the chip's slot but hide it, so the header never reflows.
+  expect(container.querySelector(".usage-lower-bound")?.classList).toContain(
+    "usage-lower-bound--off",
+  );
 });
 
 it("keeps the lower-bound note for full-session charts when only the selected day is complete", () => {
@@ -92,5 +98,7 @@ it("keeps the lower-bound note for full-session charts when only the selected da
   expect(container.querySelector(".usage-trend-section")).not.toBeNull();
   expect(container.querySelector(".usage-mosaic")).not.toBeNull();
   // Full-session rollups still include the interrupted day.
-  expect(container.querySelector(".usage-lower-bound")?.textContent).toContain("lower bound");
+  expect(
+    container.querySelector(".usage-lower-bound:not(.usage-lower-bound--off)")?.textContent,
+  ).toContain("lower bound");
 });

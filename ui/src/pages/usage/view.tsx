@@ -147,6 +147,25 @@ export function renderUsage(props: UsageProps) {
       props.data.aggregates?.sessionCount ??
       props.data.sessions.length,
   );
+  const metricBadges = createMemo(() => {
+    const totals = displayTotals();
+    const empty = t("usage.common.emptyValue");
+    const sessions = displaySessionCount();
+    return [
+      [
+        totals ? formatUsageTokens(totals.totalTokens, totals.usageReport) : empty,
+        t("usage.metrics.tokens"),
+      ],
+      [
+        totals ? formatUsageCost(totals.totalCost, 2, totals.usageReport) : empty,
+        t("usage.metrics.cost"),
+      ],
+      [
+        totals ? sessions.toLocaleString() : empty,
+        t(sessions === 1 ? "usage.metrics.session" : "usage.metrics.sessions"),
+      ],
+    ];
+  });
   const exportSessionCount = createMemo(
     () => props.data.overview?.selectedRowCount ?? displaySessionCount(),
   );
@@ -335,89 +354,82 @@ export function renderUsage(props: UsageProps) {
             {renderFilterChips(props.data.overview?.selectedRows ?? props.data.sessions, props)}
             <div class="usage-header-row">
               <div class="usage-header-metrics">
-                <Show when={displayTotals()}>
-                  {(totals) => (
-                    <For
-                      each={[
-                        [
-                          formatUsageTokens(totals().totalTokens, totals().usageReport),
-                          t("usage.metrics.tokens"),
-                        ],
-                        [
-                          formatUsageCost(totals().totalCost, 2, totals().usageReport),
-                          t("usage.metrics.cost"),
-                        ],
-                        [
-                          displaySessionCount(),
-                          t(
-                            displaySessionCount() === 1
-                              ? "usage.metrics.session"
-                              : "usage.metrics.sessions",
-                          ),
-                        ],
-                      ]}
-                    >
-                      {([value, label]) => (
-                        <span class="usage-metric-badge">
-                          <strong>{value}</strong> {label}
-                        </span>
-                      )}
-                    </For>
+                {/* Badges render before totals arrive so the row keeps its height. */}
+                <For each={metricBadges()}>
+                  {([value, label]) => (
+                    <span class="usage-metric-badge">
+                      <strong>{value}</strong> {label}
+                    </span>
                   )}
-                </Show>
-                <Show when={lowerBound()}>
-                  <span class="usage-lower-bound" role="note">
-                    {t("usage.lowerBound")}
-                  </span>
-                </Show>
-                <button
-                  class={["btn btn--sm usage-pin-btn", { active: props.display.headerPinned }]}
-                  onClick={() => props.callbacks.filters.onToggleHeaderPinned()}
-                >
-                  {props.display.headerPinned ? t("usage.filters.pinned") : t("usage.filters.pin")}
-                </button>
-                <Menu
-                  id="usage-export"
-                  label={t("usage.export.label")}
-                  class="usage-export-menu"
-                  triggerClass="btn btn--sm"
-                  placement="bottom-end"
-                  triggerAttributes={{ "aria-busy": props.data.exporting ? "true" : "false" }}
-                  trigger={
-                    <>{props.data.exporting ? t("common.loading") : t("usage.export.label")} ▾</>
-                  }
-                  items={[
-                    {
-                      id: "sessions-csv",
-                      label: t("usage.export.sessionsCsv"),
-                      disabled: props.data.exporting || exportSessionCount() === 0,
-                    },
-                    {
-                      id: "daily-csv",
-                      label: t("usage.export.dailyCsv"),
-                      disabled: props.data.exporting || props.data.costDaily.length === 0,
-                    },
-                    {
-                      id: "json",
-                      label: t("usage.export.json"),
-                      disabled:
-                        props.data.exporting ||
-                        props.data.loading ||
-                        (exportSessionCount() === 0 && props.data.costDaily.length === 0),
-                    },
-                  ]}
-                  onSelect={(item) => {
-                    switch (item.id) {
-                      case "sessions-csv":
-                      case "daily-csv":
-                        props.callbacks.display.onExportCsv(item.id);
-                        break;
-                      case "json":
-                        props.callbacks.display.onExportJson();
-                        break;
+                </For>
+                <div class="usage-header-actions">
+                  {/* Always laid out; only shown for lower-bound totals, so it never moves Pin or Export. */}
+                  <openclaw-tooltip
+                    open-on-click
+                    class={["usage-lower-bound", { "usage-lower-bound--off": !lowerBound() }]}
+                    role="note"
+                    aria-hidden={lowerBound() ? undefined : "true"}
+                  >
+                    <button
+                      type="button"
+                      class="usage-lower-bound__chip"
+                      tabindex={lowerBound() ? undefined : -1}
+                    >
+                      {t("usage.lowerBoundShort")}
+                    </button>
+                    <span slot="content">{t("usage.lowerBound")}</span>
+                  </openclaw-tooltip>
+                  <button
+                    class={["btn btn--sm usage-pin-btn", { active: props.display.headerPinned }]}
+                    onClick={() => props.callbacks.filters.onToggleHeaderPinned()}
+                  >
+                    {props.display.headerPinned
+                      ? t("usage.filters.pinned")
+                      : t("usage.filters.pin")}
+                  </button>
+                  <Menu
+                    id="usage-export"
+                    label={t("usage.export.label")}
+                    class="usage-export-menu"
+                    triggerClass="btn btn--sm"
+                    placement="bottom-end"
+                    triggerAttributes={{ "aria-busy": props.data.exporting ? "true" : "false" }}
+                    trigger={
+                      <>{props.data.exporting ? t("common.loading") : t("usage.export.label")} ▾</>
                     }
-                  }}
-                />
+                    items={[
+                      {
+                        id: "sessions-csv",
+                        label: t("usage.export.sessionsCsv"),
+                        disabled: props.data.exporting || exportSessionCount() === 0,
+                      },
+                      {
+                        id: "daily-csv",
+                        label: t("usage.export.dailyCsv"),
+                        disabled: props.data.exporting || props.data.costDaily.length === 0,
+                      },
+                      {
+                        id: "json",
+                        label: t("usage.export.json"),
+                        disabled:
+                          props.data.exporting ||
+                          props.data.loading ||
+                          (exportSessionCount() === 0 && props.data.costDaily.length === 0),
+                      },
+                    ]}
+                    onSelect={(item) => {
+                      switch (item.id) {
+                        case "sessions-csv":
+                        case "daily-csv":
+                          props.callbacks.display.onExportCsv(item.id);
+                          break;
+                        case "json":
+                          props.callbacks.display.onExportJson();
+                          break;
+                      }
+                    }}
+                  />
+                </div>
               </div>
             </div>
 

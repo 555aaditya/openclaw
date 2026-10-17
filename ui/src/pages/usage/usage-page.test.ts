@@ -118,9 +118,12 @@ describe("UsagePage cache convergence", () => {
 
       expect(Boolean(page.querySelector(".usage-loading-card"))).toBe(!committed);
       expect(Boolean(page.querySelector(".usage-overview-card"))).toBe(committed);
-      expect(Boolean(page.querySelector(".usage-header-metrics .usage-metric-badge"))).toBe(
-        committed,
-      );
+      // Badges keep their slots; uncomputed totals show placeholders, never values.
+      expect(
+        [...page.querySelectorAll(".usage-header-metrics .usage-metric-badge strong")].every(
+          (node) => node.textContent === "—",
+        ),
+      ).toBe(!committed);
       expect(page.querySelector(".usage-cache-warning.warning")).toBeNull();
       expect(page.textContent).not.toContain("Select a date range and click Refresh");
 

@@ -127,7 +127,9 @@ suite.define(() => {
         // Interrupted turns make the totals lower bounds, never exact or "$0.00".
         const badges = page.locator(".usage-metric-badge strong");
         await expect.poll(() => badges.allTextContents()).toContain("≥ $5,759.15");
-        expect(await page.locator(".usage-lower-bound").textContent()).toContain("lower bound");
+        expect(
+          await page.locator(".usage-lower-bound:not(.usage-lower-bound--off)").textContent(),
+        ).toContain("lower bound");
         // Unpriced subscription traffic marks the cost as incomplete.
         const averageCost = page.locator(".usage-summary-card", {
           has: page.locator("#usage-summary-hint-average-cost"),

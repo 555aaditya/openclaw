@@ -142,7 +142,10 @@
   border-top: 1px solid var(--border);
 }
 
-.usage-header-metrics .usage-pin-btn {
+.usage-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin-left: auto;
 }
 
@@ -347,6 +350,10 @@
   justify-content: flex-end;
 }
 
+.usage-query-count {
+  margin-left: auto;
+}
+
 .usage-filter-row {
   display: flex;
   flex-wrap: wrap;
@@ -498,11 +505,26 @@
   color: var(--text);
 }
 
-.usage-lower-bound {
-  order: 10;
-  flex-basis: 100%;
+/* Visibility inherits through the display: contents tooltip host. */
+.usage-lower-bound--off {
+  visibility: hidden;
+}
+
+.usage-lower-bound__chip {
+  padding: 3px 8px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-full);
+  background: transparent;
   color: var(--muted);
+  font: inherit;
   font-size: var(--control-ui-text-xs);
+  white-space: nowrap;
+  cursor: help;
+}
+
+.usage-lower-bound__chip:hover,
+.usage-lower-bound__chip:focus-visible {
+  color: var(--text);
 }
 
 .filter-chip-remove svg,
@@ -740,8 +762,10 @@
     box-shadow 0.18s var(--ease-out);
 }
 
+/* Fixed width: identity names arrive with the data and must not move the controls beside it. */
 .usage-creator-filter {
-  max-width: min(100%, 260px);
+  width: 260px;
+  max-width: 100%;
 }
 
 .usage-creators {
@@ -1028,7 +1052,7 @@
 }
 
 .usage-mosaic-grid {
-  grid-template-columns: 1.1fr minmax(0, 1.4fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .usage-mosaic-section-title {
@@ -1040,8 +1064,8 @@
 
 .usage-daypart-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
 }
 
 .usage-daypart-cell,
@@ -1052,21 +1076,22 @@
 }
 
 .usage-daypart-cell {
-  min-height: 72px;
-  padding: 10px;
+  min-height: 64px;
+  padding: 8px;
   display: grid;
   gap: 6px;
   align-content: space-between;
 }
 
-.usage-daypart-label,
-.usage-hour-labels {
+/* Day names sit on accent fills of any strength, so they use body ink. */
+.usage-daypart-label {
   font-size: 12px;
-  color: var(--muted);
+  color: var(--text);
 }
 
 .usage-daypart-value {
-  font-size: 15px;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
   font-weight: 700;
   color: var(--text-strong);
 }
@@ -1106,6 +1131,8 @@
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
 }
 
 .usage-hour-legend {
@@ -1290,8 +1317,7 @@
   gap: clamp(1px, 0.35vw, 4px);
   height: 11rem;
   border-bottom: 1px solid var(--border);
-  background:
-    linear-gradient(var(--border) 1px, transparent 1px) top / 100% 50% repeat-y;
+  background: linear-gradient(var(--border) 1px, transparent 1px) top / 100% 50% repeat-y;
 }
 
 .daily-bar-wrapper {
@@ -1373,6 +1399,10 @@
   color: var(--text);
   font-size: var(--control-ui-text-xs);
   pointer-events: none;
+}
+
+.daily-chart-tip strong {
+  white-space: nowrap;
 }
 
 .daily-chart-tip span {
@@ -1869,17 +1899,9 @@
   .session-summary-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-
-  .usage-query-bar {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .usage-query-actions {
-    justify-content: flex-start;
-  }
 }
 
-@container (max-width: 640px) {
+@container (max-width: 768px) {
   .usage-summary-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1888,8 +1910,21 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
+  /* A fixed grid: placeholder and loaded values take the same rows. */
   .usage-header-metrics {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 12px 20px;
+  }
+
+  .usage-header-actions {
+    grid-column: 1 / -1;
+    margin-left: 0;
+  }
+
+  /* Left-aligned here: the reserved chip slot goes last, after the buttons. */
+  .usage-lower-bound__chip {
+    order: 1;
   }
 }
 
@@ -1898,10 +1933,6 @@
   .session-summary-grid,
   .usage-loading-grid {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .usage-header-metrics .usage-pin-btn {
-    margin-left: 0;
   }
 }
 
@@ -1938,7 +1969,7 @@
   }
 
   .usage-daypart-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .usage-hour-grid {

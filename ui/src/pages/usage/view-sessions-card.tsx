@@ -66,7 +66,7 @@ export function SessionsCard(props: {
           <div class="sessions-card-count">
             {t("usage.sessions.shown", { count: String(props.sessions.length) })}
             {props.totalSessions !== props.sessions.length
-              ? ` · ${t("usage.sessions.total", { count: String(props.totalSessions) })}`
+              ? ` · ${t("usage.sessions.total", { count: props.totalSessions.toLocaleString() })}`
               : ""}
           </div>
         </div>
@@ -76,7 +76,7 @@ export function SessionsCard(props: {
               {averageLabel()} {t("usage.sessions.avg")}
             </span>
             <span>
-              {props.overview?.tableTotals.errors ?? 0}{" "}
+              {(props.overview?.tableTotals.errors ?? 0).toLocaleString()}{" "}
               {normalizeLowercaseStringOrEmpty(t("usage.overview.errors"))}
             </span>
           </div>

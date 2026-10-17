@@ -121,11 +121,11 @@ it("keeps known providers on fixed colors and folds overflow into the shared ton
     "fresh-e",
     "openai",
   ]);
-  expect(colorOf("openai")).toBe("var(--oc-accent-primary)");
+  expect(colorOf("openai")).toBe("var(--chart-series-1)");
   // Four free slots go to the largest unknown providers; the rest share the "other" tone.
   expect(new Set(["fresh-a", "fresh-b", "fresh-c", "fresh-d"].map(colorOf)).size).toBe(4);
   expect(["fresh-a", "fresh-b", "fresh-c", "fresh-d"].map(colorOf)).not.toContain(
-    "var(--oc-accent-primary)",
+    "var(--chart-series-1)",
   );
   expect(colorOf("fresh-e")).toBe("var(--oc-border-strong)");
 });

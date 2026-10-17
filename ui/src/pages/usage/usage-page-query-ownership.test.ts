@@ -110,7 +110,13 @@ describe("Usage query failure ownership", () => {
         await page.updateComplete;
         expect(page.usageSelectedSessions).toEqual([]);
         expect.soft(page.textContent).not.toContain("Old query row");
-        expect.soft(page.querySelector(".usage-metric-badge")).toBeNull();
+        expect
+          .soft(
+            [...page.querySelectorAll(".usage-metric-badge strong")].map(
+              (node) => node.textContent,
+            ),
+          )
+          .toEqual(["—", "—", "—"]);
         expect.soft(page.querySelector(".usage-empty-state")).toBeNull();
         expect(page.textContent).toContain("QA Provider Plan");
         expect(page.querySelector<HTMLInputElement>("input.usage-date-input")?.disabled).toBe(

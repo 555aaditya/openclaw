@@ -12,14 +12,14 @@ const PROVIDER_SLOTS: Record<string, number> = {
 };
 const SERIES_SLOTS = 5;
 
-/** Carapace accents first, then their tints; slot 0 is the shared "other" tone. */
+/** Series hues are base.css chart tokens; slot 0 is the shared "other" tone. */
 const SLOT_COLORS = [
   "var(--oc-border-strong)",
-  "var(--oc-accent-primary)",
-  "var(--oc-accent-secondary)",
-  "color-mix(in srgb, var(--oc-accent-primary) 50%, var(--oc-bg-surface))",
-  "color-mix(in srgb, var(--oc-accent-secondary) 50%, var(--oc-bg-surface))",
-  "var(--oc-text-muted)",
+  "var(--chart-series-1)",
+  "var(--chart-series-2)",
+  "var(--chart-series-3)",
+  "var(--chart-series-4)",
+  "var(--chart-series-5)",
 ];
 
 export type ProviderSeries = {

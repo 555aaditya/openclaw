@@ -4,6 +4,7 @@ import { en } from "./en.ts";
 // Analysis copy loads with Usage; shared labels and Settings search stay eager.
 const enUsage = {
   usage: {
+    lowerBoundShort: "≥ Lower bound",
     lowerBound:
       "≥ marks a lower bound: some responses ended before their final usage arrived, so their tokens and cost are partly counted.",
     presets: {

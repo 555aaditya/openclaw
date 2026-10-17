@@ -159,11 +159,11 @@ describe("DailyChartCompact", () => {
         background: segment.style.background,
       }));
     expect(segments(bars[0]!)).toEqual([
-      { grow: "300", background: "var(--oc-accent-primary)" },
-      { grow: "100", background: "var(--oc-accent-secondary)" },
+      { grow: "300", background: "var(--chart-series-1)" },
+      { grow: "100", background: "var(--chart-series-2)" },
     ]);
     // A provider with no usage that day adds no empty segment.
-    expect(segments(bars[1]!)).toEqual([{ grow: "100", background: "var(--oc-accent-secondary)" }]);
+    expect(segments(bars[1]!)).toEqual([{ grow: "100", background: "var(--chart-series-2)" }]);
     bars[0]!.focus();
     flush();
     expect(
