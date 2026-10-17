@@ -57,10 +57,10 @@ helper; see [retained SDK contracts](/plugins/sdk-migration/compatibility-policy
 - `parentPath`: optional parent command path for nested command groups, such as
   `["nodes"]`
 
-For paired-node features, prefer
-`api.registerNodeCliFeature(registrar, opts?)`. It is a small wrapper around
-`api.registerCli(..., { parentPath: ["nodes"] })` and makes commands such as
-`openclaw nodes canvas` explicit plugin-owned node features.
+For paired-node features, use
+`api.registerCli(registrar, { parentPath: ["nodes"], ...opts })` to place commands
+such as `openclaw nodes canvas` under `nodes`. The existing
+`api.registerNodeCliFeature(registrar, opts?)` shorthand remains supported.
 
 Reuse the core node CLI owners when a plugin-owned node command needs the same
 Gateway flags, invoke envelope, terminal presentation, and authorization hints:

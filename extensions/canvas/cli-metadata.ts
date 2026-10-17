@@ -5,7 +5,8 @@ export default definePluginEntry({
   name: "Canvas",
   description: "Presents hosted widget documents on paired macOS panels.",
   register(api) {
-    api.registerNodeCliFeature(() => {}, {
+    api.registerCli(() => {}, {
+      parentPath: ["nodes"],
       descriptors: [
         {
           name: "canvas",

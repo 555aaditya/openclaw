@@ -52,7 +52,7 @@ function registerCanvas(config: OpenClawPluginApi["config"] = {}) {
     registerHostedMediaResolver: vi.fn<OpenClawPluginApi["registerHostedMediaResolver"]>(),
     registerWidgetPresenter: vi.fn<OpenClawPluginApi["registerWidgetPresenter"]>(),
     registerTool: vi.fn<OpenClawPluginApi["registerTool"]>(),
-    registerNodeCliFeature: vi.fn<OpenClawPluginApi["registerNodeCliFeature"]>(),
+    registerCli: vi.fn<OpenClawPluginApi["registerCli"]>(),
     registerNodeInvokePolicy: vi.fn<OpenClawPluginApi["registerNodeInvokePolicy"]>(),
     registerBoardWidgetContentKind: vi.fn<OpenClawPluginApi["registerBoardWidgetContentKind"]>(),
   };
@@ -67,7 +67,7 @@ function registerCanvas(config: OpenClawPluginApi["config"] = {}) {
       ([presenter]) => presenter,
     ),
     tools: registrations.registerTool.mock.calls.map(([tool, opts]) => ({ tool, opts })),
-    cliFeatures: registrations.registerNodeCliFeature.mock.calls.map(([registrar, opts]) => ({
+    cliFeatures: registrations.registerCli.mock.calls.map(([registrar, opts]) => ({
       registrar,
       opts,
     })),
@@ -138,6 +138,7 @@ describe("Canvas plugin entry", () => {
     expect(tools).toHaveLength(1);
     expect(tools.map(({ opts }) => opts?.name)).toEqual([undefined]);
     expect(cliFeatures).toHaveLength(1);
+    expect(cliFeatures[0]?.opts?.parentPath).toEqual(["nodes"]);
     expect(mocks.registerNodesCanvasCommands).not.toHaveBeenCalled();
     expect(mocks.createCanvasTool).not.toHaveBeenCalled();
 

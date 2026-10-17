@@ -43,12 +43,13 @@ export default definePluginEntry({
       handle: async (ctx) => await ctx.invokeNode(),
     });
     api.registerTool((ctx) => createLazyCanvasTool(ctx.sessionKey));
-    api.registerNodeCliFeature(
+    api.registerCli(
       async ({ program }) => {
         const { registerNodesCanvasCommands } = await import("./src/cli.js");
         registerNodesCanvasCommands(program);
       },
       {
+        parentPath: ["nodes"],
         descriptors: [
           {
             name: "canvas",
