@@ -366,7 +366,9 @@ export function renderUsage(props: UsageProps) {
                   )}
                 </Show>
                 <Show when={lowerBound()}>
-                  <span class="usage-lower-bound">{t("usage.lowerBound")}</span>
+                  <span class="usage-lower-bound" role="note">
+                    {t("usage.lowerBound")}
+                  </span>
                 </Show>
                 <button
                   class={["btn btn--sm usage-pin-btn", { active: props.display.headerPinned }]}

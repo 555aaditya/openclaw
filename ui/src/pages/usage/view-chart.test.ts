@@ -109,46 +109,41 @@ describe("DailyChartCompact", () => {
   });
 
   it.each([
-    { costs: [1, 100], labels: ["$100.00", "$25.00", "$0.00"], stacked: false, badge: "√" },
-    { costs: [0.004, 0.008], labels: ["$0.0080", "$0.0040", "$0.00"], stacked: false, badge: null },
-    { costs: [0.00001], labels: ["$0.000010", "$0.000005", "$0.00"], stacked: true, badge: null },
+    { costs: [1, 100], labels: ["$100", "$50", "$0"], stacked: false },
+    { costs: [0.004, 0.008], labels: ["$0.010", "$0.005", "$0.000"], stacked: false },
+    { costs: [0.00001], labels: ["$0.000010", "$0.000005", "$0.000000"], stacked: true },
     {
       costs: Array.from({ length: 15 }, (_, index) => index + 1),
-      labels: ["$15.00", "$7.50", "$0.00"],
+      labels: ["$20", "$10", "$0"],
       stacked: false,
-      badge: null,
     },
-  ])("scales cost bars and labels consistently for $costs", ({ costs, labels, stacked, badge }) => {
+  ])("scales cost bars and labels consistently for $costs", ({ costs, labels, stacked }) => {
     const daily = costs.map((cost, index) => ({
       ...dailyEntry(`2026-05-${String(index + 1).padStart(2, "0")}`, 1_000, cost),
       ...(stacked ? { inputCost: 0.000004, outputCost: 0.000006 } : {}),
     }));
-    const { container } = renderDailyChart(daily, "cost", stacked ? "by-type" : "total");
+    const { container, bars } = renderDailyChart(daily, "cost", stacked ? "by-type" : "total");
     expect(
       Array.from(container.querySelectorAll(".daily-chart-scale span")).map((entry) =>
         entry.textContent?.trim(),
       ),
     ).toEqual(labels);
-    const scaleBadge = container.querySelector(".daily-chart-scale-badge");
-    if (badge === null) {
-      expect(scaleBadge).toBeNull();
-    } else {
-      expect(scaleBadge?.textContent?.trim()).toBe(badge);
-    }
-    if (stacked) {
-      expect(container.querySelector<HTMLElement>(".daily-bar")?.style.height).toBe("200px");
-      expect(container.querySelector(".daily-bar-total")?.textContent?.trim()).toBe("$0.000010");
-      const tooltip = container.querySelector<HTMLElement & { content: string }>(
-        "openclaw-tooltip",
-      );
-      expect(tooltip?.content).toContain("$0.000010");
-      expect(tooltip?.content).toContain("Output $0.000006");
-      expect(tooltip?.content).toContain("Input $0.000004");
-    }
-    expect(container.querySelectorAll(".daily-bar-total--placeholder")).toHaveLength(
-      costs.length === 15 ? 15 : 0,
+    // The tallest day reaches the rounded scale maximum, never past it.
+    const heights = bars.map((bar) =>
+      Number.parseFloat(bar.querySelector<HTMLElement>(".daily-bar")?.style.height ?? ""),
     );
+    expect(Math.max(...heights)).toBeLessThanOrEqual(100);
+    expect(Math.max(...heights)).toBeGreaterThan(40);
+    if (stacked) {
+      bars[0]!.focus();
+      flush();
+      const tip = [...container.querySelectorAll(".daily-chart-tip span")].map(
+        (entry) => entry.textContent,
+      );
+      expect(tip).toEqual(["Output$0.000006", "Input$0.000004"]);
+    }
   });
+
   it("stacks each day by provider and names every provider in the legend", () => {
     const daily = [dailyEntry("2026-05-01", 400), dailyEntry("2026-05-02", 100)];
     const series = buildProviderSeries([
@@ -160,37 +155,55 @@ describe("DailyChartCompact", () => {
 
     const segments = (bar: HTMLElement) =>
       [...bar.querySelectorAll<HTMLElement>(".cost-segment")].map((segment) => ({
-        height: segment.style.height,
+        grow: segment.style.flexGrow,
         background: segment.style.background,
       }));
     expect(segments(bars[0]!)).toEqual([
-      { height: "75%", background: "var(--oc-accent-primary)" },
-      { height: "25%", background: "var(--oc-accent-secondary)" },
+      { grow: "300", background: "var(--oc-accent-primary)" },
+      { grow: "100", background: "var(--oc-accent-secondary)" },
     ]);
     // A provider with no usage that day adds no empty segment.
-    expect(segments(bars[1]!)).toEqual([
-      { height: "100%", background: "var(--oc-accent-secondary)" },
-    ]);
-    const tooltip = bars[0]!.closest<HTMLElement & { content: string }>("openclaw-tooltip");
-    expect(tooltip?.content).toContain("OpenAI 300");
-    expect(tooltip?.content).toContain("Anthropic 100");
+    expect(segments(bars[1]!)).toEqual([{ grow: "100", background: "var(--oc-accent-secondary)" }]);
+    bars[0]!.focus();
+    flush();
+    expect(
+      [...container.querySelectorAll(".daily-chart-tip span")].map((entry) => entry.textContent),
+    ).toEqual(["OpenAI300", "Anthropic100"]);
     expect(
       [...container.querySelectorAll(".daily-chart-legend li")].map((item) =>
         item.textContent?.trim(),
       ),
-    ).toEqual(["OpenAI", "Anthropic"]);
+    ).toEqual(["OpenAI60%", "Anthropic40%"]);
   });
 
-  it("shows the provider legend only in the by-provider mode", () => {
+  it("keeps usage without per-model rows in the by-provider day total", () => {
     const series = buildProviderSeries([
-      { date: "2026-05-01", provider: "openai", model: "a", tokens: 1, cost: 0, count: 1 },
+      { date: "2026-05-01", provider: "openai", model: "a", tokens: 100, cost: 0, count: 1 },
     ]);
-    const { container } = renderDailyChart(
-      [dailyEntry("2026-05-01", 1)],
-      "tokens",
-      "by-type",
-      series,
-    );
+    const daily = [dailyEntry("2026-05-01", 400), dailyEntry("2026-05-02", 200)];
+    const { container, bars } = renderDailyChart(daily, "tokens", "by-provider", series);
+    expect(bars.map((bar) => bar.querySelector<HTMLElement>(".daily-bar")?.style.height)).toEqual([
+      "80%",
+      "40%",
+    ]);
+    expect(
+      [...container.querySelectorAll(".daily-chart-legend li")].map((item) =>
+        item.textContent?.trim(),
+      ),
+    ).toEqual(["Other83%", "OpenAI17%"]);
+  });
+
+  it("renders a range without cost as zero", () => {
+    const { container } = renderDailyChart([dailyEntry("2026-05-01", 10)], "cost");
+    expect(
+      Array.from(container.querySelectorAll(".daily-chart-scale span")).map(
+        (entry) => entry.textContent,
+      ),
+    ).toEqual(["$0.00", "$0.00", "$0.00"]);
+  });
+
+  it("shows no legend for the single total series", () => {
+    const { container } = renderDailyChart([dailyEntry("2026-05-01", 1)], "tokens", "total");
     expect(container.querySelector(".daily-chart-legend")).toBeNull();
   });
 

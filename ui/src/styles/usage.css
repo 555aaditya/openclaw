@@ -710,9 +710,16 @@
   outline-offset: 2px;
 }
 
+/* Lists differ in length: flow them as balanced columns instead of a grid with holes. */
 .usage-insights-grid {
-  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
-  align-items: start;
+  display: block;
+  columns: 3 16rem;
+  column-gap: 10px;
+}
+
+.usage-insights-grid > .usage-insight-card {
+  margin-bottom: 10px;
+  break-inside: avoid;
 }
 
 .usage-insights-grid--tight {

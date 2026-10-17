@@ -42,11 +42,11 @@ it("keeps token segments proportional and legend markers round beside form style
   await Promise.all(
     [...container.querySelectorAll("openclaw-tooltip")].map((tooltip) => tooltip.updateComplete),
   );
-  const segments = [
-    ...container.querySelectorAll<HTMLElement>(".daily-bar--stacked .cost-segment"),
-  ];
+  const segments = [...container.querySelectorAll<HTMLElement>(".daily-bar .cost-segment")];
+  // Cache write is zero, so it draws no segment.
+  expect(segments).toHaveLength(3);
   const input = segments[1]!;
-  const cacheRead = segments[3]!;
+  const cacheRead = segments[2]!;
   expect(getComputedStyle(input).paddingTop).toBe("0px");
   expect(
     input.getBoundingClientRect().height / cacheRead.getBoundingClientRect().height,

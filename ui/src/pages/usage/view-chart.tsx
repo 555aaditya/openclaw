@@ -62,11 +62,17 @@ const TOKEN_TYPE_COLORS = {
   cacheRead: "var(--info)",
 } as const;
 
-const wholeDollars = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 0,
-});
+/** One precision for every tick, fine enough to tell the half tick from zero. */
+function formatAxisCost(value: number, scale: number): string {
+  const digits =
+    scale >= 10 ? 0 : scale > 0 ? Math.min(8, Math.max(2, Math.ceil(-Math.log10(scale / 2)))) : 2;
+  return value.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
+}
 
 /** Rounds an axis maximum up to 1, 2 or 5 times a power of ten. */
 function niceCeiling(value: number): number {
@@ -74,7 +80,7 @@ function niceCeiling(value: number): number {
     return 0;
   }
   const step = 10 ** Math.floor(Math.log10(value));
-  return ([1, 2, 5, 10].find((factor) => factor * step >= value) ?? 10) * step;
+  return ([1, 2, 5, 10].find((factor) => factor * step >= value * (1 - 1e-9)) ?? 10) * step;
 }
 
 /** Daily totals as columns stacked by total, token type or provider; a click filters days. */
@@ -93,9 +99,8 @@ export function DailyChartCompact(props: {
   const isTokens = () => props.chartMode === "tokens";
   const measure = (value: number) =>
     isTokens() ? formatUsageTokens(value) : formatAnalysisCost(value);
-  // Axis ticks are round numbers: whole dollars read faster than cents.
   const axisLabel = (value: number) =>
-    !isTokens() && scale() >= 10 ? wholeDollars.format(value) : measure(value);
+    isTokens() ? formatUsageTokens(value) : formatAxisCost(value, scale());
   const series = createMemo((): ChartSeries[] => {
     const daily = days();
     const tokens = isTokens();
@@ -108,7 +113,7 @@ export function DailyChartCompact(props: {
       }));
     }
     if (props.dailyChartMode === "by-provider") {
-      return props.providerSeries
+      const providers = props.providerSeries
         .map((provider) => ({
           id: provider.id,
           label: providerDisplayLabel(provider.id),
@@ -119,6 +124,21 @@ export function DailyChartCompact(props: {
           }),
         }))
         .filter((entry) => entry.values.some((value) => value > 0));
+      // Usage without per-model rows still counts toward the day, as "Other".
+      const other = daily.map((day, index) => {
+        const total = tokens ? day.totalTokens : day.totalCost;
+        const rest = total - providers.reduce((sum, entry) => sum + (entry.values[index] ?? 0), 0);
+        return rest > total * 0.001 ? rest : 0;
+      });
+      if (other.some((value) => value > 0)) {
+        providers.push({
+          id: "other",
+          label: t("usage.daily.other"),
+          color: "var(--oc-border-strong)",
+          values: other,
+        });
+      }
+      return providers;
     }
     return [
       {
@@ -151,6 +171,11 @@ export function DailyChartCompact(props: {
     return active
       ? active.index !== index
       : selected().size > 0 && !selected().has(dates()[index] ?? "");
+  };
+  const dayLabel = (index: number) => {
+    const day = days()[index];
+    const tokens = `${formatUsageTokens(day?.totalTokens ?? 0)} ${t("usage.metrics.tokens").toLowerCase()}`;
+    return `${formatFullDate(day?.date ?? "")}: ${tokens}, ${formatAnalysisCost(day?.totalCost ?? 0)}`;
   };
   const tipPosition = (index: number) => {
     const share = (index + 0.5) / Math.max(1, dates().length);
@@ -204,10 +229,17 @@ export function DailyChartCompact(props: {
                       { selected: selected().has(date()), "daily-bar-wrapper--dim": dimmed(index) },
                     ]}
                     aria-pressed={selected().has(date()) ? "true" : "false"}
-                    aria-label={`${formatFullDate(date())}: ${measure(totals()[index] ?? 0)}`}
+                    aria-label={dayLabel(index)}
                     onPointerEnter={() => setHover({ index })}
                     onFocus={() => setHover({ index })}
                     onBlur={() => setHover(null)}
+                    onKeyDown={(event: KeyboardEvent) => {
+                      // Shift+Space and Shift+Enter extend the range like Shift-click.
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        props.onSelectDay(date(), event.shiftKey, dates());
+                      }
+                    }}
                     onClick={(event: MouseEvent) =>
                       props.onSelectDay(date(), event.shiftKey, dates())
                     }
@@ -215,7 +247,7 @@ export function DailyChartCompact(props: {
                     <span
                       class={["daily-bar", { "daily-bar--empty": !totals()[index] }]}
                       style={{
-                        height: `${scale() > 0 ? ((totals()[index] ?? 0) / scale()) * 100 : 0}%`,
+                        height: `${scale() > 0 ? (((totals()[index] ?? 0) / scale()) * 100).toFixed(2) : 0}%`,
                       }}
                     >
                       <For each={series().filter((entry) => (entry.values[index] ?? 0) > 0)}>

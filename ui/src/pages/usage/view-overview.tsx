@@ -262,7 +262,7 @@ export function UsageInsights(props: {
       .map((day) => ({
         label: formatDayLabel(day.date),
         value: `${((day.errors / day.messages) * 100).toFixed(2)}%`,
-        sub: `${day.errors} ${normalizeLowercaseStringOrEmpty(t("usage.overview.errors"))} · ${day.messages} ${t("usage.overview.messagesAbbrev")} · ${formatUsageTokens(day.tokens, day.usageReport)}`,
+        sub: `${day.errors.toLocaleString()} ${normalizeLowercaseStringOrEmpty(t("usage.overview.errors"))} · ${day.messages.toLocaleString()} ${t("usage.overview.messagesAbbrev")} · ${formatUsageTokens(day.tokens, day.usageReport)}`,
       }));
 
     const costAttribution = (
@@ -278,7 +278,10 @@ export function UsageInsights(props: {
           ? t("usage.overview.unpriced")
           : formatAnalysisCost(entryTotals.totalCost, entryTotals.usageReport),
       sub: [
-        showCostShares && entryTotals.usageReport?.state !== "unavailable" && totals.totalCost > 0
+        showCostShares &&
+        entryTotals.usageReport?.state !== "unavailable" &&
+        entryTotals.totalCost > 0 &&
+        totals.totalCost > 0
           ? t("usage.overview.costShare", {
               percent: ((entryTotals.totalCost / totals.totalCost) * 100).toFixed(1),
             })
@@ -368,7 +371,7 @@ export function UsageInsights(props: {
                   hintId="messages"
                   metric="messages"
                   value={insights().aggregates.messages.total}
-                  sub={`${insights().aggregates.messages.user} ${normalizeLowercaseStringOrEmpty(t("usage.overview.user"))} · ${insights().aggregates.messages.assistant} ${normalizeLowercaseStringOrEmpty(t("usage.overview.assistant"))}`}
+                  sub={`${insights().aggregates.messages.user.toLocaleString()} ${normalizeLowercaseStringOrEmpty(t("usage.overview.user"))} · ${insights().aggregates.messages.assistant.toLocaleString()} ${normalizeLowercaseStringOrEmpty(t("usage.overview.assistant"))}`}
                 />
                 <SummaryStat
                   hintId="throughput"
@@ -388,7 +391,7 @@ export function UsageInsights(props: {
                   metric="avgTokens"
                   value={formatUsageTokens(insights().avgTokens)}
                   sub={t("usage.overview.acrossMessages", {
-                    count: String(insights().aggregates.messages.total || 0),
+                    count: (insights().aggregates.messages.total || 0).toLocaleString(),
                   })}
                 />
                 <SummaryStat
@@ -435,14 +438,14 @@ export function UsageInsights(props: {
                   metric="sessions"
                   value={props.sessionCount}
                   sub={t("usage.overview.sessionsInRange", {
-                    count: String(props.totalSessions),
+                    count: props.totalSessions.toLocaleString(),
                   })}
                 />
                 <SummaryStat
                   hintId="errors"
                   metric="errors"
                   value={insights().aggregates.messages.errors}
-                  sub={`${insights().aggregates.messages.toolResults} ${t("usage.overview.toolResults")}`}
+                  sub={`${insights().aggregates.messages.toolResults.toLocaleString()} ${t("usage.overview.toolResults")}`}
                 />
               </div>
               <div class="usage-insights-grid">

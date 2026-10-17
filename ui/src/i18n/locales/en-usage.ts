@@ -99,6 +99,7 @@ const enUsage = {
       total: "Total",
       byType: "By Type",
       byProvider: "By Provider",
+      other: "Other",
       tokensTitle: "Daily Token Usage",
       costTitle: "Daily Cost",
       compressedScaleHint: "Square-root scale keeps low-usage days visible.",

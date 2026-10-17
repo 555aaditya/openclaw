@@ -126,10 +126,8 @@ suite.define(() => {
 
         // Interrupted turns make the totals lower bounds, never exact or "$0.00".
         const badges = page.locator(".usage-metric-badge strong");
-        await expect.poll(() => badges.allTextContents()).toContain("≥ $5759.15");
-        expect(await page.locator('.usage-callout[role="note"]').textContent()).toContain(
-          "lower bound",
-        );
+        await expect.poll(() => badges.allTextContents()).toContain("≥ $5,759.15");
+        expect(await page.locator(".usage-lower-bound").textContent()).toContain("lower bound");
         // Unpriced subscription traffic marks the cost as incomplete.
         const averageCost = page.locator(".usage-summary-card", {
           has: page.locator("#usage-summary-hint-average-cost"),
@@ -145,13 +143,10 @@ suite.define(() => {
             .getAttribute("aria-pressed"),
         ).toBe("true");
         const legend = page.locator(".daily-chart-legend li");
-        expect(await legend.allTextContents()).toEqual([
-          "OpenAI",
-          "***",
-          "xAI",
-          "Anthropic",
-          "Ollama Cloud",
-        ]);
+        // Each entry is the provider name followed by its share, e.g. "OpenAI92%".
+        expect(
+          (await legend.allTextContents()).map((text) => text.replace(/[\d.]+%$/, "")),
+        ).toEqual(["OpenAI", "***", "xAI", "Anthropic", "Ollama Cloud"]);
         expect(await page.locator(".daily-bar-wrapper").count()).toBe(30);
         const lastDay = page.locator(".daily-bar-wrapper").last();
         expect(await lastDay.locator(".cost-segment").count()).toBeGreaterThan(1);

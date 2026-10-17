@@ -540,9 +540,13 @@ describe("renderUsage", () => {
     );
     flush();
 
-    const messagesValue = container.querySelector(
-      ".usage-overview-card .usage-summary-card--hero .usage-summary-value",
-    );
+    const messagesValue = [
+      ...container.querySelectorAll(".usage-overview-card .usage-summary-card"),
+    ]
+      .find((card) =>
+        card.querySelector(".usage-summary-title")?.textContent?.startsWith("Messages"),
+      )
+      ?.querySelector(".usage-summary-value");
     expect(messagesValue?.textContent?.trim()).toBe("100");
     expect(container.textContent).toContain(
       "Cost data is missing for some or all sessions in this range.",

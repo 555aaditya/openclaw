@@ -294,7 +294,7 @@ describe("SessionsCard", () => {
     const buttons = [...container.querySelectorAll<HTMLButtonElement>(".session-bar-selection")];
     expect(buttons[1]).toBe(first);
     expect(first.querySelector(".session-bar-title")?.textContent).toBe("Renamed");
-    expect(first.querySelector(".session-bar-meta")?.textContent).toContain("channel:web");
+    expect(first.querySelector(".session-bar-meta")?.textContent).toContain("web");
     expect(
       first.closest(".session-bar-row")?.querySelector(".session-bar-value")?.textContent,
     ).toBe("250");
@@ -336,7 +336,7 @@ describe("SessionsCard", () => {
       const row = container.querySelector(".session-bar-row");
       const value = () => row?.querySelector(".session-bar-value")?.textContent;
       const average = () => container.querySelector(".sessions-card-stats > span")?.textContent;
-      expect(row?.querySelector(".session-bar-meta")?.textContent).toContain("dur:1m");
+      expect(row?.querySelector(".session-bar-meta")?.textContent).toContain("1m");
       // A response that ended before final usage leaves its subtotal as a lower bound.
       const atLeast = (amount: string) => t("usage.common.atLeast", { value: amount });
       expect(value()).toBe(atLeast("100"));
@@ -350,7 +350,7 @@ describe("SessionsCard", () => {
         unit: "minute",
         unitDisplay: "narrow",
       }).format(1);
-      expect(row?.querySelector(".session-bar-meta")?.textContent).toContain(`dur:${germanMinute}`);
+      expect(row?.querySelector(".session-bar-meta")?.textContent).toContain(germanMinute);
       expect(value()).toBe(atLeast("100"));
       expect(average()).toBe(`${atLeast("100")} ${t("usage.sessions.avg")}`);
       expect(t("usage.sessions.avg")).not.toBe("avg");

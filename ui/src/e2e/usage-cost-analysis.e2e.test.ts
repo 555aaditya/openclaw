@@ -905,12 +905,12 @@ suite.define(() => {
           });
         await expect
           .poll(() => page.locator(".daily-chart-scale span").allTextContents())
-          .toEqual(["$11.00", "$5.50", "$0.00"]);
+          .toEqual(["$20", "$10", "$0"]);
         await expect
           .poll(() =>
             page.locator(".usage-insight-card", { hasText: "Top Providers" }).textContent(),
           )
-          .toContain("openai");
+          .toContain("OpenAI");
         const messagesHint = page.locator("#usage-summary-hint-messages");
         const messagesTooltipHost = messagesHint.locator("xpath=..");
         const messagesTooltip = messagesTooltipHost.locator(".tooltip-surface[popover]");
@@ -972,7 +972,7 @@ suite.define(() => {
         await page.locator(".usage-query-input").press("Enter");
         const topProviders = page.locator(".usage-insight-card", { hasText: "Top Providers" });
         await expect.poll(() => topProviders.textContent()).toContain("No provider data");
-        await expect.poll(() => topProviders.textContent()).not.toContain("openai");
+        await expect.poll(() => topProviders.textContent()).not.toContain("OpenAI");
 
         if (process.env.OPENCLAW_CAPTURE_UI_PROOF === "1") {
           const artifactDir = path.join(suite.artifactDir, "provider-plans");

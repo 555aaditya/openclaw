@@ -120,10 +120,10 @@ suite.define(() => {
         await expect.poll(() => rows.count()).toBe(50);
         await expect
           .poll(() => page.locator(".session-bar-meta").first().textContent())
-          .toContain("msgs:2");
+          .toContain("2 msgs");
         await expect
           .poll(() => page.locator(".session-bar-meta").first().textContent())
-          .toContain("dur:1m");
+          .toContain("1m");
         const fullHeight = await page
           .locator(".usage-page")
           .evaluate((element) => Math.ceil(element.scrollHeight) + 400);
