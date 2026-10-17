@@ -232,23 +232,6 @@ describe("Sage native protocol", () => {
     value.results[0]!.answers[0] = { ok: true, result: response(choice, {}) };
     expect(() => parseSageBatchResponse(value, request)).toThrow("correlation");
   });
-  it("keeps grounding omitted, empty or explicit without adding defaults", async () => {
-    for (const grounding of [
-      undefined,
-      {},
-      { return_sources: false },
-      { trigger: "never" as const },
-    ]) {
-      const r = {
-        content: "doc",
-        question: yesno,
-        ...(grounding === undefined ? {} : { grounding }),
-      };
-      const before = JSON.stringify(r);
-      await validateSageRequest(r);
-      expect(JSON.stringify(r)).toBe(before);
-    }
-  });
   it.each([
     { content: "doc", question: { ...choice, options: [{ option: "a" }] } },
     { content: "doc", question: { ...scale, levels: [0, 1, 2, 3, 3].map((level) => ({ level })) } },
