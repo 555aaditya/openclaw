@@ -125,7 +125,6 @@ function setup(pluginConfig: Record<string, unknown>) {
       },
     }),
     enqueueNextTurnInjection: enqueue,
-    steerActiveRun: steer,
     registerRuntimeLifecycle: (lifecycle) => lifecycles.push(lifecycle),
     registerService: (service) => {
       if (service.apiVersion === 2) {
@@ -144,6 +143,7 @@ function setup(pluginConfig: Record<string, unknown>) {
       toolEvents = subscription;
     },
   });
+  api.session.workflow.steerActiveRun = steer;
   plugin.register(api);
   if (services.length > 0) {
     // The Gateway service and workspace hooks use distinct plugin registrations.

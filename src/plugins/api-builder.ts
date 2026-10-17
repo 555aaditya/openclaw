@@ -2,12 +2,15 @@ import { attachPluginApiFacades, type OpenClawPluginApiWithoutFacades } from "./
 import type { PluginRuntime } from "./runtime/types.js";
 import type { OpenClawPluginApi } from "./types.js";
 
+type PluginApiHandlers = OpenClawPluginApi &
+  Pick<OpenClawPluginApi["session"]["workflow"], "steerActiveRun">;
+
 type BuildPluginApiParams = Omit<
   OpenClawPluginApiWithoutFacades,
   keyof typeof noops | "registerNodeCliFeature" | "runtimeSource"
 > & {
   runtimeSource?: string;
-  handlers?: Partial<Pick<OpenClawPluginApi, keyof typeof noops>>;
+  handlers?: Partial<Pick<PluginApiHandlers, keyof typeof noops>>;
 };
 
 const noops = {
@@ -91,7 +94,7 @@ const noops = {
   registerMemoryPromptPreparation: () => {},
   registerMemoryCorpusSupplement: () => {},
   on: () => {},
-} satisfies Partial<OpenClawPluginApi>;
+} satisfies Partial<PluginApiHandlers>;
 const noopEntries = Object.entries(noops);
 
 export function createUnavailableRuntime(
@@ -120,14 +123,14 @@ export function buildPluginApi(params: BuildPluginApiParams): OpenClawPluginApi 
   const handlers = params.handlers ?? {};
   // Iterate the declared surface so inherited handlers and nullish defaults keep
   // the same behavior without maintaining a second list of every API method.
-  const registrations = Object.fromEntries(
+  const { steerActiveRun, ...registrations } = Object.fromEntries(
     noopEntries.map(([key, fallback]) => [
       key,
       // SAFETY: Object.entries reads only the fixed noops declaration, which defines these handler keys.
       handlers[key as keyof typeof noops] ?? fallback,
     ]),
     // SAFETY: Every declared method receives its typed handler or matching default.
-  ) as Pick<OpenClawPluginApi, keyof typeof noops>;
+  ) as Pick<PluginApiHandlers, keyof typeof noops>;
   const api: OpenClawPluginApiWithoutFacades = {
     id: params.id,
     name: params.name,
@@ -146,5 +149,5 @@ export function buildPluginApi(params: BuildPluginApiParams): OpenClawPluginApi 
       registrations.registerCli(registrar, { ...opts, parentPath: ["nodes"] }),
     resolvePath: params.resolvePath,
   };
-  return attachPluginApiFacades(api);
+  return attachPluginApiFacades(api, steerActiveRun);
 }

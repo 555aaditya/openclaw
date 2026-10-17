@@ -10,7 +10,7 @@ type PluginApiFacadeFields = Pick<
 /** Plugin API shape without nested facade namespaces attached. */
 export type OpenClawPluginApiWithoutFacades = Omit<OpenClawPluginApi, keyof PluginApiFacadeFields>;
 type PluginApiFacadeSource = OpenClawPluginApi["session"]["state"] &
-  OpenClawPluginApi["session"]["workflow"] &
+  Omit<OpenClawPluginApi["session"]["workflow"], "steerActiveRun"> &
   OpenClawPluginApi["session"]["controls"] &
   OpenClawPluginApi["agent"]["events"] &
   OpenClawPluginApi["runContext"] &
@@ -37,6 +37,7 @@ const identitySensitiveRegistrations = new Set([
 /** Attaches nested facade namespaces to the flat plugin API implementation. */
 export function attachPluginApiFacades<T extends object>(
   api: T & PluginApiFacadeSource & Partial<PluginApiFacadeFields>,
+  steerActiveRun: OpenClawPluginApi["session"]["workflow"]["steerActiveRun"],
 ): T & PluginApiFacadeFields {
   api.session = {
     state: {
@@ -44,7 +45,8 @@ export function attachPluginApiFacades<T extends object>(
     },
     workflow: {
       enqueueNextTurnInjection: (...args) => api.enqueueNextTurnInjection(...args),
-      steerActiveRun: (...args) => api.steerActiveRun(...args),
+      // Steering is runtime-only; retain its owner-bound handler across facade reattachment.
+      steerActiveRun,
       registerSessionSchedulerJob: (...args) => api.registerSessionSchedulerJob(...args),
       sendSessionAttachment: (...args) => api.sendSessionAttachment(...args),
       scheduleSessionTurn: (...args) => api.scheduleSessionTurn(...args),
@@ -126,6 +128,7 @@ export function instrumentPluginInstanceApi(
           );
       },
     }),
+    api.session.workflow.steerActiveRun,
   );
   pluginInstanceState.values.setHost(instrumented, instance);
   return instrumented;

@@ -368,6 +368,8 @@ stored session key.
 
 Use `api.session.workflow.steerActiveRun({ sessionKey, text, displayText?, idempotencyKey? })`
 to deliver guidance to the session's active run without starting a new turn.
+Use this grouped method in place of the former top-level `api.steerActiveRun`
+alias from prerelease builds.
 It returns `{ steered: true, runId? }` when the run accepts the text, or
 `{ steered: false, reason }` when no run is active, the run is not accepting
 steering, or the runtime rejects it. Acceptance does not wait for transcript

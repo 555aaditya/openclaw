@@ -1,5 +1,6 @@
 import { runInNewContext } from "node:vm";
 import { afterEach, expect, it, vi } from "vitest";
+import { createTestPluginApi } from "../plugin-sdk/plugin-test-api.js";
 import { createPluginRuntimeStore } from "../plugin-sdk/runtime-store.js";
 import { createDeferredCore } from "../shared/deferred.js";
 import { attachPluginApiFacades, instrumentPluginInstanceApi } from "./api-facades.js";
@@ -694,15 +695,14 @@ it("owns flat and grouped SDK registrations after repeated facade attachment", a
   const registerAgentEventSubscription =
     vi.fn<(entry: PluginAgentEventSubscriptionRegistration) => void>();
   const registerRuntimeLifecycle = vi.fn<(entry: PluginRuntimeLifecycleRegistration) => void>();
+  const baseApi = createTestPluginApi({
+    registerSessionAction,
+    registerAgentEventSubscription,
+    registerRuntimeLifecycle,
+  });
   const api = attachPluginApiFacades(
-    instrumentPluginInstanceApi(
-      {
-        registerSessionAction,
-        registerAgentEventSubscription,
-        registerRuntimeLifecycle,
-      } as unknown as OpenClawPluginApi,
-      instance,
-    ),
+    instrumentPluginInstanceApi(baseApi, instance),
+    baseApi.session.workflow.steerActiveRun,
   );
   const handler = vi.fn<() => void>();
   api.registerSessionAction({ id: "flat", handler });

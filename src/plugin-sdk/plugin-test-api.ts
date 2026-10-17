@@ -84,7 +84,6 @@ export function createTestPluginApi(api: TestPluginApiInput = {}): OpenClawPlugi
       id: "",
       sessionKey: injection.sessionKey,
     }),
-    steerActiveRun: async () => ({ steered: false as const, reason: "test api" }),
     registerTrustedToolPolicy() {},
     registerToolMetadata() {},
     registerControlUiDescriptor() {},
@@ -113,7 +112,10 @@ export function createTestPluginApi(api: TestPluginApiInput = {}): OpenClawPlugi
   // Facades derive nested `agent`, `lifecycle`, `runContext`, and `session`
   // views from the flat API; explicit overrides below let tests replace only
   // the nested surface under test without rebuilding every no-op method.
-  const withFacades = attachPluginApiFacades(mergedApi);
+  const withFacades = attachPluginApiFacades(mergedApi, async () => ({
+    steered: false,
+    reason: "test api",
+  }));
   return {
     ...withFacades,
     ...(agent ? { agent } : {}),

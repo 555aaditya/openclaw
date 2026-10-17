@@ -413,8 +413,6 @@ export type OpenClawPluginApi = {
    * @deprecated Use `api.session.workflow.enqueueNextTurnInjection(...)`.
    */
   enqueueNextTurnInjection: OpenClawPluginSessionWorkflowApi["enqueueNextTurnInjection"];
-  /** Backs `api.session.workflow.steerActiveRun(...)`; plugins call the workflow facade. */
-  steerActiveRun: OpenClawPluginSessionWorkflowApi["steerActiveRun"];
   /**
    * Register a trusted pre-tool policy. Installed plugins must declare the
    * policy id in `contracts.trustedToolPolicies`.
