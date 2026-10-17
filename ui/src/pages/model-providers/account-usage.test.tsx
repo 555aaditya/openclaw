@@ -47,6 +47,10 @@ it("loads automatically, renders remaining quota and balance, and re-reads on a 
     { agentId: "main", profileId: "openai:account" },
     expect.objectContaining({ signal: expect.any(AbortSignal) }),
   );
+  // A rebuilt scope with the same fields is the same account read.
+  view.setScope({ ...view.scope() });
+  flush();
+  expect(request).toHaveBeenCalledTimes(1);
   view.setScope({ ...view.scope(), revision: 1 });
   await waitForSolid(() => expect(request.mock.calls.length).toBe(2));
   expect(request.mock.lastCall?.[1]).toEqual({ agentId: "main", profileId: "openai:account" });

@@ -19,28 +19,33 @@ type UsageState =
 
 export function AccountLimits(props: { scope: AccountUsageScope; profileId: string }) {
   const [state, setState] = createSignal<UsageState>({ phase: "pending" });
-  createEffect(
-    () => ({ ...props.scope, profileId: props.profileId }),
-    ({ client, agentId, profileId }) => {
-      const request = new AbortController();
-      setState({ phase: "pending" });
-      client
-        .request<UsageSummary>(
-          "codex.accountUsage",
-          { agentId, profileId },
-          { signal: request.signal, timeoutMs: 30_000 },
-        )
-        .then(
-          (summary) => setState({ phase: "complete", summary }),
-          (error: unknown) => {
-            if (!request.signal.aborted) {
-              setState({ phase: "error", error });
-            }
-          },
-        );
-      return () => request.abort();
-    },
-  );
+  // Page props rebuild the scope object on every update; only its fields mean a new read.
+  const request = createMemo(() => ({ ...props.scope, profileId: props.profileId }), {
+    equals: (a, b) =>
+      a.client === b.client &&
+      a.agentId === b.agentId &&
+      a.revision === b.revision &&
+      a.profileId === b.profileId,
+  });
+  createEffect(request, ({ client, agentId, profileId }) => {
+    const request = new AbortController();
+    setState({ phase: "pending" });
+    client
+      .request<UsageSummary>(
+        "codex.accountUsage",
+        { agentId, profileId },
+        { signal: request.signal, timeoutMs: 30_000 },
+      )
+      .then(
+        (summary) => setState({ phase: "complete", summary }),
+        (error: unknown) => {
+          if (!request.signal.aborted) {
+            setState({ phase: "error", error });
+          }
+        },
+      );
+    return () => request.abort();
+  });
   const complete = createMemo(() => {
     const current = state();
     return current.phase === "complete" ? current : undefined;
