@@ -104,7 +104,7 @@ export function createUsagePage(context: ApplicationContext) {
   let routeDataInitialized = false;
   let routeDataEnabled = true;
   const refreshPolicy = new UsageRefreshPolicy({
-    isLoading: () => usageLoading() || providerUsage.pending,
+    isLoading: usageLoading,
     reload: (reason) => {
       // Retries exist for incomplete provider plans; they never re-read session usage.
       if (reason === "poll") {
@@ -118,7 +118,7 @@ export function createUsagePage(context: ApplicationContext) {
         reason === "manual" && usageSelectedSessions.length === 1
           ? usageSelectedSessions[0]
           : undefined;
-      return Promise.all([loadUsage(sessionKey), providerUsage.load()]).then(() => undefined);
+      return loadAll(sessionKey);
     },
     onIncompleteUsageExhausted: notify,
   });
@@ -221,7 +221,7 @@ export function createUsagePage(context: ApplicationContext) {
       gateway.connected &&
       !usageLoading()
     ) {
-      void loadUsage();
+      void loadAll();
     }
     notify();
   }
@@ -403,6 +403,10 @@ export function createUsagePage(context: ApplicationContext) {
     return !routeDataInitialized || timers.dateDebounceTimer !== null || usageRequest.pending;
   }
 
+  function loadAll(refreshSessionKey?: string): Promise<void> {
+    return Promise.all([loadUsage(refreshSessionKey), providerUsage.load()]).then(() => undefined);
+  }
+
   function loadUsage(refreshSessionKey?: string): Promise<void> {
     const client = gateway.client;
     if (!client || !gateway.connected) {
@@ -462,7 +466,7 @@ export function createUsagePage(context: ApplicationContext) {
     if (change.identityChanged || change.becameConnected) {
       connectionEpoch = {};
       if (routeDataInitialized) {
-        void refreshPolicy.request("reconnect");
+        void refreshPolicy.request("reconnect").then(() => providerUsage.resume());
       }
     } else if (usageCommitted && routeDataInitialized) {
       void refreshPolicy.request("publication");

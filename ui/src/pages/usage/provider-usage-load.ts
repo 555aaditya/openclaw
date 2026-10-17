@@ -12,10 +12,13 @@ export function createProviderUsageLoader(options: {
   onSettled: () => void;
 }) {
   let active: AbortController | null = null;
+  // A read cut short by a disconnect resumes on reconnect even when sessions are fresh.
+  let interrupted = false;
   let summary: ProviderUsageSummary | null = null;
   let unavailable = false;
   let incomplete = false;
   const cancel = () => {
+    interrupted ||= active !== null;
     active?.abort();
     active = null;
   };
@@ -39,12 +42,16 @@ export function createProviderUsageLoader(options: {
       incomplete = false;
     },
     cancel,
+    resume(): Promise<void> {
+      return interrupted ? this.load() : Promise.resolve();
+    },
     async load(): Promise<void> {
       const client = options.client();
       if (!client) {
         return;
       }
       cancel();
+      interrupted = false;
       const request = new AbortController();
       active = request;
       const epoch = options.epoch();
