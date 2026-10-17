@@ -11,6 +11,8 @@ import {
   AgentDatabaseAdmissionError,
   readAgentDatabaseAdmissionRefusal,
 } from "../state/agent-database-admission.js";
+import { getOrLoadAgentDeletionJournalStatus } from "../state/agent-deletion-journal-status.js";
+import { resolveOpenClawStateSqlitePath } from "../state/openclaw-state-db.paths.js";
 
 export const STATUS_RECENT_SESSION_LIMIT = 10;
 const SESSION_STORE_READ_SLICE_MS = 8;
@@ -82,9 +84,15 @@ export function createStatusSessionStoreReader(
 ) {
   const env = captureSessionTranscriptStorageEnvironment(process.env);
   const stores = new Map<string, SessionStoreSummary & { path: string }>();
+  const statePath = resolveOpenClawStateSqlitePath(env);
+  const isDeleted = (agentId?: string) => {
+    const status = agentId
+      ? getOrLoadAgentDeletionJournalStatus(statePath, agentId, () => undefined)
+      : undefined;
+    return status === "pending" || status === "complete";
+  };
   let sliceStartedAt = performance.now();
-  return {
-    stores,
+  const storeReader = {
     read(storePath: string, agentId?: string) {
       return withSessionStoreReaderInWorker(
         { storePath, agentId, env },
@@ -138,6 +146,9 @@ export function createStatusSessionStoreReader(
             if (agentId && readAgentDatabaseAdmissionRefusal(agentId, { env })) {
               return { path, count: 0, recent: [] };
             }
+            if (isDeleted(agentId)) {
+              return undefined;
+            }
             store = { ...summary, path };
             stores.set(database.path, store);
           }
@@ -146,6 +157,24 @@ export function createStatusSessionStoreReader(
         },
         { backing: !options.projection, dataOnly: true, logical: {} },
       );
+    },
+  };
+  return {
+    stores,
+    async read(storePath: string, agentId?: string) {
+      // Journal commits precede resource closure; stale rosters must not reopen that agent.
+      if (isDeleted(agentId)) {
+        return undefined;
+      }
+      try {
+        const summary = await storeReader.read(storePath, agentId);
+        return isDeleted(agentId) ? undefined : summary;
+      } catch (error) {
+        if (!isDeleted(agentId)) {
+          throw error;
+        }
+        return undefined;
+      }
     },
   };
 }
@@ -164,13 +193,13 @@ export async function readStatusSessionStores<Agent extends { id: string; name?:
   );
   const byAgent = [];
   for (const agent of agents) {
-    byAgent.push({
-      agent,
-      ...(await reader.read(
-        resolveSessionStorePathCore(cfg.session?.store, { agentId: agent.id }),
-        agent.id,
-      )),
-    });
+    const summary = await reader.read(
+      resolveSessionStorePathCore(cfg.session?.store, { agentId: agent.id }),
+      agent.id,
+    );
+    if (summary) {
+      byAgent.push({ agent, ...summary });
+    }
   }
   return {
     paths: [...reader.stores.values()].map((store) => store.path),

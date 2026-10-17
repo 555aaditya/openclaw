@@ -144,7 +144,7 @@ async function buildHealthSessionSummary(
 ) {
   const reader = await createHealthSessionStoreReader(agentId ? [agentId] : [], projection);
   const store = await reader.read(storePath, agentId);
-  return projectHealthSessions(store.path, store);
+  return projectHealthSessions(store?.path ?? storePath, store ?? { count: 0, recent: [] });
 }
 
 /** Shares one bounded session snapshot across every configured agent in this collection. */
@@ -164,6 +164,9 @@ export async function buildHealthAgentSummaries(
       resolveSessionStorePathCore(cfg.session?.store, { agentId: entry.id }),
       entry.id,
     );
+    if (!store) {
+      continue;
+    }
     agents.push({
       agentId: entry.id,
       name: entry.name,
@@ -527,8 +530,10 @@ export async function collectGatewayHealthSnapshot(params: {
   const sessions =
     summaryAgent?.sessions ??
     (await buildHealthSessionSummary(
-      resolveSessionStorePathCore(cfg.session?.store, { agentId: summaryAgent?.agentId }),
-      summaryAgent?.agentId,
+      resolveSessionStorePathCore(cfg.session?.store, {
+        agentId: defaultAgentId ?? ordered[0]?.id,
+      }),
+      defaultAgentId ?? ordered[0]?.id,
       params.sessionRowProjection,
     ));
 

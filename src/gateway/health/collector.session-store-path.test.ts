@@ -4,6 +4,7 @@ import { expectDefined } from "@openclaw/normalization-core";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { awaitGateBeforeSettlement, createDeferred } from "../../../test/helpers/promise.js";
 import * as configRuntime from "../../config/config.js";
+import { setRuntimeConfigSnapshot } from "../../config/runtime-snapshot.js";
 import { resolveSessionStorePathCore } from "../../config/sessions/paths.js";
 import * as sessionAccessor from "../../config/sessions/session-accessor.js";
 import { resolveSqliteTargetFromSessionStorePath } from "../../config/sessions/session-sqlite-target.js";
@@ -11,11 +12,15 @@ import { spyOnSessionStoreSummaries } from "../../config/sessions/session-store-
 import { historyLane } from "../../config/sessions/session-transcript-worker-resources.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { recordAgentDatabaseAdmissions } from "../../state/agent-database-admission.js";
+import { withAgentDatabaseCloseFence } from "../../state/openclaw-agent-db-resources.js";
 import {
   closeOpenClawAgentDatabasesAsync,
   closeOpenClawAgentDatabasesForTest,
 } from "../../state/openclaw-agent-db.js";
+import { readStatusSessionStores } from "../../status/session-stores.js";
+import { beginAgentDeletionJournal } from "../../test-utils/agent-deletion-journal.js";
 import { closeStateDatabaseForTest } from "../../test-utils/database-cleanup.js";
+import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
 import { useSessionStoreTempDirs } from "../../test-utils/session-state-cleanup.js";
 import {
   buildHealthAgentSummaries,
@@ -181,6 +186,91 @@ describe("health session store paths", () => {
         held.mockRestore();
         recordAgentDatabaseAdmissions([], { source: "startup" });
       }
+    },
+  );
+
+  it.each(["before-read", "during-read", "only-agent"] as const)(
+    "omits committed deletions without aborting health or status (%s)",
+    async (timing) => {
+      await withOpenClawTestState({ label: "health-agent-deletion" }, async (state) => {
+        const cfg: OpenClawConfig = {
+          agents: {
+            ownership: "explicit",
+            entries: timing === "only-agent" ? { deleting: {} } : { deleting: {}, survivor: {} },
+          },
+        };
+        setRuntimeConfigSnapshot(cfg);
+        const { ordered } = resolveHealthAgentOrder(cfg);
+        for (const { id } of ordered) {
+          await sessionAccessor.upsertSessionEntryCore(
+            { agentId: id, sessionKey: `agent:${id}:main` },
+            { sessionId: `${id}-session`, updatedAt: 10 },
+          );
+        }
+        const replied = createDeferred();
+        const release = createDeferred();
+        const run = historyLane.pool.run.bind(historyLane.pool);
+        const held = vi.spyOn(historyLane.pool, "run").mockImplementation(async (...args) => {
+          const result = await run(...args);
+          if (
+            timing === "during-read" &&
+            result.ok &&
+            typeof result.value !== "boolean" &&
+            !Array.isArray(result.value) &&
+            result.value.kind === "session-store-summary"
+          ) {
+            replied.resolve();
+            await release.promise;
+          }
+          return result;
+        });
+        const collect = () => collectGatewayHealthSnapshot({ audience: "admin", probe: false });
+        const pending =
+          timing === "during-read" ? readStatusSessionStores(cfg, ordered, 10) : undefined;
+        void pending?.catch(() => {});
+        try {
+          if (pending) {
+            await awaitGateBeforeSettlement(
+              replied.promise,
+              pending,
+              "Summary bypassed its worker",
+            );
+          }
+          beginAgentDeletionJournal({
+            agentId: "deleting",
+            operationId: "health-deletion",
+            agentDir: state.agentDir("deleting"),
+            sessionsDir: state.sessionsDir("deleting"),
+            workspaceDir: state.workspaceDir,
+            deleteFiles: true,
+          });
+          await withAgentDatabaseCloseFence(
+            { agentId: "deleting", rootPath: path.dirname(state.agentDir("deleting")) },
+            async () => {
+              release.resolve();
+              const expectedIds = timing === "only-agent" ? [] : ["survivor"];
+              if (pending) {
+                const status = await pending;
+                expect(status.byAgent.map(({ agent }) => agent.id)).toEqual(expectedIds);
+                expect(status.count).toBe(expectedIds.length);
+              }
+              const health = await collect();
+              expect(health.agents.map((agent) => agent.agentId)).toEqual(expectedIds);
+              expect(health.sessions.count).toBe(expectedIds.length);
+              const status = await readStatusSessionStores(cfg, ordered, 10);
+              expect(status.byAgent.map(({ agent }) => agent.id)).toEqual(expectedIds);
+              expect(status.count).toBe(expectedIds.length);
+              expect(status.recent.map(({ sessionKey }) => sessionKey)).toEqual(
+                expectedIds.map((id) => `agent:${id}:main`),
+              );
+            },
+          );
+        } finally {
+          release.resolve();
+          await pending?.catch(() => {});
+          held.mockRestore();
+        }
+      });
     },
   );
 });
