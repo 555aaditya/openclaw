@@ -66,6 +66,39 @@ describe("agent run session target", () => {
     ).resolves.toMatchObject({ sessionId, sessionKey, storePath });
   });
 
+  it("keeps detached identity independent of a stored row with the same session id", async () => {
+    const storePath = path.join(tempDir, "detached", "sessions.json");
+    const sessionId = "detached-session";
+    const config: OpenClawConfig = { session: { store: storePath } };
+    await seedSessionEntry(
+      { agentId: "main", sessionKey: "agent:main:stored", storePath },
+      { sessionId, updatedAt: 1 },
+    );
+    const detached = {
+      agentId: "main",
+      config,
+      sessionId,
+      sessionPersistence: "detached" as const,
+    };
+
+    await expect(
+      resolveAgentRunSessionTarget({ ...detached, sessionKey: " Fresh-Key " }),
+    ).resolves.toMatchObject({ sessionId, sessionKey: "agent:main:fresh-key" });
+    await expect(resolveAgentRunSessionTarget(detached, "create")).resolves.toMatchObject({
+      sessionId,
+      sessionKey: "agent:main:detached-session",
+    });
+    await expect(resolveAgentRunSessionTarget(detached)).rejects.toMatchObject({
+      code: "session-key-missing",
+    });
+    await expect(
+      resolveAgentRunSessionTarget({ ...detached, sessionKey: "agent:other:detached" }),
+    ).rejects.toThrow('belongs to "other"');
+    await expect(
+      resolveAgentRunSessionTarget({ agentId: "main", config, sessionId }),
+    ).resolves.toMatchObject({ sessionId, sessionKey: "agent:main:stored" });
+  });
+
   it("resolves an existing bare row through its persisted fixed-store owner", async () => {
     const storePath = path.join(tempDir, "fixed-owner", "sessions.json");
     const sessionId = "fixed-owner-session";
