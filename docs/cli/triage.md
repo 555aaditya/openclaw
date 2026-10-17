@@ -45,7 +45,7 @@ The diagnostics archive excludes secrets, tokens, raw chat payloads, and raw log
 
 The archive's config summary counts agent, plugin, and channel entries declared in the saved file. Shared channel settings and `$include` directives are excluded from those counts. Diagnostics do not expand included files.
 
-In sanitized config and snapshots, map keys recognized as private identifiers (such as phone numbers, email addresses, user/chat IDs, and tokens) become opaque numbered placeholders. Repeated identifier keys share a placeholder within the archive; ordinary field names remain intact. Placeholders contain no hash or recoverable portion of the identifier.
+In sanitized config and snapshots, map keys recognized as private identifiers (such as phone numbers, email addresses, user/chat IDs, and tokens) become opaque numbered placeholders. Known private config maps, including per-DM overrides (`dms`), also hide identifiers without a recognizable text pattern. Repeated identifier keys share a placeholder within the archive; ordinary field names remain intact. Placeholders contain no hash or recoverable portion of the identifier.
 
 ## Failed update recovery
 

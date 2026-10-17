@@ -136,6 +136,7 @@ describe("diagnostic support export", () => {
       identifiers.map((identifier, index) => [identifier, { port: 19000 + index }]),
     );
     writeJson(path.join(tempDir, "openclaw.json"), {
+      channels: { slack: { dms: { U1: { historyLimit: 5 }, U2: { historyLimit: 10 } } } },
       plugins: { entries: { "voice-call": { config: { numbers } } } },
     });
     const outputPath = path.join(tempDir, "identifier-keys.zip");
@@ -150,7 +151,13 @@ describe("diagnostic support export", () => {
     for (const identifier of identifiers.slice(0, -1)) {
       expect(combined).not.toContain(identifier);
     }
+    expect(combined).not.toContain('"U1"');
+    expect(combined).not.toContain('"U2"');
     const sanitizedConfig = JSON.parse(entries["config/sanitized.json"] ?? "{}");
+    expect(sanitizedConfig).toHaveProperty("channels.slack.dms", {
+      "<identifier#1>": { historyLimit: 5 },
+      "<identifier#2>": { historyLimit: 10 },
+    });
     const sanitizedNumbers = sanitizedConfig.plugins.entries["voice-call"].config.numbers;
     expect(Object.keys(sanitizedNumbers)).toHaveLength(identifiers.length);
     for (const key of Object.keys(sanitizedNumbers)) {
