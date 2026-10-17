@@ -206,11 +206,26 @@ export async function hydrateChatHistory(
       if (rows < CHAT_HISTORY_DISPLAY_ROW_TARGET && offset !== undefined && offset > 0) {
         requests.initialWindowFillAttempted = true;
         startupTail = undefined;
+        const budget = {
+          offset,
+          limit: Math.min(
+            1000,
+            Math.max(
+              CHAT_HISTORY_REQUEST_LIMIT,
+              Math.ceil(
+                (Math.max(messages.length, CHAT_HISTORY_REQUEST_LIMIT) *
+                  (CHAT_HISTORY_DISPLAY_ROW_TARGET - rows)) /
+                  Math.max(1, rows),
+              ),
+            ),
+          ),
+          maxBytes: CHAT_HISTORY_REQUEST_MAX_BYTES,
+        };
         try {
           const older = await requestSharedHistory(
             sessions,
             client,
-            `${requestKeyPrefix}fill:${offset}`,
+            `${requestKeyPrefix}fill:${JSON.stringify(budget)}`,
             "chat.history",
             sessionKey,
             requestAgentId,
@@ -218,21 +233,7 @@ export async function hydrateChatHistory(
             { isCurrent },
             undefined,
             [],
-            {
-              offset,
-              limit: Math.min(
-                1000,
-                Math.max(
-                  CHAT_HISTORY_REQUEST_LIMIT,
-                  Math.ceil(
-                    (Math.max(messages.length, CHAT_HISTORY_REQUEST_LIMIT) *
-                      (CHAT_HISTORY_DISPLAY_ROW_TARGET - rows)) /
-                      Math.max(1, rows),
-                  ),
-                ),
-              ),
-              maxBytes: CHAT_HISTORY_REQUEST_MAX_BYTES,
-            },
+            budget,
           );
           if (!isCurrent()) {
             return undefined;

@@ -155,6 +155,62 @@ afterEach(() => {
 });
 
 describe("first chat startup snapshot ordering", () => {
+  it("keeps different split-pane fill budgets separate", async () => {
+    const first = mountPane();
+    const second = mountPane(false);
+    const newest = Array.from({ length: 80 }, (_, index) => ({
+      ...nativeHistoryMessage(index + 741),
+      role: "assistant",
+    }));
+    const prefix = Array.from({ length: 8 }, (_, index) => ({
+      ...nativeHistoryMessage(index + 733),
+      role: index % 2 === 0 ? "user" : "assistant",
+    }));
+    first.read.resolve({
+      ...stored,
+      deltaCursor: undefined,
+      messages: [...prefix, ...newest],
+      pagination: { hasMore: true, nextOffset: 0, totalMessages: 820 },
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    const { sessions } = connectSessionOwner(first);
+    second.connect();
+    second.state.client = first.client;
+    second.state.sessions = sessions;
+    const initial = createDeferred<ChatHistoryResult>();
+    const fill = createDeferred<ChatHistoryResult>();
+    const tail = {
+      ...first.liveResult,
+      messages: newest,
+      hasMore: true,
+      nextOffset: 80,
+      totalMessages: 820,
+    };
+    first.request.mockImplementation((method) =>
+      method === "chat.history" ? fill.promise : initial.promise,
+    );
+    const loads = [first.start(), second.start()];
+    initial.resolve(tail);
+    await vi.dynamicImportSettled();
+    await vi.advanceTimersByTimeAsync(0);
+    try {
+      expect(first.request.mock.calls.filter(([method]) => method === "chat.startup")).toHaveLength(
+        1,
+      );
+      const requests = first.request.mock.calls.filter(([method]) => method === "chat.history");
+      expect(requests).toHaveLength(2);
+      expect(requests.map(([, params]) => params)).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ offset: 80, limit: 80 }),
+          expect.objectContaining({ offset: 80, limit: 1000 }),
+        ]),
+      );
+    } finally {
+      fill.resolve({ ...tail, messages: prefix, nextOffset: 88 });
+      await Promise.all(loads);
+    }
+  });
+
   it.each(["overlap", "disjoint", "branch-switch"] as const)(
     "uses only retained cached rows for startup coverage (%s)",
     async (mode) => {
