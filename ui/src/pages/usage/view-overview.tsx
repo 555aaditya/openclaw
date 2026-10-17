@@ -302,13 +302,13 @@ export function UsageInsights(props: {
     );
     const topProviders = [...providerTotals]
       .map(([id, entries]) => {
-        const totals = createEmptyCostUsageTotals();
+        const merged = createEmptyCostUsageTotals();
         for (const entry of entries) {
-          addCostUsageTotals(totals, entry.totals);
+          addCostUsageTotals(merged, entry.totals);
         }
         return {
           id,
-          totals,
+          totals: merged,
           count: entries.reduce((sum, entry) => sum + entry.count, 0),
         };
       })

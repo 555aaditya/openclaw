@@ -136,7 +136,9 @@ export function DailyChartCompact(props: {
   const shares = createMemo(() => {
     const sum = totals().reduce((total, value) => total + value, 0);
     return series().map((entry) => ({
-      ...entry,
+      id: entry.id,
+      label: entry.label,
+      color: entry.color,
       share: sum > 0 ? entry.values.reduce((total, value) => total + value, 0) / sum : 0,
     }));
   });
