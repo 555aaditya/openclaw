@@ -43,11 +43,14 @@ export type ModelProviderLogoutTarget = {
   profileIds: string[];
 };
 
-export type ModelProviderPendingLogout = {
-  cardId: string;
-  label: string;
-  target: ModelProviderLogoutTarget;
-};
+/** A provider-wide sign-out, or the config API key alone when `credentialType` is set. */
+export type ModelProviderRemovalTarget = { provider: string; credentialType?: "api_key" };
+
+/** One account's sign-out, or every credential OpenClaw holds for a provider. */
+export type ModelProviderPendingLogout = { cardId: string; label: string } & (
+  | { target: ModelProviderLogoutTarget }
+  | { removeTargets: ModelProviderRemovalTarget[]; keptSource?: string }
+);
 
 type ModelProviderProfileOrderLock = NonNullable<ModelAuthStatusProvider["profileOrderLocked"]>;
 

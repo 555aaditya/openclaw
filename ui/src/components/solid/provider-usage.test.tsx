@@ -47,7 +47,7 @@ describe("ProviderUsagePanel", () => {
       meters.map((meter) => [
         meter.getAttribute("aria-label"),
         meter.getAttribute("aria-valuenow"),
-        meter.closest(".provider-usage__row")?.getAttribute("data-tone"),
+        meter.closest(".provider-usage__window")?.getAttribute("data-tone"),
       ]),
     ).toEqual([
       ["5h", "75", null],
@@ -61,6 +61,26 @@ describe("ProviderUsagePanel", () => {
         (note) => note.textContent,
       ),
     ).toEqual(["Account A", "Account B", "Provider summary"]);
+  });
+
+  it("names a used-up window and when it comes back", () => {
+    const resetAt = Date.now() + 3 * 3_600_000;
+    const view = mountSolid(() => (
+      <ProviderUsagePanel
+        usage={{
+          windows: [
+            { label: "Premium", usedPercent: 100, resetAt },
+            { label: "Chat", usedPercent: 0 },
+          ],
+        }}
+      />
+    ));
+    const alert = view.container.querySelector('.provider-usage__alert[role="status"]');
+    expect(alert?.textContent).toMatch(/^Premium is used up until .+\.$/u);
+    const reset = view.container.querySelector(".provider-usage__window .provider-usage__reset");
+    expect(reset?.textContent).toMatch(/^Resets .+ · in 3h$/u);
+    // A window with no reported reset says nothing rather than guessing.
+    expect(view.container.querySelectorAll(".provider-usage__reset")).toHaveLength(1);
   });
 
   it.each([

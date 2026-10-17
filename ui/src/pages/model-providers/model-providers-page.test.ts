@@ -360,7 +360,10 @@ describe("ModelProvidersPage agent scope", () => {
     expect(page.renderRoot.textContent).toContain(page.view.props.messages.openai?.warning);
   });
 
-  it("removes stored API keys through the rendered action and retains its warning", async () => {
+  it("removes a provider only after confirmation and reports the Gateway warning", async () => {
+    const shell = document.body.appendChild(document.createElement("div"));
+    shell.className = "shell";
+    const toast = shell.appendChild(document.createElement("openclaw-toast-host"));
     const { context, request, runtimeConfig } = createHarness("main");
     const page = appendPage(context);
     await waitForProviders(page);
@@ -372,18 +375,21 @@ describe("ModelProvidersPage agent scope", () => {
         : originalRequest(method),
     );
     const row = await expandProvider(page, "openai");
-    row.querySelector<HTMLButtonElement>(".model-providers__card-actions .danger")!.click();
-    await waitForSolid(() => expect(page.view.props.messages.openai?.kind).toBe("success"));
-    expect(request).toHaveBeenCalledWith("models.authLogout", {
-      provider: "openai",
-      agentId: "main",
-      credentialType: "api_key",
+    row.querySelector<HTMLButtonElement>(".provider-row__remove")!.click();
+    const modal = await vi.waitFor(() => {
+      const dialog = document.body.querySelector<HTMLElement>("openclaw-modal-dialog");
+      expect(dialog).not.toBeNull();
+      return dialog!;
     });
+    expect(modal.textContent).toContain("Remove OpenAI");
+    expect(requestCount(request, "models.authLogout")).toBe(0);
+    modal.querySelector<HTMLButtonElement>("button.danger")!.click();
+    await waitForSolid(() => expect(toast.textContent).toContain("Authentication refresh failed."));
+    // The saved API-key profile is a provider-wide sign-out; nothing goes through config.
+    expect(request.mock.calls.filter(([method]) => method === "models.authLogout")).toEqual([
+      ["models.authLogout", { provider: "openai", agentId: "main" }],
+    ]);
     expect(runtimeConfig.patch).not.toHaveBeenCalled();
-    expect(page.view.props.messages.openai).toMatchObject({
-      text: "Saved API keys removed.",
-      warning: "Authentication refresh failed.",
-    });
   });
 
   it("keeps committed provider-add feedback visible when its refresh fails", async () => {

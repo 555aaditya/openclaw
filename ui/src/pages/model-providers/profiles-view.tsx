@@ -100,13 +100,17 @@ function profileInitials(identity: string): string {
   return initials.toLocaleUpperCase() || "?";
 }
 
-function profileStatus(profile: ProviderProfile, providerAuthRejected: boolean) {
+/** `quiet` drops a healthy status where the surrounding row already reports one. */
+function profileStatus(profile: ProviderProfile, providerAuthRejected: boolean, quiet = false) {
   const status =
     profile.externallyManaged && (profile.status === "expired" || profile.status === "expiring")
       ? "ok"
       : profile.status;
   switch (status) {
     case "ok":
+      if (quiet && !providerAuthRejected) {
+        return undefined;
+      }
       return (
         <SettingsStatus
           kind={providerAuthRejected ? "muted" : "ok"}
@@ -116,7 +120,9 @@ function profileStatus(profile: ProviderProfile, providerAuthRejected: boolean) 
         />
       );
     case "static":
-      return <SettingsStatus kind={"ok"} label={t("modelProviders.status.configured")} />;
+      return quiet ? undefined : (
+        <SettingsStatus kind={"ok"} label={t("modelProviders.status.configured")} />
+      );
     case "expiring":
       return <SettingsStatus kind={"warn"} label={t("modelProviders.status.expiring")} />;
     case "expired":
@@ -341,7 +347,7 @@ function ProfileIdentity(props: {
   return (
     <>
       <span class="model-providers__profile-avatar" aria-hidden="true">
-        {profileInitials(props.identity)}
+        {props.profile.type === "oauth" ? profileInitials(props.identity) : <Icon name="key" />}
       </span>
       <div class="model-providers__profile-copy">
         <strong>{props.identity}</strong>
@@ -453,16 +459,18 @@ export function ProviderProfiles(props: ProviderProfilesViewProps & { card: Mode
       >
         <div class="model-providers__profiles-heading">
           <div class="model-providers__profiles-heading-copy">
-            <strong>{t("modelProviders.profiles.title")}</strong>
-            <span>
-              {t(
-                rows().length === 1
-                  ? "modelProviders.profiles.accountOne"
-                  : "modelProviders.profiles.accounts",
-                { count: String(rows().length) },
-              )}
-              {additionalCredentialSource() ? ` · ${additionalCredentialSource()}` : ""}
-            </span>
+            <Show when={rows().length > 1 || additionalCredentialSource()}>
+              <span>
+                {[
+                  rows().length > 1
+                    ? t("modelProviders.profiles.accounts", { count: String(rows().length) })
+                    : "",
+                  additionalCredentialSource() ?? "",
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </span>
+            </Show>
             {reorderOffered() ? <span>{t("modelProviders.profiles.reorderHint")}</span> : undefined}
             <For each={explanations()}>{(explanation) => <span>{explanation}</span>}</For>
           </div>
@@ -621,7 +629,12 @@ function ProviderProfileRow(
       </span>
       <ProfileIdentity profile={profile()} identity={props.identity} showDetails />
       <span class="model-providers__profile-status">
-        {profileStatus(profile(), props.card.catalogStatus === "auth-rejected")}
+        {profileStatus(
+          profile(),
+          props.card.catalogStatus === "auth-rejected",
+          // A ready row already says the credential works; other rows need the account's word.
+          props.card.catalogStatus === "ready",
+        )}
       </span>
       <span class="model-providers__profile-actions">
         {profile().logoutSupported === true && logoutProvider() ? (

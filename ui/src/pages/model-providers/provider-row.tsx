@@ -12,7 +12,7 @@ import {
 import { formatUiExternalText } from "../../lib/format-error.ts";
 import { formatCompactTokenCount } from "../../lib/format.ts";
 import { t } from "../../lib/reactive/i18n.ts";
-import type { ModelProviderCard } from "./data.ts";
+import type { ModelProviderCard, ModelProviderRemovalTarget } from "./data.ts";
 import { apiKeySource, profileIdentity, ProviderProfiles } from "./profiles-view.tsx";
 import { ProviderLimitSummary } from "./provider-limits.tsx";
 import { seriesColor, type OverviewProvider } from "./usage-overview-model.ts";
@@ -173,6 +173,35 @@ function KeyEditor(props: ModelProvidersViewProps & { card: ModelProviderCard })
   );
 }
 
+/** What "Remove provider" can delete, and the credential it has to leave behind. */
+function removalPlan(card: ModelProviderCard): {
+  removeTargets: ModelProviderRemovalTarget[];
+  keptSource?: string;
+} {
+  const providers = new Set(card.logoutTargets.map((target) => target.provider));
+  for (const profile of card.profiles) {
+    if (profile.type === "api_key" && profile.logoutSupported) {
+      providers.add(card.profileProviderIds[profile.profileId] ?? card.id);
+    }
+  }
+  const external =
+    card.apiKey?.source === "env"
+      ? apiKeySource(card)
+      : card.profiles.some((profile) => profile.externallyManaged || !profile.logoutSupported)
+        ? t("modelProviders.row.managedOutside")
+        : undefined;
+  return {
+    removeTargets: [
+      ...[...providers].map((provider) => ({ provider })),
+      // A provider-wide sign-out keeps config keys; only the API-key form deletes them.
+      ...(card.hasConfigApiKey
+        ? [{ provider: card.configKey ?? card.id, credentialType: "api_key" as const }]
+        : []),
+    ],
+    ...(external ? { keptSource: external } : {}),
+  };
+}
+
 function ProviderActions(props: ModelProvidersViewProps & { card: ModelProviderCard }) {
   const authModeBlocked = () =>
     Boolean(props.card.configAuthMode && props.card.configAuthMode !== "api-key");
@@ -184,8 +213,25 @@ function ProviderActions(props: ModelProvidersViewProps & { card: ModelProviderC
     authModeBlocked()
       ? t("modelProviders.apiKey.authModeBlocked", { mode: props.card.configAuthMode ?? "" })
       : (props.mutationBlockedReason ?? "");
+  const removal = () => removalPlan(props.card);
   return (
-    <div class="model-providers__card-actions">
+    <div class="model-providers__card-actions provider-row__footer">
+      <Show when={removal().removeTargets.length > 0}>
+        <button
+          class="btn btn--sm btn--ghost danger provider-row__remove"
+          disabled={configMutationDisabled(props) || Boolean(props.busy[`logout:${props.card.id}`])}
+          title={props.mutationBlockedReason ?? ""}
+          onClick={() =>
+            props.onRequestLogout({
+              cardId: props.card.id,
+              label: providerName(props.card),
+              ...removal(),
+            })
+          }
+        >
+          {t("modelProviders.remove.action")}
+        </button>
+      </Show>
       <Show when={props.canConnect(props.card) && props.card.profiles.length === 0}>
         <button
           class="btn btn--sm"
@@ -233,23 +279,6 @@ function ProviderActions(props: ModelProvidersViewProps & { card: ModelProviderC
           onClick={() => props.onOpenKeyEditor(props.card.id)}
         >
           {t("modelProviders.apiKey.set")}
-        </button>
-      </Show>
-      <Show
-        when={
-          props.card.hasConfigApiKey ||
-          props.card.profiles.some(
-            (profile) => profile.type === "api_key" && profile.logoutSupported,
-          )
-        }
-      >
-        <button
-          class="btn btn--sm danger"
-          disabled={keyDisabled()}
-          title={keyTitle()}
-          onClick={() => props.onRemoveKey(props.card.id, props.card.configKey ?? props.card.id)}
-        >
-          {t("modelProviders.apiKey.remove")}
         </button>
       </Show>
     </div>
@@ -347,38 +376,36 @@ export function ProviderRow(props: ProviderRowProps) {
           </span>
           <span class="provider-row__meta settings-row__desc">{meta().join(" · ")}</span>
         </span>
-        <ProviderLimitSummary usage={card().usage} />
+        {/* The open row shows the full panel below; its empty chip cell collapses. */}
+        <ProviderLimitSummary usage={open() ? undefined : card().usage} />
         <ProviderUsageFigure usage={props.usage} days={props.usageDays} />
         <span class="provider-row__status">{renderProviderStatus(card())}</span>
         <Icon name="chevronDown" class="provider-row__chevron" />
       </button>
       <Show when={open()}>
         <div class="provider-row__detail" id={detailId()}>
-          <div class="provider-row__panes">
-            <section class="provider-row__pane">
-              <h3 class="provider-row__pane-title">{t("modelProviders.row.accounts")}</h3>
-              {card().profiles.length > 0 && props.canViewProfiles ? (
-                <ProviderProfiles
-                  {...props}
-                  canMutate={props.canMutate && !props.configBusy}
-                  onAddAccount={
-                    props.canConnect(card()) ? () => props.onConnect(card()) : undefined
-                  }
-                  addAccountDisabled={props.loginBusy || configMutationDisabled(props)}
-                />
-              ) : (
-                renderCredentialSummary(card(), props.credentialAgentLabel)
-              )}
-            </section>
-            <Show when={limits()}>
-              {(usage) => (
-                <section class="provider-row__pane">
-                  <h3 class="provider-row__pane-title">{t("modelProviders.limits.title")}</h3>
-                  <ProviderUsagePanel usage={usage()} />
-                </section>
-              )}
-            </Show>
-          </div>
+          <Show when={limits()}>
+            {(usage) => (
+              <section
+                class="provider-row__limits-pane"
+                aria-label={t("modelProviders.limits.title")}
+              >
+                <ProviderUsagePanel usage={usage()} />
+              </section>
+            )}
+          </Show>
+          <section class="provider-row__accounts" aria-label={t("modelProviders.row.accounts")}>
+            {card().profiles.length > 0 && props.canViewProfiles ? (
+              <ProviderProfiles
+                {...props}
+                canMutate={props.canMutate && !props.configBusy}
+                onAddAccount={props.canConnect(card()) ? () => props.onConnect(card()) : undefined}
+                addAccountDisabled={props.loginBusy || configMutationDisabled(props)}
+              />
+            ) : (
+              renderCredentialSummary(card(), props.credentialAgentLabel)
+            )}
+          </section>
           <KeyEditor {...props} />
           {renderProbeResult(props.probeResults[card().id])}
           {renderMutationMessage(message())}

@@ -500,7 +500,7 @@ export function createModelProviders(
   async function mutateApiKey(
     provider: string,
     configKey: string,
-    apiKey: string | null,
+    apiKey: string,
     action: "edit" | "add" = "edit",
   ) {
     const client = gateway.client;
@@ -542,14 +542,9 @@ export function createModelProviders(
         agentId: state.selectedAgentId,
         provider: configKey,
         apiKey,
-        success: t(
-          action === "add"
-            ? "modelProviders.add.saved"
-            : apiKey === null
-              ? "modelProviders.apiKey.removed"
-              : "modelProviders.apiKey.saved",
-          { provider },
-        ),
+        success: t(action === "add" ? "modelProviders.add.saved" : "modelProviders.apiKey.saved", {
+          provider,
+        }),
       },
     );
     if (!result.ok || !isCurrent()) {
@@ -576,17 +571,30 @@ export function createModelProviders(
     // authorize a logout under a different scope.
     const controller = new AbortController();
     logoutConfirmation = controller;
+    const removing = "removeTargets" in pending;
     const confirmed = await showConfirmDialog({
-      title: t("modelProviders.logout.actionFor", { account: pending.label }),
-      message: t("modelProviders.logout.confirm", { provider: pending.label }),
-      confirmLabel: t("modelProviders.logout.action"),
+      title: removing
+        ? t("modelProviders.remove.title", { provider: pending.label })
+        : t("modelProviders.logout.actionFor", { account: pending.label }),
+      message: removing
+        ? [
+            t("modelProviders.remove.confirm", { provider: pending.label }),
+            pending.keptSource
+              ? t("modelProviders.remove.kept", { source: pending.keptSource })
+              : "",
+          ].join(" ")
+        : t("modelProviders.logout.confirm", { provider: pending.label }),
+      confirmLabel: t(removing ? "modelProviders.remove.action" : "modelProviders.logout.action"),
       danger: true,
       signal: controller.signal,
     }).finally(() => {
       logoutConfirmation = null;
     });
     if (confirmed && !controller.signal.aborted && canMutate()) {
-      await profileActions.logout(pending.cardId, pending.target);
+      await profileActions.logout(
+        pending.cardId,
+        removing ? pending.removeTargets : [pending.target],
+      );
     }
   }
 
@@ -734,7 +742,6 @@ export function createModelProviders(
       onKeyDraftChange: (value) => setState("keyDraft", value),
       onSaveKey: (provider, configKey) =>
         void mutateApiKey(provider, configKey, state.keyDraft.trim()),
-      onRemoveKey: (provider, configKey) => void mutateApiKey(provider, configKey, null),
       onProbe: (cardId, providers) => void profileActions.probe(cardId, providers),
       onRequestLogout: (pending) => void requestLogout(pending),
       onProfileOrderChange: (cardId, provider, profileIds) =>

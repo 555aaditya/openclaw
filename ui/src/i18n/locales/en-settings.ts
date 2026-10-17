@@ -757,9 +757,7 @@ const enSettings = {
       placeholder: "Enter provider API key",
       replacePlaceholder: "Secret saved. Enter a new key to replace it.",
       set: "Set API key",
-      remove: "Remove key",
       saved: "Secret saved.",
-      removed: "Saved API keys removed.",
       authModeBlocked: 'API key changes are unavailable while auth mode is "{mode}".',
     },
     probe: {
@@ -798,6 +796,13 @@ const enSettings = {
         "Remove the saved sign-in for {provider} from OpenClaw? You can add this account again later.",
       loggingOut: "Logging out…",
       done: "Logged out.",
+    },
+    remove: {
+      action: "Remove provider",
+      title: "Remove {provider}",
+      confirm:
+        "Sign out every saved account and delete the saved API key for {provider}? Runs using it stop. You can connect it again later.",
+      kept: "{source} stays; remove it there to disconnect fully.",
     },
     add: {
       title: "Add provider",

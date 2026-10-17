@@ -2680,6 +2680,8 @@ export const en: TranslationMap & {
       costCategories: "Cost categories",
       remaining: "{percent}% left",
       resets: "Resets {date}",
+      exhausted: "{label} is used up.",
+      exhaustedUntil: "{label} is used up until {date}.",
     },
     presets: {},
     scope: {},

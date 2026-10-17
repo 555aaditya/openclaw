@@ -72,7 +72,6 @@ export function props(overrides: Partial<ModelProvidersViewProps> = {}): ModelPr
     onCloseKeyEditor: () => undefined,
     onKeyDraftChange: () => undefined,
     onSaveKey: () => undefined,
-    onRemoveKey: () => undefined,
     onProbe: () => undefined,
     onRequestLogout: () => undefined,
     onProfileOrderChange: () => undefined,

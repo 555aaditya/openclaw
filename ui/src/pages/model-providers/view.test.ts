@@ -356,7 +356,7 @@ describe("renderModelProviders", () => {
       provider?.querySelector<HTMLInputElement>(".model-providers__inline-form input")?.disabled,
     ).toBe(true);
     expect(button(provider!, "Set API key")?.disabled).toBe(true);
-    expect(button(provider!, "Remove key")?.disabled).toBe(true);
+    expect(button(provider!, "Remove provider")?.disabled).toBe(true);
     expect(
       provider?.querySelector<HTMLButtonElement>(".model-providers__profile-logout")?.disabled,
     ).toBe(true);
@@ -814,13 +814,11 @@ describe("renderModelProviders", () => {
 
   it("keeps the key editor focused while typing and uses the original config key for mutations", () => {
     const onSaveKey = vi.fn();
-    const onRemoveKey = vi.fn();
     let viewProps = props({
       cards: [card({ configKey: "OpenAI", apiKey: { source: "config" }, hasConfigApiKey: true })],
       keyEditorProvider: "openai",
       keyDraft: "replacement",
       onSaveKey,
-      onRemoveKey,
       onKeyDraftChange: (value) => {
         viewProps = {
           ...viewProps,
@@ -843,9 +841,34 @@ describe("renderModelProviders", () => {
       expect(input.value).toBe(value);
     }
     button(provider!, "Save")?.click();
-    button(provider!, "Remove key")?.click();
     expect(onSaveKey).toHaveBeenCalledWith("openai", "OpenAI");
-    expect(onRemoveKey).toHaveBeenCalledWith("openai", "OpenAI");
+  });
+
+  it("removes every saved account and the config API key in one confirmed request", () => {
+    const onRequestLogout = vi.fn();
+    const container = mount(
+      props({
+        cards: [
+          card({
+            configKey: "OpenAI",
+            hasConfigApiKey: true,
+            logoutTargets: [{ provider: "openai-codex", profileIds: ["openai-codex:work"] }],
+          }),
+        ],
+        onRequestLogout,
+      }),
+    );
+    button(expand(container), "Remove provider")!.click();
+    expect(onRequestLogout).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cardId: "openai",
+        // A provider-wide sign-out keeps config keys, so the key needs its own API-key target.
+        removeTargets: [
+          { provider: "openai-codex" },
+          { provider: "OpenAI", credentialType: "api_key" },
+        ],
+      }),
+    );
   });
 
   it("shows the current key-operation failure over an older card success", () => {

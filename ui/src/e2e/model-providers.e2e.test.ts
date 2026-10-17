@@ -381,18 +381,11 @@ describeControlUiE2e("Control UI Models mocked Gateway E2E", () => {
       const usageRow = (name: string) =>
         page.locator(".usage-overview__providers li", { hasText: name });
       await expect.poll(async () => usageRow("Claude").textContent()).toContain("$4.20");
-      // Plan headroom shows beside the name and in full inside the open row.
-      await expect
-        .poll(() =>
-          page
-            .locator('.provider-row[data-provider-id="anthropic"] .provider-limit-chip')
-            .first()
-            .textContent(),
-        )
-        .toContain("62% left");
-      await expect
-        .poll(() => claudeCard.locator(".provider-usage__row", { hasText: "5h" }).textContent())
-        .toContain("Resets");
+      // The open row trades its summary chips for the full window tiles.
+      expect(await claudeCard.locator(".provider-limit-chip").count()).toBe(0);
+      const fiveHour = claudeCard.locator(".provider-usage__window", { hasText: "5h" });
+      await expect.poll(() => fiveHour.textContent()).toContain("62% left");
+      await expect.poll(() => fiveHour.textContent()).toContain("Resets");
       await expect.poll(() => page.getByText("Model auth expired: Claude").count()).toBe(0);
 
       if (recordVisuals) {

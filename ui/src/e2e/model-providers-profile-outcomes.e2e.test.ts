@@ -96,9 +96,10 @@ suite.define(() => {
         expect(await xaiCard.locator(".model-providers__profile-copy strong").textContent()).toBe(
           "Signed-in account",
         );
-        expect(await xaiCard.locator(".model-providers__profile-status").textContent()).toContain(
-          "Signed in",
-        );
+        // The row already reads Ready, so the healthy account does not repeat it.
+        expect(
+          (await xaiCard.locator(".model-providers__profile-status").textContent())?.trim(),
+        ).toBe("");
         expect(
           await minimaxCard.locator(".model-providers__head .settings-status").textContent(),
         ).toContain("Models unavailable");
@@ -374,10 +375,12 @@ suite.define(() => {
           });
         }
         expect(
-          await openaiCard
-            .locator('[data-profile-id="openai:ready"] .model-providers__profile-status')
-            .textContent(),
-        ).toContain(available ? "Signed in" : "Credentials configured");
+          (
+            await openaiCard
+              .locator('[data-profile-id="openai:ready"] .model-providers__profile-status')
+              .textContent()
+          )?.trim(),
+        ).toBe(available ? "" : "Credentials configured");
       },
     );
   });

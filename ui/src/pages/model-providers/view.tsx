@@ -91,7 +91,6 @@ export type ModelProvidersViewProps = Omit<
     onCloseKeyEditor: () => void;
     onKeyDraftChange: (value: string) => void;
     onSaveKey: (provider: string, configKey: string) => void;
-    onRemoveKey: (provider: string, configKey: string) => void;
     onProbe: (cardId: string, providers: string[]) => void;
     onAddProviderToggle: () => void;
     onAddProviderKeyChange: (value: string) => void;

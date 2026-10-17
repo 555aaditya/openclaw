@@ -909,33 +909,23 @@
   background: color-mix(in srgb, var(--oc-bg-page) 45%, var(--oc-bg-surface));
 }
 
-.provider-row__panes {
-  display: grid;
+.provider-row .model-providers__profile-avatar svg {
+  width: 14px;
+  height: 14px;
 }
 
-.provider-row__pane + .provider-row__pane {
-  margin-top: var(--oc-space-3);
-  padding-top: var(--oc-space-3);
-  border-top: 1px solid var(--oc-border-subtle);
-}
-
-.provider-row__pane {
+.provider-row__accounts {
   display: grid;
-  align-content: start;
   gap: var(--oc-space-2);
   min-width: 0;
 }
 
-.provider-row__pane-title {
-  margin: 0;
-  color: var(--oc-text-muted);
-  font-size: var(--oc-font-size-xs);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+.provider-row__limits-pane + .provider-row__accounts {
+  padding-top: var(--oc-space-3);
+  border-top: 1px solid var(--oc-border-subtle);
 }
 
-/* Accounts inside a row: the pane title names them; keep only the list. */
+/* Accounts inside a row: one quiet line each, no list chrome. */
 .provider-row .model-providers__profiles {
   border-bottom: 0;
 }
@@ -943,10 +933,6 @@
 .provider-row .model-providers__profiles-heading {
   align-items: center;
   padding: 0;
-}
-
-.provider-row .model-providers__profiles-heading-copy strong {
-  display: none;
 }
 
 .provider-row .model-providers__profile {
@@ -973,10 +959,15 @@
   border: 0;
 }
 
-.provider-row .model-providers__card-actions {
-  justify-content: flex-start;
+/* Destructive action on its own side; routine actions sit together at the end. */
+.provider-row__footer {
+  justify-content: flex-end;
   padding-top: var(--oc-space-3);
   border-top: 1px solid var(--oc-border-subtle);
+}
+
+.provider-row__footer .provider-row__remove {
+  margin-inline-end: auto;
 }
 
 .provider-row--quiet .provider-row__summary {

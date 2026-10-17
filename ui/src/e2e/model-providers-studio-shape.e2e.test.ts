@@ -97,16 +97,24 @@ suite.define(() => {
         await expect.poll(() => segments.count()).toBe(5);
 
         // An exhausted plan window reads as no headroom, beside the name and in the open row.
-        const copilot = await expandProvider(page, "github-copilot");
         expect(
-          await copilot
-            .locator(".provider-limit-chip", { hasText: "Premium" })
+          await page
+            .locator('li.provider-row[data-provider-id="github-copilot"] .provider-limit-chip', {
+              hasText: "Premium",
+            })
             .locator(".provider-limit-chip__value")
             .textContent(),
         ).toBe("0% left");
-        const premium = copilot.locator(".provider-usage__row", { hasText: "Premium" });
+        const copilot = await expandProvider(page, "github-copilot");
+        const premium = copilot.locator(".provider-usage__window", { hasText: "Premium" });
         expect(await premium.getByRole("meter").getAttribute("aria-valuenow")).toBe("0");
-        expect(await premium.locator(".oc-menu-panel-usage-value").textContent()).toBe("0% left");
+        expect(await premium.locator(".provider-usage__window-value").textContent()).toBe(
+          "0% left",
+        );
+        // A used-up window names itself above the tiles.
+        expect(await copilot.locator(".provider-usage__alert").textContent()).toContain(
+          "Premium is used up",
+        );
         // Copilot reports no reset time, so the row claims none.
         expect(await premium.locator(".provider-usage__reset").count()).toBe(0);
         expect(await page.locator('.provider-row[data-provider-id="xai"]').textContent()).toContain(
