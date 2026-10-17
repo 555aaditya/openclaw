@@ -126,10 +126,16 @@ function createStatusSessionStoreReader(
           const selected = paths.map((path) => {
             let store = stores.get(path);
             if (!store) {
-              store = {
-                ...summarizeProjectionRows(projection, path, agentIds, recentLimit),
-                path,
-              };
+              let snapshot: SessionStoreSummary;
+              try {
+                snapshot = summarizeProjectionRows(projection, path, agentIds, recentLimit);
+              } catch (error) {
+                if (!options.recoverReadError) {
+                  throw error;
+                }
+                snapshot = options.recoverReadError(error);
+              }
+              store = { ...snapshot, path };
             }
             return store;
           });
