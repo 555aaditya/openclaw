@@ -19,6 +19,7 @@ import {
   type AdmittedRunContext,
   type AdmittedRunOperatorAuthority,
 } from "../admitted-run-context.js";
+import type { EmbeddedRunAttemptParams } from "../embedded-agent-runner/run/types.js";
 import { withPreparedSessionCapabilityRead } from "../subagents/spawn/subagent-session-store.js";
 import {
   captureGatewayToolReceiptAssertion,
@@ -115,6 +116,30 @@ export function bindHarnessWebSearchToolPolicy(
     });
     assertCurrent();
     return policy;
+  };
+}
+
+export function bindHarnessSettledTurnCallback(
+  onSettledTurn: EmbeddedRunAttemptParams["onSettledTurn"],
+  assertActive: () => void,
+  signal?: AbortSignal,
+): EmbeddedRunAttemptParams["onSettledTurn"] {
+  if (!onSettledTurn) {
+    return undefined;
+  }
+  const assertCurrent = () => {
+    signal?.throwIfAborted();
+    assertActive();
+  };
+  return async (attempt, captureContext) => {
+    assertCurrent();
+    await onSettledTurn(attempt, async () => {
+      assertCurrent();
+      const context = await captureContext();
+      assertCurrent();
+      return context;
+    });
+    assertCurrent();
   };
 }
 
