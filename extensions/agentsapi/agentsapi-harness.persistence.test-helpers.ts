@@ -1,7 +1,7 @@
 import path from "node:path";
 import type {
   AgentExecutorController,
-  AgentHarnessAttemptParamsV2,
+  AgentHarnessAttemptParamsV3,
 } from "openclaw/plugin-sdk/agent-harness-runtime";
 import * as harnessRuntime from "openclaw/plugin-sdk/agent-harness-runtime";
 import type { OpenClawConfig, OpenClawPluginApi } from "openclaw/plugin-sdk/plugin-entry";
@@ -181,7 +181,7 @@ export async function createAttempt(stateDir: string) {
     timeoutMs: 5_000,
     resolvedApiKey: "fixture-not-a-real-api-key",
     hostCapabilities: { ...params.hostCapabilities, createToolSurfaceAsync: async () => [] },
-  } satisfies AgentHarnessAttemptParamsV2;
+  } satisfies AgentHarnessAttemptParamsV3;
 }
 
 export function mockClient(sessionId: string) {

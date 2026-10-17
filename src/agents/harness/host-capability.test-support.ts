@@ -25,6 +25,7 @@ type AdmittedHostCapabilityTestFixture = Readonly<{
 export async function createAdmittedHostCapabilityTestFixture(
   attempt: Omit<HostAttempt, "admittedRunContext">,
   options: {
+    hostCapabilityVersion?: 1 | 2;
     nativeModelPolicySupport?: "exact";
     toolCalls?: "deny";
     gatewayContext?: true;
@@ -72,6 +73,7 @@ export async function createAdmittedHostCapabilityTestFixture(
   }
   const host = runWithGatewayScope(() =>
     createAgentHarnessHostCapabilities({
+      version: options.hostCapabilityVersion,
       attempt: { ...attempt, admittedRunContext },
       pluginId: "codex",
       nativeModelPolicySupport: options.nativeModelPolicySupport,

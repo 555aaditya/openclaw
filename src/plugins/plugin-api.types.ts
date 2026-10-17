@@ -1,4 +1,8 @@
-import type { AgentHarness, AgentHarnessRegistrationOptions } from "../agents/harness/types.js";
+import type {
+  AgentHarness,
+  AgentHarnessV3,
+  AgentHarnessRegistrationOptions,
+} from "../agents/harness/types.js";
 import type { AnyAgentTool } from "../agents/tools/common.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { OperatorScope } from "../gateway/operator-scopes.js";
@@ -386,7 +390,10 @@ export type OpenClawPluginApi = {
     provider: import("./compaction-provider.js").CompactionProvider,
   ) => void;
   /** Register an agent harness implementation. */
-  registerAgentHarness: (harness: AgentHarness, options?: AgentHarnessRegistrationOptions) => void;
+  registerAgentHarness: {
+    (harness: AgentHarnessV3, options?: AgentHarnessRegistrationOptions): void;
+    (harness: AgentHarness, options?: AgentHarnessRegistrationOptions): void;
+  };
   /** Register this plugin's executor controller, selected by the owning plugin ID. */
   registerAgentExecutorController: (controller: AgentExecutorController) => void;
   /**

@@ -12,7 +12,7 @@ import {
   resolveModelAuthModeAsync,
   resolveSandboxContext,
   supportsModelTools,
-  type EmbeddedRunAttemptParamsV2 as EmbeddedRunAttemptParams,
+  type EmbeddedRunAttemptParamsV3 as EmbeddedRunAttemptParams,
   type RuntimeToolSchemaDiagnostic,
 } from "openclaw/plugin-sdk/agent-harness-runtime";
 import { resolveAgentDir } from "openclaw/plugin-sdk/agent-runtime";
@@ -371,11 +371,7 @@ export async function buildDynamicTools(
       !webSearchPresent &&
       persistentCodexWebSearchSurface
     ) {
-      const prepareWebSearchToolPolicy = hostCapabilities.prepareWebSearchToolPolicy;
-      if (!prepareWebSearchToolPolicy) {
-        throw new Error("Codex web-search policy requires a current host capability");
-      }
-      const webSearchPolicy = await prepareWebSearchToolPolicy({
+      const webSearchPolicy = await hostCapabilities.prepareWebSearchToolPolicy({
         config: params.config,
         modelProvider: params.model.provider,
         modelId: params.modelId,

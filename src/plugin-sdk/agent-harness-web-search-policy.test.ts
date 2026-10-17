@@ -45,14 +45,17 @@ it.each(["active", "aborted during preparation", "closed during preparation"])(
         ),
       });
       const abort = new AbortController();
-      const host = await createAdmittedHostCapabilityTestFixture({
-        runId: "harness-search",
-        agentId: "main",
-        sessionKey,
-        sessionId: entry.sessionId,
-        config: {},
-        abortSignal: abort.signal,
-      });
+      const host = await createAdmittedHostCapabilityTestFixture(
+        {
+          runId: "harness-search",
+          agentId: "main",
+          sessionKey,
+          sessionId: entry.sessionId,
+          config: {},
+          abortSignal: abort.signal,
+        },
+        { hostCapabilityVersion: 2 },
+      );
       const preparePolicy = host.hostCapabilities.prepareWebSearchToolPolicy!;
       beginAgentDeletionJournal({
         agentId: "retiring",
@@ -109,7 +112,10 @@ it.each(["active", "aborted during preparation", "closed during preparation"])(
 );
 
 it("rejects a retained policy preparer after the attempt host closes", async () => {
-  const host = await createAdmittedHostCapabilityTestFixture({ runId: "retained-search" });
+  const host = await createAdmittedHostCapabilityTestFixture(
+    { runId: "retained-search" },
+    { hostCapabilityVersion: 2 },
+  );
   const prepare = host.hostCapabilities.prepareWebSearchToolPolicy!;
   try {
     host.closeHost();

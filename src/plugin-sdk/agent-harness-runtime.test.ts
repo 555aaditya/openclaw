@@ -16,14 +16,18 @@ import {
   type AgentHarnessQuestionGatewayCall,
   type AgentHarnessAttemptParams,
   type AgentHarnessAttemptParamsV2,
+  type AgentHarnessAttemptParamsV3,
   type AgentHarnessSideQuestionParams,
   type AgentHarnessSideQuestionParamsV2,
   type AgentHarnessSessionForkParams,
   type AgentHarnessV2,
+  type AgentHarnessV3,
   type EmbeddedRunAttemptParams,
   type EmbeddedRunAttemptParamsV2,
+  type EmbeddedRunAttemptParamsV3,
   type HarnessContextEngine,
 } from "./agent-harness-runtime.js";
+import type { OpenClawPluginApi } from "./plugin-entry.js";
 
 describe("classifyAgentHarnessTerminalOutcome", () => {
   function classify(overrides: Partial<Parameters<typeof classifyAgentHarnessTerminalOutcome>[0]>) {
@@ -62,6 +66,27 @@ describe("classifyAgentHarnessTerminalOutcome", () => {
 });
 
 describe("agent harness runtime SDK facade", () => {
+  it("keeps v1 host inputs while requiring web-search authority in v2 hosts", () => {
+    type LegacyHost = EmbeddedRunAttemptParamsV2["hostCapabilities"];
+    type CurrentHost = EmbeddedRunAttemptParamsV3["hostCapabilities"];
+    expectTypeOf<LegacyHost["version"]>().toEqualTypeOf<1>();
+    expectTypeOf<CurrentHost["version"]>().toEqualTypeOf<2>();
+    expectTypeOf<Omit<LegacyHost, "prepareWebSearchToolPolicy">>().toMatchTypeOf<LegacyHost>();
+    expectTypeOf<
+      Omit<CurrentHost, "prepareWebSearchToolPolicy">
+    >().not.toMatchTypeOf<CurrentHost>();
+    expectTypeOf<CurrentHost["prepareWebSearchToolPolicy"]>().toBeFunction();
+    expectTypeOf<AgentHarnessAttemptParamsV3["hostCapabilities"]>().toEqualTypeOf<CurrentHost>();
+    expectTypeOf<
+      Parameters<AgentHarnessV3["runAttempt"]>[0]
+    >().toEqualTypeOf<AgentHarnessAttemptParamsV3>();
+    expectTypeOf<
+      Parameters<OpenClawPluginApi["registerAgentHarness"]>[0]
+    >().toEqualTypeOf<AgentHarness>();
+    type DirectRegistration = typeof import("../agents/harness/registry.js").registerAgentHarness;
+    expectTypeOf<Parameters<DirectRegistration>[0]>().toEqualTypeOf<AgentHarness>();
+  });
+
   it("exposes optional compaction progress without requiring it from legacy engines", () => {
     type CompactParams = Parameters<HarnessContextEngine["compact"]>[0];
     expectTypeOf<CompactParams["onProgress"]>().toEqualTypeOf<(() => void) | undefined>();

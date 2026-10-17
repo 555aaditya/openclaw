@@ -166,7 +166,7 @@ function runCompactionWithTestHost(
         ...params,
         hostCapabilities: {
           kind: capabilities.kind,
-          version: capabilities.version,
+          version: 1,
           assertActive: capabilities.assertActive,
           retainSourceAuthority: capabilities.retainSourceAuthority,
         },

@@ -137,7 +137,9 @@ export async function createHarnessMcpFormResourceContext(
 
 export type {
   AgentHarnessSessionRuntimeParamsV1,
+  AgentHarnessSessionRuntimeParamsV2,
   AgentHarnessSessionPreparationV1,
+  AgentHarnessSessionPreparationV2,
 } from "../agents/harness/types.js";
 export { captureMcpClientElicitation } from "../agents/mcp-client-elicitation.js";
 export {

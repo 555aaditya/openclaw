@@ -112,6 +112,7 @@ export async function createAgentHarnessHostCapabilitiesForTest(params: {
   });
   const admittedRunContext = await admission.admit("plugin-harness", params.pluginId);
   const host = createAgentHarnessHostCapabilities({
+    version: 2,
     attempt: { ...params.attempt, admittedRunContext },
     pluginId: params.pluginId,
     nativeModelPolicySupport: params.nativeModelPolicySupport,

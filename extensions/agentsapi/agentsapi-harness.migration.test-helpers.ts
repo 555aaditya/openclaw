@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { AgentHarnessAttemptParamsV2 } from "openclaw/plugin-sdk/agent-harness-runtime";
+import type { AgentHarnessAttemptParamsV3 } from "openclaw/plugin-sdk/agent-harness-runtime";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/plugin-entry";
 import { createPluginStateKeyedStoreForTests } from "openclaw/plugin-sdk/plugin-state-test-runtime";
 import { patchSessionEntry } from "openclaw/plugin-sdk/session-store-runtime";
@@ -107,7 +107,7 @@ export function registerMigrationTests(
     withMigration(async ({ params, store, client, harness, config }) => {
       await store.register(params.sessionId, legacy);
       const changed = { transport: "streamable-http" as const, url: "https://mcp.example.test" };
-      const cases: Array<[string, Partial<AgentHarnessAttemptParamsV2>, OpenClawConfig?]> = [
+      const cases: Array<[string, Partial<AgentHarnessAttemptParamsV3>, OpenClawConfig?]> = [
         ["rotated key", { resolvedApiKey: "fixture-rotated-key" }],
         ["model", { model: { ...params.model, id: "different-model" } }],
         ["environment", {}, pluginConfig({ environment: "self_hosted" })],

@@ -3,7 +3,7 @@ import os from "node:os";
 import "./dynamic-tool-build.test-support.js";
 import path from "node:path";
 import type { createOpenClawCodingTools } from "openclaw/plugin-sdk/agent-harness";
-import type { EmbeddedRunAttemptParamsV2 as EmbeddedRunAttemptParams } from "openclaw/plugin-sdk/agent-harness-runtime";
+import type { EmbeddedRunAttemptParamsV3 as EmbeddedRunAttemptParams } from "openclaw/plugin-sdk/agent-harness-runtime";
 import { createDeferred } from "openclaw/plugin-sdk/extension-shared";
 import {
   clearRuntimeConfigSnapshot,

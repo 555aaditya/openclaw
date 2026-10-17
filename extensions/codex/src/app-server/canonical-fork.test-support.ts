@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import {
   loadCodexBundleMcpThreadConfig,
-  type EmbeddedRunAttemptParamsV2,
+  type EmbeddedRunAttemptParamsV3,
 } from "openclaw/plugin-sdk/agent-harness-runtime";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import { expectDefined } from "openclaw/plugin-sdk/expect-runtime";
@@ -68,12 +68,12 @@ export async function createCanonicalForkFixture(params: {
     senderId?: string;
     workerOwned?: boolean;
   }) => Promise<{
-    capabilities: EmbeddedRunAttemptParamsV2["hostCapabilities"];
+    capabilities: EmbeddedRunAttemptParamsV3["hostCapabilities"];
     close: () => void | Promise<void>;
     abortController: AbortController;
     invalidate: (reason: "closed" | "aborted" | "replaced" | "claim") => Promise<void>;
     runWithScope: <T>(run: () => Promise<T>) => Promise<T>;
-    userTurnTranscriptRecorder: EmbeddedRunAttemptParamsV2["userTurnTranscriptRecorder"];
+    userTurnTranscriptRecorder: EmbeddedRunAttemptParamsV3["userTurnTranscriptRecorder"];
   }>;
 }) {
   const { runtime, config, workspaceDir, agentDir } = params;
@@ -222,7 +222,7 @@ export async function createCanonicalForkFixture(params: {
           senderIsOwner,
           senderId: options.senderId,
           abortSignal: host.abortController.signal,
-        } as unknown as EmbeddedRunAttemptParamsV2;
+        } as unknown as EmbeddedRunAttemptParamsV3;
         const runAbortController = host.abortController;
         const startupBinding = bindingStore.read(session);
         const bundleMcpThreadConfig = await loadCodexBundleMcpThreadConfig({

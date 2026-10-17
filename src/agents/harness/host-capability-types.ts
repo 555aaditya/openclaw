@@ -41,6 +41,10 @@ type AgentHarnessModelExecutionBinder = (
   model: import("@openclaw/model-catalog-core/model-catalog-refs").ProviderModelRef | undefined,
 ) => Readonly<{ signal: AbortSignal; assertCurrent: () => void; release: () => void }> | undefined;
 
+/**
+ * @deprecated Use AgentHarnessHostCapabilitiesV2 for required web-search authority.
+ * Retained until a separately announced stable-release removal window.
+ */
 export type AgentHarnessHostCapabilities = Readonly<{
   kind: "agent-harness-host-capability";
   version: 1;
@@ -211,3 +215,15 @@ export type AgentHarnessHostCapabilities = Readonly<{
     signal?: AbortSignal;
   }) => Promise<AgentHarnessHostApprovalResult | undefined>;
 }>;
+
+/** Host authority for native runtimes that require prepared web-search policy. */
+export type AgentHarnessHostCapabilitiesV2 = Omit<
+  AgentHarnessHostCapabilities,
+  "version" | "prepareWebSearchToolPolicy"
+> &
+  Readonly<{
+    version: 2;
+    prepareWebSearchToolPolicy: (
+      options: WebSearchToolPolicyParams,
+    ) => Promise<WebSearchToolPolicyResolution>;
+  }>;

@@ -165,7 +165,7 @@ permission to remove a required sandbox or other configured restrictions.
 
 For native web search, await
 `params.hostCapabilities.prepareWebSearchToolPolicy(options)`. This member of
-the version-1 host capability prepares requester metadata through the core
+the version-2 host capability prepares requester metadata through the core
 worker-read protocol and returns `{ allowed, persistentAllowed }`. It checks
 the original host authority and captured attempt abort signal before preparation,
 on each worker-read replay, and before returning. Retained calls reject after
@@ -173,9 +173,13 @@ the attempt closes; harnesses must also check currentness before publishing the 
 `allowed` includes this turn's runtime tool allowlist; `persistentAllowed` keeps
 sender-independent policy for reusable native sessions. Preparation remains safe
 when another agent's deletion temporarily invalidates the shared session projection.
-The member is optional in the SDK type to preserve existing consumers' source
-compatibility. Harnesses that need it must require it and fail closed when absent;
-there is no ambient preparer or synchronous fallback. Bundled Codex requires it.
+Version 2 requires this member. Harnesses select it with
+`hostCapabilityVersion: 2` and use the V3 attempt and side-question contracts.
+Bundled Codex rejects a version-1 host at attempt or side-question admission with
+an instruction to update OpenClaw, before loading the native runtime. There is no
+ambient preparer or synchronous fallback. The legacy version-1 type and V2
+parameter contracts remain source-compatible until a separately announced
+stable-release removal window; legacy harnesses continue receiving version 1.
 The synchronous `resolveWebSearchToolPolicy(params)` signature is unchanged for
 callers that already provide prepared requester facts or a prepared capability-read scope.
 

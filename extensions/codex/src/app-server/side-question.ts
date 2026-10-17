@@ -5,7 +5,7 @@ import {
   embeddedAgentLog,
   formatErrorMessage,
   resolveSandboxContext,
-  type AgentHarnessSideQuestionParamsV2,
+  type AgentHarnessSideQuestionParamsV3,
   type AgentHarnessSideQuestionResult,
 } from "openclaw/plugin-sdk/agent-harness-runtime";
 import { resolveAgentWorkspaceDir } from "openclaw/plugin-sdk/agent-runtime";
@@ -142,7 +142,7 @@ class CodexSideQuestionTimeoutError extends Error {
   override name = "TimeoutError";
 }
 export async function runCodexAppServerSideQuestion(
-  params: AgentHarnessSideQuestionParamsV2,
+  params: AgentHarnessSideQuestionParamsV3,
   options: Pick<
     CodexRunAttemptOptions,
     "bindingStore" | "runtime" | "pluginConfig" | "runtimeModelId" | "nativeHookRelay"

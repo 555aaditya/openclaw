@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { EmbeddedRunAttemptParamsV2 } from "openclaw/plugin-sdk/agent-harness-runtime";
+import type { EmbeddedRunAttemptParamsV3 } from "openclaw/plugin-sdk/agent-harness-runtime";
 import { createDeferred } from "openclaw/plugin-sdk/extension-shared";
 import type {
   OpenAsyncKeyedStoreOptions,
@@ -224,7 +224,7 @@ describe("registered Codex harness model attribution", () => {
       throw new Error("Expected the Codex plugin to register its harness");
     }
     const registered = registration[0];
-    const events: Array<Parameters<NonNullable<EmbeddedRunAttemptParamsV2["onAgentEvent"]>>[0]> =
+    const events: Array<Parameters<NonNullable<EmbeddedRunAttemptParamsV3["onAgentEvent"]>>[0]> =
       [];
     let modelPublished = createDeferred<void>();
     params.onAgentEvent = (event) => {

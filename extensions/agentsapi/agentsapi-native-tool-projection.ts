@@ -11,7 +11,7 @@ import {
   formatToolProgressOutput,
   projectAgentToolActivity,
   TOOL_PROGRESS_OUTPUT_MAX_CHARS,
-  type AgentHarnessAttemptParamsV2,
+  type AgentHarnessAttemptParamsV3,
   type AgentHarnessAttemptResult,
 } from "openclaw/plugin-sdk/agent-harness-runtime";
 import { truncateUtf16Safe } from "openclaw/plugin-sdk/text-utility-runtime";
@@ -29,7 +29,7 @@ import {
   recordAgentsApiNativeToolTranscript,
 } from "./agentsapi-transcript.js";
 
-type AgentEvent = Parameters<NonNullable<AgentHarnessAttemptParamsV2["onAgentEvent"]>>[0];
+type AgentEvent = Parameters<NonNullable<AgentHarnessAttemptParamsV3["onAgentEvent"]>>[0];
 type NativeToolState = {
   turnId: string;
   item: AgentsApiItem;
@@ -60,7 +60,7 @@ export class AgentsApiNativeToolProjection {
   private nativeToolError: AgentHarnessAttemptResult["lastToolError"];
 
   constructor(
-    private readonly params: AgentHarnessAttemptParamsV2,
+    private readonly params: AgentHarnessAttemptParamsV3,
     private readonly remoteSessionId: string,
     private readonly emit: (event: AgentEvent) => void | Promise<void>,
     private readonly assertCurrent: () => void,

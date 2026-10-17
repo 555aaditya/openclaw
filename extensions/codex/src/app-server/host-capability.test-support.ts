@@ -2,7 +2,7 @@ import {
   createOpenClawCodingTools,
   resolveWebSearchToolPolicy,
 } from "openclaw/plugin-sdk/agent-harness";
-import type { EmbeddedRunAttemptParamsV2 as EmbeddedRunAttemptParams } from "openclaw/plugin-sdk/agent-harness-runtime";
+import type { EmbeddedRunAttemptParamsV3 as EmbeddedRunAttemptParams } from "openclaw/plugin-sdk/agent-harness-runtime";
 
 type ToolsFactory = typeof createOpenClawCodingTools;
 type HostCapabilities = EmbeddedRunAttemptParams["hostCapabilities"];
@@ -33,7 +33,7 @@ export function createCodexTestHostCapabilities(
 ): HostCapabilities {
   const host: HostCapabilities = Object.freeze({
     kind: "agent-harness-host-capability",
-    version: 1,
+    version: 2,
     assertActive: () => {},
     retainSourceAuthority: () => undefined,
     bindModelExecution: () => ({
