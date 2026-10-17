@@ -84,7 +84,7 @@ it.each(["allowed", "revoked", "replaced"] as const)(
                 decisionModel: `levanto/levanto-sage@${profileId}`,
                 workspace: state.workspaceDir,
               },
-              list: [{ id: agentId, default: true }],
+              entries: { [agentId]: {} },
             },
             models: {
               providers: {
