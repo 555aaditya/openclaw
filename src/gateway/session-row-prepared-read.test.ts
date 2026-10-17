@@ -127,8 +127,8 @@ async function withPendingStartupInspection(
   });
 }
 
-it("waits for a new session's agent before dispatching its initial message", async () => {
-  await withPendingStartupInspection(async ({ context, client, complete }) => {
+it("refuses a new session's initial message without retaining a startup write", async () => {
+  await withPendingStartupInspection(async ({ context, client, complete, admission }) => {
     const handler = vi.fn<GatewayRequestHandler>(({ respond }) => {
       assertAgentDatabaseAdmitted("main");
       respond(true, { message: "accepted" });
@@ -147,62 +147,48 @@ it("waits for a new session's agent before dispatching its initial message", asy
       isWebchatConnect: () => false,
       extraHandlers: { "sessions.create": handler },
     });
-    await vi.advanceTimersByTimeAsync(0);
-    expect(handler).not.toHaveBeenCalled();
-    expect(respond).not.toHaveBeenCalled();
-    complete();
     await request;
-    expect(respond).toHaveBeenCalledExactlyOnceWith(true, { message: "accepted" });
+    expect(handler).not.toHaveBeenCalled();
+    expect(respond).toHaveBeenCalledExactlyOnceWith(
+      false,
+      undefined,
+      expect.objectContaining({
+        code: "UNAVAILABLE",
+        retryable: true,
+        details: { reason: "startup-sidecars", method: "sessions.create" },
+      }),
+    );
+    complete();
+    await admission.pendingPreparation;
+    expect(handler).not.toHaveBeenCalled();
+    expect(respond).toHaveBeenCalledOnce();
   });
 });
 
-it.each(["before", "during"] as const)(
-  "refuses an inspection that fails %s the write",
+it.each(["before", "after refusal"] as const)(
+  "preserves terminal inspection failure %s write authorization",
   async (when) => {
     await withPendingStartupInspection(async ({ request, fail, admission }) => {
-      if (when === "before") {
-        fail(new Error("synthetic failed inspection"));
-        await admission.pendingPreparation;
+      const authorize = () =>
+        authorizeGatewayRequestPreDispatch({
+          ...request,
+          method: "sessions.send",
+          requestParams: { key: "agent:main:startup", message: "hello" },
+        });
+      if (when === "after refusal") {
+        await expect(authorize()).resolves.toMatchObject({
+          error: { code: "UNAVAILABLE", retryable: true },
+        });
       }
-      const writing = authorizeGatewayRequestPreDispatch({
-        ...request,
-        method: "sessions.send",
-        requestParams: { key: "agent:main:startup", message: "hello" },
-      });
-      if (when === "during") {
-        await vi.advanceTimersByTimeAsync(0);
-        fail(new Error("synthetic failed inspection"));
-      }
-      await expect(writing).resolves.toMatchObject({
+      fail(new Error("synthetic failed inspection"));
+      await admission.pendingPreparation;
+      await expect(authorize()).resolves.toMatchObject({
         error: {
           code: "UNAVAILABLE",
           message: expect.stringContaining("synthetic failed inspection"),
           retryable: false,
         },
       });
-    });
-  },
-);
-
-it.each(["request", "connection"] as const)(
-  "cancels a startup write wait when its %s aborts",
-  async (source) => {
-    await withPendingStartupInspection(async ({ request, client, admission }) => {
-      const controller = new AbortController();
-      if (source === "connection") {
-        client.connectionSignal = controller.signal;
-      }
-      const writing = authorizeGatewayRequestPreDispatch({
-        ...request,
-        method: "sessions.create",
-        requestParams: { agentId: "main", message: "hello" },
-        ...(source === "request" ? { signal: controller.signal } : {}),
-      });
-      const cancelled = expect(writing).rejects.toMatchObject({ name: "AbortError" });
-      await vi.advanceTimersByTimeAsync(0);
-      controller.abort();
-      await cancelled;
-      expect(admission.signal.aborted).toBe(false);
     });
   },
 );
@@ -223,72 +209,42 @@ it("admits an unrelated agent's write while startup preparation continues", asyn
   });
 });
 
-it("waits for a logical agent's physical shared-store owner before write authorization", async () => {
-  await withPendingStartupInspection(async ({ request, context, databasePath, complete }) => {
-    const sharedConfig: OpenClawConfig = {
-      agents: {
-        ownership: "explicit",
-        entries: { main: {}, ops: {} },
-        defaults: { sessionStore: { agentId: "ops" } },
-      },
-      session: { scope: "global", store: databasePath },
-    };
-    context.getRuntimeConfig = () => sharedConfig;
-    vi.spyOn(sqliteTarget, "prepareSqliteTargetFromSessionStorePath").mockResolvedValue({
-      agentId: "main",
-      path: databasePath,
-      shared: true,
-    });
-    let settled = false;
-    const writing = authorizeGatewayRequestPreDispatch({
-      ...request,
-      method: "sessions.create",
-      requestParams: { agentId: "ops", message: "hello" },
-    }).then((result) => {
-      settled = true;
-      return result;
-    });
-    await vi.advanceTimersByTimeAsync(0);
-    expect(settled).toBe(false);
-    expect(() => assertAgentDatabaseAdmitted("ops")).not.toThrow();
-    complete();
-    await expect(writing).resolves.toMatchObject({ error: null });
-  });
-});
-
-it("bounds a pending agent's write wait without cancelling startup preparation", async () => {
-  await withPendingStartupInspection(async ({ request, admission }) => {
-    const writing = authorizeGatewayRequestPreDispatch({
-      ...request,
-      method: "sessions.create",
-      requestParams: { agentId: "main", message: "hello" },
-    });
-    await vi.advanceTimersByTimeAsync(360_000);
-    await expect(writing).resolves.toMatchObject({
-      error: {
-        code: "UNAVAILABLE",
-        retryable: true,
-        details: { code: "agent-database-inspection-pending" },
-      },
-    });
-    expect(admission.signal.aborted).toBe(false);
-  });
-});
-
-it("settles a startup write wait when the Gateway stops", async () => {
-  await withPendingStartupInspection(async ({ request, admission, complete }) => {
-    const writing = authorizeGatewayRequestPreDispatch({
-      ...request,
-      method: "sessions.create",
-      requestParams: { agentId: "main", message: "hello" },
-    });
-    const stopped = expect(writing).rejects.toMatchObject({ name: "AbortError" });
-    await vi.advanceTimersByTimeAsync(0);
-    const stopping = admission.stop();
-    await stopped;
-    complete();
-    await stopping;
-  });
+it("refuses a write while its logical agent's physical shared-store owner is pending", async () => {
+  await withPendingStartupInspection(
+    async ({ request, context, databasePath, complete, admission }) => {
+      const sharedConfig: OpenClawConfig = {
+        agents: {
+          ownership: "explicit",
+          entries: { main: {}, ops: {} },
+          defaults: { sessionStore: { agentId: "ops" } },
+        },
+        session: { scope: "global", store: databasePath },
+      };
+      context.getRuntimeConfig = () => sharedConfig;
+      vi.spyOn(sqliteTarget, "prepareSqliteTargetFromSessionStorePath").mockResolvedValue({
+        agentId: "main",
+        path: databasePath,
+        shared: true,
+      });
+      const authorize = () =>
+        authorizeGatewayRequestPreDispatch({
+          ...request,
+          method: "sessions.create",
+          requestParams: { agentId: "ops", message: "hello" },
+        });
+      await expect(authorize()).resolves.toMatchObject({
+        error: {
+          code: "UNAVAILABLE",
+          retryable: true,
+          details: { reason: "startup-sidecars", method: "sessions.create" },
+        },
+      });
+      expect(() => assertAgentDatabaseAdmitted("ops")).not.toThrow();
+      complete();
+      await admission.pendingPreparation;
+      await expect(authorize()).resolves.toMatchObject({ error: null });
+    },
+  );
 });
 
 it.each([
