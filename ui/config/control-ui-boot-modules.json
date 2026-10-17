@@ -1677,6 +1677,7 @@
   "ui/src/pages/chat/chat-send-presentation.ts",
   "ui/src/pages/chat/chat-send-submit.ts",
   "ui/src/pages/chat/chat-session-companion.ts",
+  "ui/src/pages/chat/chat-session-presentation-projection.ts",
   "ui/src/pages/chat/chat-sessions-yield.ts",
   "ui/src/pages/chat/chat-spawned-subagent.ts",
   "ui/src/pages/chat/chat-state-controller.ts",
