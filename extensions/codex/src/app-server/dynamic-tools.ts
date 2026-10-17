@@ -28,7 +28,6 @@ import {
   type MessagingToolSend,
 } from "openclaw/plugin-sdk/agent-harness-runtime";
 import {
-  applyGatewayToolPolicy,
   collectAgentHarnessMessagingMediaUrls,
   copyInternalToolResultState,
   createAgentHarnessToolExecutionBoundaryRegistry,
@@ -170,9 +169,7 @@ export function createCodexDynamicToolBridge(params: {
     params.hookContext,
   );
   const registeredProjection = params.registeredTools
-    ? projectCodexDynamicTools(
-        applyGatewayToolPolicy([...params.registeredTools], params.hookContext?.config),
-      )
+    ? projectCodexDynamicTools(params.registeredTools, { config: params.hookContext?.config })
     : availableProjection;
   // Supervised thread declarations are native-owned and fingerprinted. Narrow
   // executors below, but never rewrite the catalog checked by thread-lifecycle-run.

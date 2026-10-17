@@ -4,7 +4,6 @@ import {
   type AnyAgentTool,
   wrapToolWithBeforeToolCallHook,
 } from "openclaw/plugin-sdk/agent-harness-runtime";
-import { applyGatewayToolPolicy } from "openclaw/plugin-sdk/agent-harness-tool-runtime";
 import {
   projectCodexDynamicTools,
   type CodexDynamicToolSchemaQuarantine,
@@ -22,9 +21,9 @@ export function projectCodexExecutableDynamicToolSurface(
   tools: ProjectedCodexDynamicTool<AnyAgentTool>[];
   quarantinedTools: CodexDynamicToolSchemaQuarantine[];
 } {
-  const { tools: projectedTools, quarantinedTools } = projectCodexDynamicTools(
-    applyGatewayToolPolicy([...tools], hookContext?.config),
-  );
+  const { tools: projectedTools, quarantinedTools } = projectCodexDynamicTools(tools, {
+    config: hookContext?.config,
+  });
   const wrappedTools: ProjectedCodexDynamicTool<AnyAgentTool>[] = [];
   for (const entry of projectedTools) {
     try {
