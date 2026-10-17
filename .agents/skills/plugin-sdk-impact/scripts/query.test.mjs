@@ -45,7 +45,7 @@ async function bundledFixture(t, unnamed = false) {
     if (!unnamed || pluginId !== "local") {
       await writeFile(
         path.join(root, relativeRoot, "package.json"),
-        JSON.stringify({ name: packageName }),
+        JSON.stringify({ name: packageName, openclaw: { extensions: ["./index.ts"] } }),
       );
     }
     plugins.push({
@@ -89,7 +89,10 @@ async function bundledFixture(t, unnamed = false) {
     "-qm",
     "fixture",
   ]);
-  const { source } = await captureSource(root);
+  const { source, plugins: metadata } = await captureSource(root);
+  for (const [index, item] of plugins.entries()) {
+    Object.assign(item, metadata[index]);
+  }
   const report = {
     schemaVersion: 1,
     traversalComplete: true,
@@ -517,6 +520,10 @@ test("manifest-only bundled plugins preserve consumers without inventing exact c
   );
   assert.equal(code, 0, JSON.stringify(report));
   assert.equal(report.bundled.distinctPlugins, 1);
+  assert.equal(report.bundled.coverage.complete, 1);
+  assert.equal(report.bundled.coverage.partial, 1);
+  assert.equal(report.bundled.gaps[0].status, "partial");
+  assert.match(report.bundled.gaps[0].error, /implicit host entrypoint/);
   assert.equal(report.combined.distinctPlugins, null);
   assert.deepEqual(report.combined.distinctPluginBounds, { min: 1, max: 2 });
   assert.equal(report.combined.observedPluginIdentities, 2);

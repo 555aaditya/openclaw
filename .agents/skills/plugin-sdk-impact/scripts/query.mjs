@@ -133,7 +133,13 @@ async function bundledUsage(file, key, exampleLimit) {
       ["complete", "partial"].includes(inventory.status) &&
       Array.isArray(inventory.entries) &&
       Array.isArray(inventory.unknowns);
-    const status = compatible ? inventory.status : inventory ? "incompatible" : "failed";
+    const status = compatible
+      ? plugin.error
+        ? "partial"
+        : inventory.status
+      : inventory
+        ? "incompatible"
+        : "failed";
     coverage[status] += 1;
     const unknownCount = compatible ? inventory.unknowns.length : 0;
     coverage.unresolvedReferences += unknownCount;

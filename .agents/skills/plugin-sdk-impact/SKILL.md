@@ -34,8 +34,10 @@ particular behavior. Keep the approval and deprecation rules in
    another. It discovers `extensions/*/openclaw.plugin.json`, never executes
    plugin code, and records the commit, input fingerprint, Inspector version,
    every plugin, and incomplete analyses. A failed or timed-out scan remains a
-   gap; an interrupted corpus scan cannot be used as a finished inventory. Reuse the report for multiple queries while its source
-   remains unchanged. A changed commit, plugin roster, or uncommitted source
+   gap. Plugins without declared entrypoints also remain coverage gaps, because
+   Inspector may miss implicit entrypoints. An interrupted corpus scan cannot be
+   used as a finished inventory. Reuse the report for multiple queries while its
+   source remains unchanged. A changed commit, plugin roster, or uncommitted source
    invalidates it; rescan instead of editing the receipt.
 
 3. Query each canonical key with both sources:
