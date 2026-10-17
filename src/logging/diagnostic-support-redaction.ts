@@ -51,6 +51,8 @@ const TRUNCATED_SUPPORT_FIELD = "<truncated>";
 export type SupportRedactionContext = {
   env: NodeJS.ProcessEnv;
   stateDir: string;
+  /** Shared only within one export; raw identifiers and their mapping never leave memory. */
+  identifierKeys?: Map<string, string>;
 };
 
 type RedactSupportStringOptions = {
@@ -89,9 +91,22 @@ function sanitizeSecretRefForSupport(value: Record<string, unknown>): Record<str
   return sanitized;
 }
 
-function privateMapEntryLabel(key: string): string {
-  const normalized = key.toLowerCase();
-  return normalized.endsWith("s") ? normalized.slice(0, -1) : normalized;
+function sanitizeSupportKey(
+  key: string,
+  redaction: SupportRedactionContext,
+  privateMap: boolean,
+): string {
+  // Reserve the placeholder namespace so literal keys cannot overwrite redacted entries.
+  if (!privateMap && !key.startsWith("<identifier#") && redactTextForSupport(key) === key) {
+    return key;
+  }
+  const identifiers = (redaction.identifierKeys ??= new Map<string, string>());
+  let placeholder = identifiers.get(key);
+  if (placeholder === undefined) {
+    placeholder = `<identifier#${identifiers.size + 1}>`;
+    identifiers.set(key, placeholder);
+  }
+  return placeholder;
 }
 
 function createSupportRecord(): Record<string, unknown> {
@@ -645,16 +660,9 @@ function sanitizeSupportValue(
     return { count: countOwnObjectEntries(record) };
   }
   const sanitized = createSupportRecord();
-  let privateEntryIndex = 0;
-  const redactEntryKeys = config && privateMap;
-  const privateEntryLabel = redactEntryKeys ? privateMapEntryLabel(key) : "";
   const { count, entries } = limitedSupportObjectEntries(record);
   for (const { key: entryKey, value: entryValue } of entries) {
-    let outputKey = entryKey;
-    if (redactEntryKeys) {
-      privateEntryIndex += 1;
-      outputKey = `<redacted-${privateEntryLabel}-${privateEntryIndex}>`;
-    }
+    const outputKey = sanitizeSupportKey(entryKey, redaction, privateMap);
     sanitized[outputKey] =
       !config && isPrivateSupportField(entryKey)
         ? "<redacted>"
