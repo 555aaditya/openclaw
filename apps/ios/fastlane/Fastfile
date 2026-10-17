@@ -203,6 +203,7 @@ end
 
 def available_simulator_devices
   stdout, stderr, status = Open3.capture3("xcrun", "simctl", "list", "devices", "available", "--json")
+  yield({ "stdout" => stdout, "stderr" => stderr, "exitStatus" => status.exitstatus }) if block_given?
   unless status.success?
     detail = stderr.to_s.strip
     detail = stdout.to_s.strip if detail.empty?
@@ -216,14 +217,18 @@ rescue JSON::ParserError => e
   UI.user_error!("Invalid JSON from simctl device list: #{e.message}")
 end
 
-def resolve_simulator_device(name)
-  devices = available_simulator_devices
+def resolve_simulator_device(name, diagnostics: nil)
+  selection = nil
+  devices = available_simulator_devices { |result| selection = result }
   exact = devices.find { |device| device["name"] == name }
   return exact if exact
 
   watch_devices = devices.select { |device| device["name"].to_s.include?("Apple Watch") }
   fallback = watch_devices.find { |device| device["name"].to_s.include?("Ultra") } || watch_devices.first
-  UI.user_error!("No available Apple Watch simulators found.") unless fallback
+  unless fallback
+    diagnostics&.simulator_selection_failure(name, selection)
+    UI.user_error!("No available Apple Watch simulators found.")
+  end
 
   UI.important("Apple Watch simulator '#{name}' was not found; using '#{fallback.fetch("name")}'.")
   fallback
@@ -519,7 +524,7 @@ def build_watch_screenshot_app
 end
 
 def capture_watch_screenshot(diagnostics: nil)
-  device = resolve_simulator_device(watch_snapshot_device)
+  device = resolve_simulator_device(watch_snapshot_device, diagnostics: diagnostics)
   device_name = device.fetch("name")
   output_dir = File.join(ios_root, "fastlane", "screenshots", "en-US")
   output_path = File.join(output_dir, "#{device_name}-01-now-face.png")
@@ -2360,7 +2365,7 @@ platform :ios do
       end || UI.user_error!("Screenshot simulator '#{name}' is unavailable.")
     end
     # Check every requested family before spending a build and eight captures on iOS.
-    resolve_simulator_device(watch_snapshot_device) unless ENV["OPENCLAW_SNAPSHOT_SKIP_WATCH"] == "1"
+    resolve_simulator_device(watch_snapshot_device, diagnostics: diagnostics) unless ENV["OPENCLAW_SNAPSHOT_SKIP_WATCH"] == "1"
     require_idle_screenshot_simulators!
     screenshot_phase(diagnostics, "build") do
       run_screenshot_xcodebuild!(

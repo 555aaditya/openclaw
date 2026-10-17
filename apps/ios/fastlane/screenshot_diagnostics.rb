@@ -35,6 +35,23 @@ class ScreenshotDiagnostics
     end
   end
 
+  # The runner can lose a runtime after startup inventory. Preserve the exact
+  # failed selection before observing current simulator and developer state.
+  def simulator_selection_failure(name, selection)
+    @events << {
+      "phase" => "simulator-selection", "deviceName" => name, "outcome" => "failed",
+      "startedAt" => Time.now.utc.iso8601,
+      "selection" => selection,
+      "developerDir" => ENV["DEVELOPER_DIR"],
+      "xcodePath" => command("/usr/bin/xcode-select", "-p").strip,
+      "simctlPath" => command("xcrun", "--find", "simctl").strip,
+      "devices" => command("xcrun", "simctl", "list", "devices", "--json"),
+      "runtimes" => command("xcrun", "simctl", "list", "runtimes", "--json"),
+      "runtimeImages" => command("xcrun", "simctl", "runtime", "list", "--json")
+    }
+    persist
+  end
+
   private
 
   def persist
