@@ -468,7 +468,8 @@ async function appendExactAssistantMessageWithSource(
     sessionKey: normalizedKey,
     storePath,
   };
-  if (isRedundantDeliveryMirror(params.message) && !explicitIdempotencyKey) {
+  const deduplicateMirror = isRedundantDeliveryMirror(params.message) && !explicitIdempotencyKey;
+  if (deduplicateMirror) {
     // Reconciliation needs the writer queue. Wait before entering it, then
     // read the current projected tail again inside the guarded append.
     await waitForSessionTranscriptProjection(target);
@@ -527,19 +528,20 @@ async function appendExactAssistantMessageWithSource(
               },
             }
           : {}),
-        shouldAppend: async (appendTarget) => {
-          const messageId =
-            isRedundantDeliveryMirror(params.message) && !explicitIdempotencyKey
-              ? await findLatestEquivalentAssistantMessageId(
+        ...(deduplicateMirror
+          ? {
+              shouldAppend: async (appendTarget: SessionTranscriptTurnWriteContext) => {
+                const messageId = await findLatestEquivalentAssistantMessageId(
                   appendTarget,
                   preparedUnkeyedMessage as SessionTranscriptAssistantMessage,
-                )
-              : undefined;
-          equivalentAssistant = messageId
-            ? { messageId, assertCurrent: captureOwnedTranscriptWriteAssertion(appendTarget) }
-            : undefined;
-          return !equivalentAssistant;
-        },
+                );
+                equivalentAssistant = messageId
+                  ? { messageId, assertCurrent: captureOwnedTranscriptWriteAssertion(appendTarget) }
+                  : undefined;
+                return !equivalentAssistant;
+              },
+            }
+          : {}),
       },
     ],
   });
