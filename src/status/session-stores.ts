@@ -1,5 +1,6 @@
 import { performance } from "node:perf_hooks";
 import { setImmediate as yieldToEventLoop } from "node:timers/promises";
+import { WorkerTaskError } from "@openclaw/worker-runtime";
 import { resolveSessionStorePathCore } from "../config/sessions/paths.js";
 import { withSessionStoreReaderInWorker } from "../config/sessions/session-entry-read-runtime.js";
 import type { SessionHistoryWorkerDatabase } from "../config/sessions/session-transcript-worker.types.js";
@@ -7,6 +8,7 @@ import { captureSessionTranscriptStorageEnvironment } from "../config/sessions/t
 import type { OpenClawConfig } from "../config/types.js";
 import type { listGatewayAgentsBasic } from "../gateway/agent-list.js";
 import type { SessionRowProjection } from "../gateway/session-row-projection.js";
+import { AgentDatabaseExecutionAdmissionClosedError } from "../state/agent-database-admission-error.js";
 import {
   AgentDatabaseAdmissionError,
   readAgentDatabaseAdmissionRefusal,
@@ -85,28 +87,27 @@ function createStatusSessionStoreReader(
   options: SessionStoreReadOptions = {},
 ) {
   const env = captureSessionTranscriptStorageEnvironment(process.env);
-  const stores = new Map<
-    string,
-    SessionStoreSummary & { path: string; readBy: Set<string | undefined> }
-  >();
+  const stores = new Map<string, SessionStoreSummary & { path: string }>();
   const statePath = resolveOpenClawStateSqlitePath(env);
   const readStatus = (agentId: string) =>
     getOrLoadAgentDeletionJournalStatus(statePath, agentId, () => undefined);
-  const isDeleted = (agentId?: string) => {
-    if (!agentId) {
-      return false;
-    }
-    const status = readStatus(agentId);
-    const discovery = getPreparedAgentDeletionDiscovery(statePath);
-    return (
-      status === "pending" ||
-      status === "complete" ||
-      (discovery?.status === "present" &&
-        discovery.entries.some((entry) => entry.agentId === agentId))
-    );
-  };
   let sliceStartedAt = performance.now();
-  const storeReader = {
+  return {
+    stores,
+    readDeletedAgents(contributors: Iterable<string>) {
+      const discovery = getPreparedAgentDeletionDiscovery(statePath);
+      const deleted = new Set(
+        discovery?.status === "present" ? discovery.entries.map(({ agentId }) => agentId) : [],
+      );
+      for (const agentId of contributors) {
+        const status = readStatus(agentId);
+        if (status === "pending" || status === "complete") {
+          deleted.add(agentId);
+        }
+      }
+      return deleted;
+    },
+
     async read(storePath: string, agentId?: string) {
       const projection = options.projection;
       if (projection) {
@@ -125,16 +126,10 @@ function createStatusSessionStoreReader(
           const selected = paths.map((path) => {
             let store = stores.get(path);
             if (!store) {
-              let snapshot: SessionStoreSummary;
-              try {
-                snapshot = summarizeProjectionRows(projection, path, agentIds, recentLimit);
-              } catch (error) {
-                if (!options.recoverReadError) {
-                  throw error;
-                }
-                snapshot = options.recoverReadError(error);
-              }
-              store = { ...snapshot, path, readBy: new Set<string | undefined>() };
+              store = {
+                ...summarizeProjectionRows(projection, path, agentIds, recentLimit),
+                path,
+              };
             }
             return store;
           });
@@ -156,7 +151,6 @@ function createStatusSessionStoreReader(
             return { path: summary.path, count: 0, recent: [] };
           }
           for (const store of selected) {
-            store.readBy.add(agentId);
             stores.set(store.path, store);
           }
           return summary;
@@ -204,45 +198,14 @@ function createStatusSessionStoreReader(
             if (agentId && readAgentDatabaseAdmissionRefusal(agentId, { env })) {
               return { path, count: 0, recent: [] };
             }
-            store = { ...summary, path, readBy: new Set<string | undefined>() };
+            store = { ...summary, path };
             stores.set(database.path, store);
           }
-          store.readBy.add(agentId);
           const summary = agentId ? store.byAgent.get(agentId) : store;
           return { path, count: summary?.count ?? 0, recent: summary?.recent ?? [] };
         },
         { backing: true, dataOnly: true, logical: {} },
       );
-    },
-  };
-  return {
-    stores,
-    readDeletedAgents(contributors: Set<string>) {
-      const discovery = getPreparedAgentDeletionDiscovery(statePath);
-      const deleted = new Set(
-        discovery?.status === "present" ? discovery.entries.map(({ agentId }) => agentId) : [],
-      );
-      for (const agentId of contributors) {
-        const status = readStatus(agentId);
-        if (status === "pending" || status === "complete") {
-          deleted.add(agentId);
-        }
-      }
-      return deleted;
-    },
-    async read(storePath: string, agentId?: string) {
-      // Journal commits precede resource closure; stale rosters must not reopen that agent.
-      if (isDeleted(agentId)) {
-        return undefined;
-      }
-      try {
-        return await storeReader.read(storePath, agentId);
-      } catch (error) {
-        if (!isDeleted(agentId)) {
-          throw error;
-        }
-        return undefined;
-      }
     },
   };
 }
@@ -263,12 +226,20 @@ export async function prepareStatusSessionStores<Agent extends { id: string; nam
     { agent: Agent; path: string } & Pick<SessionStoreSummary, "count" | "recent">
   > = [];
   for (const agent of agents) {
-    const summary = await reader.read(
-      resolveSessionStorePathCore(cfg.session?.store, { agentId: agent.id }),
-      agent.id,
-    );
-    if (summary) {
+    try {
+      const summary = await reader.read(
+        resolveSessionStorePathCore(cfg.session?.store, { agentId: agent.id }),
+        agent.id,
+      );
       byAgent.push({ agent, ...summary });
+    } catch (error) {
+      // Only lifecycle interruption of a committed deletion is recoverable here.
+      const interrupted =
+        error instanceof AgentDatabaseExecutionAdmissionClosedError ||
+        (error instanceof WorkerTaskError && error.code === "unavailable");
+      if (!interrupted || !reader.readDeletedAgents([agent.id]).has(agent.id)) {
+        throw error;
+      }
     }
   }
   if (agents.length === 0 && options.fallbackToUnscopedStore) {
@@ -285,21 +256,17 @@ export async function prepareStatusSessionStores<Agent extends { id: string; nam
     ),
     publish() {
       const deleted = reader.readDeletedAgents(contributors);
-      const stores = snapshots
-        .filter((store) =>
-          [...store.readBy].some((agentId) => agentId === undefined || !deleted.has(agentId)),
-        )
-        .map((store) => {
-          const namespaces = [...store.byAgent].filter(([agentId]) => !deleted.has(agentId));
-          return {
-            path: store.path,
-            count: namespaces.reduce((count, [, namespace]) => count + namespace.count, 0),
-            recent: namespaces
-              .flatMap(([, namespace]) => namespace.recent)
-              .toSorted(compareSessionRows)
-              .slice(0, recentLimit),
-          };
-        });
+      const stores = snapshots.map((store) => {
+        const namespaces = [...store.byAgent].filter(([agentId]) => !deleted.has(agentId));
+        return {
+          path: store.path,
+          count: namespaces.reduce((count, [, namespace]) => count + namespace.count, 0),
+          recent: namespaces
+            .flatMap(([, namespace]) => namespace.recent)
+            .toSorted(compareSessionRows)
+            .slice(0, recentLimit),
+        };
+      });
       return {
         paths: stores.map((store) => store.path),
         count: stores.reduce((count, store) => count + store.count, 0),
@@ -315,14 +282,4 @@ export async function prepareStatusSessionStores<Agent extends { id: string; nam
       };
     },
   };
-}
-
-/** Standalone readers publish immediately; composing owners retain preparation through their awaits. */
-export async function readStatusSessionStores<Agent extends { id: string; name?: string }>(
-  cfg: OpenClawConfig,
-  agents: readonly Agent[],
-  recentLimit: number,
-  projection?: SessionRowProjection,
-) {
-  return (await prepareStatusSessionStores(cfg, agents, recentLimit, { projection })).publish();
 }

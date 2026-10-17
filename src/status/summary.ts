@@ -115,9 +115,6 @@ async function prepareSessionStatusDetails(
   } = await loadStatusSummaryRuntimeModule();
   // Read runtime metadata once for every displayed row, including overlapping windows.
   const metadata = await readSessionRuntimeMetadata(cfg, candidates);
-  const metadataByCandidate = new Map(
-    candidates.map((candidate, index) => [candidate, metadata[index] ?? null]),
-  );
   const resolveModelContext = await createStatusModelContextResolver(cfg);
 
   const resolved = resolveConfiguredStatusModelRef({
@@ -145,7 +142,7 @@ async function prepareSessionStatusDetails(
   // Project each candidate once; agent and aggregate windows only select these facts.
   const sessionRows = new Map<SessionEntrySummary, SessionStatus>();
   await Promise.all(
-    candidates.map(async (candidate) => {
+    candidates.map(async (candidate, index) => {
       const { sessionKey: key, entry } = candidate;
       const agentId = parseAgentSessionKey(key)?.agentId;
       const updatedAt = entry.updatedAt ?? null;
@@ -205,7 +202,7 @@ async function prepareSessionStatusDetails(
         model: lookupModelId,
         agentId,
         sessionKey: key,
-        acpMeta: metadataByCandidate.get(candidate) ?? null,
+        acpMeta: metadata[index] ?? null,
       });
       const modelContext = await resolveModelContext(
         lookupModel.provider,
@@ -469,6 +466,11 @@ export async function prepareStatusSummary(
       ).inspectHostDesktop({ config: cfg.desktop?.host })
     ).status;
   const secretEgressProxy = await getSecretEgressCertificateStatus();
+  const databaseStores = options.includeCliProjection
+    ? (
+        await import("../infra/database-engine/admitted-diagnostics.js")
+      ).describeAdmittedDatabaseStores(cfg)
+    : undefined;
   return {
     publish() {
       const publishedStores = sessionStores.publish();
@@ -510,6 +512,13 @@ export async function prepareStatusSummary(
         sessionStores: publishedStores,
         summary: {
           runtimeVersion: resolveRuntimeServiceVersion(process.env),
+          ...(databaseStores
+            ? {
+                databaseStores: includeSensitive
+                  ? databaseStores
+                  : databaseStores.map((store) => Object.assign({}, store, { path: null })),
+              }
+            : {}),
           ...(options.includeCliProjection
             ? { cliProjection: buildStatusCliProjection(cfg, publishedAgentList) }
             : {}),

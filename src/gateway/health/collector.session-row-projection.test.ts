@@ -16,7 +16,7 @@ import { sessionChanges } from "../../sessions/session-row-changes.js";
 import { closeOpenClawAgentDatabaseByPathAsync } from "../../state/openclaw-agent-db-lifecycle.js";
 import { registerOpenClawAgentDatabaseAsyncResource } from "../../state/openclaw-agent-db-resources.js";
 import { resolveOpenClawAgentSqlitePath } from "../../state/openclaw-agent-db.paths.js";
-import { readStatusSessionStores } from "../../status/session-stores.js";
+import { prepareStatusSessionStores } from "../../status/session-stores.js";
 import { beginAgentDeletionJournal } from "../../test-utils/agent-deletion-journal.js";
 import { observeMainThreadReads } from "../../test-utils/main-thread-sql-spies.test-support.js";
 import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
@@ -40,6 +40,15 @@ async function settleProjection(projection: SessionRowProjection) {
   do {
     await projection.ensureMaterialized();
   } while (projection.needsMaterialization);
+}
+
+async function readStatusSessionStores(
+  cfg: OpenClawConfig,
+  agents: { id: string }[],
+  recentLimit: number,
+  projection: SessionRowProjection,
+) {
+  return (await prepareStatusSessionStores(cfg, agents, recentLimit, { projection })).publish();
 }
 
 describe("health agent summaries heartbeat roster", () => {

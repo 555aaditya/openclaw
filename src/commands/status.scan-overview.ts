@@ -110,6 +110,7 @@ export type StatusScanOverviewResult = {
         | "childRuntime"
         | "secretEgressProxy"
         | "sqliteWal"
+        | "databaseStores"
       > &
         Partial<Pick<StatusSummary, "heartbeat">>)
     | null;
@@ -290,7 +291,7 @@ export async function collectStatusScanOverview(params: {
                   config: cfg,
                   configPath: snapshot.path,
                   method: "status",
-                  params: { includeChannelSummary: false },
+                  params: { includeChannelSummary: false, includeCliProjection: true },
                   timeoutMs: Math.min(5000, resolveStatusGatewayProbeTimeoutMs(params.opts)),
                   ...gatewaySnapshot.gatewayCallOverrides,
                 }).catch(() => null),
@@ -307,6 +308,7 @@ export async function collectStatusScanOverview(params: {
           ...(params.opts.deep && status.childRuntime ? { childRuntime: status.childRuntime } : {}),
           secretEgressProxy: status.secretEgressProxy,
           sqliteWal: status.sqliteWal,
+          ...(status.databaseStores ? { databaseStores: status.databaseStores } : {}),
           // The Gateway owns route readiness; CLI channel runtimes stay unloaded.
           ...(status.heartbeat ? { heartbeat: status.heartbeat } : {}),
         }
@@ -392,8 +394,9 @@ export async function prepareStatusSummaryFromOverview(params: {
   >;
 }) {
   if (params.overview.skipColdStartNetworkChecks) {
+    const summary: StatusSummary = buildColdStartStatusSummary();
     return {
-      publish: () => ({ summary: buildColdStartStatusSummary(), sessionStores: undefined }),
+      publish: () => ({ summary, sessionStores: undefined }),
     };
   }
   const prepared = await measureCliCommandStartup(

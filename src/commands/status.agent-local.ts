@@ -102,7 +102,7 @@ export async function collectStatusLocalSnapshot(cfg: OpenClawConfig) {
         (sum, s) => sum + (s.bootstrapPending ? 1 : 0),
         0,
       );
-      const agentStatus = {
+      return {
         // The gateway keeps a projected first id for wire compatibility. Local status must
         // preserve the selection state so read-only consumers never treat that id as an owner.
         defaultId,
@@ -112,7 +112,6 @@ export async function collectStatusLocalSnapshot(cfg: OpenClawConfig) {
         totalSessions: published.count,
         bootstrapPendingCount,
       };
-      return agentStatus;
     },
   };
 }

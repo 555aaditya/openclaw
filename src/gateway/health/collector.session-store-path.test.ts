@@ -19,7 +19,7 @@ import {
   closeOpenClawAgentDatabasesAsync,
   closeOpenClawAgentDatabasesForTest,
 } from "../../state/openclaw-agent-db.js";
-import { readStatusSessionStores } from "../../status/session-stores.js";
+import { prepareStatusSessionStores } from "../../status/session-stores.js";
 import { beginAgentDeletionJournal } from "../../test-utils/agent-deletion-journal.js";
 import { closeStateDatabaseForTest } from "../../test-utils/database-cleanup.js";
 import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
@@ -41,6 +41,10 @@ async function summarizeStore(storePath: string, agentId: string) {
   };
   const agents = await buildHealthAgentSummaries(cfg, resolveHealthAgentOrder(cfg));
   return expectDefined(agents[0], "health agent summary").sessions;
+}
+
+async function readStatusSessionStores(...args: Parameters<typeof prepareStatusSessionStores>) {
+  return (await prepareStatusSessionStores(...args)).publish();
 }
 
 describe("health session store paths", () => {
@@ -435,6 +439,74 @@ describe("health session store paths", () => {
             (_, index) => `agent:survivor:${String(index).padStart(2, "0")}`,
           ),
         );
+      });
+    },
+  );
+
+  it.each(["snapshot", "read-error"] as const)(
+    "handles deletion of a shared store's sole configured reader (%s)",
+    async (outcome) => {
+      await withOpenClawTestState({ label: "status-shared-sole-reader" }, async (state) => {
+        const storePath = state.statePath("shared.sqlite");
+        const cfg: OpenClawConfig = {
+          agents: { ownership: "explicit", entries: { deleting: {} } },
+          session: { store: storePath },
+        };
+        setRuntimeConfigSnapshot(cfg);
+        for (const agentId of ["deleting", "survivor"]) {
+          replaceSessionEntrySync(
+            { agentId, sessionKey: `agent:${agentId}:main`, storePath },
+            { sessionId: `${agentId}-session`, updatedAt: 1 },
+          );
+        }
+        const entered = createDeferred();
+        const release = createDeferred();
+        const failure = new Error("invalid session state");
+        const { calls } = spyOnSessionStoreSummaries();
+        calls.mockImplementation(async (read) => {
+          const summary = await read();
+          entered.resolve();
+          await release.promise;
+          if (outcome === "read-error") {
+            throw failure;
+          }
+          return summary;
+        });
+        const pending = readStatusSessionStores(cfg, resolveHealthAgentOrder(cfg).ordered, 10);
+        try {
+          await awaitGateBeforeSettlement(entered.promise, pending, "Summary skipped the store");
+          beginAgentDeletionJournal({
+            agentId: "deleting",
+            operationId: "shared-sole-reader",
+            agentDir: state.agentDir("deleting"),
+            sessionsDir: state.sessionsDir("deleting"),
+            workspaceDir: state.workspaceDir,
+            deleteFiles: true,
+          });
+          release.resolve();
+          if (outcome === "read-error") {
+            await expect(pending).rejects.toBe(failure);
+          } else {
+            const summary = await pending;
+            expect(summary.byAgent).toEqual([]);
+            expect(summary.count).toBe(1);
+            expect(summary.recent.map(({ sessionKey }) => sessionKey)).toEqual([
+              "agent:survivor:main",
+            ]);
+            const refreshed = await readStatusSessionStores(
+              cfg,
+              resolveHealthAgentOrder(cfg).ordered,
+              10,
+            );
+            expect(refreshed.count).toBe(1);
+            expect(refreshed.recent.map(({ sessionKey }) => sessionKey)).toEqual([
+              "agent:survivor:main",
+            ]);
+          }
+        } finally {
+          release.resolve();
+          await pending.catch(() => {});
+        }
       });
     },
   );
