@@ -209,17 +209,6 @@ function resolveRuntimeAuthProfileLoadOptions(
   return { ...options, inheritedAuthDir: mode.agentDir };
 }
 
-function resolvePersistedLoadOptions(
-  options: Pick<LoadAuthProfileStoreOptions, "allowKeychainPrompt" | "database"> | undefined,
-): { allowKeychainPrompt?: boolean; database?: AuthProfileDatabase } {
-  return {
-    ...(options?.allowKeychainPrompt !== undefined
-      ? { allowKeychainPrompt: options.allowKeychainPrompt }
-      : {}),
-    ...(options?.database ? { database: options.database } : {}),
-  };
-}
-
 function loadPersistedAuthProfileStores(
   agentDir?: string,
   database?: AuthProfileDatabase,
@@ -832,10 +821,8 @@ export function createAuthProfileStoreRuntime(
         params.agentDir,
         (database, owner) => {
           const latestStore =
-            loadPersistedAuthProfileStore(params.agentDir, {
-              ...resolvePersistedLoadOptions(params.options),
-              database,
-            }) ?? createEmptyAuthProfileStore();
+            loadPersistedAuthProfileStore(params.agentDir, { database }) ??
+            createEmptyAuthProfileStore();
           let changed = false;
           for (const [profileId, credential] of changedProfiles) {
             const previous = params.store.profiles[profileId];
@@ -1305,7 +1292,6 @@ export function createAuthProfileStoreRuntime(
     getScopedSharedAuthStore,
     resolveRuntimeAuthProfileAgentDir,
     resolveRuntimeAuthProfileLoadOptions,
-    resolvePersistedLoadOptions,
     loadAuthProfileStoreForAgent,
     captureScope,
     withPreparedAuthProfileStoreReads,

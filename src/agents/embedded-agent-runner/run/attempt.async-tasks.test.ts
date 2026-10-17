@@ -79,12 +79,9 @@ describe("waitForCompletionRequiredAsyncTasks", () => {
   it("waits for active cron tasks discovered from native media operations", async () => {
     const task = startTask();
     await expect(wait({ sleep: async () => completeTask(task.taskId, 2) })).resolves.toMatchObject({
-      waitedRunIds: [task.runId],
       timedOutRunIds: [],
-      terminalTasks: [
-        { taskId: task.taskId, status: "succeeded", terminalSummary: "Generated media." },
-      ],
     });
+    expect(task.status).toBe("succeeded");
   });
 
   it.each(["image", "music", "video"])(
@@ -99,12 +96,12 @@ describe("waitForCompletionRequiredAsyncTasks", () => {
             updateMediaGenerationOperation(task.taskId, { completionDelivery: "queued" });
           },
         }),
-      ).resolves.toEqual({ waitedRunIds: [task.runId], timedOutRunIds: [], terminalTasks: [] });
+      ).resolves.toEqual({ timedOutRunIds: [] });
       expect(findMediaGenerationOperation(task.taskId)?.status).toBe("running");
       expect(requiresCompletionRequiredAsyncTaskWait({ sessionKey, toolMetas })).toBe(false);
       await expect(
         wait({ getToolMetas: () => toolMetas, getDeadlineAtMs: () => 0 }),
-      ).resolves.toEqual({ waitedRunIds: [], timedOutRunIds: [], terminalTasks: [] });
+      ).resolves.toEqual({ timedOutRunIds: [] });
     },
   );
 
@@ -112,9 +109,7 @@ describe("waitForCompletionRequiredAsyncTasks", () => {
     startTask("image", "agent:main:parent");
     expect(requiresCompletionRequiredAsyncTaskWait({ sessionKey, toolMetas: [] })).toBe(false);
     await expect(wait({ getDeadlineAtMs: () => 0 })).resolves.toEqual({
-      waitedRunIds: [],
       timedOutRunIds: [],
-      terminalTasks: [],
     });
   });
 
@@ -154,13 +149,10 @@ describe("waitForCompletionRequiredAsyncTasks", () => {
         },
       }),
     ).resolves.toMatchObject({
-      waitedRunIds: [first.runId, "tool:music_generate:run-123"],
       timedOutRunIds: [],
-      terminalTasks: [
-        { taskId: first.taskId, status: "succeeded", terminalSummary: "Generated media." },
-        { taskId: "tool:music_generate:run-123", status: "succeeded" },
-      ],
     });
+    expect(findMediaGenerationOperation(first.taskId)?.status).toBe("succeeded");
+    expect(findMediaGenerationOperation("tool:music_generate:run-123")?.status).toBe("succeeded");
     expect(polls).toBe(2);
   });
 
@@ -187,7 +179,7 @@ describe("waitForCompletionRequiredAsyncTasks", () => {
           }
         },
       }),
-    ).resolves.toMatchObject({ waitedRunIds: [task.runId], timedOutRunIds: [task.runId] });
+    ).resolves.toMatchObject({ timedOutRunIds: [task.runId] });
     expect(now).toBe(startedAt + 1_750);
     expect(polls).toBe(expectedSleeps.length);
     expect(getDeadlineAtMs).toHaveBeenCalledTimes(5);

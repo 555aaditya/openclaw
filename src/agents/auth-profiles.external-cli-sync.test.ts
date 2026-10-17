@@ -46,7 +46,6 @@ describe("external CLI OAuth resolution", () => {
       resolveExternalCliAuthProfiles(store(), {
         providerIds: ["openai", "codex-app-server"],
         profileIds: ["openai:default"],
-        allowKeychainPrompt: false,
       }),
     ).toEqual([]);
     expect(mocks.readCodexCliCredentialsCached).not.toHaveBeenCalled();

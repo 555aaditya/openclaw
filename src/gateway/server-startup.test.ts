@@ -6,12 +6,23 @@ const prepareModelRuntimeSnapshotMock = vi.fn(async (_params: unknown) => ({}));
 const refreshPreparedModelRuntimeSnapshotsMock = vi.fn<
   typeof import("../agents/prepared-model-runtime.js").refreshPreparedModelRuntimeSnapshots
 >(async () => {});
+const collectConfiguredRefs = vi.fn((_config: OpenClawConfig, agentId: string) => [
+  { value: agentId === "main" ? "openai/gpt-5.4" : "anthropic/sonnet-4.6" },
+]);
+const ensureAuthProfileStoreAsync = vi.fn(async () => ({}));
 
 vi.mock("../agents/agent-scope.js", () => ({
   resolveDefaultAgentDir: () => "/tmp/agent",
   resolveAgentWorkspaceDir: () => "/tmp/workspace",
   resolveDefaultAgentId: () => "default",
+  listAgentIds: () => ["main", "secondary"],
+  resolveAgentDir: (_config: OpenClawConfig, agentId: string) => `/tmp/${agentId}`,
 }));
+
+vi.mock("../agents/prepared-model-runtime.configured.js", () => ({
+  collectPreparedModelRuntimeConfiguredRefs: collectConfiguredRefs,
+}));
+vi.mock("../agents/auth-profiles/store-runtime.js", () => ({ ensureAuthProfileStoreAsync }));
 
 vi.mock("../agents/prepared-model-runtime.js", () => ({
   publishPreparedModelRuntimeSnapshot: (params: unknown) => prepareModelRuntimeSnapshotMock(params),
@@ -30,6 +41,8 @@ describe("gateway startup model runtime publication", () => {
   beforeEach(() => {
     prepareModelRuntimeSnapshotMock.mockClear();
     refreshPreparedModelRuntimeSnapshotsMock.mockClear();
+    collectConfiguredRefs.mockClear();
+    ensureAuthProfileStoreAsync.mockClear();
   });
 
   it.each([undefined, "/tmp/explicit-workspace"])(
@@ -89,34 +102,30 @@ describe("gateway startup model runtime publication", () => {
     const initialConfig = { ui: { theme: "light" } } as never;
     const nextConfig = { ui: { theme: "dark" } } as never;
     let currentConfig = initialConfig;
-    const depsReady =
-      createDeferred<NonNullable<Parameters<typeof hydrateConfiguredExternalCliAuth>[0]["deps"]>>();
-    const collectConfiguredRefs = vi.fn((_config: OpenClawConfig, agentId: string) => [
-      { value: agentId === "main" ? "openai/gpt-5.4" : "anthropic/sonnet-4.6" },
-    ]);
-    const hydrate = vi.fn();
-
     const hydration = hydrateConfiguredExternalCliAuth({
       getConfig: () => currentConfig,
       log: { warn: vi.fn() },
-      deps: depsReady.promise,
     } as never);
     currentConfig = nextConfig;
-    depsReady.resolve({
-      listAgentIds: () => ["main", "secondary"],
-      resolveAgentDir: (_config, agentId) => `/tmp/${agentId}`,
-      collectConfiguredRefs,
-      hydrate,
-    });
-
     await expect(hydration).resolves.toBe(nextConfig);
-    expect(hydrate).toHaveBeenCalledTimes(2);
+    expect(ensureAuthProfileStoreAsync).toHaveBeenCalledTimes(2);
     for (const [agentId, provider] of [
       ["main", "openai"],
       ["secondary", "anthropic"],
     ]) {
       expect(collectConfiguredRefs).toHaveBeenCalledWith(nextConfig, agentId);
-      expect(hydrate).toHaveBeenCalledWith(nextConfig, `/tmp/${agentId}`, [provider]);
+      expect(ensureAuthProfileStoreAsync).toHaveBeenCalledWith(`/tmp/${agentId}`, {
+        config: nextConfig,
+        externalCli: {
+          mode: "scoped",
+          config: nextConfig,
+          providerIds: [provider],
+          allowKeychainPrompt: false,
+        },
+        allowKeychainPrompt: false,
+        readOnly: true,
+        syncExternalCli: false,
+      });
     }
     expect(refreshPreparedModelRuntimeSnapshotsMock).not.toHaveBeenCalled();
   });

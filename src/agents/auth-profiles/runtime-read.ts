@@ -56,13 +56,11 @@ export function resolveExternalCliOverlayOptions(
   const config = discovery?.config ?? options?.config;
   if (discovery?.mode === "none") {
     return {
-      allowKeychainPrompt: false,
       ...(config ? { config } : {}),
       externalCliProviderIds: [],
       externalCliProfileIds: [],
     };
   }
-  const allowKeychainPrompt = discovery?.allowKeychainPrompt ?? options?.allowKeychainPrompt;
   const providerIds = !discovery
     ? options?.externalCliProviderIds
     : discovery.mode === "scoped"
@@ -74,7 +72,6 @@ export function resolveExternalCliOverlayOptions(
       ? discovery.profileIds
       : undefined;
   return {
-    ...(allowKeychainPrompt !== undefined ? { allowKeychainPrompt } : {}),
     ...(config ? { config } : {}),
     ...(providerIds ? { externalCliProviderIds: providerIds } : {}),
     ...(profileIds ? { externalCliProfileIds: profileIds } : {}),

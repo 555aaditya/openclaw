@@ -26,7 +26,6 @@ export type WithPreparedExternalAuthProfiles = <T>(
   run: () => Promise<T>,
 ) => Promise<T>;
 export type ExternalCliOverlayOptions = {
-  allowKeychainPrompt?: boolean;
   config?: OpenClawConfig;
   externalCliProviderIds?: Iterable<string>;
   externalCliProfileIds?: Iterable<string>;
@@ -83,7 +82,6 @@ function resolveAllowedExternalCliAuthProfiles(params: {
   const env = params.env ?? process.env;
   const explicitProfileIds = resolveExplicitProfileIds(params.externalCli?.externalCliProfileIds);
   const cliProfiles = externalCliSync.resolveExternalCliAuthProfiles(params.store, {
-    allowKeychainPrompt: params.externalCli?.allowKeychainPrompt,
     ...(params.env ? { env: params.env } : {}),
     providerIds: params.externalCli?.externalCliProviderIds,
     profileIds: explicitProfileIds,

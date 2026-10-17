@@ -47,7 +47,6 @@ describe("createGatewayControlUiRootLifecycle", () => {
     vi.spyOn(fs, "realpathSync").mockImplementation((rootPath) => String(rootPath));
     controlUiAssetsMocks.ensureControlUiAssetsBuilt.mockResolvedValue({
       ok: true,
-      built: false,
       assets: readyAssets(),
     });
     controlUiAssetsMocks.isPackageProvenControlUiRootSync.mockReturnValue(false);
@@ -201,7 +200,7 @@ describe("createGatewayControlUiRootLifecycle", () => {
             started.resolve(options.signal);
             await cleanup.promise;
             options.signal.throwIfAborted();
-            return { ok: true, built: true, assets: readyAssets() };
+            return { ok: true, assets: readyAssets() };
           },
         );
         const work = runWithGatewayIndependentRootWorkAdmission(
@@ -237,7 +236,7 @@ describe("createGatewayControlUiRootLifecycle", () => {
       controlUiAssetsMocks.inspectControlUiRootAssets.mockImplementation((root) =>
         readyAssets(root),
       );
-      return { ok: true, built: true, assets: readyAssets() };
+      return { ok: true, assets: readyAssets() };
     });
     controlUiAssetsMocks.isPackageProvenControlUiRootSync.mockReturnValue(true);
     const { lifecycle } = createLifecycle();
@@ -322,7 +321,7 @@ describe("createGatewayControlUiRootLifecycle", () => {
     let finishBuild: (() => void) | undefined;
     controlUiAssetsMocks.ensureControlUiAssetsBuilt.mockReturnValue(
       new Promise((resolve) => {
-        finishBuild = () => resolve({ ok: true, built: true, assets: readyAssets() });
+        finishBuild = () => resolve({ ok: true, assets: readyAssets() });
       }),
     );
     lifecycle.setEnabled(true);
@@ -351,7 +350,7 @@ describe("createGatewayControlUiRootLifecycle", () => {
     controlUiAssetsMocks.ensureControlUiAssetsBuilt.mockImplementationOnce(
       async () =>
         await new Promise((resolve) => {
-          finishBuild = () => resolve({ ok: true, built: true, assets: readyAssets() });
+          finishBuild = () => resolve({ ok: true, assets: readyAssets() });
         }),
     );
     const { lifecycle, warn } = createLifecycle();

@@ -12,7 +12,6 @@ import {
 import type { AuthProfileStore, OAuthCredential } from "./types.js";
 
 type ExternalCliAuthProfileOptions = {
-  allowKeychainPrompt?: boolean;
   env?: NodeJS.ProcessEnv;
   providerIds?: Iterable<string>;
   profileIds?: Iterable<string>;

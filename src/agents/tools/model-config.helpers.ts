@@ -222,7 +222,6 @@ function overlayExternalCliAuthStoreForProvider(params: {
   authStore: AuthProfileStore;
 }): AuthProfileStore {
   const profiles = resolveExternalCliAuthProfiles(params.authStore, {
-    allowKeychainPrompt: false,
     providerIds: [params.provider],
   });
   if (profiles.length === 0) {

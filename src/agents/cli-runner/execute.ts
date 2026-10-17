@@ -34,7 +34,6 @@ import {
   buildCliLiveOwnerKey,
   restartCliLiveSession,
 } from "./cli-live-session-registry.js";
-import { executeDeps } from "./execute-deps.js";
 import { createCliEventHandlers } from "./execute-events.js";
 import {
   CLAUDE_SELECTED_AUTH_ENV_KEYS,
@@ -55,6 +54,7 @@ import {
   resolvePromptInput,
   resolveSessionIdToSend,
   resolveSystemPromptUsage,
+  writeCliSystemPromptFile,
 } from "./helpers.js";
 import { cliBackendLog, CLI_BACKEND_LOG_OUTPUT_ENV } from "./log.js";
 import { createClaudeCliModelCallDiagnostics } from "./model-call-diagnostics.js";
@@ -161,7 +161,7 @@ export async function executePreparedCliRun(
     (!useResume || backend.systemPromptWhen === "always" || resendSystemPromptForSoftResume);
   const systemPromptFile =
     !nodePlacement && !usePluginOwnedExecution && shouldSendSystemPrompt
-      ? await executeDeps.writeCliSystemPromptFile({ backend, systemPrompt: systemPromptArg })
+      ? await writeCliSystemPromptFile({ backend, systemPrompt: systemPromptArg })
       : undefined;
   const nodeSystemPrompt = nodePlacement && shouldSendSystemPrompt ? systemPromptArg : undefined;
 
@@ -527,7 +527,6 @@ export async function executePreparedCliRun(
         context,
         assertCurrent,
         backend,
-        deps: executeDeps,
         events,
         toolTracking,
         diagnostics,

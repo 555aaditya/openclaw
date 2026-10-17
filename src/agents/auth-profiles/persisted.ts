@@ -37,7 +37,6 @@ import type {
 export { coercePersistedAuthProfileStore, parseAuthProfileCredential } from "./persisted-store.js";
 
 type LoadPersistedAuthProfileStoreOptions = {
-  allowKeychainPrompt?: boolean;
   database?: AuthProfileDatabase;
 };
 

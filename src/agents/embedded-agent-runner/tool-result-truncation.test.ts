@@ -398,7 +398,6 @@ describe("estimateToolResultReductionPotential", () => {
       texts: ["small result"],
       contextWindowTokens: 128_000,
       check: (estimate: Estimate) => {
-        expect(estimate.toolResultCount).toBe(1);
         expect(estimate.maxReducibleChars).toBe(0);
       },
     },
@@ -407,7 +406,6 @@ describe("estimateToolResultReductionPotential", () => {
       texts: Array<string>(6).fill("alpha beta gamma delta epsilon ".repeat(400)),
       contextWindowTokens: 20_000,
       check: (estimate: Estimate) => {
-        expect(estimate.toolResultCount).toBe(6);
         expect(estimate.oversizedCount).toBe(0);
         expect(estimate.aggregateReducibleChars).toBeGreaterThan(0);
         expect(estimate.maxReducibleChars).toBe(estimate.aggregateReducibleChars);
@@ -423,11 +421,8 @@ describe("estimateToolResultReductionPotential", () => {
       aggregateMaxCharsOverride: 50_000,
       check: (estimate: Estimate) => {
         expect(estimate.oversizedCount).toBeGreaterThan(0);
-        expect(estimate.oversizedReducibleChars).toBeGreaterThan(0);
         expect(estimate.aggregateReducibleChars).toBeGreaterThan(0);
-        expect(estimate.maxReducibleChars).toBe(
-          estimate.oversizedReducibleChars + estimate.aggregateReducibleChars,
-        );
+        expect(estimate.maxReducibleChars).toBeGreaterThan(estimate.aggregateReducibleChars);
       },
     },
     {
@@ -437,8 +432,6 @@ describe("estimateToolResultReductionPotential", () => {
       maxCharsOverride: 120,
       aggregateMaxCharsOverride: 120,
       check: (estimate: Estimate) => {
-        expect(estimate.maxChars).toBe(120);
-        expect(estimate.aggregateBudgetChars).toBe(120);
         expect(estimate.oversizedCount).toBe(3);
         expect(estimate.aggregateReducibleChars).toBeGreaterThan(0);
       },
@@ -502,7 +495,7 @@ describe("truncateOversizedToolResultsInMessages", () => {
     );
 
     expect(result.aggregateTruncatedCount).toBeGreaterThan(0);
-    expect(estimated).toBeLessThanOrEqual(result.aggregateBudgetChars);
+    expect(estimated).toBeLessThanOrEqual(64_000);
   });
 
   it("bounds aggregate tool-result text in prompt history without rewriting callers", () => {

@@ -1,14 +1,13 @@
 /** Test doubles and setup for CLI execution supervisor and event seams. */
-import { vi, type Mock } from "vitest";
-import type { enqueueSessionEventForHost } from "../../auto-reply/reply/session-event-handoff.js";
-import type { getProcessSupervisor } from "../../process/supervisor/index.js";
+import { beforeEach, vi, type Mock } from "vitest";
+import * as sessionEventHandoff from "../../auto-reply/reply/session-event-handoff.js";
+import * as supervisorRuntime from "../../process/supervisor/index.js";
 import { withTestRunAdmission } from "../admitted-run-context.test-support.js";
-import { executeDeps } from "./execute-deps.js";
 import type { PreparedCliRunContext } from "./types.js";
 
-type ProcessSupervisor = ReturnType<typeof getProcessSupervisor>;
+type ProcessSupervisor = ReturnType<typeof supervisorRuntime.getProcessSupervisor>;
 type SupervisorSpawnFn = ProcessSupervisor["spawn"];
-type EnqueueSessionEventFn = typeof enqueueSessionEventForHost;
+type EnqueueSessionEventFn = typeof sessionEventHandoff.enqueueSessionEventForHost;
 
 /** Encloses a logical test run, including retries, in the admission preparation normally owns. */
 export function wrapPreparedCliRunWithTestAdmission<Args extends unknown[], T>(
@@ -27,10 +26,6 @@ export function wrapPreparedCliRunWithTestAdmission<Args extends unknown[], T>(
   };
 }
 
-export function setCliRunnerExecuteTestDeps(overrides: Partial<typeof executeDeps>): void {
-  Object.assign(executeDeps, overrides);
-}
-
 export const supervisorSpawnMock = vi.fn<SupervisorSpawnFn>();
 export const enqueueSessionEventMock = vi.fn<EnqueueSessionEventFn>(() => ({
   id: "cli-watchdog-event",
@@ -39,8 +34,8 @@ export const enqueueSessionEventMock = vi.fn<EnqueueSessionEventFn>(() => ({
   settled: Promise.resolve({ status: "completed", executionStarted: true, delivered: false }),
 }));
 
-setCliRunnerExecuteTestDeps({
-  getProcessSupervisor: () => {
+beforeEach(() => {
+  vi.spyOn(supervisorRuntime, "getProcessSupervisor").mockImplementation(() => {
     const activeRuns = new Map<string, Awaited<ReturnType<SupervisorSpawnFn>>>();
     return {
       acquireScopeCleanup: vi.fn(() => {
@@ -102,14 +97,18 @@ setCliRunnerExecuteTestDeps({
       }),
       cancelScope: vi.fn(),
     };
-  },
-  captureSessionEventTarget: async (agentId, sessionKey) => ({
-    agentId,
-    sessionKey,
-    sessionId: sessionKey,
-    generation: "test",
-  }),
-  enqueueSessionEvent: (text, options) => enqueueSessionEventMock(text, options),
+  });
+  vi.spyOn(sessionEventHandoff, "captureSessionEventTargetForHost").mockImplementation(
+    async (agentId, sessionKey) => ({
+      agentId,
+      sessionKey,
+      sessionId: sessionKey,
+      generation: "test",
+    }),
+  );
+  vi.spyOn(sessionEventHandoff, "enqueueSessionEventForHost").mockImplementation(
+    enqueueSessionEventMock,
+  );
 });
 
 type MockRunExit = {

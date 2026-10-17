@@ -1,16 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 import { createDeferred, withinTest } from "../../../test/helpers/promise.js";
+import * as nodeCli from "../../gateway/node-agent-cli-runtime.js";
 import { createProcessAdapterEvents } from "../../process/supervisor/adapters/process-events.js";
+import * as supervisorRuntime from "../../process/supervisor/index.js";
 import { createProcessSupervisor } from "../../process/supervisor/supervisor.js";
+import * as execApprovals from "../bash-tools.exec-approval-request.js";
 import * as failoverErrors from "../failover-error.js";
 import { CLI_PARTIAL_OUTPUT_REJECTED_ERROR_CODE } from "../failover/error.js";
-import { executeDeps } from "./execute-deps.js";
 import { buildContext } from "./execute-events.tool-result-args.test-support.js";
 import { executePreparedCliRun as executePreparedCliRunImpl } from "./execute.js";
-import {
-  setCliRunnerExecuteTestDeps,
-  wrapPreparedCliRunWithTestAdmission,
-} from "./execute.test-support.js";
+import { wrapPreparedCliRunWithTestAdmission } from "./execute.test-support.js";
 import * as cliHelpers from "./helpers.js";
 import { buildCliSupervisorScopeKey } from "./reliability.js";
 import type { PreparedCliRunContext } from "./types.js";
@@ -149,7 +148,6 @@ function startFencedProcess(
 }
 
 describe("CLI execution cancellation", () => {
-  const restoreProcessSupervisor = executeDeps.getProcessSupervisor;
   let supervisor: ReturnType<typeof createProcessSupervisor>;
   let context: PreparedCliRunContext;
   let controller: AbortController;
@@ -159,7 +157,7 @@ describe("CLI execution cancellation", () => {
   beforeEach(() => {
     createChildAdapterMock.mockReset();
     supervisor = createProcessSupervisor();
-    setCliRunnerExecuteTestDeps({ getProcessSupervisor: () => supervisor });
+    vi.spyOn(supervisorRuntime, "getProcessSupervisor").mockReturnValue(supervisor);
     spawn = vi.spyOn(supervisor, "spawn");
     cancel = vi.spyOn(supervisor, "cancel");
     context = createRunContext();
@@ -169,7 +167,6 @@ describe("CLI execution cancellation", () => {
 
   afterEach(() => {
     vi.useRealTimers();
-    setCliRunnerExecuteTestDeps({ getProcessSupervisor: restoreProcessSupervisor });
     vi.restoreAllMocks();
   });
 
@@ -206,25 +203,23 @@ describe("CLI execution cancellation", () => {
   );
 
   it("does not start approval after a node response races with cancellation", async () => {
-    const invokeNode = vi
-      .spyOn(executeDeps, "invokeNodeClaudeCliRun")
-      .mockImplementation(async () => {
-        controller.abort();
-        return {
-          ok: true,
-          payloadJSON: JSON.stringify({
-            approvalRequired: true,
-            systemRunPlan: { argv: ["/trusted/claude", "-p"], commandText: "/trusted/claude -p" },
-            security: "allowlist",
-            ask: "on-miss",
-          }),
-        };
-      });
+    const invokeNode = vi.spyOn(nodeCli, "invokeNodeClaudeCliRun").mockImplementation(async () => {
+      controller.abort();
+      return {
+        ok: true,
+        payloadJSON: JSON.stringify({
+          approvalRequired: true,
+          systemRunPlan: { argv: ["/trusted/claude", "-p"], commandText: "/trusted/claude -p" },
+          security: "allowlist",
+          ask: "on-miss",
+        }),
+      };
+    });
     const registerApproval = vi
-      .spyOn(executeDeps, "registerExecApprovalRequestForHostOrThrow")
+      .spyOn(execApprovals, "registerExecApprovalRequestForHostOrThrow")
       .mockRejectedValue(new Error("approval registration failed after cancellation"));
     const resolveApproval = vi
-      .spyOn(executeDeps, "resolveRegisteredExecApprovalDecision")
+      .spyOn(execApprovals, "resolveRegisteredExecApprovalDecision")
       .mockResolvedValue("deny");
     context.executionTarget = { kind: "node", placement: { nodeId: "node-a" } };
     context.backendResolved.id = "claude-cli";
@@ -328,7 +323,7 @@ describe("CLI execution cancellation", () => {
   });
 
   it("passes plugin-owned system prompts without writing temporary files or exposing prompt argv", async () => {
-    const writeCliSystemPromptFile = vi.spyOn(executeDeps, "writeCliSystemPromptFile");
+    const writeCliSystemPromptFile = vi.spyOn(cliHelpers, "writeCliSystemPromptFile");
     context.preparedBackend.backend.systemPromptFileArg = "--append-system-prompt-file";
     context.preparedBackend.backend.systemPromptArg = "--append-system-prompt";
     let executionContext: Parameters<PluginTarget["execute"]>[0] | undefined;

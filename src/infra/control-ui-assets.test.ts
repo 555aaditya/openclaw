@@ -33,7 +33,7 @@ function sourceCheckout(relativePath: string) {
 }
 
 const uiIndex = (dir: string) => path.join(dir, "dist", "control-ui", "index.html");
-const buildFailure = (message: string, built = false) => ({ ok: false, built, message });
+const buildFailure = (message: string) => ({ ok: false, message });
 const buildExit = (stderr: string) => ({ ...successfulBuild, code: 1, stderr });
 
 vi.mock("./openclaw-root.js", () => ({
@@ -56,9 +56,9 @@ const {
 } = await import("./control-ui-assets.js");
 const openclawRoot = await import("./openclaw-root.js");
 
-const expectBuildFailure = (dir: string, message: string, built = false) =>
+const expectBuildFailure = (dir: string, message: string) =>
   expect(ensureControlUiAssetsBuilt(undefined, { root: dir })).resolves.toEqual(
-    buildFailure(message, built),
+    buildFailure(message),
   );
 const expectHealth = (
   options: Parameters<typeof resolveControlUiAssetHealth>[0],
@@ -72,6 +72,8 @@ describe("control UI assets helpers", () => {
     vi.clearAllMocks();
     vi.mocked(openclawRoot.resolveOpenClawPackageRootSync).mockReset().mockReturnValue(null);
   });
+
+  afterEach(() => vi.restoreAllMocks());
 
   it("distinguishes unresolved, missing, incomplete, and ready startup bundles", async () => {
     const indexPath = uiIndex(root);
@@ -191,7 +193,7 @@ process.exitCode = 1;
 
     const result = await ensureControlUiAssetsBuilt(undefined, { root });
 
-    expect(result).toMatchObject({ ok: false, built: false });
+    expect(result).toMatchObject({ ok: false });
     if (!result.ok) {
       expect(result.message).toMatch(`Control UI build failed: error during build: ${diagnostic}`);
       const summary = result.message.slice("Control UI build failed: ".length);
@@ -226,7 +228,6 @@ process.exitCode = 1;
 
     await expect(ensureControlUiAssetsBuilt(undefined, { root })).resolves.toMatchObject({
       ok: true,
-      built: false,
     });
   });
 
@@ -284,6 +285,7 @@ process.exitCode = 1;
   it("builds the source checkout selected by canonical package-root discovery", async () => {
     const packagedRoot = abs("fixtures/package-owner");
     const checkoutRoot = sourceCheckout("fixtures/checkout-owner");
+    vi.spyOn(process, "cwd").mockReturnValue(checkoutRoot);
     const indexPath = uiIndex(checkoutRoot);
     vi.mocked(openclawRoot.resolveOpenClawPackageRootSync).mockImplementation((options) =>
       options.moduleUrl ? packagedRoot : checkoutRoot,
@@ -297,9 +299,8 @@ process.exitCode = 1;
     await expect(
       ensureControlUiAssetsBuilt(runtime, {
         argv1: path.join(packagedRoot, "dist", "entry.js"),
-        cwd: checkoutRoot,
       }),
-    ).resolves.toMatchObject({ ok: true, built: true });
+    ).resolves.toMatchObject({ ok: true });
     const message = runtime.log.mock.calls.flat().join("\n");
     const commands = [...message.matchAll(/`(pnpm [^`]+)`/gu)].map((match) => match[1]);
     expect(commands).toHaveLength(2);
@@ -321,7 +322,7 @@ process.exitCode = 1;
 
     await expect(
       ensureControlUiAssetsBuilt(undefined, { root, force: true, signal: controller.signal }),
-    ).resolves.toMatchObject({ ok: true, built: true });
+    ).resolves.toMatchObject({ ok: true });
     expect(state.runCommandWithTimeout).toHaveBeenCalledWith(
       [process.execPath, path.join(root, "scripts", "ui.js"), "build"],
       { cwd: root, timeoutMs: 600_000, signal: controller.signal },
@@ -377,7 +378,7 @@ process.exitCode = 1;
       }
       return successfulBuild;
     });
-    await expectBuildFailure(root, `Control UI build completed but ${issue(root)}`, true);
+    await expectBuildFailure(root, `Control UI build completed but ${issue(root)}`);
   });
 
   it("resolves control-ui root from override file or directory", () => {
@@ -422,13 +423,14 @@ process.exitCode = 1;
     setFile(path.join(targetUi, "index.html"));
     setFile(path.join(wrapperUi, "index.html"));
 
-    expect(
-      resolveControlUiRootSync({
-        argv1: wrapperArgv1,
-        cwd,
-        execPath: abs("fixtures/runtime/node"),
-      }),
-    ).toBe(wrapperUi);
+    vi.spyOn(process, "cwd").mockReturnValue(cwd);
+    const execPath = process.execPath;
+    Object.defineProperty(process, "execPath", { value: abs("fixtures/runtime/node") });
+    try {
+      expect(resolveControlUiRootSync({ argv1: wrapperArgv1 })).toBe(wrapperUi);
+    } finally {
+      Object.defineProperty(process, "execPath", { value: execPath });
+    }
     // Health checks retain the dist entrypoint's own bundle, even when root discovery falls back.
     await expect(resolveControlUiAssetHealth({ argv1: wrapperArgv1 })).resolves.toMatchObject({
       kind: "ready",
@@ -441,9 +443,8 @@ process.exitCode = 1;
     const fallbackRoot = abs("fixtures/fallback-root/dist/control-ui");
     setFile(path.join(fallbackRoot, "index.html"), "<html></html>\n");
     vi.mocked(openclawRoot.resolveOpenClawPackageRootSync).mockReturnValueOnce(pkgRoot);
+    vi.spyOn(process, "cwd").mockReturnValue(abs("fixtures/fallback-root"));
 
-    expect(
-      isPackageProvenControlUiRootSync(fallbackRoot, { cwd: abs("fixtures/fallback-root") }),
-    ).toBe(false);
+    expect(isPackageProvenControlUiRootSync(fallbackRoot)).toBe(false);
   });
 });
