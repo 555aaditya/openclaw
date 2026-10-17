@@ -140,6 +140,14 @@ export function createChatPageState(
     return pane && !retainedSessions.unboundPaneIds.has(pane.id) ? pane : undefined;
   }
 
+  function routeLayout(): ChatSplitLayout {
+    // Admission reveals the new chat before the post-render route binding saves
+    // its split position; never reveal the previous active transcript in between.
+    return splitLayout && props.data?.creation?.admitted && props.data !== processedRouteData
+      ? setPaneSession(splitLayout, splitLayout.activePaneId, paneData().sessionKey)
+      : (splitLayout ?? classicLayout());
+  }
+
   function updated(presentationChanged: boolean, renderedSnapshot: ChatPageSnapshot | null) {
     prefetch();
     // Cancelling retained previews republishes pane state; suspend only on a hiding edge.
@@ -153,7 +161,7 @@ export function createChatPageState(
       viewerPresence.clear();
       return;
     }
-    const layout = splitLayout ?? classicLayout();
+    const layout = routeLayout();
     resumeStagedPanes(host, layout, narrow);
     viewerPresence.sync(context().gateway, layout, narrow, retainedSessions.unboundPaneIds);
     closeFocus.restore(splitLayout, mcpAppUnmountGate.retiring);
@@ -608,7 +616,7 @@ export function createChatPageState(
         () => [...host.querySelectorAll<ChatPaneElement>("openclaw-chat-pane")],
       );
     }
-    const layout = splitLayout ?? classicLayout();
+    const layout = routeLayout();
     const retained = retainedSessions.retain(panesOf(layout));
     const nextPaneKeys = chatPagePaneOwnerKeys(context(), layout, retained);
     const renderValue = () =>

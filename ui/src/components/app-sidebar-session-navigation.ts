@@ -19,6 +19,7 @@ import {
 import {
   buildAgentMainSessionKey,
   normalizeAgentId,
+  parseAgentSessionKey,
   resolveUiDefaultAgentId,
   resolveUiSessionRowAgentId,
 } from "../lib/sessions/session-key.ts";
@@ -546,11 +547,19 @@ export abstract class AppSidebarSessionNavigationElement extends AppSidebarBase 
   }
 
   activeChipAgent() {
-    return resolveActiveSidebarAgent({
-      activeId: this.expandedAgentId(),
+    const creation = this.pendingSessionCreate()?.creation;
+    const pending = this.context?.agents.state.pendingAgent;
+    const pendingAgent =
+      pending && parseAgentSessionKey(creation?.sessionKey)?.agentId === pending.id
+        ? pending
+        : undefined;
+    const chip = resolveActiveSidebarAgent({
+      activeId: pendingAgent?.id ?? this.expandedAgentId(),
       roster: this.context?.agents.state.agentsList?.agents ?? [],
       identities: this.context?.agentIdentity.entries() ?? [],
     });
+    // A pending chat can own the label without joining the admitted roster or selection.
+    return { ...chip, agent: pendingAgent ?? chip.agent, pending: Boolean(pendingAgent) };
   }
 
   private agentResumeKey(agentId: string): string {

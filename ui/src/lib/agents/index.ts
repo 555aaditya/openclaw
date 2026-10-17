@@ -11,7 +11,6 @@ import type {
   ToolsCatalogResult,
 } from "../../api/types.ts";
 import { t } from "../../i18n/index.ts";
-import { MODEL_SETUP_VERIFY_TIMEOUT_MS } from "../../pages/model-setup/state.ts";
 import { formatUiError } from "../format-error.ts";
 import type { GatewayConnectionSnapshot } from "../gateway-connection-lifecycle.ts";
 import {
@@ -68,7 +67,7 @@ type AgentCapabilityState = {
   agentsLoading: boolean;
   agentsError: string | null;
   agentsList: AgentsListResult | null;
-  agentCreationPhase?: "checking" | "creating";
+  agentCreationPhase?: "creating";
   pendingAgent?: GatewayAgentRow;
   recentlyCreatedAgentId?: string;
 };
@@ -360,7 +359,10 @@ export function createAgentCapability(gateway: AgentGateway) {
     },
     ensureList: () => loadList(false),
     refreshList: () => loadList(true),
-    async create(name: string): Promise<AgentCreationResult | null> {
+    async create(
+      name: string,
+      onStarted?: (agentId: string) => void,
+    ): Promise<AgentCreationResult | null> {
       const client = state.client;
       if (!client || !state.connected || disposed || state.agentCreationPhase) {
         return null;
@@ -369,22 +371,13 @@ export function createAgentCapability(gateway: AgentGateway) {
       creatingAgentId = agentId;
       const isCurrent = () =>
         !disposed && state.client === client && state.connected && creatingAgentId === agentId;
-      state.agentCreationPhase = "checking";
+      state.agentCreationPhase = "creating";
+      state.pendingAgent = { id: agentId, name };
       publish();
       try {
-        // Check the new agent's inherited primary route, not the selected agent's
-        // override or Crestodian's utility model, before creating persistent state.
-        const verification = await client.request<{ ok: boolean; error?: string }>(
-          "openclaw.setup.verify",
-          { agentId, modelTarget: "primary" },
-          { timeoutMs: MODEL_SETUP_VERIFY_TIMEOUT_MS },
-        );
-        if (!isCurrent()) {
-          return null;
-        }
-        if (!verification.ok) {
-          throw new Error(verification.error || t("agentChip.inferenceUnavailable"));
-        }
+        // The UI can open a display-only chat immediately. Persistence still waits
+        // for the new agent's own inference route to pass verification.
+        onStarted?.(agentId);
         const previous = state.agentsList ?? (await loadList(false));
         if (!isCurrent()) {
           return null;
@@ -392,9 +385,8 @@ export function createAgentCapability(gateway: AgentGateway) {
         if (!previous) {
           throw new Error(state.agentsError || t("agentChip.rosterUnavailable"));
         }
-        state.agentCreationPhase = "creating";
-        state.pendingAgent = { id: agentId, name };
-        publish();
+        // The creation owner verifies inference with the opening message before
+        // persistence, then returns the saved conversation in the same receipt.
         const created = await client.request<AgentCreationResult>("agents.create", {
           agentId,
           name,

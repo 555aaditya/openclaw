@@ -50,13 +50,12 @@ type SidebarAgentMenuParams = Omit<
   basePath: string;
   rosterMode: boolean;
   connected: boolean;
-  onQueryChange: (query: string) => void;
   onShowAllAgents: () => void;
   onPointerEnter: () => void;
   onPointerLeave: () => void;
   onAfterShow: () => void;
   onSwitchAgent: (agentId: string) => void;
-  creationPhase?: "checking" | "creating";
+  creationPhase?: "creating";
   onCreateAgent: () => Promise<void>;
   onClose: (restoreFocus?: boolean) => void;
   onNavigate: (routeId: NavigationRouteId, options?: ApplicationNavigationOptions) => void;
@@ -151,26 +150,6 @@ export function renderSidebarAgentMenu(params: SidebarAgentMenuParams): JSX.Elem
       class: "sidebar-agent-menu__agent-list",
       items: renderSidebarAgentMenuSwitcher({
         ...params,
-        filter:
-          params.agents.length > 6
-            ? {
-                id: "search",
-                label: t("agentChip.search"),
-                closeOnSelect: false,
-                render: () => (
-                  <input
-                    class="sidebar-agent-menu__filter"
-                    data-search
-                    type="search"
-                    role="searchbox"
-                    aria-label={t("agentChip.search")}
-                    placeholder={t("agentChip.search")}
-                    value={params.query}
-                    onInput={(event) => params.onQueryChange(event.currentTarget.value)}
-                  />
-                ),
-              }
-            : undefined,
         allAgentsScope: params.rosterMode && params.agents.length > 1,
         onAgentSettings: (agentId) => {
           params.onClose(false);
@@ -195,9 +174,6 @@ export function renderSidebarAgentMenu(params: SidebarAgentMenuParams): JSX.Elem
       onAfterShow={params.onAfterShow}
       onClose={params.onClose}
       onSelect={(value) => {
-        if (value === "search") {
-          return;
-        }
         if (value === "command:new-agent") {
           void params.onCreateAgent();
           return;

@@ -667,29 +667,28 @@ describe("setDefaultAgent", () => {
 });
 
 describe("agent creation", () => {
-  it.each([
-    { ok: false, status: "unavailable", error: "No primary model configured" },
-    { ok: false, status: "error", error: "Provider rejected credentials" },
-  ])("does not create persistent state when inference reports $status", async (verification) => {
-    const request = vi.fn<TestRequest>().mockResolvedValue(verification);
+  it("reports a failed creation without publishing a roster row", async () => {
+    const roster = { defaultId: "main", agents: [{ id: "main", name: "Molty" }] };
+    const request = vi
+      .fn<TestRequest>()
+      .mockResolvedValueOnce(roster)
+      .mockRejectedValueOnce(new Error("Provider rejected credentials"));
     const agents = createAgentCapability(
       createGatewayHarness({ request } as unknown as GatewayBrowserClient).gateway,
     );
-    await expect(agents.create("New agent")).rejects.toThrow(verification.error);
-    expect(request).toHaveBeenCalledExactlyOnceWith(
-      "openclaw.setup.verify",
-      {
-        agentId: expect.stringMatching(/^bot-/),
-        modelTarget: "primary",
-      },
-      { timeoutMs: 150_000 },
-    );
+    await agents.ensureList();
+    await expect(agents.create("New agent")).rejects.toThrow("Provider rejected credentials");
+    expect(request).toHaveBeenLastCalledWith("agents.create", {
+      agentId: expect.stringMatching(/^bot-/),
+      name: "New agent",
+      onboarding: true,
+    });
+    expect(agents.state.agentsList).toEqual(roster);
     expect(agents.state.agentCreationPhase).toBeUndefined();
     agents.dispose();
   });
 
-  it("shows a pending agent only after verification and publishes the receipt without another roster read", async () => {
-    const verification = deferred<{ ok: boolean }>();
+  it("shows a pending agent immediately and publishes the verified receipt without another roster read", async () => {
     const creation = deferred<unknown>();
     const roster = {
       defaultId: "main",
@@ -700,29 +699,27 @@ describe("agent creation", () => {
     const request = vi
       .fn<TestRequest>()
       .mockResolvedValueOnce(roster)
-      .mockReturnValueOnce(verification.promise)
       .mockReturnValueOnce(creation.promise);
     const agents = createAgentCapability(
       createGatewayHarness({ request } as unknown as GatewayBrowserClient).gateway,
     );
     await agents.ensureList();
     const creating = agents.create("New agent");
-    expect(agents.state.agentCreationPhase).toBe("checking");
-    expect(agents.state.pendingAgent).toBeUndefined();
+    expect(agents.state.agentCreationPhase).toBe("creating");
+    expect(agents.state.pendingAgent).toMatchObject({
+      id: expect.stringMatching(/^bot-/),
+      name: "New agent",
+    });
     await expect(agents.create("New agent")).resolves.toBeNull();
-    expect(request.mock.calls.map(([method]) => method)).toEqual([
-      "agents.list",
-      "openclaw.setup.verify",
-    ]);
-    verification.resolve({ ok: true });
-    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(3));
+    expect(request.mock.calls.map(([method]) => method)).toEqual(["agents.list", "agents.create"]);
+    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(2));
     const pending = agents.state.pendingAgent;
     expect(pending).toEqual({ id: expect.stringMatching(/^bot-/), name: "New agent" });
     expect(agents.state.agentsList).toEqual(roster);
     const receipt = {
       agentId: pending!.id,
       name: pending!.name,
-      onboarding: { sessionKey: `agent:${pending!.id}:main`, status: "accepted", runId: "intro" },
+      onboarding: { sessionKey: `agent:${pending!.id}:main`, status: "completed" },
     };
     creation.resolve(receipt);
     await expect(creating).resolves.toEqual(receipt);
@@ -745,7 +742,6 @@ describe("agent creation", () => {
     const request = vi
       .fn<TestRequest>()
       .mockResolvedValueOnce({ defaultId: "main", agents: [{ id: "main", name: "Old name" }] })
-      .mockResolvedValueOnce({ ok: true })
       .mockReturnValueOnce(creation.promise)
       .mockReturnValueOnce(staleRead.promise)
       .mockReturnValueOnce(currentRead.promise);
@@ -754,7 +750,7 @@ describe("agent creation", () => {
     );
     await agents.ensureList();
     const creating = agents.create("New agent");
-    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(3));
+    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(2));
     const oldRefresh = agents.refreshList();
     const pending = agents.state.pendingAgent!;
     creation.resolve({ agentId: pending.id, name: pending.name });
@@ -762,7 +758,7 @@ describe("agent creation", () => {
     expect(agents.state.agentsList?.agents[0]).toEqual(pending);
     expect(agents.state.agentsLoading).toBe(true);
     staleRead.resolve({ defaultId: "main", agents: [{ id: "main", name: "Stale name" }] });
-    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(5));
+    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(4));
     expect(agents.state.agentsList?.agents[0]).toEqual(pending);
     currentRead.resolve({
       defaultId: "main",
@@ -788,7 +784,6 @@ describe("agent creation", () => {
     const request = vi
       .fn<TestRequest>()
       .mockResolvedValueOnce(roster)
-      .mockResolvedValueOnce({ ok: true })
       .mockRejectedValueOnce(new Error("Workspace could not be created"));
     const agents = createAgentCapability(
       createGatewayHarness({ request } as unknown as GatewayBrowserClient).gateway,
@@ -801,22 +796,37 @@ describe("agent creation", () => {
     agents.dispose();
   });
 
-  it("does not create after disconnecting during verification and permits a fresh attempt", async () => {
-    const verification = deferred<{ ok: boolean }>();
+  it("retires a disconnected creation receipt and permits a fresh attempt", async () => {
+    const creation = deferred<unknown>();
+    const roster = { defaultId: "main", agents: [{ id: "main", name: "Molty" }] };
     const request = vi
       .fn<TestRequest>()
-      .mockReturnValueOnce(verification.promise)
-      .mockResolvedValueOnce({ ok: false, error: "Still offline" });
+      .mockResolvedValueOnce(roster)
+      .mockReturnValueOnce(creation.promise)
+      .mockResolvedValueOnce(roster)
+      .mockRejectedValueOnce(new Error("Still offline"));
     const harness = createGatewayHarness({ request } as unknown as GatewayBrowserClient);
     const agents = createAgentCapability(harness.gateway);
+    await agents.ensureList();
     const creating = agents.create("New agent");
+    const pending = agents.state.pendingAgent!;
     harness.publish(false);
-    verification.resolve({ ok: true });
+    creation.resolve({
+      agentId: pending.id,
+      name: pending.name,
+      onboarding: { status: "completed", sessionKey: `agent:${pending.id}:main` },
+    });
     await expect(creating).resolves.toBeNull();
     expect(agents.state.agentCreationPhase).toBeUndefined();
+    expect(agents.state.agentsList).toBeNull();
     harness.publish(true);
     await expect(agents.create("New agent")).rejects.toThrow("Still offline");
-    expect(request.mock.calls.every(([method]) => method === "openclaw.setup.verify")).toBe(true);
+    expect(request.mock.calls.map(([method]) => method)).toEqual([
+      "agents.list",
+      "agents.create",
+      "agents.list",
+      "agents.create",
+    ]);
     agents.dispose();
   });
 });

@@ -1,19 +1,67 @@
+import { routeIdFromPath } from "../app-route-paths.ts";
 import { t } from "../i18n/index.ts";
 import { formatUiError } from "../lib/format-error.ts";
-import { openPreferredApplicationSession } from "../lib/sessions/route-navigation.ts";
+import { sessionNavigationTarget } from "../lib/sessions/route-navigation.ts";
+import {
+  buildAgentMainSessionKey,
+  resolveUiConfiguredMainKey,
+} from "../lib/sessions/session-key.ts";
 import { showToast } from "../lib/toast.ts";
+import { selectApplicationSession } from "./agent-selection.ts";
 import type { ApplicationContext } from "./context.ts";
 import { patchSettings } from "./settings.ts";
 
 /** Creation belongs to the application, so closing the selector cannot cancel it. */
 export async function createApplicationAgent(context: ApplicationContext): Promise<void> {
   const client = context.gateway.snapshot.client;
-  const location = context.router.getState().location;
+  const initialLocation = context.router.getState().location;
+  const initialRouteId = routeIdFromPath(initialLocation.pathname, context.basePath);
+  let location = initialLocation;
   const selectionRevision = context.agentSelection.intentRevision;
+  const creation = { sessionKey: "", admitted: false };
+  let clearPending = () => {};
   let created = false;
+  const ownsForeground = () =>
+    context.router.getState().location === location &&
+    context.agentSelection.intentRevision === selectionRevision;
+  const restoreUncreatedChat = () => {
+    if (creation.sessionKey && ownsForeground() && initialRouteId) {
+      context.replace(initialRouteId, initialLocation);
+    }
+  };
   try {
-    const result = await context.agents.create(t("agentChip.newAgent"));
+    const name = t("agentChip.newAgent");
+    const result = await context.agents.create(name, (agentId) => {
+      creation.sessionKey = buildAgentMainSessionKey({
+        agentId,
+        mainKey: resolveUiConfiguredMainKey({
+          agentsList: context.agents.state.agentsList,
+          hello: context.gateway.snapshot.hello,
+        }),
+      });
+      const target = sessionNavigationTarget({
+        context,
+        face: "chat",
+        sessionKey: creation.sessionKey,
+        agentId,
+        preferenceDerivedFace: true,
+        exactKey: true,
+      });
+      clearPending = context.chatSubmissions.beginCreate({
+        creation,
+        message: null,
+        displayName: name,
+        canDisplay: () =>
+          context.gateway.snapshot.client === client &&
+          context.router.getState().location.pathname === target.options.pathname,
+      });
+      context.navigate("chat", target.options);
+      location = context.router.getState().location;
+    });
     if (!result || context.gateway.snapshot.client !== client || !client) {
+      if (context.gateway.snapshot.client === client) {
+        restoreUncreatedChat();
+      }
       return;
     }
     created = true;
@@ -21,12 +69,15 @@ export async function createApplicationAgent(context: ApplicationContext): Promi
     const sessionKey = onboarding.sessionKey;
     // A user who navigated away keeps their foreground; the agent and its chat
     // still exist and appear in the normal agent/session roster.
-    if (
-      context.router.getState().location === location &&
-      context.agentSelection.intentRevision === selectionRevision
-    ) {
+    creation.admitted = true;
+    if (ownsForeground()) {
       patchSettings({ sidebarAgentsMode: "chip" });
-      openPreferredApplicationSession(context, sessionKey, agentId);
+      selectApplicationSession({
+        selection: context.agentSelection,
+        gateway: context.gateway,
+        sessionKey,
+        agentId,
+      });
     }
     if (onboarding.status === "error") {
       throw new Error(onboarding.error);
@@ -35,11 +86,16 @@ export async function createApplicationAgent(context: ApplicationContext): Promi
     if (context.gateway.snapshot.client !== client) {
       return;
     }
+    if (!created) {
+      restoreUncreatedChat();
+    }
     showToast({
       message: t(created ? "agentChip.chatStartFailed" : "agentChip.creationFailed", {
         error: formatUiError(error),
       }),
       durationMs: 12_000,
     });
+  } finally {
+    clearPending();
   }
 }

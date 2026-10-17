@@ -86,6 +86,7 @@ export interface SidebarMenusControllerHost extends SessionOrganizerControllerHo
   pluginNavigation(): ControlUiRegistration<ControlUiNavigationItem>[];
   activeChipAgent(): {
     activeId: string;
+    pending?: boolean;
     agent: GatewayAgentRow | undefined;
     agents: readonly GatewayAgentRow[];
     identity: AgentIdentityResult | null;

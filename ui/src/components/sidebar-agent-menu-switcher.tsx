@@ -11,11 +11,9 @@ export const AGENT_VALUE_PREFIX = "agent:";
 export type SidebarAgentMenuSwitcherParams = {
   activeId: string;
   allAgentsScope: boolean;
-  query: string;
   openMode: "hover" | "click";
   agents: readonly GatewayAgentRow[];
   pendingAgent?: GatewayAgentRow;
-  filter?: MenuItem;
   recentlyCreatedAgentId?: string;
   identities: ReadonlyMap<string, AgentIdentityResult>;
   pinnedAgentIds: readonly string[];
@@ -176,17 +174,6 @@ export function renderSidebarAgentMenuSwitcher(params: SidebarAgentMenuSwitcherP
           Number(pinnedIds.has(normalizeAgentId(a.id))),
     );
   });
-  const query = createMemo(() => params.query.trim().toLocaleLowerCase());
-  const visibleAgents = createMemo(() =>
-    agents().filter((agent) => {
-      const label = normalizeAgentLabel(agent, params.identities.get(normalizeAgentId(agent.id)));
-      return (
-        !query() ||
-        label.toLocaleLowerCase().includes(query()) ||
-        agent.id.toLocaleLowerCase().includes(query())
-      );
-    }),
-  );
   const autofocusAll = createMemo(
     () => params.openMode === "click" && params.allAgentsScope && agents().length > 1,
   );
@@ -199,7 +186,7 @@ export function renderSidebarAgentMenuSwitcher(params: SidebarAgentMenuSwitcherP
   if (agents().length === 0) {
     return entries;
   }
-  if (params.agents.length > 1 && !query()) {
+  if (params.agents.length > 1) {
     entries.push({
       id: "scope:all",
       label: t("agentChip.showAll"),
@@ -221,10 +208,7 @@ export function renderSidebarAgentMenuSwitcher(params: SidebarAgentMenuSwitcherP
       ),
     });
   }
-  if (params.filter) {
-    entries.push(params.filter);
-  }
-  for (const agent of visibleAgents()) {
+  for (const agent of agents()) {
     entries.push(
       renderAgentRow(
         () => agent,
@@ -232,17 +216,6 @@ export function renderSidebarAgentMenuSwitcher(params: SidebarAgentMenuSwitcherP
         () => agent === autofocusAgent(),
       ),
     );
-  }
-  if (visibleAgents().length === 0) {
-    entries.push({
-      kind: "content",
-      id: "empty",
-      content: (
-        <div class="sidebar-agent-menu__empty" role="status">
-          {t("agentChip.noMatches")}
-        </div>
-      ),
-    });
   }
   return entries;
 }

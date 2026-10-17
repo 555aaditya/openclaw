@@ -1,9 +1,15 @@
 import type { RouteLocation } from "@openclaw/uirouter";
 import { definePage } from "@openclaw/uirouter";
 import { INTERNAL_SESSION_PATH_PARAM, pathForRoute, routePageSpec } from "../../app-route-paths.ts";
+import { sessionRefFromPath } from "../../app-session-route-paths.ts";
 import type { ApplicationContext } from "../../app/context.ts";
 import { gatewayPresentationScope } from "../../app/gateway-presentation-scope.ts";
 import type { BoardFace } from "../../lib/board/settings.ts";
+import {
+  buildAgentMainSessionKey,
+  resolveUiConfiguredMainKey,
+} from "../../lib/sessions/session-key.ts";
+import { sessionRouteHints } from "./route-draft.ts";
 
 function sessionLoaderDeps(
   face: BoardFace,
@@ -31,8 +37,43 @@ function sessionPage(face: BoardFace) {
     // static face route. Both locations describe the same loader match.
     loaderDeps: (context: ApplicationContext, location: RouteLocation) =>
       sessionLoaderDeps(face, context, location),
-    loader: async (context: ApplicationContext, options) =>
-      (await import("./route-loader.ts")).loadSessionPage(context, face, options),
+    loader: (context: ApplicationContext, options) => {
+      const creation = context.chatSubmissions.creation;
+      if (creation && !creation.admitted) {
+        const mainKey = resolveUiConfiguredMainKey({
+          agentsList: context.agents.state.agentsList,
+          hello: context.gateway.snapshot.hello,
+        });
+        const pathname =
+          options.location.pathname === pathForRoute(face, context.basePath)
+            ? (new URLSearchParams(options.location.search).get(INTERNAL_SESSION_PATH_PARAM) ??
+              options.location.pathname)
+            : options.location.pathname;
+        const target = sessionRefFromPath(pathname, context.basePath, mainKey);
+        const sessionKey =
+          target?.kind === "main"
+            ? buildAgentMainSessionKey({ agentId: target.agentId, mainKey })
+            : target?.kind === "literal"
+              ? target.sessionKey
+              : undefined;
+        if (target?.namespace === face && sessionKey === creation.sessionKey) {
+          options.signal.throwIfAborted();
+          // The creating owner already knows this exact target. Publish its display
+          // synchronously, before lazy route loading or Gateway discovery can wait.
+          return {
+            kind: "session" as const,
+            sessionKey,
+            agentId: target.agentId,
+            ...sessionRouteHints(options.location),
+            face,
+            creation,
+          };
+        }
+      }
+      return import("./route-loader.ts").then((module) =>
+        module.loadSessionPage(context, face, options),
+      );
+    },
     component: () => import("./route-entry.ts"),
   });
 }

@@ -14,6 +14,7 @@ import { chatStartupStatusLabel } from "./chat-run-startup.ts";
 import { ChatComposer, resetChatComposerState } from "./components/chat-composer.tsx";
 import { ChatImageLightbox } from "./components/chat-image-lightbox-view.tsx";
 import { ChatPaneHeader, type ChatPaneHeaderProps } from "./components/chat-pane-header.tsx";
+import { ChatWorkingIndicator } from "./components/chat-working-indicator.tsx";
 import { buildLocalUserMessage } from "./user-message-content.ts";
 
 registerNewSessionSetupEnglish();
@@ -29,6 +30,7 @@ type PendingSessionCreateProps = {
 /** Draft-owned input stays local; real pane controllers mount after acceptance. */
 function PendingSessionCreateContent(props: PendingSessionCreateProps) {
   const composerId = `pending-create-${generateUUID()}`;
+  const startedAt = Date.now();
   const [revision, setRevision] = createSignal(0);
   let image: ImageLightboxItem | null = null;
   const notify = () => setRevision((value) => value + 1);
@@ -113,8 +115,22 @@ function PendingSessionCreateContent(props: PendingSessionCreateProps) {
         )
       : context.chatSubmissions.readCreateMessage(props.sessionKey);
     const composer = context.chatSubmissions.readCreateComposer(props.sessionKey);
+    const pendingCreate = context.chatSubmissions.readCreate();
+    const displayName =
+      pendingCreate?.creation.sessionKey === props.sessionKey
+        ? pendingCreate.displayName
+        : undefined;
     const agentId = parseAgentSessionKey(props.sessionKey)?.agentId ?? "";
     const agent = context.agents.state.agentsList?.agents.find((entry) => entry.id === agentId);
+    const creatingAgent =
+      pendingCreate?.creation.sessionKey === props.sessionKey &&
+      context.agents.state.pendingAgent?.id === agentId;
+    const statusLabel =
+      snapshot.phase !== "connected"
+        ? t("connection.reconnecting")
+        : creatingAgent
+          ? t("agentChip.creatingAgent")
+          : (chatStartupStatusLabel(null, startup) ?? t("newSession.starting"));
     // Reuse the chat chrome without mounting session controllers or granting
     // mutation access to an identity that the Gateway has not admitted yet.
     const noAction = () => {};
@@ -126,8 +142,8 @@ function PendingSessionCreateContent(props: PendingSessionCreateProps) {
         narrow: props.narrow,
         mergedChrome: props.mergedChrome,
         navDrawerOpen: props.navDrawerOpen,
-        title: context.chatSubmissions.readCreate()?.displayName ?? t("newSession.title"),
-        titlePending: submitting && !context.chatSubmissions.readCreate()?.displayName,
+        title: displayName ?? t("newSession.title"),
+        titlePending: submitting && !displayName,
         session: undefined,
         incognito: isIncognitoSessionKey(props.sessionKey),
         catalog: false,
@@ -167,10 +183,7 @@ function PendingSessionCreateContent(props: PendingSessionCreateProps) {
         pendingMessage,
         userId: identity?.type === "profile" ? identity.id : null,
         submitting,
-        statusLabel:
-          snapshot.phase === "connected"
-            ? chatStartupStatusLabel(null, startup)
-            : t("connection.reconnecting"),
+        statusLabel,
         completion: cancelled
           ? { label: startup.error ?? t("newSession.placementCancelled") }
           : failed
@@ -178,7 +191,18 @@ function PendingSessionCreateContent(props: PendingSessionCreateProps) {
                 label: t(checking ? "chat.queue.deliveryUnconfirmed" : "chat.queue.notSent"),
               }
             : undefined,
-        renderDraft: () => <div role="status">{t("connection.reconnecting")}</div>,
+        renderDraft: () => (
+          <div class="new-session-page__starting chat-thread-inner">
+            <div class="chat-group assistant chat-group--working">
+              <div class="chat-group-messages">
+                <ChatWorkingIndicator
+                  part={{ kind: "reading-indicator", key: composerId, startedAt }}
+                  options={{ startupLabel: statusLabel }}
+                />
+              </div>
+            </div>
+          </div>
+        ),
         onOpenImage: openImage,
       },
       creationComposer: composer?.canDisplay() ? composer : undefined,
@@ -187,7 +211,7 @@ function PendingSessionCreateContent(props: PendingSessionCreateProps) {
         paneId: composerId,
         sessionKey: props.sessionKey,
         currentAgentId: agentId,
-        assistantName: agent?.identity?.name ?? agent?.name ?? agentId,
+        assistantName: displayName ?? agent?.identity?.name ?? agent?.name ?? agentId,
         connected: snapshot.phase === "connected",
         canSend: false,
         sessionAdmitted: false,

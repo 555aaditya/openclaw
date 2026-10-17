@@ -178,7 +178,7 @@ describe("AppSidebar agent chip", () => {
       const labels = [
         ...sidebar.querySelectorAll(".sidebar-agent-menu .agent-select__option-label"),
       ].map((element) => element.textContent?.trim());
-      expect(labels).toEqual(["Show all", "Workspace Molty", "rust-claw", "Create new agent"]);
+      expect(labels).toEqual(["Create new agent", "Show all", "Workspace Molty", "rust-claw"]);
     });
     await vi.waitFor(() => {
       const rustRow = [
@@ -262,19 +262,14 @@ describe("AppSidebar agent chip", () => {
     const menu = sidebar.querySelector(".sidebar-agent-menu");
     expect(menu).not.toBeNull();
     expect(menu?.querySelector(".sidebar-pair-mobile")).toBeNull();
-    expect(menu?.querySelectorAll('[role="separator"]')).toHaveLength(1);
-    expect(
-      menu
-        ?.querySelector('[role="separator"]')
-        ?.previousElementSibling?.classList.contains("sidebar-agent-menu__agent-list"),
-    ).toBe(true);
+    expect(menu?.querySelectorAll('[role="separator"]')).toHaveLength(0);
     expect(menu?.querySelector("openclaw-sidebar-build-chip")).toBeNull();
     expect(menu?.querySelector("openclaw-theme-mode-toggle")).toBeNull();
     expect(
       [...(menu?.querySelectorAll('[role^="menuitem"]') ?? [])].map((element) =>
         element.getAttribute("data-value"),
       ),
-    ).toEqual(["scope:all", "agent:main", "agent:research", "command:new-agent"]);
+    ).toEqual(["command:new-agent", "scope:all", "agent:main", "agent:research"]);
 
     const commands = [...(menu?.querySelectorAll('[data-value^="command:"]') ?? [])];
     expect(commands.map((item) => item.textContent?.trim())).toEqual(["Create new agent"]);
@@ -409,7 +404,7 @@ describe("AppSidebar agent chip", () => {
     { count: 12, pins: [], order: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] },
     { count: 12, pins: ["deleted-agent"], order: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] },
   ])(
-    "keeps all $count agents in pin order and searches only larger lists (pins=$pins)",
+    "keeps all $count agents in pin order without a search field (pins=$pins)",
     async ({ count, pins, order }) => {
       const { sidebar, context } = await mountSidebar(
         createGateway({} as GatewayBrowserClient),
@@ -423,7 +418,7 @@ describe("AppSidebar agent chip", () => {
       await sidebar.updateComplete;
       sidebar.querySelector<HTMLButtonElement>(".sidebar-agent-card__main")?.click();
       await sidebar.updateComplete;
-      expect(Boolean(sidebar.querySelector(".sidebar-agent-menu__filter"))).toBe(count > 6);
+      expect(sidebar.querySelector(".sidebar-agent-menu [role=searchbox]")).toBeNull();
       expect(sidebar.querySelector(".sidebar-agent-menu__agent-list")).not.toBeNull();
       expect(
         [

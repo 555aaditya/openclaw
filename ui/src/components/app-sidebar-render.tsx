@@ -89,7 +89,9 @@ export function renderSidebarAgentCard(host: AppSidebarRenderHost): JSX.Element 
   );
   return (
     <Show
-      when={host.sidebarAgentsMode !== "roster" && (cardAgent() || cached())}
+      when={
+        (chipAgent().pending || host.sidebarAgentsMode !== "roster") && (cardAgent() || cached())
+      }
       fallback={renderSidebarWorkspaceHeader(host)}
     >
       <SidebarAgentCard

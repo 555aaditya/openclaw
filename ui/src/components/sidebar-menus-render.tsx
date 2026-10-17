@@ -125,9 +125,7 @@ export function renderSidebarAgentMenuForController(
         agents: agents(),
         identities: identities(),
         pinnedAgentIds: host.pinnedAgentIds,
-        query: controller.agentMenuQuery,
-        onQueryChange: (query) => controller.setAgentMenuQuery(query),
-        rosterMode: host.sidebarAgentsMode === "roster",
+        rosterMode: host.sidebarAgentsMode === "roster" && !chipAgent().pending,
         onShowAllAgents: () => {
           host.navigationView = "sessions";
           host.sessionDataContext?.navigation.update({ navCollapsed: false });
@@ -161,9 +159,8 @@ export function renderSidebarAgentMenuForController(
         onCreateAgent: async () => {
           const context = host.sessionDataContext;
           if (context) {
-            controller.setAgentMenuQuery("");
-            await createApplicationAgent(context);
             controller.closeAgentMenu();
+            await createApplicationAgent(context);
           }
         },
         anchor: trigger ?? undefined,

@@ -56,6 +56,9 @@ describe.runIf("__vitest_browser__" in globalThis)("sidebar agent menu scrolling
     // Focus settles before the opening animation and selected-row reveal.
     await clickedMenuShown;
     await expect.poll(selectedAgentIsVisible).toBe(true);
+    expect(sidebar.querySelector(".sidebar-agent-menu [role=searchbox]")).toBeNull();
+    expect(sidebar.querySelectorAll('.sidebar-agent-menu [data-value^="agent:"]')).toHaveLength(40);
+    expect(sidebar.querySelector('.sidebar-agent-menu [data-value="scope:all"]')).not.toBeNull();
     await userEvent.keyboard("{Escape}");
     await expect.poll(() => sidebar.querySelector(".sidebar-agent-menu")).toBeNull();
 

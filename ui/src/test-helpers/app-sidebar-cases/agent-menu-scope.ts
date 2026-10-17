@@ -36,7 +36,7 @@ describe("AppSidebar agent menu scope", () => {
         ?.click();
       await sidebar.updateComplete;
       const menu = sidebar.querySelector(".sidebar-agent-menu");
-      expect(menu?.querySelector(".sidebar-agent-menu__filter")).toBeNull();
+      expect(menu?.querySelector("[role=searchbox]")).toBeNull();
       expect(menu?.querySelector('[data-value="scope:all"]')).toBeNull();
       expect(menu?.querySelectorAll('[data-value^="agent:"]')).toHaveLength(count);
       expect(

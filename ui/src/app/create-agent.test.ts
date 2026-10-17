@@ -16,6 +16,7 @@ import {
   mountSidebarContext,
 } from "../test-helpers/app-sidebar.ts";
 import { createAgentSelectionCapability } from "./agent-selection.ts";
+import { createChatSubmissions } from "./chat-submissions.ts";
 import type { ApplicationContext } from "./context.ts";
 import { createApplicationAgent } from "./create-agent.ts";
 
@@ -40,10 +41,11 @@ async function fixture(
     if (method === "agents.list") {
       return structuredClone(roster);
     }
-    if (method === "openclaw.setup.verify") {
-      return options.verification ?? { ok: true };
-    }
     if (method === "agents.create") {
+      const verification = await (options.verification ?? { ok: true });
+      if (!verification.ok) {
+        throw new Error(verification.error ?? "Inference unavailable");
+      }
       await options.creation;
       if (
         !params ||
@@ -64,7 +66,7 @@ async function fixture(
           sessionKey: `agent:${params.agentId}:home`,
           ...(options.onboardingError
             ? { status: "error", error: options.onboardingError }
-            : { status: "accepted", runId: "intro-run" }),
+            : { status: "completed" }),
         },
       };
     }
@@ -114,17 +116,74 @@ async function fixture(
       },
     );
   });
-  Object.assign(context, { agents, agentSelection, router, navigate, basePath: "" });
+  const replace = vi.fn<ApplicationContext["replace"]>((routeId, params) => {
+    navigation = router.navigate(
+      routeId,
+      context,
+      { history: "replace" },
+      {
+        ...locationForRoute(routeId, ""),
+        ...params,
+      },
+    );
+  });
+  Object.assign(context, {
+    agents,
+    agentSelection,
+    router,
+    navigate,
+    replace,
+    chatSubmissions: createChatSubmissions(),
+    basePath: "",
+  });
   await router.start(history, "", context);
   onTestFinished(() => {
     router.stop();
     agentSelection.dispose();
     agents.dispose();
   });
-  return { context, request, roster, navigate, toast, settledNavigation: () => navigation };
+  return {
+    context,
+    request,
+    roster,
+    navigate,
+    replace,
+    publishGateway: (snapshot: Parameters<typeof harness.publish>[0]) => harness.publish(snapshot),
+    toast,
+    settledNavigation: () => navigation,
+  };
 }
 
 describe("application agent creation", () => {
+  it("opens the new chat before waiting for inference verification", async () => {
+    const verification = createDeferred<{ ok: boolean; error?: string }>();
+    const { context, request, roster, navigate } = await fixture({
+      verification: verification.promise,
+    });
+    const creating = createApplicationAgent(context);
+    try {
+      expect(navigate).toHaveBeenCalledExactlyOnceWith("chat", {
+        pathname: expect.stringMatching(/^\/chat\/bot-/),
+        search: `?${SESSION_FACE_PREFERENCE_PARAM}=1`,
+      });
+      expect(roster.agents).toHaveLength(1);
+      expect(context.chatSubmissions.creation).toMatchObject({
+        sessionKey: expect.stringMatching(/^agent:bot-.*:home$/),
+        admitted: false,
+      });
+      expect(context.chatSubmissions.readCreate()?.displayName).toBe("New agent");
+      expect(context.chatSubmissions.readCreate()?.message).toBeNull();
+      expect(context.gateway.snapshot.sessionKey).toBe("agent:main:home");
+      expect(request.mock.calls.map(([method]) => method)).toEqual([
+        "agents.list",
+        "agents.create",
+      ]);
+    } finally {
+      verification.resolve({ ok: false, error: "Test verification did not pass" });
+      await creating;
+    }
+  });
+
   it("puts creation first, shows a pending top row, and opens the agent-initiated chat", async () => {
     const verification = createDeferred<{ ok: boolean }>();
     const creation = createDeferred();
@@ -142,14 +201,18 @@ describe("application agent creation", () => {
     expect(sidebar.querySelector(".sidebar-agent-menu [data-value]")).toBe(create);
     expect(sidebar.querySelector(".sidebar-agent-menu [role=separator]")).toBeNull();
     create?.click();
+    await sidebar.updateComplete;
+    expect(sidebar.querySelector(".sidebar-agent-menu")).toBeNull();
+    sidebar.querySelector<HTMLButtonElement>(".sidebar-agent-card__main")?.click();
+    await sidebar.updateComplete;
     await vi.waitFor(() => {
-      expect(context.agents.state.agentCreationPhase).toBe("checking");
+      expect(context.agents.state.agentCreationPhase).toBe("creating");
       expect(sidebar.querySelector('[data-value="command:new-agent"]')?.textContent).toContain(
         "Creating new agent",
       );
     });
     expect(roster.agents).toHaveLength(1);
-    expect(navigate).not.toHaveBeenCalled();
+    expect(navigate).toHaveBeenCalledOnce();
 
     verification.resolve({ ok: true });
     await vi.waitFor(() => {
@@ -166,9 +229,9 @@ describe("application agent creation", () => {
         "Creating new agent…",
       );
     });
-    expect(navigate).not.toHaveBeenCalled();
+    expect(navigate).toHaveBeenCalledOnce();
     creation.resolve();
-    await vi.waitFor(() => expect(navigate).toHaveBeenCalled());
+    await vi.waitFor(() => expect(context.chatSubmissions.creation).toBeUndefined());
     await settledNavigation();
     const bot = roster.agents[1];
     expect(bot).toEqual({ id: expect.stringMatching(/^bot-/), name: "New agent" });
@@ -185,36 +248,63 @@ describe("application agent creation", () => {
       onboarding: true,
     });
     // The creation owner starts the assistant turn; the UI never impersonates a user.
-    expect(request.mock.calls.map(([method]) => method)).toEqual([
-      "agents.list",
-      "openclaw.setup.verify",
-      "agents.create",
-    ]);
+    expect(request.mock.calls.map(([method]) => method)).toEqual(["agents.list", "agents.create"]);
     expect(toast.toast).toBeNull();
   });
 
-  it("explains failed inference without creating or leaving the current chat", async () => {
-    const { context, request, roster, navigate, toast } = await fixture({
-      verification: Promise.resolve({ ok: false, error: "Provider credentials expired" }),
-    });
+  it("explains failed inference and restores the prior chat without persisting an agent", async () => {
+    const { context, request, roster, navigate, replace, toast, settledNavigation } = await fixture(
+      {
+        verification: Promise.resolve({ ok: false, error: "Provider credentials expired" }),
+      },
+    );
     vi.useFakeTimers();
     await createApplicationAgent(context);
+    await settledNavigation();
     await toast.updateComplete;
     await vi.dynamicImportSettled();
     await vi.advanceTimersByTimeAsync(1_000);
     await toast.updateComplete;
     expect(roster.agents).toEqual([{ id: "main", name: "Molty" }]);
-    expect(request.mock.calls.map(([method]) => method)).toEqual([
-      "agents.list",
-      "openclaw.setup.verify",
-    ]);
-    expect(navigate).not.toHaveBeenCalled();
+    expect(request.mock.calls.map(([method]) => method)).toEqual(["agents.list", "agents.create"]);
+    expect(navigate).toHaveBeenCalledOnce();
+    expect(replace).toHaveBeenCalledWith("chat", { pathname: "/chat/main", search: "", hash: "" });
+    expect(context.chatSubmissions.creation).toBeUndefined();
     expect(context.agentSelection.state.selectedId).toBe("main");
     expect(context.gateway.snapshot.sessionKey).toBe("agent:main:home");
     expect(toast.active).toBe(true);
     expect(toast.querySelector(".app-toast__message")?.textContent).toContain(
       "Provider credentials expired",
     );
+  });
+
+  it("restores the prior chat if the same Gateway disconnects during verification", async () => {
+    const verification = createDeferred<{ ok: boolean }>();
+    const { context, request, roster, replace, publishGateway, settledNavigation } = await fixture({
+      verification: verification.promise,
+    });
+    const client = context.gateway.snapshot.client;
+    const creating = createApplicationAgent(context);
+    await settledNavigation();
+    expect(context.router.getState().location.pathname).toMatch(/^\/chat\/bot-/);
+
+    publishGateway({ phase: "reconnecting" });
+    expect(context.gateway.snapshot.client).toBe(client);
+    verification.resolve({ ok: true });
+    await creating;
+    await settledNavigation();
+
+    expect(context.router.getState().location.pathname).toBe("/chat/main");
+    expect(replace).toHaveBeenCalledExactlyOnceWith("chat", {
+      pathname: "/chat/main",
+      search: "",
+      hash: "",
+    });
+    // A disconnected client cannot undo an already dispatched server creation.
+    expect(roster.agents).toHaveLength(2);
+    expect(context.agents.state.agentsList).toBeNull();
+    expect(context.chatSubmissions.creation).toBeUndefined();
+    expect(request.mock.calls.map(([method]) => method)).toEqual(["agents.list", "agents.create"]);
   });
 
   it.each(["route", "selection"] as const)(
