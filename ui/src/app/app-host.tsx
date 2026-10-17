@@ -514,14 +514,7 @@ export class ShellOwner
 
   readonly openNewSession = this.shellNavigation.openNewSession.bind(this.shellNavigation);
 
-  // Shipped Mac app builds without web chrome still drive these handlers.
-  readonly handleNativeToggleSidebar = this.toggleNavigationSurface;
-  readonly handleNativeOpenSearch = this.shellChrome.openPalette;
-  readonly handleNativeToggleSearch = this.shellChrome.handleNativeToggleSearch;
   readonly handleNativeNewSession = this.shellChrome.handleNativeNewSession;
-  readonly handleNativeNavigate = this.shellChrome.handleNativeNavigate;
-  readonly handleWindowResize = this.shellChrome.handleWindowResize;
-  readonly handleDocumentKeydown = this.shellChrome.handleDocumentKeydown;
   get pendingDebugOverlayMode() {
     return this.shellChrome.pendingDebugOverlayMode;
   }
@@ -546,7 +539,6 @@ export class ShellOwner
       ),
     });
   };
-  readonly handleShellNavDrawerToggle = this.shellChrome.handleShellNavDrawerToggle;
   readonly handleCommandPaletteSlashCommand = this.shellChrome.handleCommandPaletteSlashCommand;
   readonly restorePendingLazyAction = this.shellChrome.restorePendingLazyAction;
   readonly nativeNavCollapsed = this.shellChrome.nativeNavCollapsed;

@@ -493,14 +493,13 @@ describe("shell lazy events", () => {
     });
 
     await withConnectedShell(shell, async () => {
-      shell.handleDocumentKeydown(shortcut);
+      document.dispatchEvent(shortcut);
       expect(shortcut.defaultPrevented).toBe(true);
       await vi.dynamicImportSettled();
       await vi.waitFor(() => expect(toggled).toHaveBeenCalledOnce());
 
       const input = document.body.appendChild(document.createElement("input"));
       onTestFinished(() => input.remove());
-      input.addEventListener("keydown", (event) => shell.handleDocumentKeydown(event));
       input.dispatchEvent(
         new KeyboardEvent("keydown", {
           key: "d",
