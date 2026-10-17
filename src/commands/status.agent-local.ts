@@ -103,9 +103,10 @@ export async function collectStatusLocalSnapshot(cfg: OpenClawConfig) {
         0,
       );
       return {
-        // The gateway keeps a projected first id for wire compatibility. Local status must
-        // preserve the selection state so read-only consumers never treat that id as an owner.
-        defaultId,
+        // Keep explicit fleets unselected; the prepared default still owns local inspection.
+        defaultId: defaultId
+          ? ((statuses.find(({ id }) => id === defaultId) ?? statuses[0])?.id ?? null)
+          : null,
         ownership: agentList.ownership,
         selectionRequired: agentList.selectionRequired,
         agents: statuses,

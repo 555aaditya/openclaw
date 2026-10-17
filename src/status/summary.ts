@@ -475,9 +475,13 @@ export async function prepareStatusSummary(
     publish() {
       const publishedStores = sessionStores.publish();
       const survivingIds = new Set(publishedStores.byAgent.map(({ agent }) => agent.id));
+      const survivingAgents = agentList.agents.filter(({ id }) => survivingIds.has(id));
       const publishedAgentList = {
         ...agentList,
-        agents: agentList.agents.filter(({ id }) => survivingIds.has(id)),
+        defaultId: survivingIds.has(agentList.defaultId)
+          ? agentList.defaultId
+          : survivingAgents[0]?.id,
+        agents: survivingAgents,
       };
       const recentCandidates = sortAndLimitBy(
         publishedStores.recent,
@@ -534,7 +538,7 @@ export async function prepareStatusSummary(
               }
             : undefined,
           heartbeat: {
-            defaultAgentId: agentList.defaultId,
+            defaultAgentId: publishedAgentList.defaultId,
             agents: heartbeatAgents.filter(({ agentId }) => survivingIds.has(agentId)),
           },
           channelSummary,

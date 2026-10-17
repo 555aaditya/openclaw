@@ -661,13 +661,10 @@ export async function collectGatewayHealthSnapshot(params: {
     channelOrder,
     channelLabels,
     heartbeatSeconds,
-    ...(defaultAgentId ? { defaultAgentId } : {}),
+    // Display follows surviving rows; configured runtime ownership does not change.
+    ...(defaultAgentId && summaryAgent ? { defaultAgentId: summaryAgent.agentId } : {}),
     agents,
-    sessions: {
-      path: sessions.path,
-      count: sessions.count,
-      recent: sessions.recent,
-    },
+    sessions,
   };
 }
 

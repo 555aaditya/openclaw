@@ -2,7 +2,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { expectDefined } from "@openclaw/normalization-core";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { stripAnsi } from "../../../packages/terminal-core/src/ansi.js";
 import { awaitGateBeforeSettlement, createDeferred } from "../../../test/helpers/promise.js";
+import * as diagnosticReadiness from "../../commands/gateway-diagnostic-readiness.js";
+import { healthCommand } from "../../commands/health.js";
+import { collectStatusLocalSnapshot } from "../../commands/status.agent-local.js";
+import { createTestRuntime } from "../../commands/test-runtime-config-helpers.js";
 import * as configRuntime from "../../config/config.js";
 import { setRuntimeConfigSnapshot } from "../../config/runtime-snapshot.js";
 import { resolveSessionStorePathCore } from "../../config/sessions/paths.js";
@@ -24,6 +29,7 @@ import { beginAgentDeletionJournal } from "../../test-utils/agent-deletion-journ
 import { closeStateDatabaseForTest } from "../../test-utils/database-cleanup.js";
 import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
 import { useSessionStoreTempDirs } from "../../test-utils/session-state-cleanup.js";
+import * as gatewayCall from "../call.js";
 import {
   buildHealthAgentSummaries,
   collectGatewayHealthSnapshot,
@@ -212,6 +218,9 @@ describe("health session store paths", () => {
           agents: {
             ownership: "explicit",
             entries: timing === "only-agent" ? { deleting: {} } : { deleting: {}, survivor: {} },
+            ...(timing === "late-health"
+              ? { defaults: { systemAgent: { agentId: "deleting" }, heartbeat: { every: "1m" } } }
+              : {}),
           },
           ...(shared ? { session: { store: state.statePath("shared.sqlite") } } : {}),
         };
@@ -229,6 +238,8 @@ describe("health session store paths", () => {
             { sessionId: "retired-session", updatedAt: 5 },
           );
         }
+        const preparedLocal =
+          timing === "late-health" ? await collectStatusLocalSnapshot(cfg) : undefined;
         const replied = createDeferred();
         const release = createDeferred();
         const read = sessionReadRuntime.withSessionStoreReaderInWorker;
@@ -306,6 +317,22 @@ describe("health session store paths", () => {
                 expect(health.sessions.recent.map(({ key }) => key)).toEqual(
                   expectedIds.map((id) => `agent:${id}:main`),
                 );
+                vi.spyOn(gatewayCall, "callGateway").mockResolvedValueOnce(health);
+                vi.spyOn(diagnosticReadiness, "waitForGatewayDiagnostic").mockResolvedValueOnce(
+                  1000,
+                );
+                const runtime = createTestRuntime();
+                await healthCommand({ config: cfg }, runtime);
+                const output = stripAnsi(runtime.log.mock.calls.flat().join("\n"));
+                expect(output).toContain("Heartbeat interval: 1m (survivor)");
+                expect(output).toContain("Session store (survivor):");
+                expect(health.defaultAgentId).toBe("survivor");
+                expect(resolveHealthAgentOrder(cfg).defaultAgentId).toBe("deleting");
+                expect(preparedLocal?.defaultId).toBe("deleting");
+                expect(preparedLocal?.publish()).toMatchObject({
+                  defaultId: "survivor",
+                  agents: [{ id: "survivor" }],
+                });
               }
               const health = await collect();
               expect(health.agents.map((agent) => agent.agentId)).toEqual(expectedIds);
@@ -333,7 +360,11 @@ describe("health session store paths", () => {
     async (phase) => {
       await withOpenClawTestState({ label: "status-final-publication" }, async (state) => {
         const cfg: OpenClawConfig = {
-          agents: { ownership: "explicit", entries: { deleting: {}, survivor: {} } },
+          agents: {
+            ownership: "explicit",
+            entries: { deleting: {}, survivor: {} },
+            ...(phase === "desktop" ? { defaults: { systemAgent: { agentId: "deleting" } } } : {}),
+          },
         };
         setRuntimeConfigSnapshot(cfg);
         for (const id of ["deleting", "survivor"]) {
@@ -389,6 +420,14 @@ describe("health session store paths", () => {
           expect(summary.sessions.count).toBe(1);
           expect(summary.heartbeat.agents.map(({ agentId }) => agentId)).toEqual(["survivor"]);
           expect(summary.cliProjection?.agents.rows.map(({ id }) => id)).toEqual(["survivor"]);
+          expect(summary.heartbeat.defaultAgentId).toBe("survivor");
+          expect(summary.cliProjection?.agents.defaultId).toBe(
+            phase === "desktop" ? "survivor" : null,
+          );
+          expect(summary.cliProjection?.agents.selectionRequired).toBe(phase !== "desktop");
+          expect(cfg.agents?.defaults?.systemAgent?.agentId).toBe(
+            phase === "desktop" ? "deleting" : undefined,
+          );
         } finally {
           release.resolve();
           await pending.catch(() => {});
