@@ -2,9 +2,10 @@ import path from "node:path";
 import type {
   AgentExecutorController,
   AgentHarnessAttemptParamsV3,
+  AgentHarnessV3,
 } from "openclaw/plugin-sdk/agent-harness-runtime";
 import * as harnessRuntime from "openclaw/plugin-sdk/agent-harness-runtime";
-import type { OpenClawConfig, OpenClawPluginApi } from "openclaw/plugin-sdk/plugin-entry";
+import type { OpenClawConfig } from "openclaw/plugin-sdk/plugin-entry";
 import type { PluginRuntime } from "openclaw/plugin-sdk/plugin-runtime";
 import {
   createPluginStateKeyedStoreForTests,
@@ -99,7 +100,7 @@ export async function executorFixture(state: { stateDir: string; env: NodeJS.Pro
 }
 
 export function requireExecutorHarness(runtime: PluginRuntime) {
-  const registerAgentHarness = vi.fn<OpenClawPluginApi["registerAgentHarness"]>();
+  const registerAgentHarness = vi.fn<(harness: AgentHarnessV3) => void>();
   plugin.register(createTestPluginApi({ id: "agentsapi", runtime, registerAgentHarness }));
   const harness = registerAgentHarness.mock.calls[0]?.[0];
   assert(

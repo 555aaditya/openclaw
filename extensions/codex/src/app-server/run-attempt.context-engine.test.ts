@@ -59,7 +59,7 @@ async function createSqliteParams(
     agentId: "main",
     sessionKey,
     storePath,
-    entry: { sessionFile, sessionId, updatedAt: Date.now() },
+    entry: { sessionId, updatedAt: Date.now() },
   });
   params.sessionTarget = {
     agentId: "main",

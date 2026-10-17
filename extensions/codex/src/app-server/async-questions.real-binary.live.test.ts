@@ -157,7 +157,6 @@ describeLive("Codex async questions real-binary bridge", () => {
         ...sessionTarget,
         entry: {
           sessionId: sessionTarget.sessionId,
-          sessionFile: params.sessionFile,
           updatedAt: Date.now(),
         },
       });

@@ -14,6 +14,7 @@ import {
   setActiveEmbeddedRun,
   type AgentHarness,
   type AgentHarnessQuestionGatewayCall,
+  type AgentHarnessRegistrationOptions,
   type AgentHarnessAttemptParams,
   type AgentHarnessAttemptParamsV2,
   type AgentHarnessAttemptParamsV3,
@@ -80,9 +81,9 @@ describe("agent harness runtime SDK facade", () => {
     expectTypeOf<
       Parameters<AgentHarnessV3["runAttempt"]>[0]
     >().toEqualTypeOf<AgentHarnessAttemptParamsV3>();
-    expectTypeOf<
-      Parameters<OpenClawPluginApi["registerAgentHarness"]>[0]
-    >().toEqualTypeOf<AgentHarness>();
+    expectTypeOf<Parameters<OpenClawPluginApi["registerAgentHarness"]>[0]>().toEqualTypeOf<
+      AgentHarness | AgentHarnessV3
+    >();
     type DirectRegistration = typeof import("../agents/harness/registry.js").registerAgentHarness;
     expectTypeOf<Parameters<DirectRegistration>[0]>().toEqualTypeOf<AgentHarness>();
   });
@@ -119,6 +120,11 @@ describe("agent harness runtime SDK facade", () => {
 
     expectTypeOf(legacyHarness).toMatchTypeOf<AgentHarness>();
     expectTypeOf<AgentHarnessV2>().toMatchTypeOf<AgentHarness>();
+    type PublishedRegister = (
+      harness: AgentHarness,
+      options?: AgentHarnessRegistrationOptions,
+    ) => void;
+    expectTypeOf<PublishedRegister>().toMatchTypeOf<OpenClawPluginApi["registerAgentHarness"]>();
     expectTypeOf<
       Omit<AgentHarnessAttemptParamsV2, "onSettledTurn">
     >().toMatchTypeOf<AgentHarnessAttemptParamsV2>();

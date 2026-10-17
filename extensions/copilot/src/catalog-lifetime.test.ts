@@ -82,15 +82,18 @@ it("cancels a resumed Code Mode cell during real SDK session.error cleanup befor
     persistFallback: async () => {},
   };
   const config = { tools: { codeMode: { enabled: true } } };
-  const host = await createAdmittedHostCapabilityTestFixture({
-    config,
-    runId,
-    agentId: "main",
-    sessionId,
-    sessionKey,
-    workspaceDir: state.workspaceDir,
-    abortSignal: callController.signal,
-  });
+  const host = await createAdmittedHostCapabilityTestFixture(
+    {
+      config,
+      runId,
+      agentId: "main",
+      sessionId,
+      sessionKey,
+      workspaceDir: state.workspaceDir,
+      abortSignal: callController.signal,
+    },
+    { hostCapabilityVersion: 2 },
+  );
   let attempt: ReturnType<typeof harness.runAttempt> | undefined;
   const realCreateToolBridge = createCopilotToolBridge;
   const constructBridge = vi

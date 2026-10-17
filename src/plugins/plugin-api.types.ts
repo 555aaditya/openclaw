@@ -389,11 +389,11 @@ export type OpenClawPluginApi = {
   registerCompactionProvider: (
     provider: import("./compaction-provider.js").CompactionProvider,
   ) => void;
-  /** Register an agent harness implementation. */
-  registerAgentHarness: {
-    (harness: AgentHarnessV3, options?: AgentHarnessRegistrationOptions): void;
-    (harness: AgentHarness, options?: AgentHarnessRegistrationOptions): void;
-  };
+  /** Method variance preserves existing registration callbacks when adding a harness generation. */
+  registerAgentHarness(
+    harness: AgentHarness | AgentHarnessV3,
+    options?: AgentHarnessRegistrationOptions,
+  ): void;
   /** Register this plugin's executor controller, selected by the owning plugin ID. */
   registerAgentExecutorController: (controller: AgentExecutorController) => void;
   /**

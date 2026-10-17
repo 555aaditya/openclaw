@@ -24,7 +24,7 @@ export async function attachSqliteSessionTarget(
     agentId: "main",
     sessionKey: params.sessionKey,
     storePath,
-    entry: { sessionFile: params.sessionFile, sessionId, updatedAt: Date.now() },
+    entry: { sessionId, updatedAt: Date.now() },
   });
 }
 export async function appendSqliteHistoryMessage(

@@ -1,6 +1,3 @@
-/**
- * Codex app-server agent harness registration and lazy runtime boundaries.
- */
 import type {
   AgentHarnessV3,
   AgentHarnessHostCapabilitiesV2,
@@ -90,10 +87,6 @@ async function disposeSharedCodexAppServerClients(): Promise<void> {
   await dispose?.();
 }
 
-/**
- * Creates the Codex app-server harness used for attempts, side questions,
- * compaction, reset, and disposal.
- */
 export function createCodexAppServerAgentHarness(
   options: CodexAppServerAgentHarnessOptions,
 ): AgentHarnessV3 {

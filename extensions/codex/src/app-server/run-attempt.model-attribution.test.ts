@@ -1,7 +1,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { EmbeddedRunAttemptParamsV3 } from "openclaw/plugin-sdk/agent-harness-runtime";
+import type {
+  AgentHarnessV3,
+  EmbeddedRunAttemptParamsV3,
+} from "openclaw/plugin-sdk/agent-harness-runtime";
 import { createDeferred } from "openclaw/plugin-sdk/extension-shared";
 import type {
   OpenAsyncKeyedStoreOptions,
@@ -12,7 +15,7 @@ import {
   createPluginStateKeyedStoreForTests,
   createPluginStateSyncKeyedStoreForTests,
 } from "openclaw/plugin-sdk/plugin-state-test-runtime";
-import { createTestPluginApi, type TestPluginApiInput } from "openclaw/plugin-sdk/plugin-test-api";
+import { createTestPluginApi } from "openclaw/plugin-sdk/plugin-test-api";
 import { createPluginRuntimeMock } from "openclaw/plugin-sdk/plugin-test-runtime";
 import {
   ensureAuthProfileStore,
@@ -208,7 +211,7 @@ describe("registered Codex harness model attribution", () => {
       config: { current: () => ({ plugins: { entries: { codex: { config: pluginConfig } } } }) },
       state: stateRuntime.state,
     });
-    const registerAgentHarness = vi.fn<NonNullable<TestPluginApiInput["registerAgentHarness"]>>();
+    const registerAgentHarness = vi.fn<(harness: AgentHarnessV3) => void>();
     plugin.register(
       createTestPluginApi({
         id: "codex",

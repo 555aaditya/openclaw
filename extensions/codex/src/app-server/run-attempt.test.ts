@@ -2434,7 +2434,6 @@ describe("runCodexAppServerAttempt", () => {
         storePath,
         entry: {
           sessionId: node,
-          sessionFile: sessionKey,
           createdVia: via,
           parentSessionKey,
           forkedFromParent: true,

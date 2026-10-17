@@ -76,6 +76,10 @@ parameter types when native execution needs the required
 harnesses; current bundled harnesses use version 2. Both are issued by the same
 closure-bound host owner. No removal date is set: removal requires stable
 deprecation followed by a separately announced ordinary stable release window.
+`OpenClawPluginApi.registerAgentHarness` accepts both legacy and V3 harnesses;
+existing registration callbacks typed with `AgentHarness` remain assignable to
+that member. Its method signature preserves the same variance used by the
+versioned harness methods.
 Codex on a version-1 host rejects attempt or side-question admission with an
 actionable update message before loading its native runtime.
 

@@ -206,7 +206,7 @@ describe("parent session fork", () => {
       .mockRejectedValue(new Error("Session fork attempted to acquire a replacement client"));
     const host = await createAdmittedHostCapabilityTestFixture(
       { runId: "session-fork" },
-      { toolCalls: "deny" },
+      { toolCalls: "deny", hostCapabilityVersion: 2 },
     );
     const side: AgentHarnessSideQuestionParamsV3 = {
       cfg: params.config ?? {},

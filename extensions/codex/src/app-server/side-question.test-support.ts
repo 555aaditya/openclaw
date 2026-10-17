@@ -297,7 +297,6 @@ export function sideParams(overrides: Partial<SideQuestionParams> = {}): SideQue
     question: "What changed?",
     sessionEntry: {
       sessionId: "session-1",
-      sessionFile: "/tmp/session-1.jsonl",
       updatedAt: 1,
     },
     resolvedReasoningLevel: "off",
