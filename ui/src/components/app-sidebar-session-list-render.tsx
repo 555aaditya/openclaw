@@ -179,7 +179,7 @@ function renderSessionCatalog(params: {
       onCatalogMenuTriggerRendered={(key, element) =>
         host().sidebarMenus.catalogMenu.retargetTrigger(key, element)
       }
-      isMenuOpen={(key) => host().sidebarMenus.catalogMenu.isOpenFor(key)}
+      isMenuOpen={(key) => host().sidebarMenus.catalogMenuView.isOpenFor(key)}
     />
   );
 }
@@ -313,7 +313,10 @@ export function renderSessionListFrame(host: SidebarSessionListHost, body: JSX.E
   });
   return (
     <section
-      class={`sidebar-sessions ${host.sessionOrganizer.sessionListRemovalDrop ? "sidebar-sessions--removal-drop" : ""}`}
+      class={[
+        "sidebar-sessions",
+        host.sessionOrganizer.sessionListRemovalDrop && "sidebar-sessions--removal-drop",
+      ]}
       onDragOver={(event: DragEvent) => host.sessionOrganizer.handleSessionListDragOver(event)}
       onDragLeave={(event: DragEvent) => host.sessionOrganizer.handleSessionListDragLeave(event)}
       onDrop={(event: DragEvent) => host.sessionOrganizer.handleSessionListDrop(event)}
@@ -338,4 +341,3 @@ export function renderSessionListFrame(host: SidebarSessionListHost, body: JSX.E
   );
 }
 const SessionCatalog = renderSessionCatalog;
-export { SessionSection as renderSessionSection };

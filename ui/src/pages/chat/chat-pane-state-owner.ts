@@ -2,7 +2,6 @@ import type { ChatWorkContext } from "../../../../packages/gateway-protocol/src/
 import type {
   SessionCatalogHost,
   SessionCatalogSession,
-  SessionDiscussionState,
   SessionSharingRole,
   SessionSuggestion,
 } from "../../../../packages/gateway-protocol/src/index.js";
@@ -44,6 +43,7 @@ import {
 import type { SwarmRosterHydrator } from "../../lib/sessions/swarm-roster.ts";
 import { SessionUnreadPatchGuard } from "../../lib/sessions/unread.ts";
 import { ChatComposerCapabilityHost } from "./chat-composer-capability-host.tsx";
+import { projectChatFields } from "./chat-field-projection.ts";
 import {
   CHAT_PANE_LIFECYCLE_CHANGED_EVENT,
   CHAT_RUN_ACTIVITY_CHANGED_EVENT,
@@ -54,6 +54,7 @@ import {
   getChatHistoryLoadState,
   isChatHistoryRetrying,
 } from "./chat-history-state.ts";
+import { createChatPaneDiscussionState } from "./chat-pane-discussion-state.ts";
 import { sameChatPanePresence } from "./chat-pane-presence.ts";
 import type { PendingSessionPanelToggle } from "./chat-pane-session-panel-toggle.ts";
 import type { ChatPaneConnectionScope, PaneSessionChangeOptions } from "./chat-pane-shared.ts";
@@ -119,10 +120,12 @@ export abstract class ChatPaneStateOwner {
     this.isConnected = true;
     this.transcript.start();
     this.refreshBoardSubscriptions();
+    // Focus ownership hands off draft persistence synchronously, before another input event.
     this.chatState.addCleanup(
       chatInputOwnerForContext(this.context).subscribe(() => this.activeChanged(this.active)),
     );
     this.activeChanged(this.active);
+    // Approval publications reconcile live request ownership even when rendering is parked.
     this.chatState.addCleanup(
       this.context.overlays?.subscribe((snapshot) => {
         if (this.state) {
@@ -131,6 +134,7 @@ export abstract class ChatPaneStateOwner {
         this.invalidate();
       }) ?? (() => {}),
     );
+    // Configuration publications reconcile the scoped swarm hydrator outside rendering.
     this.chatState.addCleanup(
       this.context.runtimeConfig?.subscribe(() => {
         this.refreshSwarmRoster();
@@ -365,7 +369,7 @@ export abstract class ChatPaneStateOwner {
   get runActivity() {
     return this.chatState.projectRunActivity(this.state);
   }
-  protected readonly composerCapabilities = new ChatComposerCapabilityHost(() => this.invalidate());
+  readonly composerCapabilities = new ChatComposerCapabilityHost();
   protected readonly transcript = createChatTranscript(
     () => this.invalidate(),
     () => this.paneId,
@@ -432,13 +436,13 @@ export abstract class ChatPaneStateOwner {
   protected projectChildRoster(
     target: ReturnType<typeof resolveUiConversationIdentity> | undefined,
   ) {
-    const sessions = target ? this.swarmHydrator?.rows : undefined;
+    const sessions = target ? this.swarm.hydrator?.rows : undefined;
     return {
-      swarm: target && this.swarmEnabled ? { ...target, sessions: sessions ?? [] } : undefined,
+      swarm: target && this.swarm.enabled ? { ...target, sessions: sessions ?? [] } : undefined,
       subagentSessions: sessions,
-      subagentSessionsHydrated: Boolean(target && this.swarmHydrator?.hydrated),
-      subagentSessionsPending: Boolean(target && this.swarmHydrator?.pendingChildRead),
-      subagentSessionsRead: Boolean(target && this.swarmHydrator?.childrenRead),
+      subagentSessionsHydrated: Boolean(target && this.swarm.hydrator?.hydrated),
+      subagentSessionsPending: Boolean(target && this.swarm.hydrator?.pendingChildRead),
+      subagentSessionsRead: Boolean(target && this.swarm.hydrator?.childrenRead),
       // Carry the admitted owner forward; route aliases do not identify child ancestry.
       subagentParentKey: target
         ? scopedSessionArtifactKey(target.sessionKey, target.agentId)
@@ -523,10 +527,11 @@ export abstract class ChatPaneStateOwner {
     expanded: boolean;
     pendingRoute?: boolean;
   };
-  protected swarmHydrator: SwarmRosterHydrator | null = null;
-  protected swarmEnabled = true;
-  protected readonly sessionDiscussionStates = new Map<string, SessionDiscussionState>();
-  protected readonly sessionDiscussionOpenUrls = new Map<string, string | null>();
+  readonly swarm: { hydrator: SwarmRosterHydrator | null; enabled: boolean } = {
+    hydrator: null,
+    enabled: true,
+  };
+  readonly sessionDiscussion = createChatPaneDiscussionState();
   protected readonly pendingPanelToggleRequests = new Map<
     SessionPanelToggleSlot,
     PendingSessionPanelToggle
@@ -587,12 +592,21 @@ export abstract class ChatPaneStateOwner {
   protected githubPublication: GitHubPublicationBinding | null = null;
   protected dismissedSessionPullRequestIds: ReadonlySet<string> = new Set();
   protected readonly dismissedWorkspaceConflictRefs = new Map<string, string>();
-  protected catalogMessages: unknown[] = [];
-  protected catalogLoading = false;
-  protected loadingOlder = false;
-  protected catalogCursor: string | undefined;
-  protected catalogSession: SessionCatalogSession | null = null;
-  protected catalogHost: SessionCatalogHost | null = null;
+  readonly history = projectChatFields<{
+    catalogMessages: unknown[];
+    catalogLoading: boolean;
+    loadingOlder: boolean;
+    catalogCursor: string | undefined;
+    catalogSession: SessionCatalogSession | null;
+    catalogHost: SessionCatalogHost | null;
+  }>({
+    catalogMessages: [],
+    catalogLoading: false,
+    loadingOlder: false,
+    catalogCursor: undefined,
+    catalogSession: null,
+    catalogHost: null,
+  });
   protected catalogLoadGeneration = 0;
   protected catalogRequestedSessionKey: string | null = null;
   protected olderLoadGeneration = 0;
@@ -612,7 +626,7 @@ export abstract class ChatPaneStateOwner {
     public context: ApplicationContext,
   ) {}
 
-  private subscribedBoardProvider: BoardProvider | undefined;
+  subscribedBoardProvider: BoardProvider | undefined;
   private stopBoardSubscriptions: (() => void) | undefined;
 
   refreshBoardSubscriptions(): void {
@@ -625,14 +639,10 @@ export abstract class ChatPaneStateOwner {
     }
     this.stopBoardSubscriptions?.();
     this.subscribedBoardProvider = provider;
-    const stopSnapshot = provider.snapshot$.subscribe(this.invalidate);
-    const stopError = provider.loadError$.subscribe(this.invalidate);
-    const stopEvents = provider.events.subscribe((event) => this.handleBoardCommand(event));
-    this.stopBoardSubscriptions = () => {
-      stopSnapshot();
-      stopError();
-      stopEvents();
-    };
+    // Commands must reach the synchronous pane owner in order, including while parked.
+    this.stopBoardSubscriptions = provider.events.subscribe((event) =>
+      this.handleBoardCommand(event),
+    );
   }
 
   protected abstract refreshSessionPullRequests(options?: {
