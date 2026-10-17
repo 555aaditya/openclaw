@@ -116,7 +116,6 @@ function mapResponsesTerminalStopReason(
     case "failed":
     case "cancelled":
       return "error";
-    // These two are wonky ...
     case "in_progress":
     case "queued":
       return "stop";

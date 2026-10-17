@@ -1,4 +1,3 @@
-// Built-in provider registration installs lazy protocol adapters.
 import type { ApiProvider, ApiRegistry } from "../api-registry.js";
 import type {
   Api,

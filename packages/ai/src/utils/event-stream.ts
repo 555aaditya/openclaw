@@ -1,4 +1,3 @@
-/** Assistant message event stream implementation. */
 export {
   EventStream,
   AssistantMessageEventStream,

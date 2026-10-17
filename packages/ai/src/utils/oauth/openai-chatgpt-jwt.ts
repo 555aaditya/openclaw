@@ -1,4 +1,3 @@
-// OpenAI ChatGPT JWT helpers inspect auth claims for ChatGPT OAuth sessions.
 const OPENAI_CODEX_AUTH_CLAIM = "https://api.openai.com/auth";
 
 export type OpenAICodexJwtPayload = {

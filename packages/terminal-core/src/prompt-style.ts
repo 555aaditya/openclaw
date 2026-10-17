@@ -1,7 +1,5 @@
 import { isRich, theme } from "./theme.js";
 
-// Shared styling helpers for interactive prompt copy.
-
 /** Style a prompt message when rich terminal output is active. */
 export const stylePromptMessage = (message: string): string =>
   isRich() ? theme.accent(message) : message;

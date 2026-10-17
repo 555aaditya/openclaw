@@ -1,8 +1,6 @@
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
 import { theme } from "./theme.js";
 
-// Styles the status word in health output lines.
-
 const HEALTH_STATUS_COLORS = [
   ["failed", "error"],
   ["degraded", "warn"],

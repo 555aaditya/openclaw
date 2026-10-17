@@ -1,4 +1,3 @@
-// GitHub Copilot header helpers build request headers for Copilot-backed providers.
 import type { Message } from "../types.js";
 import { projectCopilotRequestFacts } from "./github-copilot-request-facts.js";
 

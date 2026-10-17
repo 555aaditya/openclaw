@@ -7,7 +7,6 @@ import {
 import { modelRequestBodyState } from "../transports/model-request-body.js";
 import { responsesServiceTierObserver } from "../transports/openai-responses-contracts.js";
 import { copyProviderAcceptanceObserver } from "../transports/transport-stream-shared.js";
-// Simple provider option helpers normalize lightweight provider configuration.
 import type { Model, SimpleStreamOptions, ThinkingBudgets, ThinkingLevel } from "../types.js";
 
 type FirstEventStreamOptions = {

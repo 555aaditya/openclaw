@@ -1,4 +1,3 @@
-// Provides model selection, usage, and thinking-level utility helpers.
 import {
   calculateUsageCost,
   resolveClaudeNativeThinkingLevelMap,
