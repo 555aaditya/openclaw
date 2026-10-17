@@ -30,11 +30,8 @@ import { createTempHomeEnv, type TempHomeEnv } from "../test-utils/temp-home.js"
 import { verifySystemAgentInferenceWithFallback } from "./inference-fallback.js";
 import { resolveSystemAgentConfiguredRouteFromConfig } from "./inference-route.js";
 import { activateSetupInference } from "./setup-inference-activate.js";
-import {
-  completeSetupInference,
-  verifySetupInference,
-  verifySetupInferenceConfig,
-} from "./setup-inference-turn.js";
+import { completeSetupInference } from "./setup-inference-completion.js";
+import { verifySetupInference, verifySetupInferenceConfig } from "./setup-inference-turn.js";
 import {
   createSystemAgentVerifiedInferenceBinding,
   resolveSystemAgentVerifiedInferenceRoute,
@@ -123,9 +120,13 @@ afterEach(async () => {
   await temp?.restore();
 });
 
-it.each(["utility-only", "primary failure", "primary success"] as const)(
-  "verifies an uncreated agent's inherited primary without creating it: %s",
-  async (scenario) => {
+it.each(
+  (["utility-only", "primary failure", "primary success"] as const).flatMap((scenario) =>
+    (["verify", "complete"] as const).map((entrypoint) => ({ scenario, entrypoint })),
+  ),
+)(
+  "$entrypoint checks an uncreated agent's inherited primary without creating it: $scenario",
+  async ({ scenario, entrypoint }) => {
     const agentId = "bot-00000000-0000-4000-8000-000000000001";
     const config = (await readSnapshot()).sourceConfig;
     config.meta = { ...config.meta, migrations: { utilityModelSeparation: true } };
@@ -187,16 +188,24 @@ it.each(["utility-only", "primary failure", "primary success"] as const)(
         },
       };
     });
-    const result = await verifySetupInference({
+    const request = {
       agentId,
-      modelTarget: "primary",
+      modelTarget: "primary" as const,
       runtime: { log() {}, error() {}, exit() {} },
       deps: {
         readConfigFileSnapshot: readSnapshot,
         createTempDir: () => fs.mkdtemp(path.join(temp.home, "probe-")),
         runEmbeddedAgent,
       },
-    });
+    };
+    const result =
+      entrypoint === "verify"
+        ? await verifySetupInference(request)
+        : await completeSetupInference({
+            ...request,
+            prompt: "Ask for your name.",
+            maxTokens: 128,
+          });
 
     expect(result.ok).toBe(scenario === "primary success");
     if (scenario === "utility-only") {

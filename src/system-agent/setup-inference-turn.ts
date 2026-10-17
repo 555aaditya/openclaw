@@ -40,7 +40,6 @@ import {
 import {
   type ActivateSetupInferenceDeps,
   type BoundVerifySetupInferenceResult,
-  type CompleteSetupInferenceResult,
   describeSetupInferenceError,
   invalidSetupConfigError,
   parseInferenceRef,
@@ -81,6 +80,7 @@ import {
 export async function runSetupInferenceTurn(params: {
   route: SystemAgentConfiguredRoute;
   prompt?: string;
+  maxTokens?: number;
   deps: ActivateSetupInferenceDeps;
   requireExecutionOwner: boolean;
   signal?: AbortSignal;
@@ -191,8 +191,9 @@ export async function runSetupInferenceTurn(params: {
         verboseLevel: "off",
         disableTrajectory: true,
         // The "reply OK" probe stays bounded; custom completions keep the model's own budget.
-        ...(params.prompt === undefined && (!harness || harness === "openclaw")
-          ? { streamParams: { maxTokens: SETUP_INFERENCE_TEST_MAX_TOKENS } }
+        ...((params.maxTokens !== undefined || params.prompt === undefined) &&
+        (!harness || harness === "openclaw")
+          ? { streamParams: { maxTokens: params.maxTokens ?? SETUP_INFERENCE_TEST_MAX_TOKENS } }
           : {}),
         modelRun: true,
       });
@@ -227,8 +228,20 @@ export async function runSetupInferenceTurn(params: {
         "Inference succeeded, but its runtime did not report an owner that OpenClaw can safely reuse.",
       );
     }
+    const assistant = shared.sessionManager
+      .getBranch()
+      .findLast((entry) => entry.type === "message" && entry.message.role === "assistant");
+    // CLI adapters may return text without a native transcript message. Keep
+    // that distinction so publication uses a delivery mirror, not invented usage.
+    const assistantReply: SetupTurnSuccess["assistantReply"] =
+      assistant?.type === "message" && assistant.message.role === "assistant"
+        ? { kind: "native", message: assistant.message }
+        : route.runner === "cli"
+          ? { kind: "cli-text", text }
+          : undefined;
     return {
       ok: true,
+      ...(assistantReply ? { assistantReply } : {}),
       latencyMs: Date.now() - started,
       text,
       auth: successfulAuth ?? (route.authProfileId ? { authProfileId: route.authProfileId } : {}),
@@ -418,7 +431,7 @@ export async function revalidateStableSetupInferenceOwner(params: {
   return binding;
 }
 
-type SetupInferenceRequestParams = {
+export type SetupInferenceRequestParams = {
   agentId?: string;
   modelTarget?: "primary" | "utility";
   runtime: RuntimeEnv;
@@ -685,59 +698,4 @@ export async function verifySetupInferenceConfig(
     latencyMs: turn.latencyMs,
     ...(route.modelTarget ? { modelTarget: route.modelTarget } : {}),
   };
-}
-
-/** Run one tool-free completion through the configured setup inference route. */
-export async function completeSetupInference(
-  params: SetupInferenceRequestParams & { prompt: string },
-): Promise<CompleteSetupInferenceResult> {
-  const readSnapshot =
-    params.deps?.readConfigFileSnapshot ??
-    (await import("../config/config.js")).readConfigFileSnapshot;
-  const snapshot = await readSnapshot();
-  if (!snapshot.exists) {
-    return { ok: false, status: "unavailable", error: "No OpenClaw config exists." };
-  }
-  if (!snapshot.valid) {
-    return { ok: false, status: "format", error: invalidSetupConfigError(snapshot) };
-  }
-  return await completeSetupInferenceConfig({
-    ...params,
-    config: snapshot.runtimeConfig ?? snapshot.config,
-    configSnapshot: snapshot,
-  });
-}
-
-/** Config-injected variant used by setup clients and live provider tests. */
-export async function completeSetupInferenceConfig(
-  params: SetupInferenceRequestParams & {
-    config: OpenClawConfig;
-    configSnapshot?: SystemAgentConfigSnapshot;
-    prompt: string;
-  },
-): Promise<CompleteSetupInferenceResult> {
-  const deps: ActivateSetupInferenceDeps = {
-    ...params.deps,
-    ...(params.timeoutMs !== undefined ? { timeoutMs: params.timeoutMs } : {}),
-  };
-  const route = await resolveSystemAgentConfiguredRouteFromConfig(
-    params.config,
-    params.agentId,
-    { loadAuthProfileStoreForRuntimeAsync: deps.loadAuthProfileStoreForRuntimeAsync },
-    params.configSnapshot,
-  );
-  if (!route) {
-    return { ok: false, status: "unavailable", error: "No agent model is configured." };
-  }
-  const turn = await runSetupInferenceTurn({
-    route,
-    prompt: params.prompt,
-    deps,
-    requireExecutionOwner: false,
-    runtime: params.runtime,
-  });
-  if (!turn.ok) {
-    return { ...turn, error: await redactSetupInferenceError(turn.error) };
-  }
-  return { ok: true, modelRef: route.modelLabel, latencyMs: turn.latencyMs, text: turn.text };
 }

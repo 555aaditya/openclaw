@@ -16,6 +16,7 @@ import type {
   InferenceBackendKind,
 } from "../commands/onboard-inference.js";
 import { normalizeAgentModelRefForConfig } from "../config/model-input.js";
+import type { SessionTranscriptAssistantMessage } from "../config/sessions/transcript.js";
 import type { ConfigFileSnapshot, OpenClawConfig } from "../config/types.openclaw.js";
 import type { PluginInstallRecord } from "../config/types.plugins.js";
 import { racePromiseWithAbortSignal } from "../infra/abort-signal.js";
@@ -174,8 +175,15 @@ export type VerifySetupInferenceResult =
       error: string;
     };
 
+export type SetupInferenceAssistantReply =
+  | { kind: "native"; message: SessionTranscriptAssistantMessage }
+  | { kind: "cli-text"; text: string };
+
 export type CompleteSetupInferenceResult =
-  | (Omit<Extract<VerifySetupInferenceResult, { ok: true }>, "modelTarget"> & { text: string })
+  | (Omit<Extract<VerifySetupInferenceResult, { ok: true }>, "modelTarget"> & {
+      text: string;
+      assistantReply?: SetupInferenceAssistantReply;
+    })
   | Extract<VerifySetupInferenceResult, { ok: false }>;
 
 export type BoundVerifySetupInferenceResult =

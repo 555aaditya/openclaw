@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createDeferred } from "../../test/helpers/promise.js";
 import { FailoverError } from "../agents/failover-error.js";
+import { buildAssistantMessage, buildUsageWithNoCost } from "../agents/stream-message-shared.js";
 import {
   createPluginMetadataSnapshot,
   makeRegistry,
@@ -69,6 +70,50 @@ function embeddedRoute(runtime: "codex" | "openclaw" = "codex"): SystemAgentConf
 }
 
 describe("setup inference plugin ownership", () => {
+  it("retains the exact generated assistant message from a bounded read-only completion", async () => {
+    const route = embeddedRoute("openclaw");
+    const assistant = buildAssistantMessage({
+      model: { api: "openai-responses", provider: route.provider, id: route.model },
+      content: [{ type: "text", text: "What would you like to call me?" }],
+      stopReason: "stop",
+      usage: buildUsageWithNoCost({ input: 12, output: 9 }),
+      timestamp: 100,
+    });
+    const result = await runSetupInferenceTurn({
+      route,
+      prompt: "Ask for your name.",
+      maxTokens: 128,
+      requireExecutionOwner: false,
+      deps: {
+        createTempDir: async () => "/tmp/openclaw-opening-test",
+        removeTempDir: async () => {},
+        runEmbeddedAgent: async (params) => {
+          expect(params).toMatchObject({
+            sessionPersistence: "detached",
+            authProfileStateMode: "read-only",
+            preparedModelRuntimeMode: "isolated-read-only",
+            allowAuthProfileFallback: false,
+            disableTools: true,
+            thinkLevel: "off",
+            streamParams: { maxTokens: 128 },
+          });
+          await params.sessionManager!.appendMessageAsync(assistant);
+          return {
+            payloads: [{ text: "What would you like to call me?" }],
+            meta: {
+              durationMs: 1,
+              executionTrace: { winnerProvider: route.provider, winnerModel: route.model },
+            },
+          };
+        },
+      },
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      assistantReply: { kind: "native", message: assistant },
+    });
+  });
+
   it.each([
     ["ECONNREFUSED", "Nothing is listening at http://127.0.0.1:43210", "Start the server"],
     ["ENOTFOUND", "The server name in http://127.0.0.1:43210 could not be found", "DNS"],

@@ -122,8 +122,7 @@ export const AgentsCreateResultSchema = closedObject({
     Type.Union([
       closedObject({
         sessionKey: NonEmptyString,
-        runId: NonEmptyString,
-        status: Type.Literal("accepted"),
+        status: Type.Literal("completed"),
       }),
       closedObject({
         sessionKey: NonEmptyString,

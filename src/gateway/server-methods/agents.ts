@@ -6,6 +6,7 @@ import {
   validateAgentsDeleteParams,
   validateAgentsUpdateParams,
 } from "../../../packages/gateway-protocol/src/index.js";
+import { validateAgentIdInput } from "../../agents/agent-create.js";
 import { AgentSharedStoreOwnerError } from "../../agents/agent-delete-databases.js";
 import { resolveAgentWorkspaceDir } from "../../agents/agent-scope.js";
 import {
@@ -25,6 +26,7 @@ import {
   attachRuntimeConfigWriteApplication,
   createRuntimeConfigWriteApplication,
 } from "../../config/runtime-write-application.js";
+import { formatErrorMessage } from "../../infra/errors.js";
 import { captureGatewayRootWorkAdmissionContinuationScope } from "../../process/gateway-work-admission.js";
 import { normalizeAgentIdStrict } from "../../routing/session-key.js";
 import { resolveUserPath } from "../../utils.js";
@@ -47,7 +49,11 @@ import {
   writeWorkspaceFileOrRespond,
 } from "./agents-files.js";
 import { agentListHandler } from "./agents-list.js";
-import { startCreatedAgentOnboarding } from "./agents-onboarding.js";
+import {
+  prepareAgentOnboarding,
+  completeAgentOnboarding,
+  type PreparedAgentOnboarding,
+} from "./agents-onboarding.js";
 import {
   captureLocalStateMutationGuard,
   localStateOwnerChangedError,
@@ -101,6 +107,22 @@ export const agentsHandlers: GatewayRequestHandlers = {
       respond(false, undefined, localStateOwnerChangedError(error));
       return;
     }
+    let opening: PreparedAgentOnboarding | undefined;
+    if (params.onboarding) {
+      const identity = validateAgentIdInput(params.agentId ?? params.name, {
+        displayName: params.name,
+      });
+      if (!identity.ok) {
+        respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, identity.message));
+        return;
+      }
+      try {
+        opening = await prepareAgentOnboarding(options, identity.agentId, params);
+      } catch (error) {
+        respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, formatErrorMessage(error)));
+        return;
+      }
+    }
     const application = createAgentConfigApplication(respond);
     try {
       const result = await createAgentConfigEntry(
@@ -111,7 +133,11 @@ export const agentsHandlers: GatewayRequestHandlers = {
           model: params.model,
           emoji: params.emoji,
           avatar: params.avatar,
-          beforePersistentApply: assertOwnerCurrent,
+          beforePersistentApply: () => {
+            assertOwnerCurrent?.();
+            opening?.assertCurrent();
+          },
+          ...(opening ? { expectedConfigHash: opening.expectedConfigHash } : {}),
           assertIdentityInputAllowed: captureGatewayClientUploadCommitGuard({
             method: "agents.create",
             requestParams: params,
@@ -131,8 +157,8 @@ export const agentsHandlers: GatewayRequestHandlers = {
       if (!(await application.confirm())) {
         return;
       }
-      const onboarding = params.onboarding
-        ? await startCreatedAgentOnboarding(options, result.agentId)
+      const onboarding = opening
+        ? await completeAgentOnboarding(options, result.agentId, opening)
         : undefined;
       respond(
         true,

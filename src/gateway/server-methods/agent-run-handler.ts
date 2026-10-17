@@ -14,18 +14,15 @@ import { createAgentRuntimeAuthorityGuard } from "./agent-runtime-authority.js";
 import type { GatewayRequestHandlerOptions, GatewayRequestHandlers } from "./types.js";
 import { assertValidParams } from "./validation.js";
 
-async function handleAgentRun(
-  {
-    params,
-    respond,
-    context,
-    client,
-    isWebchatConnect,
-    hasCurrentClientAuthority,
-    sessionMutationCommitGuard,
-  }: GatewayRequestHandlerOptions,
-  allowPromptPersistenceSuppression?: true,
-): Promise<void> {
+async function handleAgentRun({
+  params,
+  respond,
+  context,
+  client,
+  isWebchatConnect,
+  hasCurrentClientAuthority,
+  sessionMutationCommitGuard,
+}: GatewayRequestHandlerOptions): Promise<void> {
   const assertUploadAllowed = captureGatewayClientUploadCommitGuard({
     method: "agent",
     requestParams: params,
@@ -66,7 +63,6 @@ async function handleAgentRun(
     context,
     client: principal,
     io,
-    allowPromptPersistenceSuppression,
   });
   if (!preflight) {
     return;
@@ -96,27 +92,3 @@ async function handleAgentRun(
 
 export const agentRunHandler: GatewayRequestHandlers["agent"] = (options) =>
   handleAgentRun(options);
-
-/** Only the successful creation owner can author this fixed assistant-first bootstrap turn. */
-export async function startCreatedAgentOnboardingTurn(
-  options: GatewayRequestHandlerOptions,
-  target: { agentId: string; sessionKey: string; runId: string },
-): Promise<void> {
-  await handleAgentRun(
-    {
-      ...options,
-      req: { ...options.req, method: "agent" },
-      params: {
-        agentId: target.agentId,
-        sessionKey: target.sessionKey,
-        idempotencyKey: target.runId,
-        message:
-          "Begin your first conversation with the user. Follow your workspace's BOOTSTRAP.md onboarding instructions if present. Introduce yourself briefly and ask the first question needed to establish your name and identity. This is an internal startup event, not a user message.",
-        deliver: false,
-        suppressPromptPersistence: true,
-        inputProvenance: { kind: "internal_system", sourceTool: "agents.create" },
-      },
-    },
-    true,
-  );
-}

@@ -268,6 +268,8 @@ type SessionTranscriptAssistantAppendOptions = {
   /** Optional override for store path (mostly for tests). */
   storePath?: string;
   updateMode?: SessionTranscriptUpdateMode;
+  /** Atomic session initialization owns entry publication until its transcript is ready. */
+  touchSessionEntry?: boolean;
   config?: OpenClawConfig;
   beforeMessageWrite?: AssistantBeforeMessageWrite;
   assertCurrent?: () => void;
@@ -492,7 +494,7 @@ async function appendExactAssistantMessageWithSource(
     ...(params.runId ? { runId: params.runId } : {}),
     updateMode: params.updateMode ?? "inline",
     onMessageCommitted: params.onMessageCommitted,
-    touchSessionEntry: true,
+    touchSessionEntry: params.touchSessionEntry !== false,
     messages: [
       ...(params.command
         ? [

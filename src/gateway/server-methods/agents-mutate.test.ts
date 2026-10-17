@@ -97,7 +97,8 @@ const mocks = vi.hoisted(() => ({
   captureDeletedAgentDatabaseFences: vi.fn<() => [string, string][]>(() => []),
   reviveAgentDatabases: vi.fn(async (_agentIds: readonly string[]) => {}),
   logGatewayWarn: vi.fn(),
-  startCreatedAgentOnboarding: vi.fn(),
+  prepareAgentOnboarding: vi.fn(),
+  completeAgentOnboarding: vi.fn(),
   runAgentDatabaseCleanup: vi.fn(
     async (_target: unknown, run: () => Promise<unknown>) => await run(),
   ),
@@ -463,7 +464,8 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 });
 
 vi.mock(import("./agents-onboarding.js"), () => ({
-  startCreatedAgentOnboarding: mocks.startCreatedAgentOnboarding,
+  prepareAgentOnboarding: mocks.prepareAgentOnboarding,
+  completeAgentOnboarding: mocks.completeAgentOnboarding,
 }));
 
 const { agentsHandlers } = await import("./agents.js");
@@ -699,14 +701,18 @@ describe("agents.create", () => {
   });
 
   const create = (params: Record<string, unknown>) => call("agents.create", params);
-  it.each(["accepted", "error"] as const)(
+  it.each(["completed", "error"] as const)(
     "returns the created agent even when onboarding is $status",
     async (status) => {
       const onboarding =
-        status === "accepted"
-          ? { status, sessionKey: "agent:test-agent:home", runId: "opening-run" }
+        status === "completed"
+          ? { status, sessionKey: "agent:test-agent:home" }
           : { status, sessionKey: "agent:test-agent:home", error: "inference unavailable" };
-      mocks.startCreatedAgentOnboarding.mockImplementation(async (_options, agentId) => {
+      mocks.prepareAgentOnboarding.mockImplementation(async () => {
+        expect(mocks.writeConfigFile).not.toHaveBeenCalled();
+        return { expectedConfigHash: "test-hash", assertCurrent: vi.fn(), reply: {} };
+      });
+      mocks.completeAgentOnboarding.mockImplementation(async (_options, agentId) => {
         expect(agentId).toBe("test-agent");
         expect(mocks.writeConfigFile).toHaveBeenCalledOnce();
         return onboarding;
@@ -716,9 +722,19 @@ describe("agents.create", () => {
         agentId: "test-agent",
         onboarding,
       });
-      expect(mocks.startCreatedAgentOnboarding).toHaveBeenCalledOnce();
+      expect(mocks.completeAgentOnboarding).toHaveBeenCalledOnce();
     },
   );
+  it("does not create an agent or workspace when the real opening inference fails", async () => {
+    mocks.prepareAgentOnboarding.mockRejectedValueOnce(new Error("Inference unavailable"));
+    expectRespondErrorContaining(
+      await create({ agentId: "bot-unavailable", name: "New agent", onboarding: true }),
+      "Inference unavailable",
+    );
+    expect(mocks.writeConfigFile).not.toHaveBeenCalled();
+    expect(mocks.ensureAgentWorkspace).not.toHaveBeenCalled();
+    expect(mocks.completeAgentOnboarding).not.toHaveBeenCalled();
+  });
   it.each([
     { name: "Test Agent", workspace: "/home/user/agents/test", fancy: false },
     { name: "Test Agent", workspace: undefined, fancy: false },
@@ -740,7 +756,7 @@ describe("agents.create", () => {
     expect(mocks.ensureAgentWorkspace).toHaveBeenCalled();
     expect(mocks.writeConfigFile).toHaveBeenCalled();
     expect(mocks.reviveAgentDatabases).not.toHaveBeenCalled();
-    expect(mocks.startCreatedAgentOnboarding).not.toHaveBeenCalled();
+    expect(mocks.completeAgentOnboarding).not.toHaveBeenCalled();
     if (!workspace) {
       expect(mocks.resolveAgentWorkspaceDir).toHaveBeenCalledWith(expect.any(Object), "test-agent");
       expectRespondOk(respond, { workspace: "/resolved/workspace/test-agent" });
