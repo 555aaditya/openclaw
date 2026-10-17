@@ -1,4 +1,3 @@
-import type { EnvironmentSummary, WorkerDesktopAppId } from "@openclaw/gateway-protocol";
 import type { JSX } from "@solidjs/web";
 import { t } from "../../lib/reactive/i18n.ts";
 import type { DesktopFullscreen } from "../desktop-fullscreen.ts";
@@ -20,7 +19,6 @@ import {
   type DesktopSizingOptions,
 } from "./desktop-panel-view.tsx";
 import type { DesktopPictureInPicture } from "./desktop-picture-in-picture.ts";
-import { desktopSourceForEnvironment } from "./desktop-source.ts";
 
 type DesktopPresentationOptions = {
   documentMode: boolean;
@@ -39,9 +37,6 @@ type DesktopPresentationOptions = {
     recovery: Omit<Parameters<typeof DesktopPanelRecovery>[0], "inventoryError">;
   };
   controlling: boolean;
-  desktopApps: WorkerDesktopAppId[];
-  launchingApp: WorkerDesktopAppId | null;
-  startup: EnvironmentSummary | undefined;
   sizing: DesktopSizingOptions;
   mobileKeyboard: DesktopMobileKeyboard;
   pictureInPicture: DesktopPictureInPicture;
@@ -50,7 +45,6 @@ type DesktopPresentationOptions = {
   fullscreenMode: DesktopFullscreen;
   onControlToggle: () => void;
   onTakeControl: () => void;
-  onLaunch: (app: WorkerDesktopAppId) => void;
   onClose: () => void;
   onDocumentClose: () => void;
   focusTarget: () => {
@@ -130,16 +124,6 @@ export function DesktopPresentation(props: { view: DesktopPresentationOptions })
             availability={props.view.content.availability}
           />
           <DesktopAudioNotice state={props.view.audio.state()} />
-          {props.view.startup && (
-            <DesktopNotice
-              errorText={null}
-              noticeText={t(
-                props.view.startup.worker?.state === "bootstrapping"
-                  ? "desktop.preparing"
-                  : "desktop.starting",
-              )}
-            />
-          )}
         </>
       );
     },
@@ -223,19 +207,6 @@ export function DesktopPresentation(props: { view: DesktopPresentationOptions })
             get controlling() {
               return props.view.controlling;
             },
-            get desktopApps() {
-              return props.view.desktopApps;
-            },
-            get launchingApp() {
-              return props.view.launchingApp;
-            },
-            get showApps() {
-              const target = props.view.focusTarget();
-              return (
-                target.source !== null &&
-                desktopSourceForEnvironment({ id: target.source }).kind === "environment"
-              );
-            },
             get sizing() {
               return props.view.sizing;
             },
@@ -245,7 +216,6 @@ export function DesktopPresentation(props: { view: DesktopPresentationOptions })
             get audioControl() {
               return audioControl();
             },
-            onLaunch: (app) => props.view.onLaunch(app),
             onTakeControl: () => props.view.onTakeControl(),
             onControlToggle: () => props.view.onControlToggle(),
             onDisconnect: () => props.view.onDisconnect(),

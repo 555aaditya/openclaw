@@ -3,12 +3,15 @@ import {
   WORKER_EXECUTION_CONTEXT_PROTOCOL_FEATURE,
   WORKER_EXECUTION_AUTHORITY_PROTOCOL_FEATURE,
 } from "../../../packages/gateway-protocol/src/schema/worker-admission.js";
+import { setRuntimeConfigSnapshot } from "../../config/runtime-snapshot.js";
 import { createDeferredCore } from "../../shared/deferred.js";
 import {
   createWorkerPlacementInitialRecovery,
   installWorkerPlacementReconcileGuard,
 } from "../server-worker-placement-reconcile-guard.js";
 import { WorkerDispatchTargetChangedError } from "../server-worker-placement-session-target.js";
+import { bindDeviceWorkerAvailability } from "./device-provider.js";
+import { createNodeWorkerBundleTestNode } from "./node-worker-bundle.test-support.js";
 import { coordinateWorkerPlacementDispatch } from "./placement-dispatch-coordinator.js";
 import {
   MANIFEST_REF,
@@ -17,6 +20,7 @@ import {
 } from "./placement-dispatch-test-fixtures.js";
 import { createHarness, createRecoveryService } from "./placement-dispatch-test-harness.js";
 import { createWorkerSessionPlacementStore } from "./placement-store.js";
+import { createProviderReplayDispatch } from "./provider-replay.test-support.js";
 import {
   deriveEnvironmentIntent,
   WorkerPlacementAdmissionTargetError,
@@ -45,14 +49,43 @@ describe("worker placement shutdown replay", () => {
           provisionStarted.resolve();
           await interrupted.promise;
         }
-        return { leaseId: "lease-shutdown-replay", ssh: support.SSH_ENDPOINT, sharedHost: false };
+        return { leaseId: "lease-shutdown-replay", node: { deviceId: "node-1" }, sharedHost: true };
       },
       destroy,
     });
     let placements = createWorkerSessionPlacementStore({ database: support.testState.stateDb });
     const first = support.createService(provider);
+    const requirement = {
+      requiredNodeCommands: ["codex.exec-server.stdio.v1"],
+      consumesWorkerSlot: false,
+    };
+    const node = {
+      ...createNodeWorkerBundleTestNode(),
+      commands: requirement.requiredNodeCommands,
+    };
+    const config = {
+      ...support.testState.config,
+      gateway: { nodes: { commands: { allow: requirement.requiredNodeCommands } } },
+    };
+    setRuntimeConfigSnapshot(config, config);
+    const createDispatch = async (
+      environments: ReturnType<typeof support.createService>,
+      isShuttingDown: () => boolean = () => false,
+    ) => {
+      bindDeviceWorkerAvailability(environments, async (deviceId) =>
+        deviceId === node.nodeId ? { available: true, node } : { available: false },
+      );
+      return createProviderReplayDispatch({
+        initialPlacements: await placements.listAsync(),
+        placements,
+        environments,
+        isShuttingDown,
+        resolveDevicePlacementRequirement: async () => requirement,
+        isCurrentNodePlacement: (captured) => captured === node,
+      });
+    };
     let shuttingDown = false;
-    const dispatch = await createRecoveryService(placements, first, () => shuttingDown);
+    const dispatch = await createDispatch(first, () => shuttingDown);
     const transitions: string[] = [];
     const request = { ...REQUEST, executionMode: "remote-exec" as const };
     const rejected = expect(
@@ -99,7 +132,7 @@ describe("worker placement shutdown replay", () => {
     }));
     const attach = vi.spyOn(restarted, "attachSession");
     const recovery = coordinateWorkerPlacementDispatch(
-      await createRecoveryService(placements, restarted),
+      await createDispatch(restarted),
       (_request, run) => run(),
       createWorkerPlacementInitialRecovery({
         placements,

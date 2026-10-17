@@ -12,7 +12,6 @@ import {
   NODE_WORKER_ENVIRONMENT_SESSION_VERSION,
   NODE_WORKER_STATUS_WAIT_VERSION,
   NODE_WORKER_PORTAL_STREAM_VERSION,
-  NODE_WORKER_PREPARED_WORKSPACE_VERSION,
   NODE_WORKER_NATIVE_INFERENCE_VERSION,
   NODE_WORKER_PROMPT_CONTEXT_VERSION,
   NODE_WORKER_WORKSPACE_QUIESCENCE_VERSION,
@@ -329,9 +328,6 @@ export function startNodeHostConnection({
               ...(prepared.deviceFoldersEnabled &&
               gatewayCapabilities.has(GATEWAY_SERVER_CAPS.NODE_WORKER_DEVICE_FOLDERS)
                 ? { deviceFolders: true }
-                : {}),
-              ...(prepared.preparedWorkspacesEnabled
-                ? { preparedWorkspace: NODE_WORKER_PREPARED_WORKSPACE_VERSION }
                 : {}),
               bundlePrewarm: WORKER_BUNDLE_PREWARM_VERSION,
               ...(gatewayCapabilities.has(GATEWAY_SERVER_CAPS.NODE_WORKER_BUNDLE_RETENTION)

@@ -71,11 +71,10 @@ function createHeldInstaller(boundary: "attachment read" | "discovery" | "instal
   const service = support.createService(
     support.createProvider({
       supportedExecutionModes: ["worker-turn"],
-      provisionBeforeInstallation: true,
       provision: async () => ({
         leaseId: "cloud-owner-lease",
         node: { deviceId: node.nodeId },
-        sharedHost: false,
+        sharedHost: true,
       }),
       destroy,
     }),
@@ -131,7 +130,7 @@ describe("node provisioning installer ownership", () => {
               ...support.readyPatch(record.environmentId),
               leaseId: "replacement-lease",
               nodeDeviceId: fixture.node.nodeId,
-              sharedHost: false,
+              sharedHost: true,
             },
           });
         }

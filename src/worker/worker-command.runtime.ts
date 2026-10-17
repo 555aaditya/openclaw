@@ -13,7 +13,6 @@ import {
 } from "../agents/bash-process-registry.js";
 import { toErrorObject } from "../infra/errors.js";
 import { createBoundedLineFramer } from "../process/bounded-line-framer.js";
-import type { WorkerBrowserRuntime } from "./browser-runtime.js";
 import { parseWorkerLaunchDescriptor, type WorkerLaunchDescriptor } from "./launch-descriptor.js";
 import {
   takeNativeInferenceStartup,
@@ -30,7 +29,6 @@ type RunWorkerCommandOptions = {
   input: Readable;
   lifetime?: WorkerCommandLifetime;
   output: Writable;
-  browserRuntime?: WorkerBrowserRuntime;
   managed?: boolean;
   nativeInference?: NativeInferenceStartup;
 };
@@ -224,7 +222,6 @@ async function runManagedWorkerCommand(
               ...(options.lifetime
                 ? { onConnectionFailure: options.lifetime.reportConnectionFailure }
                 : {}),
-              ...(options.browserRuntime ? { browserRuntime: options.browserRuntime } : {}),
             },
           );
           if (closed) {
@@ -396,7 +393,6 @@ export async function runWorkerCommand(input: RunWorkerCommandOptions): Promise<
       ...(options.lifetime
         ? { onConnectionFailure: options.lifetime.reportConnectionFailure }
         : {}),
-      ...(options.browserRuntime ? { browserRuntime: options.browserRuntime } : {}),
     });
     const encoded = `${JSON.stringify(result)}\n`;
     options.output.write(encoded);

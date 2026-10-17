@@ -15,6 +15,7 @@ import {
   type OpenClawStateDatabase,
 } from "../../state/openclaw-state-db.js";
 import { closeStateDatabaseForTest } from "../../test-utils/database-cleanup.js";
+import type { WorkerEnvironmentNodeTunnel } from "./environment-access.js";
 import {
   type PlacementStore,
   REQUEST,
@@ -25,7 +26,6 @@ import { placementTurnOwner } from "./placement-record.js";
 import { createWorkerSessionPlacementStore } from "./placement-store.js";
 import { createWorkerSessionPlacementGate } from "./placement-worker-gate.js";
 import * as support from "./service.test-support.js";
-import { createWorkerTunnelManager } from "./tunnel.js";
 import { stagePendingWorkerWorkspaceResult } from "./workspace-recovery.test-support.js";
 import {
   applyStagedWorkerWorkspaceResult,
@@ -198,10 +198,23 @@ describe("worker placement result recovery", () => {
       const fixtureStart = vi
         .mocked(fixtureHarness.environments.startTunnel)
         .getMockImplementation()!;
-      const tunnels = createWorkerTunnelManager();
+      const tunnels: WorkerEnvironmentNodeTunnel = {
+        status: () => "stopped",
+        start: vi.fn(),
+        stop: vi.fn(async () => {}),
+        stopAll: vi.fn(async () => {}),
+        observeProcesses: vi.fn(),
+      };
       let claim: Awaited<ReturnType<PlacementStore["claimTurn"]>> | undefined;
       vi.spyOn(tunnels, "start").mockImplementation(async (request) => ({
         ...(await fixtureStart(request)),
+        measureLaunchTurn: () => {
+          throw new Error("No model launch belongs in staged-result proof");
+        },
+        readLaunchToolNames: async () => [],
+        launchTurn: async () => {
+          throw new Error("No model launch belongs in staged-result proof");
+        },
         reconcileWorkspace: async ({ source }) => {
           if (source.kind !== "local") {
             throw new Error("expected a local workspace source");
@@ -250,7 +263,7 @@ describe("worker placement result recovery", () => {
         ],
       });
       const environments = support.createService(support.createProvider({ destroy }), {
-        tunnelManager: tunnels,
+        nodeTunnelManager: tunnels,
         placementStore: createWorkerSessionPlacementGate(placementStore),
       });
       const ready = await environments.createWithRequest({

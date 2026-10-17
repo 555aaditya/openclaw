@@ -56,7 +56,6 @@ it.each([
               bundleRetention: 1,
               bundleStatus: 1,
               portalStream: 1,
-              preparedWorkspace: 1,
               launchToolNames: declared,
             }
           : {}),
@@ -175,7 +174,6 @@ it.each([
 
 function startConnectionFixture(
   workerHostingEnabled = false,
-  preparedWorkspacesEnabled = false,
   nativeInferenceEnabled = false,
   deviceFoldersEnabled = false,
 ) {
@@ -195,7 +193,6 @@ function startConnectionFixture(
   const prepared: Prepared = {
     manifest: { commands: [], caps: [], pathEnv: "/bin" },
     workerHostingEnabled,
-    preparedWorkspacesEnabled,
     nativeInferenceEnabled,
     ...(deviceFoldersEnabled ? { deviceFoldersEnabled: true as const } : {}),
     initialInventory: { skills: [], pluginTools: [] },
@@ -293,7 +290,7 @@ it.each(["disconnect", "close", "manifest"] as const)(
 );
 
 it("advertises configured native inference only to a capable Gateway", async () => {
-  const { connection, request, start } = startConnectionFixture(true, false, true);
+  const { connection, request, start } = startConnectionFixture(true, true);
   try {
     start.mock.calls[0]?.[0].onRunnerCapacityChanged?.({ total: 1, available: 1 });
     for (const supported of [false, true, false]) {
@@ -564,36 +561,6 @@ it("keeps refreshed publication on its replacement connection despite an old ack
   }
 });
 
-it.each([false, true])(
-  "advertises prepared workspace registration only when enabled: %s",
-  async (enabled) => {
-    const { connection, request, start } = startConnectionFixture(true, enabled);
-    try {
-      start.mock.calls[0]?.[0].onRunnerCapacityChanged?.({ total: 1, available: 1 });
-      connection.connect(gateway);
-      const declaration = request.mock.calls.find(
-        ([method]) => method === NODE_RUNNER_INVENTORY_UPDATE_METHOD,
-      )?.[1];
-      expect(declaration).toMatchObject({ workerHost: { enabled: true } });
-      const parsed = parseNodeRunnerInventoryDeclaration(declaration);
-      expect(parsed).toEqual(declaration);
-      if (!parsed || !("workerHost" in parsed) || !parsed.workerHost.enabled) {
-        throw new Error("Expected an enabled worker declaration");
-      }
-      expect(parsed.workerHost.preparedWorkspace).toBe(enabled ? 1 : undefined);
-      start.mock.calls[0]?.[0].onWorkerHostingDisabled?.("test revoked worker consent");
-      await vi.advanceTimersByTimeAsync(0);
-      expect(
-        request.mock.calls.findLast(
-          ([method]) => method === NODE_RUNNER_INVENTORY_UPDATE_METHOD,
-        )?.[1],
-      ).toMatchObject({ workerHost: { enabled: false } });
-    } finally {
-      await connection.close();
-    }
-  },
-);
-
 const disabledReason =
   "State directory /srv/node-state is group-writable; run chmod go-w /srv/node-state";
 
@@ -709,7 +676,7 @@ it.each([
 ])(
   "advertises device folders unless disabled, with Gateway support (%j)",
   async ({ enabled, supported }) => {
-    const { connection, request, start } = startConnectionFixture(true, false, false, enabled);
+    const { connection, request, start } = startConnectionFixture(true, false, enabled);
     try {
       start.mock.calls[0]?.[0].onRunnerCapacityChanged?.({ total: 1, available: 1 });
       connection.connect({

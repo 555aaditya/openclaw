@@ -67,9 +67,6 @@ export type GatewayCoreRequestParams = {
   "portal.list": PortalSchema.PortalListParams;
   "portal.open": PortalSchema.PortalOpenParams;
   "presence.query": PresenceQueryParams;
-  "portal.session.close": Static<typeof PortalSchema.SessionPortalCloseParamsSchema>;
-  "portal.session.list": Static<typeof PortalSchema.SessionPortalListParamsSchema>;
-  "portal.session.open": Static<typeof PortalSchema.SessionPortalOpenParamsSchema>;
   "sessions.github.publish": GitHubSchema.SessionGitHubPublishParams;
   "sessions.github.action": GitHubSchema.SessionGitHubActionParams;
   "sessions.github.options": Static<typeof GitHubSchema.SessionGitHubOptionsParamsSchema>;

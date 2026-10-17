@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NODE_WORKER_DESKTOP_COMPUTER_COMMAND } from "../infra/node-commands.js";
 import type { ComputerUseCapabilityDescriptor } from "../plugins/computer-use-contract.js";
 import { registerComputerUseProvider } from "../plugins/computer-use-registration.js";
 import { createEmptyPluginRegistry } from "../plugins/registry-empty.js";
@@ -24,7 +23,6 @@ vi.mock("../plugins/loader.js", () => ({
 afterEach(() => resetPluginRuntimeStateForTest());
 
 const executionId = "123e4567-e89b-42d3-a456-426614174000";
-const otherExecutionId = "223e4567-e89b-42d3-a456-426614174000";
 const descriptor: ComputerUseCapabilityDescriptor = {
   contractVersion: 2,
   provider: { id: "fixture", label: "Fixture", generation: "generation-1" },
@@ -35,7 +33,7 @@ const descriptor: ComputerUseCapabilityDescriptor = {
   features: { recording: false, agentCursor: false, multiDisplay: false },
 };
 
-async function startComputer(ephemeral = true, prepare?: () => Promise<void>) {
+async function startComputer(ephemeral = false, prepare?: () => Promise<void>) {
   let providerGeneration = descriptor.provider.generation;
   const snapshot = vi.fn(async (_params: unknown, _signal?: AbortSignal) =>
     JSON.stringify({ format: "png", base64: "c2NyZWVu", displayFrameId: "frame-1" }),
@@ -81,7 +79,7 @@ async function startComputer(ephemeral = true, prepare?: () => Promise<void>) {
   const onManifestChanged = vi.fn();
   const runtime = prepared.start({ client: { request }, onManifestChanged });
   let invokeId = 0;
-  const invoke = async (input: unknown, command = NODE_WORKER_DESKTOP_COMPUTER_COMMAND) => {
+  const invoke = async (input: unknown, command = "screen.snapshot") => {
     const id = `invoke-${++invokeId}`;
     await runtime.invoke({
       id,
@@ -111,24 +109,9 @@ async function startComputer(ephemeral = true, prepare?: () => Promise<void>) {
   };
 }
 
-function computerOperation(
-  operation: "snapshot" | "act",
-  id = executionId,
-  generation = descriptor.provider.generation,
-) {
-  return {
-    operation,
-    providerGeneration: generation,
-    params: {
-      executionId: id,
-      ...(operation === "act" ? { action: "type", text: "fixture" } : {}),
-    },
-  };
-}
-
 async function withComputer(
   run: (host: Awaited<ReturnType<typeof startComputer>>) => Promise<void>,
-  ephemeral = true,
+  ephemeral = false,
 ) {
   const host = await startComputer(ephemeral);
   try {
@@ -138,7 +121,7 @@ async function withComputer(
   }
 }
 
-describe("private worker computer runtime", () => {
+describe("paired-node computer runtime", () => {
   it("awaits the registered provider preparation before publishing the first manifest", async () => {
     const gate = createDeferredCore();
     const entered = createDeferredCore();
@@ -147,7 +130,7 @@ describe("private worker computer runtime", () => {
       return gate.promise;
     });
     let prepared = false;
-    const starting = startComputer(true, prepare).then((host) => {
+    const starting = startComputer(false, prepare).then((host) => {
       prepared = true;
       return host;
     });
@@ -157,9 +140,9 @@ describe("private worker computer runtime", () => {
       expect(prepared).toBe(false);
       gate.resolve();
       const host = await starting;
-      expect(await host.invoke({ operation: "capabilities" })).toMatchObject({ ok: true });
+      expect(await host.invoke({ executionId })).toMatchObject({ ok: true });
       await host.runtime.cancelAll();
-      await host.invoke({ operation: "capabilities" });
+      await host.invoke({ executionId });
       expect(prepare).toHaveBeenCalledOnce();
     } finally {
       gate.resolve();
@@ -177,7 +160,7 @@ describe("private worker computer runtime", () => {
     });
     let closing: Promise<void> | undefined;
     try {
-      expect(await host.invoke(computerOperation("snapshot"))).toMatchObject({ ok: true });
+      expect(await host.invoke({ executionId })).toMatchObject({ ok: true });
       let closed = false;
       closing = host.runtime.close().then(() => {
         closed = true;
@@ -240,65 +223,23 @@ describe("private worker computer runtime", () => {
     }
   });
 
-  it("rejects a rotated generation while allowing exact cleanup and a fresh execution", async () => {
-    await withComputer(async (host) => {
-      expect(await host.invoke(computerOperation("act"))).toMatchObject({
-        ok: true,
-        payload: { ok: true },
-      });
-      host.setProviderGeneration("generation-2");
-      expect(await host.invoke(computerOperation("snapshot"))).toMatchObject({
-        ok: false,
-        error: { message: expect.stringContaining("COMPUTER_CONTRACT_MISMATCH") },
-      });
-      expect(host.snapshot).not.toHaveBeenCalled();
-      expect(host.act).toHaveBeenCalledOnce();
-      await host.invoke({ operation: "close", executionId, reason: "provider-changed" });
-      expect(host.close).toHaveBeenCalledExactlyOnceWith("provider-changed");
-      expect(await host.invoke({ operation: "capabilities" })).toMatchObject({
-        ok: true,
-        payload: { provider: { generation: "generation-2" } },
-      });
-      expect(
-        await host.invoke(computerOperation("snapshot", otherExecutionId, "generation-2")),
-      ).toMatchObject({
-        ok: true,
-        payload: { displayFrameId: "frame-1" },
-      });
-      expect(host.openExecution).toHaveBeenCalledTimes(2);
-    });
-  });
-
   it.each([true, false])(
-    "enforces the private/public transport boundary for ephemeral=%s",
+    "keeps public computer access disabled for ephemeral=%s",
     async (ephemeral) => {
       await withComputer(async (host) => {
         expect(host.prepared.manifest.computerUse).toEqual(ephemeral ? undefined : descriptor);
         expect(host.prepared.manifest.commands.includes("screen.snapshot")).toBe(!ephemeral);
         expect(host.prepared.manifest.commands.includes("computer.act")).toBe(!ephemeral);
-        expect(host.prepared.manifest.commands).not.toContain(NODE_WORKER_DESKTOP_COMPUTER_COMMAND);
-        const privateResult = await host.invoke({ operation: "capabilities" });
-        expect(privateResult.ok).toBe(ephemeral);
+        expect(host.prepared.manifest.commands).not.toContain("worker.desktop.computer.v1");
+        const privateResult = await host.invoke(
+          { operation: "capabilities" },
+          "worker.desktop.computer.v1",
+        );
+        expect(privateResult.ok).toBe(false);
         const publicResult = await host.invoke({ executionId }, "screen.snapshot");
         expect(publicResult.ok).toBe(!ephemeral);
         expect(host.snapshot).toHaveBeenCalledTimes(ephemeral ? 0 : 1);
       }, ephemeral);
     },
   );
-
-  it("rejects the internal close action before the provider", async () => {
-    await withComputer(async (host) => {
-      expect(
-        await host.invoke({
-          operation: "act",
-          providerGeneration: descriptor.provider.generation,
-          params: { executionId, action: "__close_execution" },
-        }),
-      ).toMatchObject({
-        ok: false,
-        error: { code: "INVALID_REQUEST" },
-      });
-      expect(host.openExecution).not.toHaveBeenCalled();
-    });
-  });
 });

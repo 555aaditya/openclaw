@@ -5,10 +5,7 @@ import { sliceUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import { root as fsRoot } from "../../infra/fs-safe.js";
 import { requestGitWorkerEffect } from "../../infra/git-worker-context.js";
 import { hasNodeErrorCode } from "../../infra/path-guards.js";
-import {
-  createStagedInputPathMatcher,
-  stagedInputPathDirectory,
-} from "../../media/staged-inputs.js";
+import { createStagedInputPathMatcher } from "../../media/staged-inputs.js";
 import { isPortableRootContainedSymlink } from "./workspace-actual-manifest.js";
 import type {
   WorkspaceInventoryComputationCommand,
@@ -25,28 +22,6 @@ import {
 import { gitFileMode, type WorkerWorkspaceManifestEntry } from "./workspace-manifest.js";
 import { workspacePathAncestors } from "./workspace-path-ancestors.js";
 import { isDerivedWorkspacePath } from "./workspace-path-exclusions.js";
-
-/** Exact rsync exemptions, prepared once without walking input file contents. */
-async function readStagedInputDirectories(rootDir: string): Promise<string[]> {
-  const root = await fsRoot(rootDir);
-  const inbound = await root.stat("media/inbound").catch(() => undefined);
-  if (!inbound?.isDirectory || inbound.isSymbolicLink) {
-    return [];
-  }
-  const isStagedInput = createStagedInputPathMatcher(root);
-  const directories: string[] = [];
-  let candidates = 0;
-  for await (const entry of await fs.opendir(path.join(rootDir, "media/inbound"))) {
-    if (++candidates > MAX_WORKSPACE_INVENTORY_ENTRIES) {
-      throw workspaceInventoryError("Cloud workspace has too many entries");
-    }
-    const directory = stagedInputPathDirectory(`media/inbound/${entry.name}`);
-    if (entry.isDirectory() && directory && (await isStagedInput(directory))) {
-      directories.push(directory);
-    }
-  }
-  return directories.toSorted();
-}
 
 function createInventoryPathWriter() {
   let records: string[] = [];
@@ -272,40 +247,12 @@ async function selectTransferPaths(params: {
   await writer.flush();
 }
 
-async function filterExistingPaths(params: {
-  gitRoot: string;
-  preparedListPath: string;
-}): Promise<void> {
-  const writer = createInventoryPathWriter();
-  for await (const file of readBoundedGitPathCandidates(params.preparedListPath)) {
-    let stats;
-    try {
-      stats = lstatSync(path.join(params.gitRoot, file));
-    } catch (error) {
-      if (!hasNodeErrorCode(error, "ENOENT")) {
-        throw error;
-      }
-    }
-    if (stats?.isFile() || stats?.isSymbolicLink()) {
-      const pendingWrite = writer.append(file);
-      if (pendingWrite) {
-        await pendingWrite;
-      }
-    }
-  }
-  await writer.flush();
-}
-
 export async function executeWorkspaceInventoryComputation(
   command: WorkspaceInventoryComputationCommand,
 ): Promise<WorkspaceInventoryComputationResult> {
   switch (command.type) {
-    case "workspace.inventory.staged-directories":
-      return await readStagedInputDirectories(command.input.rootDir);
     case "workspace.inventory.select":
       return await selectTransferPaths(command.input);
-    case "workspace.inventory.existing":
-      return await filterExistingPaths(command.input);
     case "workspace.inventory.paths": {
       const paths = new Set<string>();
       for await (const entry of readBoundedGitPathCandidates(command.input.filePath)) {

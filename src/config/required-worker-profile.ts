@@ -12,8 +12,6 @@ export function assertRequiredWorkerSelection(
     profileId?: string;
     deviceId?: string;
     autoDevice?: boolean;
-    machineClass?: string;
-    os?: string;
     agentRuntime?: string | null;
     execNode?: string | null;
     catalogId?: string;
@@ -28,8 +26,6 @@ export function assertRequiredWorkerSelection(
     selection.catalogId !== undefined ||
     selection.deviceId !== undefined ||
     selection.autoDevice === true ||
-    selection.machineClass !== undefined ||
-    selection.os !== undefined ||
     (selection.execNode !== undefined && selection.execNode !== null) ||
     (selection.agentRuntime !== undefined &&
       selection.agentRuntime !== null &&
@@ -45,7 +41,7 @@ export function assertRequiredWorkerSelection(
 
 export function assertRequiredWorkerDispatch(
   config: Pick<OpenClawConfig, "cloudWorkers">,
-  request: { profileId: string; executionMode: string; machineClass?: string; os?: string },
+  request: { profileId: string; executionMode: string },
 ): void {
   const required = config.cloudWorkers?.requiredProfile;
   if (!required) {
@@ -53,12 +49,7 @@ export function assertRequiredWorkerDispatch(
   }
   // A recorded profile may carry its original device and settings through recovery.
   // New dispatches cannot use that internal snapshot to choose another profile.
-  if (
-    request.profileId !== required ||
-    request.executionMode !== "worker-turn" ||
-    request.machineClass !== undefined ||
-    request.os !== undefined
-  ) {
+  if (request.profileId !== required || request.executionMode !== "worker-turn") {
     throw new RequiredWorkerProfileError(`Gateway policy requires worker profile "${required}".`);
   }
 }
@@ -68,13 +59,7 @@ export function assertRequiredWorkerMove(
   target: SessionMoveTarget,
 ): void {
   const required = config.cloudWorkers?.requiredProfile;
-  if (
-    required &&
-    (target.kind !== "profile" ||
-      target.profileId !== required ||
-      target.machineClass !== undefined ||
-      target.os !== undefined)
-  ) {
+  if (required && (target.kind !== "profile" || target.profileId !== required)) {
     throw new RequiredWorkerProfileError(
       "Session placement changes are disabled by the required worker profile policy.",
     );

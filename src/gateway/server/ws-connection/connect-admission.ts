@@ -1,7 +1,6 @@
 // Gateway WebSocket connect admission validates protocol, role, and browser origin.
 import type { IncomingMessage } from "node:http";
 import {
-  GATEWAY_CLIENT_IDS,
   GATEWAY_CLIENT_CAPS,
   GATEWAY_CLIENT_MODES,
   hasGatewayClientCap,
@@ -47,31 +46,8 @@ import type {
   GatewayConnectPhaseContext,
 } from "./message-handler-types.js";
 
-function hasCredential(value: unknown): boolean {
-  return typeof value === "string" && value.trim().length > 0;
-}
-
 export function isStartupNodeConnect(connectParams: ConnectParams): boolean {
   return connectParams.role === "node" && connectParams.client.mode === GATEWAY_CLIENT_MODES.NODE;
-}
-
-/** Exact first-connect shape emitted by `openclaw connect` for a setup-code node. */
-export function isStartupNodeBootstrapConnect(connectParams: ConnectParams): boolean {
-  const auth = connectParams.auth;
-  const device = connectParams.device;
-  return (
-    isStartupNodeConnect(connectParams) &&
-    connectParams.client.id === GATEWAY_CLIENT_IDS.NODE_HOST &&
-    Array.isArray(connectParams.scopes) &&
-    connectParams.scopes.length === 0 &&
-    Boolean(device?.id.trim() && device.publicKey.trim()) &&
-    hasCredential(auth?.bootstrapToken) &&
-    !hasCredential(auth?.token) &&
-    !hasCredential(auth?.deviceToken) &&
-    !hasCredential(auth?.password) &&
-    !hasCredential(auth?.approvalRuntimeToken) &&
-    !hasCredential(auth?.agentRuntimeIdentityToken)
-  );
 }
 
 export async function rejectGatewayStartupConnect(

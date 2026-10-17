@@ -2,115 +2,10 @@ import { expectDefined } from "@openclaw/normalization-core";
 import { describe, expect, it, vi } from "vitest";
 import { WorkerProviderError } from "../../plugins/types.js";
 import { createDeferredCore } from "../../shared/deferred.js";
-import { completeWorkerNodeSetupForTest } from "./node-enrollment.test-support.js";
 import * as support from "./service.test-support.js";
 
 describe("worker allocation cleanup", () => {
   support.setupWorkerEnvironmentServiceSuite();
-
-  it.each([{ bound: true, failRetirement: true }])(
-    "retires node enrollment before completing provider cleanup (bound: $bound, retry: $failRetirement)",
-    async ({ bound, failRetirement }) => {
-      const retirementEntered = createDeferredCore();
-      const retirementFinished = createDeferredCore();
-      const primaryError = new Error("node enrollment failed after setup");
-      let retireAttempts = 0;
-      const retireNodeEnrollment = vi.fn(async () => {
-        retirementEntered.resolve();
-        await retirementFinished.promise;
-        if (failRetirement && ++retireAttempts === 1) {
-          throw new Error("node retirement unavailable");
-        }
-      });
-      const destroy = vi.fn(async () => {});
-      const provider = support.createProvider({
-        requiresNodeEnrollment: true,
-        provisionBeforeInstallation: true,
-        provision: async (_profile, _operationId, options) => {
-          const enrollment = await options?.beginNodeEnrollment?.();
-          if (enrollment?.mode !== "connect") {
-            throw new Error("expected pending enrollment");
-          }
-          if (bound) {
-            await completeWorkerNodeSetupForTest({
-              baseDir: support.testState.root,
-              store: support.testState.store,
-              setupId: enrollment.setupId,
-              deviceId: "cleanup-device",
-              completedAtMs: 1_000,
-            });
-          }
-          throw WorkerProviderError.cleanupComplete("cleanup-node-lease", primaryError);
-        },
-        destroy,
-        inspect: async () => ({ status: "destroyed" }),
-      });
-      const provision = vi.spyOn(provider, "provision");
-      const createService = () =>
-        support.createService(provider, {
-          prepareNodeEnrollment: async (record) => ({
-            mode: "connect",
-            setupCode: "fixture-setup-code",
-            setupId: expectDefined(
-              (await support.testState.store.ensureNodeEnrollment(record.environmentId))
-                .nodeSetupId,
-              "node setup identity",
-            ),
-            openclawVersion: "2026.8.1",
-            nodeBootstrap: support.NODE_BOOTSTRAP,
-            displayName: "Cleanup worker",
-            waitForDeviceId: async () => "cleanup-device",
-          }),
-          retireNodeEnrollment,
-        });
-      let service = createService();
-      const creation = service
-        .createWithRequest({ profileId: "development", idempotencyKey: "confirmed-node-cleanup" })
-        .catch((error: unknown) => error);
-      try {
-        await Promise.race([
-          retirementEntered.promise,
-          creation.then(() => {
-            throw new Error("provisioning settled before retiring node enrollment");
-          }),
-        ]);
-        expect(support.testState.store.list()[0]).toMatchObject({
-          state: "destroying",
-          leaseId: "cleanup-node-lease",
-          nodeDeviceId: bound ? "cleanup-device" : null,
-          lastError: primaryError.message,
-        });
-      } finally {
-        retirementFinished.resolve();
-        await creation;
-      }
-      if (failRetirement) {
-        expect(await creation).toMatchObject({ message: "node retirement unavailable" });
-        expect(support.testState.store.list()[0]).toMatchObject({
-          state: "destroying",
-          leaseId: "cleanup-node-lease",
-          lastError: primaryError.message,
-        });
-        await support.reopenWorkerEnvironmentStore();
-        service = createService();
-        await service.reconcileOnce();
-      } else {
-        expect(await creation).toMatchObject({
-          code: "provider_failure",
-          message: expect.stringContaining(primaryError.message),
-        });
-      }
-      expect(support.testState.store.list()[0]).toMatchObject({
-        state: "failed",
-        leaseId: null,
-        nodeDeviceId: null,
-        lastError: primaryError.message,
-      });
-      expect(retireNodeEnrollment).toHaveBeenCalledTimes(failRetirement ? 2 : 1);
-      expect(provision).toHaveBeenCalledOnce();
-      expect(destroy).not.toHaveBeenCalled();
-    },
-  );
 
   it.each([true])(
     "does not replay a confirmed-cleaned-up allocation after restart (replay: %s)",
@@ -162,7 +57,7 @@ describe("worker allocation cleanup", () => {
       });
       expect(provision).toHaveBeenCalledTimes(replay ? 2 : 1);
       expect(destroy).not.toHaveBeenCalled();
-      expect(support.testState.bootstrapWorker).not.toHaveBeenCalled();
+      expect(support.testState.ensureNodeWorkerBundle).not.toHaveBeenCalled();
     },
   );
 
@@ -219,7 +114,7 @@ describe("worker allocation cleanup", () => {
         }
         allocate();
         setup();
-        return { leaseId: "operation-cleanup", ssh: support.SSH_ENDPOINT };
+        return { leaseId: "operation-cleanup", node: { deviceId: "node-1" }, sharedHost: true };
       });
       const resolveAllocation = vi.fn(async () => ({
         leaseId: "operation-cleanup",
@@ -227,7 +122,7 @@ describe("worker allocation cleanup", () => {
       }));
       const destroy = vi.fn(async () => {});
       const provider = {
-        ...support.createProvider({ provisionBeforeInstallation: true, provision, destroy }),
+        ...support.createProvider({ provision, destroy }),
         resolveAllocation,
       };
       let service = support.createService(provider);
@@ -276,7 +171,7 @@ describe("worker allocation cleanup", () => {
         profile: { region: "test" },
       });
       expect(support.testState.prepareInstallation).not.toHaveBeenCalled();
-      expect(support.testState.bootstrapWorker).not.toHaveBeenCalled();
+      expect(support.testState.ensureNodeWorkerBundle).not.toHaveBeenCalled();
       expect(support.testState.store.getCredential(pending.environmentId)).toBeUndefined();
       expect(support.testState.store.get(pending.environmentId)).toMatchObject({
         state: "destroyed",
@@ -390,8 +285,8 @@ describe("worker allocation cleanup", () => {
           provision,
           resolveAllocation,
           destroy,
-          resolveProvisionTimeoutMs: () => 20,
         }),
+        { providerCallTimeoutMs: 20 },
       );
       const creation = service
         .createWithRequest({ profileId: "development", idempotencyKey: "owner-race" })

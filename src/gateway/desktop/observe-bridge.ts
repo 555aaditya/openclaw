@@ -31,7 +31,7 @@ import type { DesktopSessionRegistry } from "./session-registry.js";
 
 type WebSocket = import("ws").WebSocket;
 
-export const DESKTOP_OBSERVE_PATH = "/desktop/observe";
+const DESKTOP_OBSERVE_PATH = "/desktop/observe";
 const TOKEN_TTL_MS = 60_000;
 const MAX_PAYLOAD_BYTES = 1024 * 1024;
 const PAUSE_BUFFERED_BYTES = 4 * 1024 * 1024;

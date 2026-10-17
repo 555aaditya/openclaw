@@ -396,8 +396,7 @@ Follow the canonical
 For its remote exceptions, `.crabbox.yaml` defaults to `blacksmith-testbox`.
 That workflow hydrates credentials: untrusted contributor/fork code requires
 secretless fork CI or sanitized direct AWS, never local execution or Testbox.
-The wrapper uses the bundled Crabbox plugin's binary manager. All providers and
-cloud-worker profiles require Crabbox 0.77.0 or newer. This includes task-owned
+The wrapper uses the bundled Crabbox plugin's binary manager. All proof providers require Crabbox 0.77.0 or newer. This includes task-owned
 Testbox SSH teardown, which prevents persistent SSH masters from keeping idle
 Testboxes alive. Missing or older binaries use a verified managed 0.77.0 release
 before provider discovery or lease work. The original binary stays untouched.

@@ -269,9 +269,7 @@ If desktop teardown fails, the Gateway retains the session's cleanup owner and
 reports the failure in its logs. New observations return that failure without
 retrying cleanup or accumulating replacement owners. Lifecycle cleanup, such as
 turning Host Desktop off in Labs, retries the retained owner; a replacement can
-start only after cleanup succeeds. For SSH-backed worker desktops, temporary
-connection files remain until the transport has closed; a late process exit
-triggers another cleanup attempt. Check the reported process or filesystem error
+start only after cleanup succeeds. Check the reported process or filesystem error
 before retrying cleanup.
 
 Without managed mode, configure third-party servers to listen on loopback when
@@ -325,8 +323,8 @@ that cannot keep up stops instead of accumulating delayed sound. It is intended
 for a first desktop-audio implementation, not synchronized video playback or
 low-bandwidth streaming.
 
-External VNC servers, paired-node desktops, cloud-worker desktops, macOS, and
-Windows do not advertise audio yet. Their toolbar reports audio unavailable.
+External VNC servers, paired-node desktops, macOS, and Windows do not advertise
+audio yet. Their toolbar reports audio unavailable.
 Microphone forwarding is not supported.
 
 ### Paired node desktops

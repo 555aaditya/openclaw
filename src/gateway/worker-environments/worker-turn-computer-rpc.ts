@@ -11,7 +11,6 @@ import {
   WORKER_PROTOCOL_MAX_FRAME_ID_LENGTH,
   WORKER_PROTOCOL_MAX_MEDIA_PAYLOAD_BYTES,
 } from "../../../packages/gateway-protocol/src/schema/worker-protocol-primitives.js";
-import { ComputerTakeControlParamsSchema } from "../../agents/tools/computer-tool-control.js";
 import {
   ComputerActParamsSchema,
   ScreenSnapshotParamsSchema,
@@ -69,10 +68,7 @@ export function createWorkerComputerRpc(params: {
       const closing =
         request.command === "computer.act" &&
         Value.Check(NodeWorkerComputerCloseParamsSchema, commandParams);
-      const takingControl =
-        request.command === "computer.act" &&
-        Value.Check(ComputerTakeControlParamsSchema, commandParams);
-      if (!closing && !takingControl && !Value.Check(schema, commandParams)) {
+      if (!closing && !Value.Check(schema, commandParams)) {
         return { ok: false, closeReason: "invalid-frame" };
       }
       assertCurrent();

@@ -76,10 +76,7 @@ function expectNotSent(request: ReturnType<typeof vi.fn>) {
 
 describe("session placement startup", () => {
   it.each([
-    [
-      { kind: "profile", profileId: "aws", os: "windows/wsl2", machineClass: "fast" },
-      { profileId: "aws", os: "windows/wsl2", machineClass: "fast" },
-    ],
+    [{ kind: "profile", profileId: "aws" }, { profileId: "aws" }],
     [{ kind: "device", deviceId: "device-1" }, { deviceId: "device-1" }],
     [{ kind: "auto-device" }, { autoDevice: true }],
   ] as const)("serializes %j to the flat dispatch contract", async (target, expectedTarget) => {

@@ -208,6 +208,6 @@ function renderProcessNodeVersionCheck() {
 })(process.versions.node)`;
 }
 
-// Worker bootstrap runs before OpenClaw is transferred. Carry the canonical
+// VM smoke provisioning runs before OpenClaw is installed. Carry the canonical
 // release policy as a self-contained expression instead of a second parser.
 export const PROCESS_NODE_VERSION_CHECK = renderProcessNodeVersionCheck();

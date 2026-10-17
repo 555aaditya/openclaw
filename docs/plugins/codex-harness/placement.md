@@ -128,42 +128,8 @@ yet bound to paired-device placement and fail with an actionable explanation.
 See [Cloud workers and paired-device placement](/gateway/cloud-workers) and
 [Node command policy](/nodes/command-policy#command-policy).
 
-## Run Codex on a cloud worker
+<a id="run-codex-on-a-cloud-worker" />
 
-The bundled Crabbox provider supports both OpenClaw `worker-turn` and Codex
-`remote-exec`, so one configured cloud-worker profile is selectable for either
-harness. Choose the same **Cloud · profile** destination in New Session or
-Move Session after selecting a Codex model. Profile placement requires
-`operator.admin`. Start from a GitHub repository URL and optional ref without a
-Gateway checkout, or place an existing Gateway managed-worktree session.
-Repository-only sessions fetch and pin their source on the selected node.
-Repository sessions require a managed node; SSH-only providers cannot create them.
+## Configured worker profiles
 
-Enable a trusted Codex plugin installation and explicitly allow
-`codex.exec-server.stdio.v1` on the Gateway, as shown in
-[Run Codex on a paired device](#run-codex-on-a-paired-device).
-Crabbox automatically bootstraps the cloud node from the running Gateway's
-built installation, including the Codex plugin and its pinned native dependency.
-Bootstrap installs dependencies for the cloud machine's operating system and
-CPU, then enables the plugin in the node's isolated state. Keep profile setup
-focused on machine prerequisites and project tools, including a supported
-Node.js release and npm. See [Bundle installation](/gateway/cloud-workers#bundle-installation)
-for build and registry access requirements.
-
-The Gateway checks the cloud node's current pairing and
-effectively invocable command before starting a Codex process. The same
-placement-scoped approval or explicitly selected Full access rules apply,
-including the cloud node's local exec policy and approvals floors.
-
-Codex runs its managed exec-server over the enrolled node's authenticated
-outbound connection without starting an OpenClaw worker child or consuming a
-worker slot. Its app-server, model connection, provider authentication, and
-transcript remain Gateway-owned. Process and filesystem access still have the
-node operating-system account's permissions, and only credential-free HTTP is
-forwarded. Workspace changes reconcile to the Gateway-owned worktree or an
-immutable repository checkpoint. A failed or disconnected attempt is terminal
-and requires a fresh attempt; it never resumes the remote process or falls back
-to Gateway-local or SSH execution.
-
-See [Cloud workers](/gateway/cloud-workers) for profile configuration,
-placement lifecycle, and cleanup.
+Codex can use a configured `device` profile for an already paired node. The same pairing, trusted plugin, command allowlist, invocation approval, and local execution policy apply as for [direct paired-device placement](#run-codex-on-a-paired-device). See [Worker configuration](/gateway/config-cloud-workers).

@@ -28,7 +28,7 @@ describe("OpenClawSchema cloudWorkers config", () => {
     },
   );
 
-  it("accepts device settings with SecretRefs and defaults to bundled installation", () => {
+  it("accepts device settings with SecretRefs", () => {
     const settings = {
       host: "worker.example.test",
       port: 22,
@@ -38,8 +38,16 @@ describe("OpenClawSchema cloudWorkers config", () => {
     expect(
       OpenClawSchema.parse(cloudProfile({ provider: "device", settings })).cloudWorkers,
     ).toStrictEqual({
-      profiles: { development: { provider: "device", install: "bundle", settings } },
+      profiles: { development: { provider: "device", settings } },
     });
+  });
+
+  it.each(["bundle", "npm"])("rejects the retired install selection %s", (install) => {
+    expect(OpenClawSchema.safeParse(cloudProfile({ install })).success).toBe(false);
+  });
+
+  it("rejects the retired worker desktop switch", () => {
+    expect(OpenClawSchema.safeParse({ cloudWorkers: { desktop: true } }).success).toBe(false);
   });
 
   it("accepts nested secret maps without admitting plaintext", () => {

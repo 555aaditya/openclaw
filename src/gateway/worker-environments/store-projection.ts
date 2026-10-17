@@ -291,49 +291,6 @@ function createWorkerEnvironmentProjection() {
       sorted = undefined;
       reconcilable = undefined;
     },
-    preparedRecords() {
-      assertActive();
-      return [...environments.values()].filter((row) => row.preparation !== null);
-    },
-    hasNodeEnrollmentOwner(nodeId: string) {
-      assertActive();
-      for (const row of environments.values()) {
-        if (
-          row.nodeDeviceId === nodeId &&
-          row.nodeSetupId !== null &&
-          !isTerminalWorkerEnvironmentState(row.state)
-        ) {
-          assertReadable(row.environmentId, "environment");
-          return true;
-        }
-      }
-      return false;
-    },
-    hasPendingNodeEnrollmentSetup(setup: string, device: string) {
-      assertActive();
-      const setupId = setup.trim();
-      const deviceId = device.trim();
-      if (!setupId || !deviceId) {
-        return false;
-      }
-      let matches = 0;
-      for (const row of environments.values()) {
-        if (
-          row.nodeSetupId === setupId &&
-          row.destroyRequestedAtMs === null &&
-          ((row.state === "provisioning" && row.nodeDeviceId === null) ||
-            (["provisioning", "bootstrapping", "ready", "idle", "attached"].includes(row.state) &&
-              row.nodeDeviceId === deviceId))
-        ) {
-          assertReadable(row.environmentId, "environment");
-          matches += 1;
-          if (matches === 2) {
-            return false;
-          }
-        }
-      }
-      return matches === 1;
-    },
     get(id: string) {
       assertReadable(id, "environment");
       return environments.get(id);

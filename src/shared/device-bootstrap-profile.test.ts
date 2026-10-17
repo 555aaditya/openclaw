@@ -3,7 +3,6 @@ import { describe, expect, test } from "vitest";
 import {
   CONTROL_UI_OWNER_BOOTSTRAP_OPERATOR_SCOPES,
   CONTROL_UI_OWNER_BOOTSTRAP_PROFILE,
-  CLOUD_WORKER_PAIRING_SETUP_BOOTSTRAP_PROFILE,
   FULL_ACCESS_PAIRING_SETUP_BOOTSTRAP_PROFILE,
   NODE_PAIRING_SETUP_BOOTSTRAP_PROFILE,
   PAIRING_SETUP_BOOTSTRAP_PROFILE,
@@ -123,15 +122,14 @@ describe("device bootstrap profile", () => {
     expect(isMobilePairingSetupBootstrapProfile(NODE_PAIRING_SETUP_BOOTSTRAP_PROFILE)).toBe(false);
   });
 
-  test("cloud worker setup remains node-only while retaining lifecycle purpose", () => {
-    expect(CLOUD_WORKER_PAIRING_SETUP_BOOTSTRAP_PROFILE).toEqual({
+  test("preserves the retired cloud-worker purpose so credential admission can reject it", () => {
+    expect(
+      normalizeDeviceBootstrapProfile({ roles: ["node"], scopes: [], purpose: "cloud-worker" }),
+    ).toEqual({
       roles: ["node"],
       scopes: [],
       purpose: "cloud-worker",
     });
-    expect(isNodePairingSetupBootstrapProfile(CLOUD_WORKER_PAIRING_SETUP_BOOTSTRAP_PROFILE)).toBe(
-      true,
-    );
   });
 
   test("voice-node setup profile carries only node, read, and Talk access", () => {

@@ -238,7 +238,6 @@ export async function prepareNodeHostRuntime(params?: {
     ...(workerRunsEnabled && workspaceOptions.folders?.length !== 0
       ? { deviceFoldersEnabled: true as const }
       : {}),
-    preparedWorkspacesEnabled: workerRunsEnabled && params?.ephemeral === true,
     nativeInferenceEnabled: workerRunsEnabled && nativeInferenceSnapshot !== undefined,
     ...(commandAllowlist ? { restrictedSurface: true as const } : {}),
     ...(workerHostingDisabledReason ? { workerHostingDisabledReason } : {}),
@@ -444,7 +443,11 @@ export async function prepareNodeHostRuntime(params?: {
             }
             // Enforce the declaration locally too: a paired Gateway cannot widen
             // an operator-restricted surface by sending a hidden command directly.
-            if (commandAllowlist && !currentManifest.commands.includes(frame.command)) {
+            if (
+              (commandAllowlist && !currentManifest.commands.includes(frame.command)) ||
+              (params?.ephemeral === true &&
+                (frame.command === "screen.snapshot" || frame.command === "computer.act"))
+            ) {
               await createNodeInvokeResponder(client, frame).error(
                 "UNAVAILABLE",
                 "command not advertised by this node",
@@ -560,9 +563,6 @@ export async function prepareNodeHostRuntime(params?: {
                 ...(progress ? { emitProgress: (text) => progress.write(text) } : {}),
                 installedAppsSharingEnabled,
                 pluginCommandContext,
-                ...(params?.ephemeral === true && !commandAllowlist
-                  ? { workerComputer: { capabilities: () => resolvePluginNodeHost().computerUse } }
-                  : {}),
                 ...(workerBundleInstaller ? { workerBundleInstaller } : {}),
                 ...(workerSupervisor ? { workerSupervisor } : {}),
                 ...(workerWorkspace ? { workerWorkspace } : {}),

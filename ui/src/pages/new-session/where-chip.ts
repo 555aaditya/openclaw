@@ -1,7 +1,3 @@
-import type {
-  WorkerMachineOption,
-  WorkerOperatingSystem,
-} from "../../../../packages/gateway-protocol/src/schema/environments.ts";
 import { t } from "../../i18n/index.ts";
 import { registerNewSessionSetupEnglish } from "../../i18n/locales/en-new-session-setup.ts";
 import {
@@ -10,13 +6,7 @@ import {
   type DevicePlacementOption,
   type DevicePlacementRequirement,
 } from "./device-placement.ts";
-import {
-  cloudMachinesForOs,
-  defaultCloudMachine,
-  defaultCloudOs,
-  type DraftCloudProfile,
-  type DraftEnvironment,
-} from "./discovery.ts";
+import { type DraftCloudProfile, type DraftEnvironment } from "./discovery.ts";
 import type { DraftGatewayState } from "./draft-gateway-state.ts";
 import type { DraftPlaceState } from "./draft-place-state.ts";
 import {
@@ -31,10 +21,6 @@ type WhereChipState = Readonly<{
   label: string;
   devices: readonly DevicePlacementOption[];
   cloudProfiles: readonly DraftCloudProfile[];
-  cloudMachines: readonly WorkerMachineOption[];
-  selectedMachineId: string;
-  operatingSystems: readonly WorkerOperatingSystem[];
-  selectedOsId: string;
   autoDeviceDisabledReason?: string;
   hostedRuntimeId?: string;
 }>;
@@ -51,7 +37,6 @@ export function draftWhereChipParams(
     environments: place.canWrite() ? gateway.environments : [],
     cloudProfiles,
     cloudProfileId: place.cloudProfileId,
-    ...place.cloudSelection,
     deviceId: place.deviceId,
     autoDevice: place.autoDevice,
     devicePlacement: environmentPlacementRuntime(place.modelControl)?.devicePlacement,
@@ -65,8 +50,6 @@ export function resolveWhereChip(params: {
   environments: readonly DraftEnvironment[] | null;
   cloudProfiles: readonly DraftCloudProfile[];
   cloudProfileId: string;
-  machineClass?: string;
-  os?: string;
   deviceId: string;
   autoDevice?: boolean;
   devicePlacement?: DevicePlacementRequirement;
@@ -87,10 +70,6 @@ export function resolveWhereChip(params: {
   const common = {
     devices,
     cloudProfiles: params.cloudProfiles,
-    cloudMachines: [],
-    selectedMachineId: "",
-    operatingSystems: [],
-    selectedOsId: "",
     autoDeviceDisabledReason,
   };
   if (params.hostedEnvironment) {
@@ -102,22 +81,10 @@ export function resolveWhereChip(params: {
     };
   }
   if (params.cloudProfileId) {
-    const defaultOs = profile ? defaultCloudOs(profile) : "";
-    const selectedOsId = params.os || defaultOs;
-    const operatingSystems = profile?.operatingSystems ?? [];
-    const cloudMachines = profile ? cloudMachinesForOs(profile, selectedOsId) : [];
-    const defaultMachine = profile ? defaultCloudMachine(profile, selectedOsId) : undefined;
-    const selectedMachine = params.machineClass
-      ? cloudMachines.find((machine) => machine.id === params.machineClass)
-      : defaultMachine;
     return {
       ...common,
       kind: "cloud",
       label: profile?.id ?? params.cloudProfileId,
-      operatingSystems,
-      selectedOsId,
-      cloudMachines,
-      selectedMachineId: selectedMachine?.id ?? "",
     };
   }
   return {
@@ -145,8 +112,6 @@ export type WhereChipOptions = {
   environmentQuery: string;
   onEnvironmentQueryInput: (query: string) => void;
   cloudProfileId: string;
-  machineClass?: string;
-  os?: string;
   deviceId: string;
   autoDevice?: boolean;
   cloudDisabledReason?: string;
@@ -161,9 +126,7 @@ export type WhereChipOptions = {
   onPopoverAfterHide: () => void;
   onSelectDevice: (deviceId: string) => void;
   onSelectAutoDevice: () => void;
-  onSelectCloudProfile: (profileId: string, useDefaults?: boolean) => void;
-  onSelectCloudOs?: (osId: string) => void;
-  onSelectCloudMachine?: (machineId: string) => void;
+  onSelectCloudProfile: (profileId: string) => void;
   onConnectMachine: () => void;
   onManageCloudWorkers: () => void;
 };

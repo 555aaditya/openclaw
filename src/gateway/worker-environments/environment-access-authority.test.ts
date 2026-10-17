@@ -17,9 +17,11 @@ describe("worker environment startup authority", () => {
       return await prepared.promise;
     });
     const environmentId = "worker-revoked-tunnel";
-    await support.seedReady(environmentId, undefined, true);
+    await support.seedReady(environmentId);
     const tunnelManager = createStoppedTunnelManager();
-    const workerService = support.createService(support.createProvider(), { tunnelManager });
+    const workerService = support.createService(support.createProvider(), {
+      nodeTunnelManager: tunnelManager,
+    });
     let authorized = true;
 
     const starting = workerService.startTunnel({
@@ -47,8 +49,7 @@ describe("worker environment startup authority", () => {
   ] as const)(
     "checks $executionMode node ownership beyond worker credential expiry (revoke during preparation: $revokeDuringPreparation)",
     async ({ executionMode, revokeDuringPreparation }) => {
-      const tunnelManager = createStoppedTunnelManager();
-      support.testState.config.cloudWorkers!.profiles!.development!.provider = "crabbox";
+      support.testState.config.cloudWorkers!.profiles!.development!.provider = "device";
       const nodeHandle = {
         environmentId: "pending",
         ownerEpoch: 0,
@@ -77,21 +78,21 @@ describe("worker environment startup authority", () => {
       const workerService = support.createService(
         support.createProvider({
           supportedExecutionModes: ["worker-turn", "remote-exec"],
-          id: "crabbox",
+          id: "device",
           provision: async () => ({
-            leaseId: "cloud-lease",
+            leaseId: "device-lease",
+            sharedHost: true,
             node: { deviceId: "device-1" },
           }),
         }),
         {
-          tunnelManager,
           nodeTunnelManager,
           ensureNodeWorkerBundle: async () => structuredClone(support.BOOTSTRAP_RECEIPT),
         },
       );
       const environment = await workerService.createWithRequest({
         profileId: "development",
-        idempotencyKey: "cloud-node-tunnel-gate",
+        idempotencyKey: "device-node-tunnel-gate",
         executionMode,
       });
       const credential = await workerService.attachSession({
@@ -134,7 +135,6 @@ describe("worker environment startup authority", () => {
           authorize,
         }),
       ).resolves.toMatchObject({ environmentId: environment.environmentId });
-      expect(tunnelManager.start).not.toHaveBeenCalled();
       expect(prepareInstallation).toHaveBeenCalledTimes(prepareCallsBeforeTunnel + 1);
       expect(nodeTunnelManager.start).toHaveBeenCalledWith(
         expect.objectContaining({

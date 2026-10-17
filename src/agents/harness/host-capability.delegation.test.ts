@@ -77,7 +77,8 @@ describe("harness tool delegation through the catalog", () => {
       );
       const provision = vi.fn(async () => ({
         leaseId: "preview-lease",
-        ssh: support.SSH_ENDPOINT,
+        sharedHost: true,
+        node: { deviceId: "node-1" },
       }));
       const service = support.createService(support.createProvider({ provision }));
       const requester: GatewayClient = {

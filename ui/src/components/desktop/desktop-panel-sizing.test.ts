@@ -28,18 +28,13 @@ describe("desktop panel sizing", () => {
 
   it.each([
     {
-      name: "worker password without auth metadata",
-      observed: { vncPassword: "synthetic" },
-      credentials: { password: "synthetic" },
-    },
-    {
       name: "explicit VNC password",
       observed: { auth: "vnc-password", vncPassword: "synthetic" },
       credentials: { password: "synthetic" },
     },
     {
       name: "preauthenticated VNC",
-      observed: { auth: "vnc-password", vncPassword: "synthetic", preauthenticated: true },
+      observed: { auth: "vnc-password", preauthenticated: true },
       credentials: undefined,
     },
     {
@@ -48,12 +43,13 @@ describe("desktop panel sizing", () => {
       credentials: undefined,
     },
   ])("passes only resolved credentials to noVNC for $name", async ({ observed, credentials }) => {
+    const hostEnvironment = { ...desktopEnvironment, id: "gateway", type: "local" };
     const request = vi.fn(async (method: string) => {
       if (method === "environments.list") {
-        return { environments: [desktopEnvironment] };
+        return { environments: [hostEnvironment] };
       }
       if (method === "environments.status") {
-        return desktopEnvironment;
+        return hostEnvironment;
       }
       if (method === "desktop.observe") {
         return { transport: "rfb", wsPath: "/view", control: false, ...observed };
@@ -69,7 +65,7 @@ describe("desktop panel sizing", () => {
       available: true,
       embedded: true,
       presented: true,
-      requestedSource: desktopEnvironment.id,
+      requestedSource: hostEnvironment.id,
       desktopClientFactory: () => ({ connect }),
     });
     mountPanel(panel);
@@ -152,7 +148,7 @@ describe("desktop panel sizing", () => {
   it.each(["retry", "demotion", "permission loss", "source change"] as const)(
     "revalidates Match after %s",
     async (transition) => {
-      const replacement = { ...desktopEnvironment, id: "worker-desktop-2" };
+      const replacement = { ...desktopEnvironment, id: "node:desktop-node-2" };
       let canResize = true;
       const request = vi.fn(
         async (method: string, params?: { control?: boolean; environmentId?: string }) => {

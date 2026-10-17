@@ -14,7 +14,7 @@ import {
   parseNodeWorkerWorkspaceExecResult,
   type NodeWorkerWorkspaceExecInput,
 } from "../worker/node-workspace-protocol.js";
-import { NodeWorkerPreparedWorkspaceStore } from "./node-worker-prepared-workspace-store.js";
+import { serializeNodeWorkerWorkspace } from "./node-worker-transfer-client.js";
 import { NodeWorkerWorkspaceRuntime } from "./node-worker-workspace.js";
 
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
@@ -91,7 +91,6 @@ function fixture(ephemeral = false) {
 describe("conversation-owned preview processes", () => {
   it("rejects outside path operands after positional arguments, eval terminators, and option values", async () => {
     const { workspace } = fixture(true);
-    vi.spyOn(NodeWorkerPreparedWorkspaceStore.prototype, "find").mockResolvedValue(undefined);
     const initial = await workspace.exec({
       ...identity,
       nativeProcessOwner: true,
@@ -232,9 +231,6 @@ describe("conversation-owned preview processes", () => {
     const { workspace } = fixture(true);
     const entered = createDeferredCore();
     const lookup = createDeferredCore<undefined>();
-    const find = vi
-      .spyOn(NodeWorkerPreparedWorkspaceStore.prototype, "find")
-      .mockResolvedValue(undefined);
     const command: NodeWorkerWorkspaceExecInput = {
       ...identity,
       argv: [runtimeExecutableName, "-e", "process.stdout.write('fresh')"],
@@ -249,14 +245,15 @@ describe("conversation-owned preview processes", () => {
     });
     const sentinel = path.join(initial.workspaceDir, "retained.txt");
     fs.writeFileSync(sentinel, "retained");
-    find.mockImplementationOnce(async () => {
+    const holding = serializeNodeWorkerWorkspace(path.dirname(initial.workspaceDir), async () => {
       entered.resolve();
-      return await lookup.promise;
+      await lookup.promise;
     });
+    await entered.promise;
     const pending = workspace.exec(command);
     void pending.catch(() => undefined);
     try {
-      await awaitGateBeforeSettlement(entered.promise, pending, "lookup did not hold the command");
+      // exec captures its process admission before joining the held workspace queue.
       await workspace.processes.stopEnvironment({ ...identity, ownerEpoch: 1 });
       lookup.resolve(undefined);
       await expect(pending).rejects.toThrow("retired");
@@ -265,13 +262,12 @@ describe("conversation-owned preview processes", () => {
       expect(fresh).toMatchObject({ code: 0, stdout: "fresh" });
     } finally {
       lookup.resolve(undefined);
-      await pending.catch(() => undefined);
+      await Promise.allSettled([holding, pending]);
     }
   });
 
   it("keeps overlapping stops sealed and excludes higher epochs from stale stop", async () => {
     const { workspace } = fixture(true);
-    vi.spyOn(NodeWorkerPreparedWorkspaceStore.prototype, "find").mockResolvedValue(undefined);
     const first = createDeferredCore();
     const second = createDeferredCore();
     const secondStarted = createDeferredCore();
@@ -303,31 +299,27 @@ describe("conversation-owned preview processes", () => {
       await expect(workspace.exec(command)).rejects.toThrow("retired");
       second.resolve();
       await overlapping;
-      expect((await workspace.exec(command)).stdout).toBe("fresh");
+      const current = await workspace.exec(command);
+      expect(current.stdout).toBe("fresh");
       await workspace.processes.stopEnvironment({ ...identity, ownerEpoch: 2 });
       await expect(workspace.exec(command)).rejects.toThrow("retired");
       const lookup = createDeferredCore<undefined>();
       const entered = createDeferredCore();
-      vi.spyOn(NodeWorkerPreparedWorkspaceStore.prototype, "find").mockImplementationOnce(
-        async () => {
-          entered.resolve();
-          return await lookup.promise;
-        },
-      );
+      const holding = serializeNodeWorkerWorkspace(path.dirname(current.workspaceDir), async () => {
+        entered.resolve();
+        await lookup.promise;
+      });
+      await entered.promise;
       const higher = workspace.exec({ ...command, generation: 3 });
       void higher.catch(() => undefined);
       try {
-        await awaitGateBeforeSettlement(
-          entered.promise,
-          higher,
-          "higher-epoch lookup did not begin",
-        );
+        // The higher epoch has captured admission and waits behind the held queue.
         await workspace.processes.stopEnvironment({ ...identity, ownerEpoch: 1 });
         lookup.resolve(undefined);
         expect((await higher).stdout).toBe("fresh");
       } finally {
         lookup.resolve(undefined);
-        await higher.catch(() => undefined);
+        await Promise.allSettled([holding, higher]);
       }
       const lowerStarted = createDeferredCore();
       const finishLower = createDeferredCore();

@@ -52,8 +52,6 @@ describe("session dispatch protocol schemas", () => {
         key: "agent:main:dispatch",
         agentId: "main",
         profileId: "development",
-        machineClass: "beast",
-        os: "windows/wsl2",
       }),
     ).toBe(true);
     expect(
@@ -70,13 +68,14 @@ describe("session dispatch protocol schemas", () => {
       validateSessionsDispatchParams({
         key: "agent:main:dispatch",
         profileId: "development",
-        os: "x".repeat(64),
       }),
     ).toBe(true);
     for (const invalidOsTarget of [
       { os: "windows/wsl2" },
       { deviceId: "device-1", os: "windows/wsl2" },
       { autoDevice: true, os: "windows/wsl2" },
+      { profileId: "development", os: "linux" },
+      { profileId: "development", machineClass: "small" },
       { profileId: "development", os: "" },
       { profileId: "development", os: "x".repeat(65) },
     ]) {
@@ -274,12 +273,10 @@ describe("session dispatch protocol schemas", () => {
         target: {
           kind: "profile",
           profileId: accepted,
-          machineClass: "x".repeat(128),
-          os: "x".repeat(64),
         },
       }),
     ).toBe(true);
-    for (const machineClass of ["", "x".repeat(129)]) {
+    for (const machineClass of ["small", "", "x".repeat(129)]) {
       expect(
         validateSessionsMoveParams({
           key: "agent:main:dispatch",
@@ -288,7 +285,7 @@ describe("session dispatch protocol schemas", () => {
         }),
       ).toBe(false);
     }
-    for (const os of ["", "x".repeat(65)]) {
+    for (const os of ["linux", "", "x".repeat(65)]) {
       expect(
         validateSessionsMoveParams({
           key: "agent:main:dispatch",
@@ -359,7 +356,7 @@ describe("session dispatch protocol schemas", () => {
       { expected, target: { kind: "device", deviceId: "device-1" } },
       {
         expected,
-        target: { kind: "profile", profileId: "team", os: "linux", machineClass: "tiny" },
+        target: { kind: "profile", profileId: "team" },
       },
     ];
     for (const retry of retries) {

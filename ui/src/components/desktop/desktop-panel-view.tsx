@@ -1,8 +1,4 @@
-import type {
-  DesktopAvailability,
-  EnvironmentSummary,
-  WorkerDesktopAppId,
-} from "@openclaw/gateway-protocol";
+import type { DesktopAvailability, EnvironmentSummary } from "@openclaw/gateway-protocol";
 import type { JSX } from "@solidjs/web";
 import { For, Show, untrack } from "solid-js";
 import { registerDesktopEnglish } from "../../i18n/locales/en-desktop.ts";
@@ -195,7 +191,7 @@ function DesktopEnvironment(props: {
     <div class="desktop-environment">
       <div class="desktop-environment__details">
         <div class="desktop-environment__id">
-          {desktopSourceForEnvironment(props.environment).kind === "host"
+          {desktopSourceForEnvironment(props.environment)?.kind === "host"
             ? t("desktop.thisMachine")
             : props.environment.id}
         </div>
@@ -267,49 +263,17 @@ export function DesktopCredentials(props: {
 function DesktopConnection(props: {
   state: DesktopPanelState;
   controlling: boolean;
-  desktopApps: WorkerDesktopAppId[];
-  launchingApp: WorkerDesktopAppId | null;
-  showApps: boolean;
   sizing: DesktopSizingOptions;
   pictureInPictureControl: JSX.Element;
   audioControl?: JSX.Element;
   presentationControls?: JSX.Element;
   onDisconnect: () => void;
-  onLaunch: (app: WorkerDesktopAppId) => void;
   onTakeControl: () => void;
   onControlToggle: () => void;
 }) {
   return (
     <>
       <div class="desktop-toolbar desktop-toolbar--connection">
-        {props.showApps && props.desktopApps.length > 0 && (
-          <div class="desktop-apps">
-            <For each={props.desktopApps} keyed={(app) => app}>
-              {(app) => (
-                <button
-                  class="desktop-app-button"
-                  type="button"
-                  title={t(app() === "browser" ? "browser.title" : "terminal.title")}
-                  aria-label={t(app() === "browser" ? "browser.title" : "terminal.title")}
-                  aria-busy={props.launchingApp === app() ? "true" : "false"}
-                  disabled={props.launchingApp === app()}
-                  onClick={() => props.onLaunch(app())}
-                >
-                  <span
-                    class={[
-                      "desktop-app-button__icon",
-                      { "desktop-app-button__icon--launching": props.launchingApp === app() },
-                    ]}
-                    aria-hidden="true"
-                  >
-                    <Icon name={app() === "browser" ? "chrome" : "terminal"} />
-                  </span>
-                  <span>{t(app() === "browser" ? "browser.title" : "terminal.title")}</span>
-                </button>
-              )}
-            </For>
-          </div>
-        )}
         <span class="desktop-toolbar__spacer" />
         {props.controlling ? (
           <button

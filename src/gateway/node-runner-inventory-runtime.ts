@@ -6,7 +6,6 @@ import {
   NODE_RUNNER_UPDATE_REQUIRED_ISSUE,
   NODE_WORKER_ENVIRONMENT_SESSION_VERSION,
   NODE_WORKER_STATUS_WAIT_VERSION,
-  NODE_WORKER_PREPARED_WORKSPACE_VERSION,
   NODE_WORKER_WORKSPACE_QUIESCENCE_VERSION,
   NODE_WORKER_SUPERVISOR_PROTOCOL_FEATURE,
   resolveNodeWorkerExecutionIssue,
@@ -303,7 +302,6 @@ export function isNodeWorkerSupervisorProofCurrent(
     commands?: readonly string[];
     environmentSession?: boolean;
     statusWait?: boolean;
-    preparedWorkspace?: boolean;
     capturedExecPolicy?: boolean;
     workspaceQuiescence?: boolean;
   } = {},
@@ -323,8 +321,6 @@ export function isNodeWorkerSupervisorProofCurrent(
       current.workerHost.environmentSession === NODE_WORKER_ENVIRONMENT_SESSION_VERSION) &&
     (!requirements.statusWait ||
       current.workerHost.statusWait === NODE_WORKER_STATUS_WAIT_VERSION) &&
-    (!requirements.preparedWorkspace ||
-      current.workerHost.preparedWorkspace === NODE_WORKER_PREPARED_WORKSPACE_VERSION) &&
     (!requirements.capturedExecPolicy || !resolveNodeWorkerExecutionIssue(current.workerHost)) &&
     (!requirements.workspaceQuiescence ||
       current.workerHost.workspaceQuiescence === NODE_WORKER_WORKSPACE_QUIESCENCE_VERSION) &&

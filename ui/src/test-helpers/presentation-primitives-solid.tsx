@@ -350,7 +350,7 @@ function Icons() {
           <span>Emoji fallback</span>
         </div>
         <div>
-          <CloudProfileIcon profile={{ providerId: "google" }} />
+          <CloudProfileIcon profile={{ providerId: "device" }} />
           <span>Cloud profile</span>
         </div>
       </div>

@@ -168,7 +168,7 @@ describe("offline device placement abandonment", () => {
       getConfig: () => ({}),
       resolveProvider: () => provider,
       prepareInstallation: async () => BUNDLE_ARTIFACT,
-      bootstrapWorker: async () => BUILD,
+      ensureNodeWorkerBundle: async () => BUILD,
       nodeTunnelManager: manager,
       now: () => 1_000,
     });

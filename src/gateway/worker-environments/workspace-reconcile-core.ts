@@ -15,11 +15,9 @@ import type {
 import { reconciliationDirectories } from "./workspace-reconcile-derived-paths.js";
 import { removeEmptyWorkspaceDirectory } from "./workspace-reconcile-fs.js";
 export { preflightWorkspaceApply } from "./workspace-manifest-worker.js";
-export { changedPaths, manifestNodes } from "./workspace-manifest-comparison.js";
+export { manifestNodes } from "./workspace-manifest-comparison.js";
 export { localWorkspaceNode } from "./workspace-reconcile-fs.js";
 export {
-  MAX_RECONCILIATION_FILE_BYTES,
-  MAX_RECONCILIATION_TOTAL_BYTES,
   parseWorkerWorkspaceReconciliationPlan,
   serializeWorkerWorkspaceReconciliationPlan,
   type WorkerWorkspaceReconciliationJournal,

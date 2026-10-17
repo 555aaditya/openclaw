@@ -125,7 +125,7 @@ const pageStyles = {
     "ui/src/styles/new-session.css",
     "ui/src/styles/palette-session-settings.css",
   ],
-  plugin: ["ui/src/styles/logbook.css"],
+  plugin: [],
   plugins: [
     "ui/src/pages/plugins/credential-editor.css",
     "ui/src/pages/plugins/install-action.css",
@@ -966,14 +966,6 @@ const ownerWatches: readonly UiE2eOwnerWatch[] = [
       ...pageStyles["chat"],
     ],
   },
-  pageWatch(
-    "ui/src/e2e/cloud-workers-snapshots.e2e.test.ts",
-    ["cloud-workers", "config"],
-    [
-      "ui/src/components/modal-dialog.ts",
-      "ui/src/pages/cloud-workers/cloud-worker-snapshot-rows.tsx",
-    ],
-  ),
   pageWatch("ui/src/e2e/cloud-workspace-conflict.e2e.test.ts", ["chat"]),
   pageWatch(
     "ui/src/e2e/codex-sessions.e2e.test.ts",
@@ -1416,8 +1408,6 @@ const ownerWatches: readonly UiE2eOwnerWatch[] = [
     ["chat", "new-session"],
     ["ui/src/components/session-menu.ts", "ui/src/pages/new-session/cloud-profile-discovery.ts"],
   ),
-  pageWatch("ui/src/e2e/new-session-page.cloud-os.e2e.test.ts", ["chat", "new-session"]),
-  pageWatch("ui/src/e2e/new-session-page.cloud-size.e2e.test.ts", ["chat", "new-session"]),
   pageWatch(
     "ui/src/e2e/new-session-page.cloud-startup.e2e.test.ts",
     ["chat", "new-session", "profile"],
@@ -1581,11 +1571,6 @@ const ownerWatches: readonly UiE2eOwnerWatch[] = [
     ],
   ),
   pageWatch("ui/src/e2e/placement-error-unicode.e2e.test.ts", ["chat", "new-session"]),
-  pageWatch(
-    "ui/src/e2e/plugin-bundled-view-recovery.e2e.test.ts",
-    ["plugin"],
-    ["ui/src/app/stale-chunk-reload.ts"],
-  ),
   pageWatch(
     "ui/src/e2e/plugins-config-mutation.e2e.test.ts",
     ["agents-home", "agents", "config", "plugins", "workboard"],

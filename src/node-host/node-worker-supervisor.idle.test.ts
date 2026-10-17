@@ -133,7 +133,10 @@ function fixture(capacity = 1, container = false) {
     return receipt;
   });
   mocks.drain.mockResolvedValue(undefined);
-  mocks.acquirePreparedWorkspace.mockResolvedValue(undefined);
+  mocks.acquireManagedWorkspaceAsync.mockImplementation(async ({ workspaceDir }) => ({
+    workspaceDir,
+    release: vi.fn(),
+  }));
   mocks.send.mockResolvedValue(undefined);
   mocks.remove.mockResolvedValue(undefined);
   function child() {
@@ -297,7 +300,7 @@ describe("node worker idle retention", () => {
   });
 
   it.each(["completed", "closed", "aborted"] as const)(
-    "releases prepared workspace custody when public launch is %s",
+    "releases device-folder workspace custody when public launch is %s",
     async (outcome) => {
       const f = fixture();
       const lease = {
@@ -311,21 +314,25 @@ describe("node worker idle retention", () => {
       const controller = new AbortController();
       const failure = new Error("Synthetic admission failure");
       let closing: Promise<void> | undefined;
-      mocks.acquirePreparedWorkspace.mockReturnValueOnce(acquired.promise);
+      mocks.acquireManagedWorkspaceAsync.mockReturnValueOnce(acquired.promise);
       mocks.send.mockImplementationOnce(async () => {
         started.resolve();
         await startup.promise;
       });
-      const pending = f.supervisor.launch(
-        input("prepared"),
-        TEST_WORKER_ENDPOINT,
-        controller.signal,
-      );
+      const launchInput = { ...input("managed"), sessionKey: "agent:main:session-1" };
+      const pending = f.supervisor.launch(launchInput, TEST_WORKER_ENDPOINT, controller.signal);
       const settled = pending.then(
         (value) => ({ value }),
         (error: unknown) => ({ error }),
       );
       try {
+        expect(mocks.acquireManagedWorkspaceAsync).toHaveBeenCalledExactlyOnceWith(
+          expect.objectContaining({
+            ...testNodeWorkerEnvironmentIdentity(launchInput),
+            sessionKey: launchInput.sessionKey,
+            workspaceDir: lease.workspaceDir,
+          }),
+        );
         expect(mocks.prepare).not.toHaveBeenCalled();
         if (outcome === "closed") {
           closing = f.supervisor.close();
@@ -344,7 +351,7 @@ describe("node worker idle retention", () => {
           );
           startup.resolve();
           expect(await settled).toMatchObject({
-            value: { launchId: "prepared", state: "running" },
+            value: { launchId: launchInput.launchId, state: "running" },
           });
         } else if (outcome === "closed") {
           expect(await settled).toMatchObject({

@@ -88,11 +88,9 @@ class NodeWorkerSupervisor {
     this.store = new NodeWorkerLaunchStore(this.journal);
     this.turns = new NodeWorkerTurnStore(this.journal);
     this.workerEnv = startup.workerEnv;
-    const containerEngine = options.containerEngine;
     this.containerLifecycle = options.containerEngine
       ? new NodeWorkerContainerLifecycle(options.containerEngine, bundleRoot, this.store)
       : undefined;
-    const containerImage = options.containerImage;
     this.workspace =
       options.workspace ??
       new NodeWorkerWorkspaceRuntime({ root: bundleRoot, env: this.workerEnv });
@@ -110,9 +108,9 @@ class NodeWorkerSupervisor {
       store: this.store,
       turns: this.turns,
       capacity: this.capacity,
-      containerEngine,
+      containerEngine: options.containerEngine,
       containerLifecycle: this.containerLifecycle,
-      containerImage,
+      containerImage: options.containerImage,
       starting: this.starting,
       initialize: () => this.initialize(),
       isClosed: () => this.closed,
@@ -205,10 +203,12 @@ class NodeWorkerSupervisor {
       );
     const admissionSignal = signal ? AbortSignal.any([signal, abort.signal]) : abort.signal;
     const done = (async () => {
-      const workspace = await this.workspace.acquirePreparedWorkspace({
-        ...binding,
-        sessionKey: input.sessionKey,
-      });
+      const workspace = input.sessionKey
+        ? await this.workspace.acquireManagedWorkspaceAsync({
+            ...binding,
+            sessionKey: input.sessionKey,
+          })
+        : undefined;
       try {
         admissionSignal.throwIfAborted();
         if (this.closed) {

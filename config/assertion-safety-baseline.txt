@@ -83,7 +83,6 @@ extensions/buzz/src/qa/adapter.runtime.ts	2
 extensions/buzz/src/room-membership.ts	2
 extensions/buzz/src/setup-verify.ts	2
 extensions/buzz/src/types.ts	2
-extensions/canvas/src/a2ui-jsonl.ts	1
 extensions/canvas/src/cli.ts	2
 extensions/canvas/src/config-migration.ts	2
 extensions/canvas/src/tool.ts	1
@@ -1956,11 +1955,9 @@ src/gateway/worker-environments/inference-runtime.ts	2
 src/gateway/worker-environments/live-event-projection.ts	1
 src/gateway/worker-environments/node-worker-workspace-fallback.ts	2
 src/gateway/worker-environments/placement-state.ts	2
-src/gateway/worker-environments/service-validation.ts	2
 src/gateway/worker-environments/state.ts	1
 src/gateway/worker-environments/worker-session-tool-executor.ts	1
 src/gateway/worker-environments/worker-turn-admission.ts	3
-src/gateway/worker-environments/workspace-accepted-publication.ts	1
 src/gateway/worker-environments/workspace-result-staging.ts	2
 src/gateway/worker-workspace-conflict-transcript.ts	4
 src/gateway/ws-log.ts	3
@@ -2490,7 +2487,6 @@ src/worker/launch-descriptor.ts	1
 src/worker/node-workspace-protocol.ts	1
 src/worker/worker-connection-frames.ts	2
 src/worker/worker-process.ts	1
-src/worker/workspace-rsync-receiver.ts	1
 ui/src/app-navigation.ts	1
 ui/src/app-routes.ts	1
 ui/src/app/app-host-route-state.ts	1

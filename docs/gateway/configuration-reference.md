@@ -37,7 +37,7 @@ Dedicated deep references:
 - [Configuration — MCP, skills, and plugins](/gateway/config-extensions) — extension config: MCP servers, skills, plugin entries, and the canvas widget presenter.
 - [Configuration — browser, UI, and desktop](/gateway/config-browser-ui-desktop) — browser automation, Control UI presentation, and desktop or paired-node config.
 - [Configuration — gateway](/gateway/config-gateway) — gateway config: bind, auth, roles, Control UI, terminal, remote, nodes, TLS, and reload.
-- [Configuration — cloud worker environments](/gateway/config-cloud-workers) — cloud worker profiles under `cloudWorkers`, including Crabbox and static SSH development.
+- [Configuration — cloud worker environments](/gateway/config-cloud-workers) — paired-device worker profiles and required placement under `cloudWorkers`.
 - [Storage locations](/concepts/storage-locations) — named storage destinations under `storage.locations`, initialization, and encryption.
 - [Database engines (experimental)](/reference/database-engines) — SQLite defaults and PostgreSQL selection under `database`, connection SecretRefs, and store support.
 - [Configuration — hooks](/gateway/config-hooks) — hook config: HTTP contract, agent payload, session policy, mapping, retries, and Gmail.
@@ -132,7 +132,7 @@ Moved to [Configuration — gateway](/gateway/config-gateway). Sections: OpenAI-
 
 ## Cloud worker environments
 
-Moved to [Configuration — cloud worker environments](/gateway/config-cloud-workers). Sections: Crabbox profile, Static SSH development profile.
+Moved to [Configuration — cloud worker environments](/gateway/config-cloud-workers). Sections: device profiles and required worker placement.
 
 <a id="crabbox-profile"></a>
 <a id="static-ssh-development-profile"></a>

@@ -45,7 +45,6 @@ async function selectSessionPlacementTarget(params: {
     sessionLabel: params.row.label || params.row.key,
     activeRun: params.row.hasActiveRun === true,
     repositoryOnly: repositorySessionNeedsWorker(params.row),
-    allowMachineOverrides: !params.requiredProfile,
     gatewayDisabledReason: params.requiredProfile
       ? t("sessionsView.moveSessionRequiredProfile")
       : gatewayAccess.allowed
@@ -279,8 +278,6 @@ export async function changeSessionPlacement(params: {
         ...(target.kind === "profile"
           ? {
               profileId: target.profileId,
-              ...(target.os ? { os: target.os } : {}),
-              ...(target.machineClass ? { machineClass: target.machineClass } : {}),
             }
           : { deviceId: target.deviceId }),
       });

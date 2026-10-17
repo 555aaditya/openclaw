@@ -1,14 +1,6 @@
 export type WorkspaceInventoryComputationOperations = {
-  "workspace.inventory.staged-directories": {
-    input: { rootDir: string };
-    output: string[];
-  };
   "workspace.inventory.select": {
     input: { gitRoot: string; eligiblePath: string; ignoredPath: string; selectedPath: string };
-    output: void;
-  };
-  "workspace.inventory.existing": {
-    input: { gitRoot: string; preparedListPath: string };
     output: void;
   };
   "workspace.inventory.paths": {
@@ -26,7 +18,7 @@ export type WorkspaceInventoryComputationCommand = {
 
 export type WorkspaceInventoryWriteCommand = Exclude<
   WorkspaceInventoryComputationCommand,
-  { type: "workspace.inventory.paths" | "workspace.inventory.staged-directories" }
+  { type: "workspace.inventory.paths" }
 >;
 
 export type WorkspaceInventoryComputationResult =

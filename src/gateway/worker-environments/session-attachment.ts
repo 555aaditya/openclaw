@@ -30,8 +30,6 @@ export type WorkerEnvironmentAttachmentRecord = Omit<WorkerEnvironmentAttachment
 export type WorkerEnvironmentSessionCreateRequest = WorkerEnvironmentSessionIdentity & {
   profileId: string;
   idempotencyKey: string;
-  machineClass?: string;
-  os?: string;
 };
 
 /** Requester presentation must succeed before a newly reserved machine can be allocated. */

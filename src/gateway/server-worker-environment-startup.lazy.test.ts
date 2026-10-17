@@ -1,19 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
-import * as metadataState from "../plugins/current-plugin-metadata-state.js";
-import { createPluginMetadataSnapshotFixture } from "../plugins/plugin-metadata.test-support.js";
 import { createEmptyPluginRegistry } from "../plugins/registry-empty.js";
-import { createDeferredCore } from "../shared/deferred.js";
 import {
   closeOpenClawStateDatabaseAsync,
   closeOpenClawStateDatabaseForTest,
 } from "../state/openclaw-state-db.js";
 import { createTestGatewayScheduler } from "../test-utils/gateway-scheduler-clock.js";
-import * as version from "../version.js";
 import { createDesktopSessionRegistry } from "./desktop/session-registry.js";
-import * as bundles from "./worker-environments/bundle.js";
 import type { WorkerConnectionIdentity } from "./worker-environments/connection-identity.js";
-import * as bootstrapArtifacts from "./worker-environments/node-bootstrap-artifact.js";
 import type {
   createWorkerEnvironmentService,
   WorkerEnvironmentService,
@@ -29,23 +23,19 @@ const mocks = vi.hoisted(() => {
   return {
     createTools: vi.fn<WorkerGatewayTools>(async () => []),
     createGatewayTools: undefined as GatewayToolFactory | undefined,
-    prepareNodeArtifacts: undefined as Parameters<
-      typeof createWorkerEnvironmentService
-    >[0]["prepareNodeArtifacts"],
     service: {
-      setHumanPresence: vi.fn(async () => {}),
       get: vi.fn<WorkerEnvironmentService["get"]>(),
       ready: vi.fn<WorkerEnvironmentService["ready"]>(async () => {}),
       stop: vi.fn<WorkerEnvironmentService["stop"]>(async () => {}),
-    } satisfies Pick<WorkerEnvironmentService, "get" | "ready" | "stop" | "setHumanPresence">,
+    } satisfies Pick<WorkerEnvironmentService, "get" | "ready" | "stop">,
   };
 });
 
-vi.mock("./worker-environments/service.js", () => ({
+vi.mock("./worker-environments/service.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./worker-environments/service.js")>()),
   createWorkerEnvironmentService: vi.fn(
     (options: Parameters<typeof createWorkerEnvironmentService>[0]) => {
       mocks.createGatewayTools = options.createGatewayTools;
-      mocks.prepareNodeArtifacts = options.prepareNodeArtifacts;
       return mocks.service;
     },
   ),
@@ -66,7 +56,6 @@ const tempDirs = useAutoCleanupTempDirTracker((cleanup) =>
     await closeOpenClawStateDatabaseAsync();
     closeOpenClawStateDatabaseForTest();
     mocks.createGatewayTools = undefined;
-    mocks.prepareNodeArtifacts = undefined;
     vi.restoreAllMocks();
     vi.clearAllMocks();
     cleanup();
@@ -126,86 +115,3 @@ describe("gateway worker tool-surface startup", () => {
     });
   });
 });
-
-it.each(["success", "failure", "abort"] as const)(
-  "cold artifact preparation overlaps without late publication (outcome=%s)",
-  async (outcome) => {
-    const nodeArtifact = {
-      tarballPath: "/synthetic/node.tgz",
-      tarballSha256: "a".repeat(64),
-      tarballBytes: 1,
-      openclawVersion: "1.2.3",
-      buildId: "fixture",
-      enabledPluginIds: [],
-    };
-    const bundleArtifact = {
-      install: "bundle" as const,
-      tarballPath: "/synthetic/worker.tgz",
-      tarballSha256: "b".repeat(64),
-      tarballBytes: 1,
-      bundleHash: "c".repeat(64),
-      openclawVersion: "1.2.3",
-      protocolFeatures: [],
-    };
-    const node = createDeferredCore<typeof nodeArtifact>();
-    const bundle = createDeferredCore<typeof bundleArtifact>();
-    const prepareNode = vi.fn(() => node.promise);
-    const prepareBundle = vi.fn(() => bundle.promise);
-    vi.spyOn(metadataState, "getGatewayPluginMetadataSnapshot").mockReturnValue(
-      createPluginMetadataSnapshotFixture(),
-    );
-    vi.spyOn(version, "resolveRuntimeServiceBuildId").mockReturnValue("fixture");
-    vi.spyOn(bootstrapArtifacts, "createNodeBootstrapArtifactProvider").mockReturnValue({
-      prepare: prepareNode,
-      close: async () => {},
-    });
-    vi.spyOn(bundles, "createWorkerBundleProducer").mockReturnValue({
-      prepare: prepareBundle,
-      prune: async () => {},
-    });
-    await withWorkerRuntime(async () => {
-      const controller = new AbortController();
-      const preparation = mocks.prepareNodeArtifacts!({}, controller.signal);
-      const published = vi.fn();
-      const rejected = vi.fn();
-      void preparation.then(published, rejected);
-      const failure = new Error("node artifact failed");
-      try {
-        await vi.dynamicImportSettled();
-        if (outcome === "abort") {
-          expect(prepareBundle).toHaveBeenCalledOnce();
-          node.resolve(nodeArtifact);
-          await vi.dynamicImportSettled();
-          controller.abort();
-          await vi.dynamicImportSettled();
-          expect(rejected).toHaveBeenCalledWith(expect.objectContaining({ name: "AbortError" }));
-          expect(published).not.toHaveBeenCalled();
-          bundle.reject(new Error("late bundle failure"));
-          await vi.dynamicImportSettled();
-          expect(published).not.toHaveBeenCalled();
-        } else if (outcome === "failure") {
-          node.reject(failure);
-          await vi.dynamicImportSettled();
-          expect(rejected).not.toHaveBeenCalled();
-          expect(published).not.toHaveBeenCalled();
-          bundle.reject(new Error("bundle artifact failed"));
-          await expect(preparation).rejects.toBe(failure);
-          expect(published).not.toHaveBeenCalled();
-        } else {
-          expect(prepareNode).toHaveBeenCalledOnce();
-          expect(prepareBundle).toHaveBeenCalledOnce();
-          expect(published).not.toHaveBeenCalled();
-          node.resolve(nodeArtifact);
-          bundle.resolve(bundleArtifact);
-          await expect(preparation).resolves.toMatchObject({
-            artifacts: { workerBundleHash: bundleArtifact.bundleHash },
-          });
-        }
-      } finally {
-        node.resolve(nodeArtifact);
-        bundle.resolve(bundleArtifact);
-        await preparation.catch(() => undefined);
-      }
-    });
-  },
-);

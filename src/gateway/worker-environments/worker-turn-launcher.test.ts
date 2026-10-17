@@ -802,7 +802,7 @@ describe("worker turn launcher local placement", () => {
     }
   });
 
-  it("resolves an exact paired-device sandbox without requiring an SSH identity resolver", async () => {
+  it("resolves an exact paired-device sandbox", async () => {
     await seedActivePlacement("remote-exec");
     const environment = {
       ...attachedEnvironment(),
@@ -814,7 +814,6 @@ describe("worker turn launcher local placement", () => {
     const environments: WorkerTurnEnvironmentService = {
       ...unusedEnvironments(),
       get: vi.fn(() => environment),
-      resolveSshIdentity: undefined,
     };
     const provider = createWorkerSessionTurnPlacementProvider({ environments, placements });
 

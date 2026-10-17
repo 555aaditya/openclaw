@@ -15,11 +15,6 @@ import type { OpenClawStateDatabase } from "../../state/openclaw-state-db.js";
 import { captureOpenClawStateWorkerContext } from "../../state/openclaw-state-worker-context.js";
 import { runOpenClawStateWorkerOperation } from "../../state/openclaw-state-worker-store.js";
 import { stagePlacementTurnClaimWorkerPublication } from "./placement-turn-authority.js";
-import {
-  isPreparedReservationWithinCapacity,
-  preparedCapacityFromReservations,
-  selectPreparedEnvironmentReservations,
-} from "./prepared-environment-store.js";
 import type { WorkerEnvironmentSessionIdentity } from "./session-attachment.js";
 import { WorkerEnvironmentInventoryClosedError } from "./store-errors.js";
 import { workerEnvironmentProjections } from "./store-projection.js";
@@ -34,10 +29,7 @@ import type {
   WorkerEnvironmentPrunePage,
 } from "./store.types.js";
 
-export type {
-  PreparedEnvironmentPlacementBinding,
-  WorkerEnvironmentRecord,
-} from "./environment-record.js";
+export type { WorkerEnvironmentRecord } from "./environment-record.js";
 export type { WorkerEnvironmentTransitionPatch } from "./store-write-types.js";
 
 type Input<Method extends keyof WorkerEnvironmentMutationMethods> = Parameters<
@@ -303,15 +295,6 @@ export async function createWorkerEnvironmentStore(
     await close();
     throw error;
   }
-  let reservationVersion = -1;
-  let reservations: ReturnType<typeof selectPreparedEnvironmentReservations> = [];
-  const prepared = () => {
-    if (reservationVersion !== owner.version()) {
-      reservations = selectPreparedEnvironmentReservations(owner.preparedRecords());
-      reservationVersion = owner.version();
-    }
-    return reservations;
-  };
   const ready = async () => {
     assertActive();
     await owner.ready();
@@ -336,20 +319,6 @@ export async function createWorkerEnvironmentStore(
       read(() => owner.credentialByHash(normalizeCredentialHash(hash))),
     getTransferOwner: (id: string) =>
       read(() => owner.transferOwner(requireWorkerEnvironmentString(id, "id"))),
-    hasNodeEnrollmentOwner: (nodeId: string) => read(() => owner.hasNodeEnrollmentOwner(nodeId)),
-    hasPendingNodeEnrollmentSetup: (setup: string, device: string) =>
-      read(() => owner.hasPendingNodeEnrollmentSetup(setup, device)),
-    preparedCapacity: (input: Parameters<typeof preparedCapacityFromReservations>[1]) =>
-      read(() => preparedCapacityFromReservations(prepared(), input)),
-    preparedReservationEnvironmentIds: () =>
-      read(() => prepared().map((record) => record.environmentId)),
-    isPreparedIntentWithinCapacity: (
-      input: Parameters<typeof isPreparedReservationWithinCapacity>[1],
-    ) =>
-      read(() => {
-        owner.get(input.environmentId);
-        return isPreparedReservationWithinCapacity(prepared(), input);
-      }),
     getSessionAttachmentRecord: (id: string) => read(() => owner.attachment(id)),
     listSessionAttachmentRecords: () => read(() => owner.attachments()),
     findSessionAttachmentRecord(
@@ -377,8 +346,6 @@ export async function createWorkerEnvironmentStore(
     },
     createIntent: (input: Input<"createIntent">, assertCurrent?: () => void) =>
       mutate("workerEnvironments.createIntent", { input }, assertCurrent),
-    ensureNodeEnrollment: (input: string) =>
-      mutate("workerEnvironments.ensureNodeEnrollment", { input }),
     async revokeEnvironmentCredential(
       input: string,
       opts: {
@@ -407,18 +374,8 @@ export async function createWorkerEnvironmentStore(
     refreshBootstrapReceipt({ assertCurrent, ...input }: Input<"refreshBootstrapReceipt">) {
       return mutate("workerEnvironments.refreshBootstrapReceipt", { input }, assertCurrent);
     },
-    transition({ assertCurrent, placementBinding, ...input }: Input<"transition">) {
-      const binding = placementBinding
-        ? (({ assertCurrent: _guard, ...facts }) => facts)(placementBinding)
-        : undefined;
-      return mutate(
-        "workerEnvironments.transition",
-        { input: { ...input, placementBinding: binding } },
-        () => {
-          assertCurrent?.();
-          placementBinding?.assertCurrent();
-        },
-      );
+    transition({ assertCurrent, ...input }: Input<"transition">) {
+      return mutate("workerEnvironments.transition", { input }, assertCurrent);
     },
     renewCredential({ assertCurrent, ...input }: Input<"renewCredential">) {
       return mutate("workerEnvironments.renewCredential", { input }, assertCurrent);
@@ -428,12 +385,6 @@ export async function createWorkerEnvironmentStore(
     },
     recordError({ assertCurrent, ...input }: Input<"recordError">) {
       return mutate("workerEnvironments.recordError", { input }, assertCurrent);
-    },
-    ensurePreparedIntent({ assertCurrent, ...input }: Input<"ensurePreparedIntent">) {
-      return mutate("workerEnvironments.ensurePreparedIntent", { input }, assertCurrent);
-    },
-    requestPreparedDestroy({ assertCurrent, ...input }: Input<"requestPreparedDestroy">) {
-      return mutate("workerEnvironments.requestPreparedDestroy", { input }, assertCurrent);
     },
     createSessionAttachmentIntent(
       input: Input<"createSessionAttachmentIntent">,

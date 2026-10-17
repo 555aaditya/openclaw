@@ -92,8 +92,7 @@ const config = {
         "test/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts}!",
         // CLI subprocess fixtures consume the shared native-report collector.
         "src/cli/cli-process-child.test-helpers.test.ts!",
-        // Core bootstrap packaging and source updates consume shared script owners.
-        "src/gateway/worker-environments/node-bootstrap-artifact.ts!",
+        // Package inventory and source updates consume shared script owners.
         "src/infra/package-dist-inventory.ts!",
         "src/plugin-sdk/api-baseline.ts!",
         "src/cli/update-cli/update-command-{git-admission,runtime}.ts!",
@@ -107,7 +106,6 @@ const config = {
         "scripts/**/*.{js,mjs,cjs,ts,mts,cts}!",
         "test/**/*.{js,mjs,cjs,ts,mts,cts}!",
         "src/cli/cli-process-child.test-helpers{,.test}.ts!",
-        "src/gateway/worker-environments/node-bootstrap-artifact.ts!",
         "src/infra/package-dist-inventory.ts!",
         "src/plugin-sdk/api-baseline.ts!",
         "src/cli/update-cli/update-command-{git-admission,runtime}.ts!",

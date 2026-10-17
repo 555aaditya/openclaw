@@ -216,7 +216,6 @@ vi.mock("./runtime.js", async (importOriginal) => {
           pathEnv: process.env.PATH ?? "",
         },
         workerHostingEnabled: mocks.fakeRuntimeWorkerHosting,
-        preparedWorkspacesEnabled: false,
         nativeInferenceEnabled: false,
         workerHostingDisabledReason: mocks.fakeRuntimeWorkerHostingDisabledReason,
         initialInventory: { skills: [], pluginTools: [] },

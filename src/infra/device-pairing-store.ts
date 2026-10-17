@@ -18,13 +18,10 @@ import {
   type OpenClawStateDatabase,
   type OpenClawStateDatabaseOptions,
 } from "../state/openclaw-state-db.js";
-import { sha256Base64Url } from "./crypto-digest.js";
 import { clearDeviceAuthTokenFromDatabase } from "./device-auth-store.kernel.js";
 import { resolveDeviceBootstrapTokenExpiresAtMs } from "./device-bootstrap.worker-types.js";
-import { bindCloudWorkerSetupCompletion } from "./device-pairing-cloud-worker.js";
 import type { PairedDeviceMetadataPatch } from "./device-pairing-core.types.js";
 import { invalidateDevicePairingNodeSnapshot } from "./device-pairing-publication.js";
-import type { CloudWorkerSetupCompletionPublication } from "./device-pairing-read.types.js";
 import {
   toJsonColumn,
   toPendingRow,
@@ -460,7 +457,6 @@ export function consumeDeviceBootstrapTokenWithSetupCompletionInTransaction(para
     device: PairedDevice | null,
     record: DeviceBootstrapTokenRecord,
   ) => boolean;
-  recordWorkerEnvironment: (facts: CloudWorkerSetupCompletionPublication) => void;
 }): { record: DeviceBootstrapTokenRecord; completion?: DevicePairSetupCompletionRecord } | null {
   const token = params.token.trim();
   const deviceId = params.deviceId.trim();
@@ -481,7 +477,10 @@ export function consumeDeviceBootstrapTokenWithSetupCompletionInTransaction(para
       return null;
     }
     const record = fromBootstrapRow(tokenRow);
-    if (params.nowMs > resolveDeviceBootstrapTokenExpiresAtMs(record)) {
+    if (
+      record.profile?.purpose === "cloud-worker" ||
+      params.nowMs > resolveDeviceBootstrapTokenExpiresAtMs(record)
+    ) {
       return null;
     }
     const paired =
@@ -504,24 +503,11 @@ export function consumeDeviceBootstrapTokenWithSetupCompletionInTransaction(para
         }
       : undefined;
 
-    // Cloud workers can retry an undelivered hello only with this exact bound bearer;
-    // delivery confirmation retires it atomically with the confirmed completion.
-    if (!completion || record.profile?.purpose !== "cloud-worker") {
-      executeSqliteQuerySync(
-        db,
-        kysely.deleteFrom("device_bootstrap_tokens").where("token_key", "=", tokenRow.token_key),
-      );
-    }
+    executeSqliteQuerySync(
+      db,
+      kysely.deleteFrom("device_bootstrap_tokens").where("token_key", "=", tokenRow.token_key),
+    );
     if (completion) {
-      if (record.profile?.purpose === "cloud-worker") {
-        params.recordWorkerEnvironment(
-          bindCloudWorkerSetupCompletion({
-            db,
-            completion,
-            credentialDigest: sha256Base64Url(tokenRow.token),
-          }),
-        );
-      }
       executeSqliteQuerySync(
         db,
         kysely

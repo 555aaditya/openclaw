@@ -1,4 +1,4 @@
-import type { DesktopObserveResult, DesktopSource } from "@openclaw/gateway-protocol";
+import type { DesktopObserveResult } from "@openclaw/gateway-protocol";
 import type { DesktopCredentials } from "./desktop-panel-connection.ts";
 
 const DESKTOP_CREDENTIALS_REQUIRED_CODE = "DESKTOP_CREDENTIALS_REQUIRED";
@@ -23,13 +23,10 @@ export function fromForm(
 }
 
 export function forObserve(
-  source: DesktopSource,
   auth: "vnc-password" | "ard-account" | undefined,
   saved: DesktopCredentials | undefined,
 ): DesktopCredentials | undefined {
-  return source.kind !== "environment" &&
-    saved?.password &&
-    (auth === "vnc-password" || (auth === "ard-account" && saved.username))
+  return saved?.password && (auth === "vnc-password" || (auth === "ard-account" && saved.username))
     ? saved
     : undefined;
 }
@@ -45,7 +42,7 @@ export function forConnection(
   observed: DesktopObserveResult,
   saved: DesktopCredentials | undefined,
 ): DesktopConnectionAuthentication {
-  // Worker responses can carry a password without an auth discriminator.
+  // Host observations can provide credentials when the stream is not preauthenticated.
   const credentials = observed.preauthenticated
     ? undefined
     : observed.vncPassword

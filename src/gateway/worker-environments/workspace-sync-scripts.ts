@@ -19,57 +19,6 @@ import {
   WORKSPACE_PATH_EXCLUSIONS_JS,
   WORKSPACE_STAGED_INPUT_OWNERSHIP_JS,
 } from "./workspace-path-exclusions.js";
-export { REMOTE_WORKSPACE_ACCEPTED_TRANSACTION_JS } from "./workspace-accepted-remote-script.js";
-export { REMOTE_GIT_WORKSPACE_RETRY_RESET_JS } from "./workspace-mutation-remote-script.js";
-export { REMOTE_WORKSPACE_SETUP_SCRIPT } from "./workspace-sync-setup-script.js";
-
-export const REMOTE_GIT_WORKSPACE_SETUP_SCRIPT = String.raw`set -eu
-workspace=$1
-pack=$2
-base=$3
-author_name=$4
-author_email=$5
-cd "$workspace"
-if ! command -v git >/dev/null 2>&1; then
-  printf '%s\n' 'git is required for a git worker workspace' >&2
-  exit 2
-fi
-case ${"${"}#base} in
-  40) git init -q . ;;
-  64) git init -q --object-format=sha256 . ;;
-  *) printf '%s\n' 'invalid worker git base object id' >&2; exit 2 ;;
-esac
-git index-pack --stdin < "$pack" >/dev/null
-printf '%s\n' "$base" > .git/shallow
-actual=$(git rev-parse --verify "$base^{commit}")
-if [ "$actual" != "$base" ]; then
-  printf '%s\n' 'worker git base does not match the synced pack' >&2
-  exit 2
-fi
-git update-ref refs/heads/openclaw-worker "$base"
-git symbolic-ref HEAD refs/heads/openclaw-worker
-git read-tree "$base"
-git ls-files --stage -z | node -e '
-const childProcess = require("node:child_process");
-const chunks = [];
-process.stdin.on("data", (chunk) => chunks.push(chunk));
-process.stdin.on("end", () => {
-  const paths = Buffer.concat(chunks)
-    .toString("utf8")
-    .split("\0")
-    .filter(Boolean)
-    .flatMap((record) => {
-      const separator = record.indexOf("\t");
-      return separator >= 0 && record.startsWith("160000 ") ? [record.slice(separator + 1)] : [];
-    });
-  if (paths.length > 0) {
-    childProcess.execFileSync("git", ["update-index", "--skip-worktree", "--", ...paths]);
-  }
-});'
-rm -f -- "$pack"
-if [ -n "$author_name" ]; then git config user.name "$author_name"; fi
-if [ -n "$author_email" ]; then git config user.email "$author_email"; fi
-`;
 
 export const WORKSPACE_MANIFEST_PROGRAM = String.raw`const crypto = require("node:crypto");
 const childProcess = require("node:child_process");

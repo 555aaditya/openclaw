@@ -53,18 +53,7 @@ export function CloudProfileIcon(props: { profile?: CloudProfileIdentity; class?
   const data = createMemo(() => resolveCloudProfileIconData(props.profile));
   return (
     <span class={["cloud-profile-icon", props.class]} aria-hidden="true">
-      <Show
-        when={data().providerId}
-        fallback={<Show when={data().iconName}>{(name) => <Icon name={name()} />}</Show>}
-      >
-        {(providerId) => (
-          <ProviderAsset
-            icon={providerId()}
-            assetPath={inferControlUiPublicAssetPath(`cloud-provider-icons/${providerId()}.svg`)}
-            class="cloud-provider-icon"
-          />
-        )}
-      </Show>
+      <Icon name={data().iconName} />
     </span>
   );
 }

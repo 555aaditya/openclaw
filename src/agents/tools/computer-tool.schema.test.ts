@@ -82,7 +82,7 @@ describe("createComputerTool v2 execution", () => {
 
     await tool.execute("select", { action: "wait", duration: 0 });
 
-    expect(readActionEnum(tool)).toEqual([...actions, "wait", "take_control"]);
+    expect(readActionEnum(tool)).toEqual([...actions, "wait"]);
     expect(sleepMock).toHaveBeenCalledWith(0, undefined);
     expect(
       callGatewayToolMock.mock.calls.map((call) => (call[2] as ComputerActBody).command),
@@ -127,7 +127,6 @@ describe("createComputerTool v2 execution", () => {
       "screenshot",
       "list_windows",
       "wait",
-      "take_control",
     ]);
     await tool.execute("new-action", { action: "launch_app", app: "Fixture" });
     expect(callGatewayToolMock).toHaveBeenCalledWith(
@@ -186,7 +185,6 @@ describe("createComputerTool v2 execution", () => {
       "launch_app",
       "get_accessibility_tree",
       "wait",
-      "take_control",
     ]);
     for (const field of ["query", "depth", "maxElements"]) {
       expect(tool.parameters).toHaveProperty(
@@ -218,11 +216,11 @@ describe("createComputerTool v2 execution", () => {
 
     const withoutCleanup = createVisionComputerTool();
     await withoutCleanup.execute("bind-without-cleanup", { action: "screenshot" });
-    expect(readActionEnum(withoutCleanup)).toEqual(["screenshot", "wait", "take_control"]);
+    expect(readActionEnum(withoutCleanup)).toEqual(["screenshot", "wait"]);
 
     const withCleanup = createVisionComputerTool({ registerRunCleanup: () => {} });
     await withCleanup.execute("bind-with-cleanup", { action: "screenshot" });
-    expect(readActionEnum(withCleanup)).toEqual([...actions, "wait", "take_control"]);
+    expect(readActionEnum(withCleanup)).toEqual([...actions, "wait"]);
   });
 
   it.each([
@@ -726,9 +724,7 @@ describe("createComputerTool schema", () => {
         invoke: async () => undefined,
       },
     });
-    expect(readActionEnum(tool)).toEqual(
-      actions.some((action) => action === "screenshot") ? [...actions, "take_control"] : actions,
-    );
+    expect(readActionEnum(tool)).toEqual(actions);
   });
 
   it("keeps override-compatible v1 actions alongside prepared paired v2 actions", () => {

@@ -10,7 +10,6 @@ import { registerSecretValueForRedaction } from "../logging/secret-redaction-reg
 import { getProcessSupervisor } from "../process/supervisor/index.js";
 import { supportsNodeWorkerProcessOwner } from "../process/supervisor/service-child-protocol.js";
 import { resolveOpenClawStateSqlitePath } from "../state/openclaw-state-db.paths.js";
-import type { WorkerBrowserRuntime } from "./browser-runtime.js";
 import { buildWorkerConnectParams, type WorkerLaunchDescriptor } from "./launch-descriptor.js";
 import {
   assertNativeInferenceAssignment,
@@ -123,7 +122,6 @@ export async function runWorkerDescriptor(
   options: {
     signal?: AbortSignal;
     onConnectionFailure?: (cause: string | undefined) => void;
-    browserRuntime?: WorkerBrowserRuntime;
     /** Supplied by the managed process owner, which closes state after its final turn. */
     environmentStateDir?: string;
     nativeInference?: NativeInferenceStartup;
@@ -355,7 +353,6 @@ export async function runWorkerDescriptor(
                 },
               }
             : {}),
-          ...(options.browserRuntime ? { browserRuntime: options.browserRuntime } : {}),
           inference: { stream },
           transcript,
           live: {

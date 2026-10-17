@@ -7,7 +7,6 @@ import {
 } from "../process/supervisor/inherited-process-lineage.js";
 import { isOwnedProcessGroupGone } from "../process/supervisor/service-child-group-ownership.js";
 import { createDeferredCore } from "../shared/deferred.js";
-import type { WorkerBrowserRuntime } from "./browser-runtime.js";
 import {
   NODE_WORKER_CONNECTION_FAILURE_MESSAGE_TYPE,
   type NodeWorkerConnectionFailureMessage,
@@ -166,7 +165,6 @@ export async function runWorkerProcess(
   options: {
     internalWorkerIpc?: boolean;
     managed?: boolean;
-    browserRuntime?: WorkerBrowserRuntime;
   } = {},
 ): Promise<void> {
   const { initializeSqliteRuntimeCapabilities } = await import("../infra/bun-sqlite-library.js");
@@ -179,6 +177,5 @@ export async function runWorkerProcess(
     output: process.stdout,
     ...(options.managed ? { managed: true } : {}),
     ...(options.internalWorkerIpc ? { lifetime: createWorkerIpcLifetime() } : {}),
-    ...(options.browserRuntime ? { browserRuntime: options.browserRuntime } : {}),
   });
 }

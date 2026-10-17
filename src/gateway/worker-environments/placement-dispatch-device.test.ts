@@ -90,9 +90,6 @@ function prepareCloudNodeDispatch(
   const ready = { ...harness.ready, ...cloudNodeIdentity };
   const attached = { ...harness.attached, ...cloudNodeIdentity };
   let isAttached = false;
-  Object.assign(harness.environments, {
-    requiresNodeEnrollment: (profileId: string) => profileId === ready.profileId,
-  });
   vi.mocked(harness.environments.createWithRequest).mockResolvedValue(ready);
   vi.mocked(harness.environments.get).mockImplementation((environmentId) =>
     environmentId === ready.environmentId ? (isAttached ? attached : ready) : undefined,
@@ -177,7 +174,6 @@ describe("device worker placement dispatch", () => {
       profileId: request.profileId,
       idempotencyKey: expect.stringMatching(/^session-dispatch:/u),
       executionMode: REQUEST.executionMode,
-      projectPath: "/gateway/workspace",
       inheritedProfile: request.inheritedProfile,
     });
     expect(harness.environments.startTunnel).toHaveBeenCalledWith({
@@ -249,7 +245,6 @@ describe("device worker placement dispatch", () => {
       profileId: request.profileId,
       idempotencyKey: expect.stringMatching(/^session-dispatch:/u),
       executionMode: "remote-exec",
-      projectPath: "/gateway/workspace",
       inheritedProfile: request.inheritedProfile,
     });
     const workspaceTunnel = await vi.mocked(harness.environments.startTunnel).mock.results[0]
@@ -284,31 +279,11 @@ describe("device worker placement dispatch", () => {
       profileId: "multi-mode-cloud",
       idempotencyKey: expect.stringMatching(/^session-dispatch:/u),
       executionMode: "remote-exec",
-      projectPath: "/gateway/workspace",
-      admittedIntent: {
-        providerId: harness.ready.providerId,
-        profileSnapshot: harness.ready.profileSnapshot,
-      },
     });
     const workspaceTunnel = await vi.mocked(harness.environments.startTunnel).mock.results[0]
       ?.value;
     expect(workspaceTunnel?.syncWorkspace).toHaveBeenCalledOnce();
     expect(workspaceTunnel?.launchTurn).not.toHaveBeenCalled();
-  });
-
-  it("does not require node command approval for an SSH-only remote-exec profile", async () => {
-    const harness = await createHarness(database, placementStore);
-    runtimeNodeCommandPolicy.commands = { deny: [CODEX_COMMAND] };
-
-    await expect(
-      harness.service.dispatch({
-        ...REQUEST,
-        executionMode: "remote-exec",
-        devicePlacement: CODEX_DEVICE_REQUIREMENT,
-      }),
-    ).resolves.toMatchObject({ state: "active", executionMode: "remote-exec" });
-
-    expect(harness.environments.createWithRequest).toHaveBeenCalledOnce();
   });
 
   it("rejects a remote-exec-only enrolled node before provider allocation when its command is denied", async () => {
@@ -317,7 +292,6 @@ describe("device worker placement dispatch", () => {
     runtimeNodeCommandPolicy.commands = { deny: [CODEX_COMMAND] };
     Object.assign(harness.environments, {
       supportsExecutionMode: (_profileId: string, mode: string) => mode === "remote-exec",
-      requiresNodeEnrollment: () => true,
     });
 
     await expect(harness.service.dispatch(request)).rejects.toThrow(CODEX_COMMAND);

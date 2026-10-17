@@ -7,7 +7,6 @@ import { captureWorkspaceSnapshot } from "./workspace-manifest-worker.js";
 import {
   isDerivedWorkspacePath,
   WORKSPACE_PATH_EXCLUSIONS_JS,
-  DERIVED_WORKSPACE_RSYNC_EXCLUDES,
 } from "./workspace-path-exclusions.js";
 import { prepareNonDirectoryTargets } from "./workspace-reconcile-derived-paths.js";
 import { preflightWorkspaceApplyImpl } from "./workspace-reconcile-preflight.js";
@@ -41,7 +40,6 @@ it("excludes only the root managed skill namespace in host and serialized invent
   ]) {
     expect(isDerivedWorkspacePath(relative)).toBe(false);
   }
-  expect(DERIVED_WORKSPACE_RSYNC_EXCLUDES).toContain("/.openclaw/sandbox-skills");
   expect(isDerivedWorkspacePath(".openclaw/sandbox-skills/skills/demo/SKILL.md", true)).toBe(true);
 });
 

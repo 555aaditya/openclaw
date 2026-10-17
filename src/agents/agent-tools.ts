@@ -14,6 +14,7 @@ import {
   bindAssembledAgentToolActionDescriptor,
   copyAgentToolMetadata,
 } from "./agent-tool-metadata.js";
+import { prepareAgentToolOwnerPolicy } from "./agent-tool-owner-policy.js";
 import { createCodingToolsGatewayCaller } from "./agent-tools.caller.js";
 import { finalizeAgentTools } from "./agent-tools.finalize.js";
 import {
@@ -91,7 +92,6 @@ import {
 } from "./tool-search.js";
 import { replaceWithEffectiveCronCreatorToolAllowlist } from "./tools/cron-tool.js";
 import { createGitHubPublishTool } from "./tools/github-publish-tool.js";
-import { prepareSessionPortalToolAccess } from "./tools/session-portal-target.js";
 
 export { resolveToolLoopDetectionConfig } from "./tool-loop-detection-config.js";
 
@@ -319,20 +319,12 @@ function* assembleOpenClawCodingTools(
           recordToolPrepStage: options?.recordToolPrepStage,
         })
       : [];
-  const {
-    sessionPortalTarget,
-    ownerOnlyCoreToolDenylist,
-    ownerOnlyCoreToolPolicy,
-    cronCreatorAuthorityResolver,
-  } = prepareSessionPortalToolAccess({
-    sessionKey: executionSessionKey,
-    agentId: executionAgentId,
-    sessionId: options?.sessionId,
-    senderIsOwner: options?.senderIsOwner,
-    sandboxed: Boolean(sandbox),
-    runId: options?.runId,
-    cronSelfRemoveOnlyJobId,
-  });
+  const { ownerOnlyCoreToolDenylist, ownerOnlyCoreToolPolicy, cronCreatorAuthorityResolver } =
+    prepareAgentToolOwnerPolicy({
+      senderIsOwner: options?.senderIsOwner,
+      runId: options?.runId,
+      cronSelfRemoveOnlyJobId,
+    });
   const pluginToolAllowlist = appendRuntimePluginToolGrant(
     capabilityProfile.policy.explicitToolAllowlist,
     runtimePluginToolGrant,
@@ -441,7 +433,6 @@ function* assembleOpenClawCodingTools(
           ringZeroTools,
           yield {
             ...pluginToolOptions,
-            sessionPortalTarget,
             sandboxSessionRenameOnly: capabilityProfile.policy.sandboxSessionRenameOnly,
             questionInputMode: capabilityProfile.conversation.questionInputMode,
             sessionPermissionPolicy,

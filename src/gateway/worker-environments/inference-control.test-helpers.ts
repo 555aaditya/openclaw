@@ -90,7 +90,6 @@ export function createWorkerInferenceServiceStub(): WorkerEnvironmentServiceCont
     throw new Error("Unexpected worker service operation during drain acquisition");
   };
   return {
-    getDedicatedNodeLeaseSignal: unexpected,
     captureSessionAttachment: unexpected,
     getSessionAttachment: unexpected,
     findSessionAttachment: unexpected,
@@ -102,22 +101,13 @@ export function createWorkerInferenceServiceStub(): WorkerEnvironmentServiceCont
     destroySessionAttachment: unexpected,
     openNodePortal: unexpected,
     list: unexpected,
-    readPreparedPoolSummary: unexpected,
-    readReadyWorkerTarget: unexpected,
     get: () => undefined,
     inventoryVersion: unexpected,
     readMachineShape: unexpected,
-    machineShapeVersion: unexpected,
     supportsExecutionMode: unexpected,
-    readProviderDisplayId: unexpected,
-    listMachineOptions: unexpected,
-    listOperatingSystems: unexpected,
-    prepare: unexpected,
     create: unexpected,
     destroy: unexpected,
     destroyUnattached: unexpected,
-    observeDesktop: unexpected,
-    launchDesktopApp: unexpected,
     startTunnel: unexpected,
     stopTunnel: unexpected,
   };

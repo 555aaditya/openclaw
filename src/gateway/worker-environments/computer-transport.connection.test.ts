@@ -244,9 +244,15 @@ describe("worker computer connection lifetime", () => {
           const readComputerEffects = () => ({
             computerRequests,
             nativeExecutions: h.nativeExecutionIds.length,
-            inputs: h.privateInvoke.mock.calls
+            inputs: h.publicInvoke.mock.calls
               .map(([invocation]) =>
-                parseNodeWorkerComputerInput(JSON.stringify(invocation.params)),
+                parseNodeWorkerComputerInput(
+                  JSON.stringify({
+                    operation: invocation.command === "screen.snapshot" ? "snapshot" : "act",
+                    providerGeneration: COMPUTER_USE.provider.generation,
+                    params: invocation.params,
+                  }),
+                ),
               )
               .filter((input) => input.operation === "act"),
           });
@@ -315,8 +321,8 @@ describe("worker computer connection lifetime", () => {
           }
           await disconnected.promise;
           await vi.waitFor(() => {
-            expect(h.privateInvoke.mock.calls.at(-1)?.[0].params).toMatchObject({
-              operation: "close",
+            expect(h.publicInvoke.mock.calls.at(-1)?.[0].params).toMatchObject({
+              action: "__close_execution",
               executionId: h.nativeExecutionIds[0],
             });
           });
@@ -384,7 +390,9 @@ describe("worker computer connection lifetime", () => {
         });
       }
       expect(h.nativeExecutionIds).toHaveLength(boundary === "completed" ? 3 : 1);
-      expect(h.privateInvoke.mock.calls.at(-1)?.[0].params).toMatchObject({ operation: "close" });
+      expect(h.publicInvoke.mock.calls.at(-1)?.[0].params).toMatchObject({
+        action: "__close_execution",
+      });
     },
   );
 });

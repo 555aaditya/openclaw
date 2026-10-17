@@ -2,7 +2,6 @@ import { flushCompileCache } from "node:module";
 import "./worker-deploy-runtime.js";
 import { formatCliOperatorError } from "../cli/failure-output.js";
 import { assertSupportedRuntime } from "../infra/runtime-guard.js";
-import workerDeployBrowserRuntime from "./worker-deploy-browser-runtime.js";
 import { runWorkerProcess } from "./worker-process.js";
 import { loadWorkerTurnRuntime } from "./worker.runtime.js";
 
@@ -38,7 +37,6 @@ try {
     await runWorkerProcess({
       internalWorkerIpc,
       managed,
-      browserRuntime: workerDeployBrowserRuntime,
     });
   }
 } catch (error) {

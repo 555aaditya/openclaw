@@ -10,14 +10,14 @@ const DEFAULT_LINGER_MS = 60_000;
 const MAX_OBSERVERS = 8;
 const log = createSubsystemLogger("gateway/desktop");
 
-export class DesktopSessionStaleOwnerError extends Error {
+class DesktopSessionStaleOwnerError extends Error {
   constructor() {
     super("Desktop session owner epoch is stale");
     this.name = "DesktopSessionStaleOwnerError";
   }
 }
 
-export class DesktopSessionStoppedError extends Error {
+class DesktopSessionStoppedError extends Error {
   constructor() {
     super("Desktop session stopped before connecting");
     this.name = "DesktopSessionStoppedError";

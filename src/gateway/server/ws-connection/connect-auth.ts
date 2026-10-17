@@ -8,10 +8,6 @@ import {
   verifyDeviceBootstrapToken,
 } from "../../../infra/device-bootstrap.js";
 import { verifyDeviceToken } from "../../../infra/device-pairing-tokens.js";
-import {
-  CLOUD_WORKER_PAIRING_SETUP_BOOTSTRAP_PROFILE,
-  deviceBootstrapProfilesEqual,
-} from "../../../shared/device-bootstrap-profile.js";
 import { intersectOperatorScopes } from "../../../shared/operator-scope-compat.js";
 import { resolveRuntimeServiceBuildId } from "../../../version.js";
 import { captureGatewayAuthPolicy } from "../../auth-policy.js";
@@ -27,7 +23,6 @@ import { formatGatewayAuthFailureMessage } from "./auth-messages.js";
 import {
   admitGatewayConnect,
   applyConnectionScopeCap,
-  isStartupNodeBootstrapConnect,
   rejectGatewayStartupConnect,
 } from "./connect-admission.js";
 import { emitGatewayAuthSecurityEvent } from "./connect-auth-security.js";
@@ -114,7 +109,6 @@ async function authenticateGatewayConnectCore(
   }
   let { scopes } = admission;
   const { role, isControlUi, startupPending } = admission;
-  const startupBootstrapConnect = startupPending && isStartupNodeBootstrapConnect(connectParams);
 
   const device = connectParams.device;
   const hasTokenAuth = Boolean(connectParams.auth?.token);
@@ -354,7 +348,6 @@ async function authenticateGatewayConnectCore(
         publicKey: device?.publicKey,
         role,
         scopes,
-        requireBootstrapToken: startupBootstrapConnect,
         rateLimiter: authRateLimiter,
         clientIp: browserRateLimitClientIp,
         verifyBootstrapToken: verifyDeviceBootstrapToken,
@@ -395,31 +388,9 @@ async function authenticateGatewayConnectCore(
           publicKey: device.publicKey,
         })
       : null;
-  if (startupPending && authMethod === "bootstrap-token" && !startupBootstrapConnect) {
+  if (startupPending && authMethod === "bootstrap-token") {
     await rejectGatewayStartupConnect(context);
     return undefined;
-  }
-  if (startupBootstrapConnect) {
-    const setupId = boundBootstrapContext?.setupId?.trim();
-    const isCloudWorkerProfile = Boolean(
-      boundBootstrapContext &&
-      deviceBootstrapProfilesEqual(
-        boundBootstrapContext.profile,
-        CLOUD_WORKER_PAIRING_SETUP_BOOTSTRAP_PROFILE,
-      ),
-    );
-    let pendingSetup = false;
-    if (isCloudWorkerProfile && setupId && device) {
-      try {
-        pendingSetup = context.handler.isPendingWorkerNodeSetup?.(setupId, device.id) === true;
-      } catch {
-        pendingSetup = false;
-      }
-    }
-    if (!isCloudWorkerProfile || !pendingSetup) {
-      await rejectGatewayStartupConnect(context);
-      return undefined;
-    }
   }
   advanceHandshakePhase("auth_validated");
   const issuedBootstrapProfile = boundBootstrapContext?.profile ?? null;

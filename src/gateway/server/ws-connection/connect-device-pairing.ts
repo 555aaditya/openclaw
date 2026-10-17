@@ -35,7 +35,6 @@ import { formatForLog } from "../../ws-log.js";
 import { truncateCloseReason } from "../close-reason.js";
 import {
   applyConnectionScopeCap,
-  isStartupNodeBootstrapConnect,
   rejectGatewayStartupConnect,
   resolveGatewayConnectPolicyFailure,
 } from "./connect-admission.js";
@@ -534,7 +533,6 @@ export async function authorizeGatewayConnectDevice(
     }
     if (
       state.startupPending &&
-      !isStartupNodeBootstrapConnect(connectParams) &&
       (!paired || !isPaired || !hasEffectivePairedDeviceRole(paired, "node") || !paired.nodeSurface)
     ) {
       await rejectGatewayStartupConnect(context);

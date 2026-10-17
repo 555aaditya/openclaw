@@ -10,7 +10,6 @@ import {
   isCurrentWorkerWorkspacePendingResultOwner,
   readWorkerWorkspaceReconciliationFacts,
 } from "./placement-workspace-result.js";
-import { assertPreparedEnvironmentAttachment } from "./prepared-environment-store.js";
 import { hasWorkerEnvironmentSessionAttachment } from "./session-attachment-store.js";
 import { WorkerSessionAlreadyAttachedError } from "./session-attachment.js";
 import { canTransitionWorkerEnvironment } from "./state.js";
@@ -167,12 +166,8 @@ export function createWorkerEnvironmentTransitionOps(db: EngineConnection, now: 
             "Conversation-attached environments cannot be adopted for session placement",
           );
         }
-        const sessionId = patch.attachedSessionIds?.[0];
-        if (current.preparation && !sessionId) {
-          throw new Error("Prepared worker attachment requires its exact session");
-        }
-        if (sessionId) {
-          assertPreparedEnvironmentAttachment(db, current, sessionId, input.placementBinding);
+        if (current.preparation) {
+          throw new Error("Prepared worker environments are retired and cannot accept attachments");
         }
       }
       // Terminal bootstrap failure is valid only after the service proves teardown;

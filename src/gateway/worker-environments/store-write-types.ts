@@ -3,7 +3,6 @@ import type {
   WorkerSshEndpoint,
 } from "../../plugins/capability-provider.types.js";
 import type {
-  PreparedEnvironmentPlacementBinding,
   WorkerEnvironmentBootstrapReceipt,
   WorkerEnvironmentRecord,
 } from "./environment-record.js";
@@ -37,7 +36,6 @@ export type TransitionInput = {
   from: WorkerEnvironmentState;
   to: WorkerEnvironmentState;
   expectedOwnerEpoch?: number;
-  placementBinding?: PreparedEnvironmentPlacementBinding;
   patch?: WorkerEnvironmentTransitionPatch;
 };
 export type BootstrapRefreshInput = {

@@ -9,7 +9,6 @@ import type {
   WorkerOperationHandlers,
   WorkerWriteOperationContext,
 } from "../../state/worker-operation-registry.js";
-import type { PreparedEnvironmentSelection } from "./environment-record.js";
 import type { PlacementLifecycleReceipt } from "./placement-lifecycle.types.js";
 import {
   createPlacementMoveOps,
@@ -34,7 +33,6 @@ import {
   query,
   readWorkerPlacementsInDatabase,
   readWorkerPlacementsForReconcileInDatabase,
-  updateTransition,
 } from "./placement-row-codec.js";
 import type { PlacementStoreRuntime } from "./placement-runtime.js";
 import {
@@ -44,7 +42,6 @@ import {
 import { clearLocalTurnClaimsInDatabase } from "./placement-turn-claims.js";
 import { assertSessionWorkspaceUnreserved } from "./placement-workspace-reservation.kernel.js";
 import { hasWorkerWorkspacePendingResult } from "./placement-workspace-result.js";
-import { consumePreparedEnvironment } from "./prepared-environment-store.js";
 import { findWorkerEnvironment } from "./store-row-codec.js";
 
 type Moves = ReturnType<typeof createPlacementMoveOps>;
@@ -280,27 +277,6 @@ export const placementLifecycleOperations = {
       return retired
         ? { sessionId: input.sessionId, retired: input.expectedState, retiredIdentity: retired }
         : { sessionId: input.sessionId, changed: false };
-    },
-  ),
-  "workerPlacements.bindPrepared": operation(
-    "workerPlacements.bindPrepared",
-    (runtime, input: Omit<PreparedEnvironmentSelection, "assertCurrent">) => {
-      const nowMs = runtime.now();
-      const consumed = consumePreparedEnvironment(runtime.read(), input, nowMs);
-      if (!consumed) {
-        return { sessionId: input.sessionId };
-      }
-      return {
-        sessionId: input.sessionId,
-        placement: updateTransition(
-          runtime.read(),
-          consumed.placement,
-          "provisioning",
-          { environmentId: input.environmentId },
-          nowMs,
-        ),
-        environment: { environmentId: input.environmentId, patch: consumed.environmentPatch },
-      };
     },
   ),
 } satisfies WorkerOperationHandlers<WorkerWriteOperationContext>;

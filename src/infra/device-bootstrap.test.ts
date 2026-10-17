@@ -2,11 +2,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MAX_NODE_BOOTSTRAP_TIMEOUT_MS } from "../gateway/worker-environments/bootstrap-timeouts.js";
 import { resetLogger, setLoggerOverride } from "../logging.js";
 import { flushLogger } from "../logging/logger.js";
 import {
-  CLOUD_WORKER_PAIRING_SETUP_BOOTSTRAP_PROFILE,
   CONTROL_UI_OWNER_BOOTSTRAP_OPERATOR_SCOPES,
   CONTROL_UI_OWNER_BOOTSTRAP_PROFILE,
   FULL_ACCESS_PAIRING_SETUP_BOOTSTRAP_PROFILE,
@@ -27,7 +25,6 @@ import {
   consumeDeviceBootstrapTokenWithSetupCompletion,
   getBoundDeviceBootstrapContext,
   getBoundDeviceBootstrapProfile,
-  ensureDevicePairSetupBootstrapToken,
   issueDeviceBootstrapToken,
   issueDevicePairSetupBootstrapToken,
   readDevicePairSetupCompletion,
@@ -75,24 +72,6 @@ function consumeBootstrapToken(
   });
 }
 
-async function issueCloudWorkerSetupToken(baseDir: string) {
-  const issued = await issueDevicePairSetupBootstrapToken({
-    baseDir,
-    profile: CLOUD_WORKER_PAIRING_SETUP_BOOTSTRAP_PROFILE,
-  });
-  const { db } = openOpenClawStateDatabase({
-    env: { ...process.env, OPENCLAW_STATE_DIR: baseDir },
-  });
-  db.prepare(
-    `INSERT INTO worker_environments (
-      environment_id, provider_id, profile_id, profile_snapshot_json,
-      provision_operation_id, node_setup_id, state,
-      created_at_ms, updated_at_ms, state_changed_at_ms
-    ) VALUES (?, 'test-provider', 'test-profile', '{}', ?, ?, 'provisioning', ?, ?, ?)`,
-  ).run(issued.setupId, `provision:${issued.setupId}`, issued.setupId, 1_000, 1_000, 1_000);
-  return issued;
-}
-
 afterEach(async () => {
   vi.useRealTimers();
   resetLogger();
@@ -103,6 +82,22 @@ afterEach(async () => {
 });
 
 describe("device bootstrap tokens", () => {
+  it("revokes an undelivered pairing token without revoking another pending token", async () => {
+    const baseDir = await createTempDir();
+    const abandoned = await issueDeviceBootstrapToken({ baseDir });
+    const retained = await issueDeviceBootstrapToken({ baseDir });
+    await expect(
+      revokeDeviceBootstrapToken({ baseDir, token: abandoned.token }),
+    ).resolves.toMatchObject({ removed: true });
+    await expect(verifyBootstrapToken(baseDir, abandoned.token)).resolves.toMatchObject({
+      ok: false,
+    });
+    await expect(verifyBootstrapToken(baseDir, retained.token)).resolves.toEqual({ ok: true });
+    await expect(revokeDeviceBootstrapToken({ baseDir, token: abandoned.token })).resolves.toEqual({
+      removed: false,
+    });
+  });
+
   it("issues bootstrap tokens and persists them with a ten-minute expiry", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-14T12:00:00Z"));
@@ -128,52 +123,6 @@ describe("device bootstrap tokens", () => {
       },
     });
   });
-  it("keeps cloud-worker setup credentials valid for the enrollment backstop", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-03-14T12:00:00Z"));
-    const baseDir = await createTempDir();
-    const issuedAtMs = Date.now();
-    const issued = await issueCloudWorkerSetupToken(baseDir);
-    expect(issued.expiresAtMs).toBe(issuedAtMs + MAX_NODE_BOOTSTRAP_TIMEOUT_MS);
-
-    vi.setSystemTime(issuedAtMs + 10 * 60 * 1000 + 1);
-    await expect(verifyBootstrapToken(baseDir, issued.token)).resolves.toEqual({ ok: true });
-    await expect(
-      ensureDevicePairSetupBootstrapToken({
-        baseDir,
-        setupId: issued.setupId,
-        profile: CLOUD_WORKER_PAIRING_SETUP_BOOTSTRAP_PROFILE,
-      }),
-    ).resolves.toEqual({ status: "pending", ...issued });
-    const context = {
-      baseDir,
-      token: issued.token,
-      deviceId: "device-123",
-      publicKey: "public-key-123",
-    };
-    await expect(getBoundDeviceBootstrapContext(context)).resolves.toMatchObject({
-      setupId: issued.setupId,
-      profile: CLOUD_WORKER_PAIRING_SETUP_BOOTSTRAP_PROFILE,
-    });
-    await expect(
-      consumeBootstrapToken(baseDir, issued.token, {
-        completedAtMs: Date.now(),
-        admitsCloudWorkerSetup: () => true,
-      }),
-    ).resolves.toMatchObject({ completion: { setupId: issued.setupId } });
-
-    vi.setSystemTime(issued.expiresAtMs);
-    await expect(verifyBootstrapToken(baseDir, issued.token)).resolves.toEqual({ ok: true });
-    vi.setSystemTime(issued.expiresAtMs + 1);
-    await expect(getBoundDeviceBootstrapContext(context)).resolves.toBeNull();
-    await expect(
-      consumeBootstrapToken(baseDir, issued.token, { completedAtMs: Date.now() }),
-    ).resolves.toBeNull();
-    await expect(verifyBootstrapToken(baseDir, issued.token)).resolves.toEqual({
-      ok: false,
-      reason: "bootstrap_token_invalid",
-    });
-  });
 
   it("keeps non-cloud setup credentials limited to ten minutes", async () => {
     vi.useFakeTimers();
@@ -194,44 +143,6 @@ describe("device bootstrap tokens", () => {
       ok: false,
       reason: "bootstrap_token_invalid",
     });
-  });
-
-  it("reuses one setup bearer until the exact handoff completes", async () => {
-    const baseDir = await createTempDir();
-    const setupId = "worker-environment-setup";
-    const first = await ensureDevicePairSetupBootstrapToken({
-      baseDir,
-      setupId,
-      profile: NODE_PAIRING_SETUP_BOOTSTRAP_PROFILE,
-    });
-    const replay = await ensureDevicePairSetupBootstrapToken({
-      baseDir,
-      setupId,
-      profile: NODE_PAIRING_SETUP_BOOTSTRAP_PROFILE,
-    });
-
-    expect(first).toMatchObject({ status: "pending", setupId });
-    expect(replay).toEqual(first);
-    if (first.status !== "pending") {
-      throw new Error("expected pending setup credential");
-    }
-    const database = openOpenClawStateDatabase({
-      env: { ...process.env, OPENCLAW_STATE_DIR: baseDir },
-    });
-    database.db
-      .prepare(
-        `INSERT INTO device_pair_setup_completions (
-          setup_id, device_id, access, completed_at_ms, delivery_state, retain_until_ms
-        ) VALUES (?, ?, 'node', ?, 'confirmed', ?)`,
-      )
-      .run(setupId, "cloud-device", Date.now(), Date.now() + 10_000);
-    await expect(
-      ensureDevicePairSetupBootstrapToken({
-        baseDir,
-        setupId,
-        profile: NODE_PAIRING_SETUP_BOOTSTRAP_PROFILE,
-      }),
-    ).resolves.toEqual({ status: "completed", setupId, deviceId: "cloud-device" });
   });
 
   it("adds setup correlation storage only on first setup issuance", async () => {
@@ -302,179 +213,6 @@ describe("device bootstrap tokens", () => {
     await expect(
       readDevicePairSetupCompletion({ baseDir, setupId: "some-other-setup" }),
     ).resolves.toBeNull();
-  });
-
-  it("refuses first cloud-worker setup completion without a live admission predicate", async () => {
-    const baseDir = await createTempDir();
-    const issued = await issueCloudWorkerSetupToken(baseDir);
-    await verifyBootstrapToken(baseDir, issued.token);
-    await expect(
-      consumeBootstrapToken(baseDir, issued.token, { completedAtMs: Date.now() }),
-    ).resolves.toBeNull();
-    await expect(
-      readDevicePairSetupCompletion({ baseDir, setupId: issued.setupId }),
-    ).resolves.toBeNull();
-    const { db } = openOpenClawStateDatabase({
-      env: { ...process.env, OPENCLAW_STATE_DIR: baseDir },
-    });
-    expect(
-      executeSqliteQueryTakeFirstSync(
-        db,
-        getNodeSqliteKysely<OpenClawStateKyselyDatabase>(db)
-          .selectFrom("worker_environments")
-          .select("node_device_id")
-          .where("node_setup_id", "=", issued.setupId),
-      ),
-    ).toEqual({ node_device_id: null });
-  });
-
-  it("retains an uncertain cloud-worker setup only for its exact device until delivery", async () => {
-    const baseDir = await createTempDir();
-    const unbound = await issueCloudWorkerSetupToken(baseDir);
-    await verifyBootstrapToken(baseDir, unbound.token);
-    await expect(
-      revokeDeviceBootstrapToken({ baseDir, token: unbound.token }),
-    ).resolves.toMatchObject({ removed: true });
-    const issued = await issueCloudWorkerSetupToken(baseDir);
-
-    await expect(verifyBootstrapToken(baseDir, issued.token)).resolves.toEqual({ ok: true });
-    await expect(
-      consumeBootstrapToken(baseDir, issued.token, {
-        admitsCloudWorkerSetup: () => true,
-      }),
-    ).resolves.toMatchObject({
-      completion: { setupId: issued.setupId, deviceId: "device-123", deliveryState: "uncertain" },
-    });
-    expect(loadDeviceBootstrapTokenRecords(baseDir)[issued.token]?.deviceId).toBe("device-123");
-    await expect(revokeDeviceBootstrapToken({ baseDir, token: issued.token })).resolves.toEqual({
-      removed: false,
-    });
-    await expect(verifyBootstrapToken(baseDir, issued.token)).resolves.toEqual({ ok: true });
-    await expect(
-      verifyBootstrapToken(baseDir, issued.token, {
-        deviceId: "different-device",
-        publicKey: "different-public-key",
-      }),
-    ).resolves.toEqual({ ok: false, reason: "bootstrap_token_invalid" });
-    await expect(
-      consumeBootstrapToken(baseDir, issued.token, {
-        deviceId: "different-device",
-      }),
-    ).resolves.toBeNull();
-
-    await expect(
-      consumeBootstrapToken(baseDir, issued.token, { completedAtMs: 2_000 }),
-    ).resolves.toMatchObject({
-      completion: { deviceId: "device-123", completedAtMs: 2_000, deliveryState: "uncertain" },
-    });
-    await expect(
-      confirmDevicePairSetupCompletionDelivery({
-        baseDir,
-        setupId: issued.setupId,
-        deviceId: "device-123",
-      }),
-    ).resolves.toMatchObject({ deliveryState: "confirmed" });
-    expect(loadDeviceBootstrapTokenRecords(baseDir)[issued.token]).toBeUndefined();
-    await expect(verifyBootstrapToken(baseDir, issued.token)).resolves.toEqual({
-      ok: false,
-      reason: "bootstrap_token_invalid",
-    });
-  });
-
-  it("replays uncertain cloud-worker setup for its bound device in attached until confirmation", async () => {
-    const baseDir = await createTempDir();
-    const issued = await issueCloudWorkerSetupToken(baseDir);
-    await verifyBootstrapToken(baseDir, issued.token);
-    await consumeBootstrapToken(baseDir, issued.token, {
-      admitsCloudWorkerSetup: () => true,
-    });
-    const { db } = openOpenClawStateDatabase({
-      env: { ...process.env, OPENCLAW_STATE_DIR: baseDir },
-    });
-    db.prepare("UPDATE worker_environments SET state = ? WHERE node_setup_id = ?").run(
-      "attached",
-      issued.setupId,
-    );
-
-    await expect(
-      consumeBootstrapToken(baseDir, issued.token, { completedAtMs: 2_000 }),
-    ).resolves.toMatchObject({
-      completion: { deviceId: "device-123", completedAtMs: 2_000, deliveryState: "uncertain" },
-    });
-    await confirmDevicePairSetupCompletionDelivery({
-      baseDir,
-      setupId: issued.setupId,
-      deviceId: "device-123",
-    });
-    await expect(
-      consumeBootstrapToken(baseDir, issued.token, { completedAtMs: 3_000 }),
-    ).resolves.toBeNull();
-    await expect(verifyBootstrapToken(baseDir, issued.token)).resolves.toEqual({
-      ok: false,
-      reason: "bootstrap_token_invalid",
-    });
-  });
-
-  it("rejects first cloud-worker setup-device binding outside provisioning in bootstrapping", async () => {
-    const baseDir = await createTempDir();
-    const issued = await issueCloudWorkerSetupToken(baseDir);
-    await verifyBootstrapToken(baseDir, issued.token);
-    const { db } = openOpenClawStateDatabase({
-      env: { ...process.env, OPENCLAW_STATE_DIR: baseDir },
-    });
-    db.prepare("UPDATE worker_environments SET state = ? WHERE node_setup_id = ?").run(
-      "bootstrapping",
-      issued.setupId,
-    );
-
-    await expect(consumeBootstrapToken(baseDir, issued.token)).rejects.toThrow(
-      "Cloud worker setup completion owner is no longer pending",
-    );
-  });
-
-  it("rejects an uncertain cloud-worker setup replay after its environment reaches destroyed", async () => {
-    const baseDir = await createTempDir();
-    const issued = await issueCloudWorkerSetupToken(baseDir);
-    await verifyBootstrapToken(baseDir, issued.token);
-    await consumeBootstrapToken(baseDir, issued.token, {
-      admitsCloudWorkerSetup: () => true,
-    });
-    const { db } = openOpenClawStateDatabase({
-      env: { ...process.env, OPENCLAW_STATE_DIR: baseDir },
-    });
-    db.prepare("UPDATE worker_environments SET state = ? WHERE node_setup_id = ?").run(
-      "destroyed",
-      issued.setupId,
-    );
-
-    await expect(
-      consumeBootstrapToken(baseDir, issued.token, { completedAtMs: 2_000 }),
-    ).rejects.toThrow("Cloud worker setup completion owner is no longer pending");
-    await expect(
-      readDevicePairSetupCompletion({ baseDir, setupId: issued.setupId }),
-    ).resolves.toMatchObject({ deliveryState: "uncertain", completedAtMs: 1_000 });
-  });
-
-  it("rejects cloud-worker setup retries after their owner requests destruction", async () => {
-    const baseDir = await createTempDir();
-    const issued = await issueCloudWorkerSetupToken(baseDir);
-    await verifyBootstrapToken(baseDir, issued.token);
-    await consumeBootstrapToken(baseDir, issued.token, {
-      admitsCloudWorkerSetup: () => true,
-    });
-    const { db } = openOpenClawStateDatabase({
-      env: { ...process.env, OPENCLAW_STATE_DIR: baseDir },
-    });
-    db.prepare(
-      "UPDATE worker_environments SET destroy_requested_at_ms = ? WHERE node_setup_id = ?",
-    ).run(2_000, issued.setupId);
-
-    await expect(
-      consumeBootstrapToken(baseDir, issued.token, { completedAtMs: 2_000 }),
-    ).rejects.toThrow("Cloud worker setup completion owner is no longer pending");
-    await expect(
-      readDevicePairSetupCompletion({ baseDir, setupId: issued.setupId }),
-    ).resolves.toMatchObject({ deliveryState: "uncertain", completedAtMs: 1_000 });
   });
 
   // Databases written before this table shipped stay at the same schema
@@ -652,7 +390,7 @@ describe("device bootstrap tokens", () => {
     const baseDir = await createTempDir();
     const issued = await issueDevicePairSetupBootstrapToken({
       baseDir,
-      profile: CLOUD_WORKER_PAIRING_SETUP_BOOTSTRAP_PROFILE,
+      profile: NODE_PAIRING_SETUP_BOOTSTRAP_PROFILE,
     });
     const contextParams = {
       baseDir,
@@ -664,14 +402,14 @@ describe("device bootstrap tokens", () => {
     await expect(getBoundDeviceBootstrapContext(contextParams)).resolves.toBeNull();
     await expect(verifyBootstrapToken(baseDir, issued.token)).resolves.toEqual({ ok: true });
     await expect(getBoundDeviceBootstrapContext(contextParams)).resolves.toEqual({
-      profile: CLOUD_WORKER_PAIRING_SETUP_BOOTSTRAP_PROFILE,
+      profile: NODE_PAIRING_SETUP_BOOTSTRAP_PROFILE,
       setupId: issued.setupId,
     });
     await expect(
       getBoundDeviceBootstrapContext({ ...contextParams, deviceId: "other-device" }),
     ).resolves.toBeNull();
     await expect(getBoundDeviceBootstrapProfile(contextParams)).resolves.toEqual(
-      CLOUD_WORKER_PAIRING_SETUP_BOOTSTRAP_PROFILE,
+      NODE_PAIRING_SETUP_BOOTSTRAP_PROFILE,
     );
   });
 
@@ -723,22 +461,6 @@ describe("device bootstrap tokens", () => {
       ok: false,
       reason: "bootstrap_token_invalid",
     });
-  });
-
-  it("revokes a specific bootstrap token", async () => {
-    const baseDir = await createTempDir();
-    const first = await issueDeviceBootstrapToken({ baseDir });
-    const second = await issueDeviceBootstrapToken({ baseDir });
-
-    const revoked = await revokeDeviceBootstrapToken({ baseDir, token: first.token });
-    expect(revoked.removed).toBe(true);
-
-    await expect(verifyBootstrapToken(baseDir, first.token)).resolves.toEqual({
-      ok: false,
-      reason: "bootstrap_token_invalid",
-    });
-
-    await expect(verifyBootstrapToken(baseDir, second.token)).resolves.toEqual({ ok: true });
   });
 
   it("keeps the token when required verification fields are blank", async () => {

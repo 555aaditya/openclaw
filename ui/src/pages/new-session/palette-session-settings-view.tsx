@@ -319,10 +319,7 @@ export function PaletteSessionSettingsView(properties: {
                     ? t("newSession.hostedWorkspace")
                     : view().projectState.label}
                 </span>
-                <span class="palette-session-settings__secondary">
-                  {view().machineLabel}
-                  {view().cloudSummary ? " · " + view().cloudSummary : ""}
-                </span>
+                <span class="palette-session-settings__secondary">{view().machineLabel}</span>
               </span>
               <span class="palette-session-settings__chevron">
                 <Icon name="chevronRight" />

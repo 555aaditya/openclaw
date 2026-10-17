@@ -9,11 +9,7 @@ import {
   validateEnvironmentsCreateParams,
   validateEnvironmentsDestroyParams,
   validateEnvironmentsListParams,
-  validateEnvironmentsPrepareParams,
-  validateEnvironmentsPrepareResult,
   validateEnvironmentsStatusParams,
-  validateWorkerDesktopLaunchParams,
-  validateWorkerDesktopLaunchResult,
   WorkerEnvironmentStateSchema,
 } from "../index.js";
 import { WorkerSlotSummarySchema } from "./environments.js";
@@ -32,33 +28,11 @@ const workerStates = [
   "orphaned",
 ] as const;
 
-function workerSummary(
-  state: (typeof workerStates)[number],
-  status: "available" | "unavailable" | "starting" = "starting",
-) {
-  return {
-    id: "environment-1",
-    type: "worker",
-    label: "Development worker",
-    status,
-    worker: {
-      providerId: "static-ssh",
-      state,
-      ageMs: 250,
-      attachedSessionIds: [],
-      tunnelStatus: "stopped",
-    },
-  };
-}
-
 describe("worker environment protocol schemas", () => {
-  it("accepts only boolean opt-in for prepared details in list and status requests", () => {
-    for (const includePreparedDetails of [undefined, false, true]) {
-      const option = includePreparedDetails === undefined ? {} : { includePreparedDetails };
-      expect(validateEnvironmentsListParams(option)).toBe(true);
-      expect(validateEnvironmentsStatusParams({ environmentId: "worker-1", ...option })).toBe(true);
-    }
-    for (const includePreparedDetails of [null, "true", 1]) {
+  it("rejects retired preparation details in list and status requests", () => {
+    expect(validateEnvironmentsListParams({})).toBe(true);
+    expect(validateEnvironmentsStatusParams({ environmentId: "worker-1" })).toBe(true);
+    for (const includePreparedDetails of [false, true, null, "true", 1]) {
       expect(validateEnvironmentsListParams({ includePreparedDetails })).toBe(false);
       expect(
         validateEnvironmentsStatusParams({ environmentId: "worker-1", includePreparedDetails }),
@@ -93,25 +67,6 @@ describe("worker environment protocol schemas", () => {
       expect(Value.Check(EnvironmentSummarySchema, { ...gateway, desktopSetup })).toBe(false);
     }
   });
-  it("accepts only a profile and local project selector for preparation", () => {
-    const request = { profileId: "development", projectPath: "/projects/app" };
-    expect(validateEnvironmentsPrepareParams(request)).toBe(true);
-    for (const invalid of [
-      {},
-      { profileId: "development" },
-      { ...request, profileId: "" },
-      { ...request, projectPath: "" },
-      { ...request, setupAuthorized: false },
-    ]) {
-      expect(validateEnvironmentsPrepareParams(invalid)).toBe(false);
-    }
-    const result = { environmentId: "worker-1", preparationKey: "project-key", reused: false };
-    expect(validateEnvironmentsPrepareResult(result)).toBe(true);
-    expect(validateEnvironmentsPrepareResult({ ...result, reused: true })).toBe(true);
-    expect(validateEnvironmentsPrepareResult({ ...result, reused: "true" })).toBe(false);
-    expect(validateEnvironmentsPrepareResult({ ...result, preparationKey: "" })).toBe(false);
-  });
-
   it("rejects missing, empty, and unknown lifecycle request fields", () => {
     expect(validateEnvironmentsCreateParams({})).toBe(false);
     expect(validateEnvironmentsCreateParams({ profileId: "", idempotencyKey: "request-1" })).toBe(
@@ -290,86 +245,45 @@ describe("worker environment protocol schemas", () => {
     );
   });
 
-  it("keeps desktop app launch requests, results, and projected ids closed", () => {
-    expect(validateWorkerDesktopLaunchParams({ environmentId: "worker:one", app: "browser" })).toBe(
-      true,
-    );
-    expect(validateWorkerDesktopLaunchResult({ app: "terminal", status: "ready" })).toBe(true);
-    expect(validateWorkerDesktopLaunchParams({ environmentId: "worker:one", app: "editor" })).toBe(
-      false,
-    );
-    expect(
-      validateWorkerDesktopLaunchParams({
-        environmentId: "worker:one",
-        app: "browser",
-        args: ["--incognito"],
-      }),
-    ).toBe(false);
-    expect(validateWorkerDesktopLaunchResult({ app: "browser", status: "starting" })).toBe(false);
-    expect(
-      Value.Check(EnvironmentSummarySchema, {
-        ...workerSummary("ready", "available"),
-        worker: {
-          ...workerSummary("ready", "available").worker,
-          desktopApps: ["editor"],
-        },
-      }),
-    ).toBe(false);
-  });
-
   it("lists configured worker profiles without provider settings", () => {
     expect(
       Value.Check(EnvironmentsListResultSchema, {
         environments: [],
         profiles: [
           {
-            id: "aws",
-            providerId: "crabbox",
+            id: "development",
+            providerId: "device",
             trust: "disposable",
             executionMode: "worker-turn",
             executionModes: ["worker-turn", "remote-exec"],
-            operatingSystems: [
-              { id: "linux", label: "Linux", default: true },
-              { id: "windows/wsl2", label: "Windows (WSL2)" },
-            ],
-            machines: [
-              {
-                id: "standard",
-                label: "Standard",
-                cpu: 32,
-                memoryGb: 64,
-                default: true,
-                os: "linux",
-              },
-            ],
           },
           {
             id: "worker",
-            providerId: "static-ssh",
+            providerId: "device",
             executionMode: "remote-exec",
             executionModes: ["remote-exec"],
           },
-          { id: "legacy-primary", providerId: "static-ssh", executionMode: "worker-turn" },
-          { id: "legacy", providerId: "static-ssh" },
+          { id: "legacy-primary", providerId: "device", executionMode: "worker-turn" },
+          { id: "legacy", providerId: "device" },
         ],
       }),
     ).toBe(true);
     expect(
       Value.Check(EnvironmentsListResultSchema, {
         environments: [],
-        profiles: [{ id: "aws", providerId: "crabbox", settings: { token: "hidden" } }],
+        profiles: [{ id: "development", providerId: "device", settings: { token: "hidden" } }],
       }),
     ).toBe(false);
     expect(
       Value.Check(EnvironmentsListResultSchema, {
         environments: [],
-        profiles: [{ id: "aws", providerId: "crabbox", trust: "temporary" }],
+        profiles: [{ id: "development", providerId: "device", trust: "temporary" }],
       }),
     ).toBe(false);
     expect(
       Value.Check(EnvironmentsListResultSchema, {
         environments: [],
-        profiles: [{ id: "aws", providerId: "crabbox", executionMode: "sandbox" }],
+        profiles: [{ id: "development", providerId: "device", executionMode: "sandbox" }],
       }),
     ).toBe(false);
     for (const executionModes of [
@@ -382,7 +296,7 @@ describe("worker environment protocol schemas", () => {
       expect(
         Value.Check(EnvironmentsListResultSchema, {
           environments: [],
-          profiles: [{ id: "aws", providerId: "crabbox", executionModes }],
+          profiles: [{ id: "development", providerId: "device", executionModes }],
         }),
       ).toBe(false);
     }
@@ -391,8 +305,8 @@ describe("worker environment protocol schemas", () => {
         environments: [],
         profiles: [
           {
-            id: "aws",
-            providerId: "crabbox",
+            id: "development",
+            providerId: "device",
             machines: [{ id: "standard", label: "Standard", cpu: 0 }],
           },
         ],

@@ -206,13 +206,14 @@ describe("chat pane terminal action", () => {
       }> = [
         { name: "local", session: localSession },
         {
-          name: "cloud",
+          name: "placed device",
           session: {
             ...localSession,
             execNode: "stale-node",
             placement: {
               state: "active",
-              environmentId: "worker-desktop-1",
+              environmentId: "device:desktop-placement",
+              runner: { kind: "device", deviceId: "desktop-node", status: "available" },
             } as GatewaySessionRow["placement"],
           },
         },
@@ -237,6 +238,11 @@ describe("chat pane terminal action", () => {
 
       for (const placement of [
         { state: "requested" },
+        { state: "active", environmentId: "retired-worker-desktop" },
+        {
+          state: "active",
+          runner: { kind: "device", deviceId: "offline-node", status: "unavailable" },
+        },
         { state: "reclaimed", environmentId: "former-worker" },
       ]) {
         renderDesktopHeader({

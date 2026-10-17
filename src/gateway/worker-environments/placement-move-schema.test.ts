@@ -6,6 +6,7 @@ import { openOpenClawStateDatabase } from "../../state/openclaw-state-db.js";
 import { getOpenClawStateRuntimeSchema } from "../../state/openclaw-state-schema-compatibility.js";
 import { OPENCLAW_STATE_SCHEMA_SQL } from "../../state/openclaw-state-schema.js";
 import { closeStateDatabaseForTest } from "../../test-utils/database-cleanup.js";
+import { projectWorkerPlacementMove } from "./placement-projector.js";
 import { createWorkerSessionPlacementStore } from "./placement-store.js";
 
 const tempDirs = useAutoCleanupTempDirTracker((cleanup) =>
@@ -73,13 +74,33 @@ describe("worker placement move schema", () => {
       target: {
         kind: "profile",
         profileId: "profile-destination",
-        machineClass: "beast",
-        os: "os-a",
       },
     });
     expect((await store.readProjection(["session-move"])).moves.get("session-move")).toEqual(
       begun.intent,
     );
+    // Previous releases persisted provider overrides. Keep those bytes visible,
+    // but never offer a retry that silently changes the requested destination.
+    database.db
+      .prepare(
+        "UPDATE worker_session_placement_moves SET target_machine_class = ?, target_os = ? WHERE session_id = ?",
+      )
+      .run("beast", "os-a", "session-move");
+    const historicalIntent = {
+      ...begun.intent,
+      target: {
+        kind: "profile" as const,
+        profileId: "profile-destination",
+        machineClass: "beast",
+        os: "os-a",
+      },
+    };
+    expect(await store.getPlacementMoveAsync("session-move")).toEqual(historicalIntent);
+    expect(projectWorkerPlacementMove(historicalIntent)).toMatchObject({
+      target: { kind: "profile", profileId: "profile-destination" },
+      error: expect.stringContaining("retired worker provider overrides"),
+    });
+    expect(projectWorkerPlacementMove(historicalIntent)).not.toHaveProperty("retry");
     expect(database.db.prepare("PRAGMA table_info(worker_session_placement_moves)").all()).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ name: "target_machine_class" }),
@@ -113,10 +134,10 @@ describe("worker placement move schema", () => {
 
     const reopened = openOpenClawStateDatabase(options);
     const reopenedStore = createWorkerSessionPlacementStore({ database: reopened });
-    expect(await reopenedStore.getPlacementMoveAsync("session-move")).toEqual(begun.intent);
+    expect(await reopenedStore.getPlacementMoveAsync("session-move")).toEqual(historicalIntent);
     expect(
       (await reopenedStore.readProjection(["session-move"])).moves.get("session-move"),
-    ).toEqual(begun.intent);
+    ).toEqual(historicalIntent);
     expect(reopened.db.prepare("PRAGMA user_version").get()).toEqual(versionBefore);
     expect(
       reopened.db

@@ -17,7 +17,6 @@ import {
 } from "../../infra/agent-run-registry.js";
 import type {
   WorkerDesktopEndpoint,
-  WorkerNodeEnrollment,
   WorkerProvider,
   WorkerSshEndpoint,
 } from "../../plugins/types.js";
@@ -71,7 +70,7 @@ export const SSH_ENDPOINT: WorkerSshEndpoint = {
   hostKey: HOST_KEY,
   keyRef: { source: "file", provider: "worker-keys", id: "/development-key" },
 };
-export const DESKTOP: WorkerDesktopEndpoint = {
+const DESKTOP: WorkerDesktopEndpoint = {
   protocol: "rfb",
   port: 5900,
   passwordFilePath: "/var/lib/crabbox/vnc.password",
@@ -85,14 +84,6 @@ export const DESKTOP: WorkerDesktopEndpoint = {
   ],
 };
 export const BUNDLE_HASH = "a".repeat(64);
-export const NODE_BOOTSTRAP: WorkerNodeEnrollment["nodeBootstrap"] = {
-  url: `https://gateway.example.test/__openclaw__/worker-bootstrap/artifacts/${"b".repeat(64)}`,
-  token: "t".repeat(43),
-  sha256: "b".repeat(64),
-  bytes: 1,
-  openclawVersion: "2026.8.1",
-  enabledPluginIds: ["runtime-plugin"],
-};
 export const BUNDLE_ARTIFACT: Extract<WorkerInstallationArtifact, { install: "bundle" }> = {
   install: "bundle",
   bundleHash: BUNDLE_HASH,
@@ -101,14 +92,6 @@ export const BUNDLE_ARTIFACT: Extract<WorkerInstallationArtifact, { install: "bu
   tarballBytes: 1,
   tarballSha256: "b".repeat(64),
   tarballPath: "/gateway/cache/worker-bundle.tgz",
-};
-export const NPM_ARTIFACT: WorkerInstallationArtifact = {
-  install: "npm",
-  bundleHash: BUNDLE_HASH,
-  openclawVersion: "2026.7.2",
-  packageIntegrity: `sha512-${Buffer.alloc(64).toString("base64")}`,
-  protocolFeatures: [],
-  packageSpec: "openclaw@2026.7.2",
 };
 export const BOOTSTRAP_RECEIPT = {
   bundleHash: BUNDLE_HASH,
@@ -141,7 +124,7 @@ export const testState = {} as {
   providersEnabled: boolean;
   releaseTurnOwners: Array<() => void | Promise<void>>;
   prepareInstallation: WorkerEnvironmentServiceOptions["prepareInstallation"];
-  bootstrapWorker: WorkerEnvironmentServiceOptions["bootstrapWorker"];
+  ensureNodeWorkerBundle: NonNullable<WorkerEnvironmentServiceOptions["ensureNodeWorkerBundle"]>;
 };
 
 export function setupWorkerEnvironmentServiceSuite() {
@@ -161,7 +144,6 @@ export function setupWorkerEnvironmentServiceSuite() {
     });
     testState.config = {
       cloudWorkers: {
-        desktop: true,
         profiles: {
           development: {
             provider: "fake",
@@ -172,14 +154,15 @@ export function setupWorkerEnvironmentServiceSuite() {
     };
     // The Gateway publishes its runtime config at startup.
     setRuntimeConfigSnapshot(testState.config);
-    testState.prepareInstallation = vi.fn(async (install) =>
-      install === "bundle" ? BUNDLE_ARTIFACT : NPM_ARTIFACT,
-    );
-    testState.bootstrapWorker = vi.fn(async ({ installation }) => ({
-      bundleHash: installation.bundleHash,
-      openclawVersion: installation.openclawVersion,
-      protocolFeatures: [...installation.protocolFeatures],
-    }));
+    testState.prepareInstallation = vi.fn(async () => BUNDLE_ARTIFACT);
+    testState.ensureNodeWorkerBundle = vi.fn(async ({ artifact, assertCurrent }) => {
+      assertCurrent();
+      return {
+        bundleHash: artifact.bundleHash,
+        openclawVersion: artifact.openclawVersion,
+        protocolFeatures: [...artifact.protocolFeatures],
+      };
+    });
   });
 
   afterEach(async () => {
@@ -238,31 +221,16 @@ export function createService(
       | "bootstrapCallTimeoutMs"
       | "executeInference"
       | "inferenceStore"
-      | "closeNodeBootstrapArtifacts"
       | "createGatewayTools"
       | "executeComputer"
       | "providerCallTimeoutMs"
-      | "projectNamespace"
-      | "resolveSshIdentity"
       | "ensureNodeWorkerBundle"
-      | "registerPreparedWorkspace"
-      | "prepareNodeBootstrap"
-      | "prepareNodeArtifacts"
-      | "prepareNodeRuntime"
-      | "closeNodeRuntime"
-      | "prepareNodeEnrollment"
-      | "closeNodeEnrollment"
-      | "retireNodeEnrollment"
-      | "stopNodeEnrollmentWaits"
-      | "tunnelManager"
       | "generateWorkerCredential"
       | "liveEvents"
-      | "maintainProviders"
       | "scheduler"
       | "logger"
       | "now"
       | "nodeTunnelManager"
-      | "nodeDesktopCarrier"
       | "nodePortalCarrier"
       | "placementStore"
       | "workerCredentialTtlMs"
@@ -281,11 +249,7 @@ export function createService(
     resolveProvider: (providerId) =>
       testState.providersEnabled && providerId === provider.id ? provider : undefined,
     prepareInstallation: testState.prepareInstallation,
-    ...(provider.requiresNodeEnrollment
-      ? { prepareNodeBootstrap: async () => NODE_BOOTSTRAP.sha256 }
-      : {}),
-    bootstrapWorker: testState.bootstrapWorker,
-    resolveSshIdentity: async () => ({ kind: "path", path: "/keys/worker" }),
+    ensureNodeWorkerBundle: testState.ensureNodeWorkerBundle,
     generateWorkerCredential: () => CREDENTIAL,
     inferenceStore: createWorkerInferenceStore({
       path: testState.stateDb.path,
@@ -302,9 +266,9 @@ export function createProvider(overrides: Partial<WorkerProvider> = {}): WorkerP
   return {
     id: "fake",
     supportedExecutionModes: ["remote-exec"],
-    resolveAllocation: async () => ({ leaseId: "lease-1", sharedHost: false }),
-    provision: async () => ({ leaseId: "lease-1", ssh: SSH_ENDPOINT }),
-    inspect: async () => ({ status: "active" }),
+    resolveAllocation: async () => ({ leaseId: "lease-1", sharedHost: true }),
+    provision: async () => ({ leaseId: "lease-1", sharedHost: true, node: { deviceId: "node-1" } }),
+    inspect: async () => ({ status: "active", sharedHost: true }),
     destroy: async () => {},
     ...overrides,
   };
@@ -318,23 +282,6 @@ export function createLiveEvents(overrides: Record<string, unknown> = {}) {
     rotateCredential: vi.fn(() => true),
     ...overrides,
   };
-}
-
-export async function seedBootstrapping(
-  environmentId: string,
-  install?: WorkerInstallationArtifact["install"],
-  sharedHost = false,
-) {
-  const provisioning = await seedProvisioning(environmentId, {
-    ...(install ? { install } : {}),
-    settings: { region: "test" },
-  });
-  return testState.store.transition({
-    environmentId,
-    from: provisioning.state,
-    to: "bootstrapping",
-    patch: { leaseId: `lease:${environmentId}`, sshEndpoint: SSH_ENDPOINT, sharedHost },
-  });
 }
 
 async function seedProvisioning(
@@ -357,40 +304,24 @@ async function seedProvisioning(
 
 export async function seedReady(
   environmentId: string,
-  install?: WorkerInstallationArtifact["install"],
-  sharedHost = false,
+  options: {
+    sharedHost?: boolean;
+    nodeDeviceId?: string;
+    receipt?: NonNullable<WorkerEnvironmentTransitionPatch["bootstrapReceipt"]>;
+  } = {},
 ) {
-  const bootstrapping = await seedBootstrapping(environmentId, install, sharedHost);
+  const provisioning = await seedProvisioning(environmentId, { settings: { region: "test" } });
   return testState.store.transition({
-    environmentId,
-    from: bootstrapping.state,
-    to: "ready",
-    patch: readyPatch(environmentId),
-  });
-}
-
-export async function seedReadyDesktop(
-  environmentId: string,
-  desktop: WorkerDesktopEndpoint = DESKTOP,
-) {
-  const provisioning = await seedProvisioning(environmentId, {
-    settings: { region: "test", desktop: true },
-  });
-  const bootstrapping = await testState.store.transition({
     environmentId,
     from: provisioning.state,
-    to: "bootstrapping",
+    to: "ready",
     patch: {
       leaseId: `lease:${environmentId}`,
-      sshEndpoint: SSH_ENDPOINT,
-      desktop,
+      nodeDeviceId: options.nodeDeviceId ?? `node:${environmentId}`,
+      sshEndpoint: null,
+      sharedHost: options.sharedHost ?? true,
+      ...readyPatch(environmentId, options.receipt),
     },
-  });
-  return testState.store.transition({
-    environmentId,
-    from: bootstrapping.state,
-    to: "ready",
-    patch: readyPatch(environmentId),
   });
 }
 
@@ -417,7 +348,10 @@ export async function seedReadyNodeDesktop(
 
 export function readyPatch(
   environmentId: string,
-  receipt: NonNullable<WorkerEnvironmentTransitionPatch["bootstrapReceipt"]> = BOOTSTRAP_RECEIPT,
+  receipt: NonNullable<WorkerEnvironmentTransitionPatch["bootstrapReceipt"]> = {
+    ...BOOTSTRAP_RECEIPT,
+    installKind: "bundle",
+  },
 ) {
   return {
     bootstrapReceipt: receipt,

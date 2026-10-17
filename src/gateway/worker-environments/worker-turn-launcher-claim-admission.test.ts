@@ -6,11 +6,11 @@ import { makeAgentAssistantMessage } from "../../agents/test-helpers/agent-messa
 import { loadSessionEntry } from "../../config/sessions/session-accessor.js";
 import type { SpawnResult } from "../../process/exec.js";
 import { closeStateDatabaseForTest } from "../../test-utils/database-cleanup.js";
-import { result as processResult } from "./bootstrap.test-support.js";
 import { placementTurnOwner } from "./placement-record.js";
 import { completeWorkerWorkspaceTeardown } from "./placement-teardown.js";
 import { createWorkerSessionPlacementGate } from "./placement-worker-gate.js";
 import type { WorkerTurnTunnelHandle } from "./tunnel-contract.js";
+import { result as processResult } from "./worker-command.test-support.js";
 import { createWorkerGatewayTools } from "./worker-session-tool-executor.js";
 import { waitForPendingWorkerResult } from "./worker-turn-admission.js";
 import {

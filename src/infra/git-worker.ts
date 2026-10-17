@@ -61,14 +61,11 @@ const SPAWN_OPERATIONS = {
   "worktree.directory-size": "worktree.inspect",
   "workspace.artifacts": "workspace.inventory",
   "workspace.inventory.select": "workspace.inventory",
-  "workspace.inventory.existing": "workspace.inventory",
   "workspace.inventory.paths": "workspace.inventory",
-  "workspace.inventory.staged-directories": "workspace.inventory",
   "workspace.manifest.capture": "workspace.manifest",
   "workspace.manifest.snapshot": "workspace.manifest",
   "workspace.manifest.parse": "workspace.manifest",
   "workspace.manifest.serialize": "workspace.manifest",
-  "workspace.manifest.overlay": "workspace.manifest",
   "workspace.manifest.pair": "workspace.manifest",
   "workspace.manifest.staged": "workspace.manifest",
   "workspace.manifest.entries": "workspace.manifest",
@@ -137,7 +134,7 @@ function poolFor(
         : owner === "workspace"
           ? "compute"
           : "writer",
-    // Overlay retains three maximum-size manifests plus its decoded result.
+    // Manifest comparisons retain full decoded inputs and results.
     workerOptions:
       owner === "workspace" ? { resourceLimits: { maxOldGenerationSizeMb: 1024 } } : undefined,
     // Discovery refreshes and PR polls can leave readers idle for just over a minute.

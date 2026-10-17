@@ -86,9 +86,8 @@ export function NewSessionPlaceControls(props: { params: NewSessionPlaceControls
   const folderValue = liveValue(() => props.params.place.folder);
   const deviceFolderValue = liveValue(() => props.params.place.deviceFolder?.path ?? "");
   const view = createMemo(() => {
-    const { context, data, gateway, place, submitting, pendingPlacement, onChange } = props.params;
+    const { context, data, gateway, place } = props.params;
     const browser = place.browser;
-    const { machineClass, os } = place.cloudSelection;
     const nativeTerminal = catalog.isTarget(data);
     const cloudProfiles = nativeTerminal || !place.isAdmin() ? [] : gateway.cloudProfiles;
     const branches = place.repository.kind === "git" ? place.repository : null;
@@ -131,20 +130,9 @@ export function NewSessionPlaceControls(props: { params: NewSessionPlaceControls
     const browserNodeId = browser.browserNodeId;
     // Changing the device closes the browser, so an open device listing is this device's.
     const browserLabel = browserNodeId ? (deviceBrowse?.label ?? browserNodeId) : gatewayLabel;
-    const selectCloudOption = (kind: "os" | "machine", id: string) =>
-      place.cloudMachines[kind === "os" ? "selectOs" : "select"](
-        place.cloudProfileId,
-        id,
-        cloudProfiles,
-        submitting || pendingPlacement,
-        onChange,
-      );
-
     return {
       nativeTerminal,
       browser,
-      machineClass,
-      os,
       whereState,
       projectState,
       checkoutState,
@@ -154,7 +142,6 @@ export function NewSessionPlaceControls(props: { params: NewSessionPlaceControls
       browserNodeId,
       deviceBrowse,
       gatewayName: gateway.gatewayName,
-      selectCloudOption,
     };
   });
   // Child prop reads must reuse this projection instead of rebuilding placement facts.
@@ -168,8 +155,6 @@ export function NewSessionPlaceControls(props: { params: NewSessionPlaceControls
     onEnvironmentQueryInput: (query) => view().browser.changeEnvironmentQuery(query),
     gatewayName: view().gatewayName,
     cloudProfileId: props.params.place.cloudProfileId,
-    machineClass: view().machineClass,
-    os: view().os,
     deviceId: props.params.place.deviceId,
     autoDevice: props.params.place.autoDevice,
     autoPlacementMode: props.params.place.modelControl.autoPlacementSelectionMode(
@@ -185,14 +170,7 @@ export function NewSessionPlaceControls(props: { params: NewSessionPlaceControls
     ...view().browser.popoverCallbacks("where"),
     onSelectDevice: (deviceId) => props.params.place.selectDevice(deviceId),
     onSelectAutoDevice: () => props.params.place.selectDevice("", true),
-    onSelectCloudProfile: (profileId, useDefaults) => {
-      if (useDefaults) {
-        props.params.place.cloudMachines.applyPending(profileId);
-      }
-      props.params.place.selectCloudProfile(profileId);
-    },
-    onSelectCloudOs: (osId) => view().selectCloudOption("os", osId),
-    onSelectCloudMachine: (machineId) => view().selectCloudOption("machine", machineId),
+    onSelectCloudProfile: (profileId) => props.params.place.selectCloudProfile(profileId),
     onConnectMachine: props.params.onConnectMachine,
     onManageCloudWorkers: () => {
       view().browser.close();

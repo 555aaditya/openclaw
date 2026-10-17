@@ -7,6 +7,7 @@ import type {
   WorkerDispatchPlacement,
   WorkerDispatchPlacementStore,
 } from "./placement-dispatch-failure.js";
+import { hasRetiredWorkerMoveOverrides } from "./placement-move-intent.types.js";
 import type {
   WorkerPlacementMoveIntent,
   WorkerPlacementMoveTarget,
@@ -104,6 +105,9 @@ export function createWorkerPlacementMoveService(options: {
     let local: WorkerReclaimPlacement | undefined;
     try {
       assertCurrent();
+      if (hasRetiredWorkerMoveOverrides(request.target)) {
+        throw new Error("Worker provider machine and operating-system overrides have been retired");
+      }
       if (request.abandonSource && request.target.kind !== "gateway") {
         throw new Error("Source abandonment is available only when continuing on the Gateway");
       }
@@ -240,6 +244,11 @@ export function createWorkerPlacementMoveService(options: {
     initialPlacement: WorkerDispatchPlacement | undefined,
   ): Promise<void> => {
     try {
+      if (hasRetiredWorkerMoveOverrides(intent.target)) {
+        throw new Error(
+          "Stored move requires retired worker provider overrides; stop this placement before selecting a new target",
+        );
+      }
       let placement = initialPlacement;
       if (!placement) {
         throw new Error(`Session ${intent.sessionId} placement move lost its session placement`);

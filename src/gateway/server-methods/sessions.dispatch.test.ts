@@ -346,13 +346,13 @@ describe("sessions.dispatch", () => {
       }),
       {
         expected: { generation: 4, environmentId: "environment-previous", ownerEpoch: 1 },
-        target: { kind: "profile", profileId: "test", machineClass: "beast", os: "os-b" },
+        target: { kind: "profile", profileId: "test" },
       },
     );
 
     expect(move).toHaveBeenCalledWith(
       expect.objectContaining({
-        target: { kind: "profile", profileId: "test", machineClass: "beast", os: "os-b" },
+        target: { kind: "profile", profileId: "test" },
       }),
       expect.any(Function),
       undefined,
@@ -574,7 +574,7 @@ describe("sessions.dispatch", () => {
           }
         }),
       );
-      const respond = await invoke(context, { profileId, machineClass: "large", os: "os-a" });
+      const respond = await invoke(context, { profileId });
       expect(mocks.runCommandWithTimeout).not.toHaveBeenCalled();
 
       expect(dispatch).toHaveBeenCalledWith(
@@ -584,8 +584,6 @@ describe("sessions.dispatch", () => {
           agentId: "main",
           executionMode: "worker-turn",
           profileId,
-          machineClass: "large",
-          os: "os-a",
           devicePlacement: { requiredNodeCommands: [], consumesWorkerSlot: true },
         }),
         expect.any(Function),

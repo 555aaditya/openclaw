@@ -1,4 +1,7 @@
 // tsdown config defines package build entrypoints and output options.
+// tsdown config defines package build entrypoints and output options.
+// tsdown config defines package build entrypoints and output options.
+// tsdown config defines package build entrypoints and output options.
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -1044,9 +1047,7 @@ const configs: UserConfig[] = [
       false,
     ),
   ),
-  workerHelperBuildConfig({
-    "worker/workspace-rsync-receiver": "src/worker/workspace-rsync-receiver.ts",
-  }),
+  workerHelperBuildConfig({}),
   workerHelperBuildConfig({ "worker/github-exec-launcher": "src/agents/github-exec-launcher.ts" }),
   ...["service-child-relay", "service-child-group-anchor"].map((name) =>
     workerHelperBuildConfig(

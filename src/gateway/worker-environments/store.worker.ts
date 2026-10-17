@@ -88,11 +88,7 @@ function mutation<Name extends Method, Result>(
 
 type EnvironmentMethod = Exclude<
   keyof WorkerEnvironmentMutationMethods,
-  | "ensureNodeEnrollment"
-  | "ensurePreparedIntent"
-  | "createSessionAttachmentIntent"
-  | "closeSessionAttachment"
-  | "pruneTerminalEnvironments"
+  "createSessionAttachmentIntent" | "closeSessionAttachment" | "pruneTerminalEnvironments"
 >;
 function environmentMutation<Name extends EnvironmentMethod, Result>(
   name: Name,
@@ -113,13 +109,6 @@ export const workerEnvironmentOperations = {
   }),
   "workerEnvironments.createIntent": environmentMutation("createIntent", (input, store) =>
     store.createIntent(input),
-  ),
-  "workerEnvironments.ensureNodeEnrollment": mutation(
-    "ensureNodeEnrollment",
-    ({ input }, { store, touch }) => {
-      touch(input);
-      return store.ensureNodeEnrollment(input);
-    },
   ),
   "workerEnvironments.revokeEnvironmentCredential": environmentMutation(
     "revokeEnvironmentCredential",
@@ -152,21 +141,6 @@ export const workerEnvironmentOperations = {
   ),
   "workerEnvironments.recordError": environmentMutation("recordError", (input, store) =>
     store.recordError(input),
-  ),
-  "workerEnvironments.ensurePreparedIntent": mutation(
-    "ensurePreparedIntent",
-    ({ input }, { store, touch }) => {
-      const value = store.ensurePreparedIntent(input);
-      touch(input.intent.environmentId);
-      if (value) {
-        touch(value.environmentId);
-      }
-      return value;
-    },
-  ),
-  "workerEnvironments.requestPreparedDestroy": environmentMutation(
-    "requestPreparedDestroy",
-    (input, store) => store.requestPreparedDestroy(input),
   ),
   "workerEnvironments.createSessionAttachmentIntent": mutation(
     "createSessionAttachmentIntent",

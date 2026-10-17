@@ -1,4 +1,3 @@
-import type { SecretRef } from "../../config/types.secrets.js";
 import { WorkerProviderError, type WorkerProvider } from "../../plugins/types.js";
 import { DEVICE_WORKER_PROVIDER_ID } from "./device-provider-identity.js";
 import {
@@ -11,7 +10,6 @@ import type {
   WorkerProviderLifecycleOptions,
 } from "./provider-lifecycle.types.js";
 import {
-  requireProviderOperationTimeoutMs,
   requireWorkerAllocation,
   requireWorkerProfile,
   resolveWorkerLeaseTransportError,
@@ -33,16 +31,13 @@ export function createWorkerProviderOwnerLifecycle(
     | "tunnelManager"
     | "callProvider"
     | "providerCallTimeoutMs"
-    | "resolveSshIdentity"
     | "placementStore"
     | "move"
-    | "retireNodeEnrollment"
     | "saveError"
     | "withLock"
     | "isStopping"
   > & {
     providerFor: (providerId: string) => WorkerProvider;
-    onOwnerStopped?: (environmentId: string) => void;
   },
 ) {
   const { store, move, callProvider, saveError, withLock, providerFor } = options;
@@ -66,54 +61,11 @@ export function createWorkerProviderOwnerLifecycle(
     return current;
   };
 
-  const identityResolverFor = (
-    record: WorkerEnvironmentRecord,
-    provider: WorkerProvider,
-    leaseId: string,
-  ) => {
-    const profile = requireWorkerProfile(record.profileSnapshot.settings);
-    return async (keyRef: SecretRef, context: { assertCurrent: () => void }) => {
-      const resolveSshIdentity = options.resolveSshIdentity;
-      if (!resolveSshIdentity) {
-        throw new Error("Worker SSH identity resolution is unavailable");
-      }
-      let open = true;
-      const assertAuthorized = () => {
-        if (!open) {
-          throw new Error("Worker SSH identity invocation is closed");
-        }
-        context.assertCurrent();
-        const current = requireCurrentOwner(record);
-        if (options.isStopping() || current.destroyRequestedAtMs !== null) {
-          throw new Error("Worker identity owner is closed");
-        }
-      };
-      try {
-        return await callProvider(record.environmentId, async () => {
-          assertAuthorized();
-          const identity = await resolveSshIdentity({
-            provider,
-            leaseId,
-            profile,
-            keyRef,
-            assertAuthorized,
-          });
-          assertAuthorized();
-          return identity;
-        });
-      } finally {
-        // A caller-visible timeout closes authority, not the underlying provider queue owner.
-        open = false;
-      }
-    };
-  };
-
   const stopOwner = async (
     record: WorkerEnvironmentRecord,
     reason?: WorkerTunnelStopReason,
     runtimeRefresh?: { assertCurrent: () => void },
   ): Promise<WorkerEnvironmentRecord> => {
-    options.onOwnerStopped?.(record.environmentId);
     const sessionId = record.attachedSessionIds.length === 1 ? record.attachedSessionIds[0] : null;
     if (sessionId && !runtimeRefresh) {
       // Runtime refresh hands off eligible results before capturing placement authority.
@@ -150,24 +102,13 @@ export function createWorkerProviderOwnerLifecycle(
     provider: WorkerProvider,
     lease: Parameters<WorkerProvider["destroy"]>[0],
   ) => {
-    const timeoutMs =
-      options.providerCallTimeoutMs === undefined
-        ? requireProviderOperationTimeoutMs(
-            "destroy",
-            provider.resolveDestroyTimeoutMs?.(lease.profile),
-          )
-        : undefined;
-    await options.callProvider(
-      record.environmentId,
-      () => {
-        // An earlier timed-out operation can keep this call queued across owner changes.
-        if (requireCurrentOwner(record).state !== record.state) {
-          throw serviceError("invalid_state", "Worker environment owner changed during teardown");
-        }
-        return provider.destroy(lease);
-      },
-      timeoutMs,
-    );
+    await options.callProvider(record.environmentId, () => {
+      // An earlier timed-out operation can keep this call queued across owner changes.
+      if (requireCurrentOwner(record).state !== record.state) {
+        throw serviceError("invalid_state", "Worker environment owner changed during teardown");
+      }
+      return provider.destroy(lease);
+    });
   };
 
   const beginDrain = async (record: WorkerEnvironmentRecord) => {
@@ -193,9 +134,6 @@ export function createWorkerProviderOwnerLifecycle(
 
   const finishProvenDestroy = async (record: WorkerEnvironmentRecord) => {
     const destroying = await beginDestroy(record);
-    if (destroying.nodeSetupId) {
-      await options.retireNodeEnrollment?.(destroying);
-    }
     if (destroying.teardownTerminalState !== "failed") {
       return move(destroying, "destroyed");
     }
@@ -441,9 +379,12 @@ export function createWorkerProviderOwnerLifecycle(
     record: WorkerEnvironmentRecord,
     provider: WorkerProvider,
   ): Promise<boolean> => {
-    const transport = record.nodeDeviceId ? "node" : record.sshEndpoint ? "ssh" : undefined;
-    const modeError = transport
-      ? resolveWorkerLeaseTransportError(provider, transport, record.profileSnapshot.executionMode)
+    if (record.sshEndpoint) {
+      await saveError(record, new Error("SSH worker environments are no longer supported"));
+      return true;
+    }
+    const modeError = record.nodeDeviceId
+      ? resolveWorkerLeaseTransportError(provider, "node", record.profileSnapshot.executionMode)
       : undefined;
     if (!modeError || record.destroyRequestedAtMs !== null) {
       return false;
@@ -459,7 +400,6 @@ export function createWorkerProviderOwnerLifecycle(
   };
 
   return {
-    identityResolverFor,
     requireCurrentOwner,
     stopOwner,
     beginDrain,

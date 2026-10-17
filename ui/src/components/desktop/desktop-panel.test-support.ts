@@ -12,18 +12,10 @@ type DesktopPanelElement = DesktopPanelController;
 const mountedPanels = new WeakMap<DesktopPanelController, ReturnType<typeof mountSolid>>();
 
 export const desktopEnvironment = {
-  id: "worker-desktop-1",
-  type: "worker",
+  id: "node:desktop-node",
+  type: "node",
   status: "available",
   desktop: true,
-  worker: {
-    providerId: "crabbox",
-    state: "attached",
-    ageMs: 1_000,
-    attachedSessionIds: ["main"],
-    tunnelStatus: "connected",
-    desktopApps: [],
-  },
 } satisfies EnvironmentSummary;
 
 export function createPanel() {

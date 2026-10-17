@@ -1,16 +1,12 @@
-import { createHash, randomUUID } from "node:crypto";
-import { createReadStream, type Dirent } from "node:fs";
+import { randomUUID } from "node:crypto";
+import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
-import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import * as tar from "tar";
 import { resolveStateDir } from "../../config/paths.js";
 import { sha256File } from "../../infra/directory-durability.js";
-import { isExactSemverVersion, resolveNpmJsonEntries } from "../../infra/npm-registry-spec.js";
 import { resolveOpenClawPackageRootSync } from "../../infra/openclaw-root.js";
-import { resolvePreferredOpenClawTmpDir } from "../../infra/tmp-openclaw-dir.js";
-import { runCommandWithTimeout } from "../../process/exec.js";
 import { createLazyPromise } from "../../shared/lazy-promise.js";
 import {
   DEFAULT_WORKER_BUNDLE_ARCHIVE_LIMITS,
@@ -28,9 +24,6 @@ import { VERSION } from "../../version.js";
 import type { ExpectedWorkerBuild } from "../../worker/worker-build-identity.js";
 import { collectWorkerBundleManifest } from "./bundle-staging.js";
 
-const OPENCLAW_NPM_REGISTRY = "https://registry.npmjs.org/";
-const NPM_RELEASE_PROOF_TIMEOUT_MS = 60_000;
-const NPM_SHA512_INTEGRITY_PATTERN = /^sha512-[A-Za-z0-9+/]{86}==$/u;
 const BUNDLE_TARBALL_NAME_PATTERN = /^([a-f0-9]{64})\.tgz$/u;
 const BUNDLE_STAGING_NAME_PATTERN = /^\.staging-[A-Za-z0-9_-]+$/u;
 const BUNDLE_TEMP_NAME_PATTERN = /^[a-f0-9]{64}\.tgz\.[0-9]+\.[0-9a-f-]{36}\.tmp$/u;
@@ -43,13 +36,7 @@ type WorkerBundleArtifact = ExpectedWorkerBuild & {
   tarballPath: string;
 };
 
-export type WorkerNpmArtifact = ExpectedWorkerBuild & {
-  install: "npm";
-  packageIntegrity: string;
-  packageSpec: string;
-};
-
-export type WorkerInstallationArtifact = WorkerBundleArtifact | WorkerNpmArtifact;
+export type WorkerInstallationArtifact = WorkerBundleArtifact;
 
 export type WorkerBundleProducer = {
   prepare: () => Promise<WorkerBundleArtifact>;
@@ -66,12 +53,6 @@ type WorkerBundleProducerOptions = {
   cacheOwnership?: "exclusive";
   onCacheCleanupError?: (error: unknown) => void;
 };
-
-type WorkerNpmPackageInstallCheck = (packageRoot: string) => Promise<boolean>;
-type WorkerNpmReleaseVerifier = (params: {
-  bundleHash: string;
-  version: string;
-}) => Promise<string>;
 
 function normalizeProtocolFeatures(features: readonly string[]): string[] {
   const normalized = features.map((feature) => feature.trim());
@@ -100,164 +81,6 @@ function resolvePackageRoot(packageRoot: string | undefined): string {
     throw new Error("Unable to locate the running OpenClaw package root for worker bundling");
   }
   return resolved;
-}
-
-async function isReleasedPackageInstall(packageRoot: string): Promise<boolean> {
-  const entries = new Set(await fs.readdir(packageRoot));
-  return (
-    !entries.has(".git") &&
-    !entries.has("pnpm-lock.yaml") &&
-    !entries.has("bun.lock") &&
-    !entries.has("bun.lockb")
-  );
-}
-
-type NpmPackageIdentity = {
-  filename?: string;
-  name: string;
-  version: string;
-  integrity: string;
-};
-
-function parseNpmPackageIdentity(value: unknown): NpmPackageIdentity | undefined {
-  if (!isRecord(value)) {
-    return undefined;
-  }
-  const name = normalizeOptionalString(value.name);
-  const version = normalizeOptionalString(value.version);
-  const integrity =
-    normalizeOptionalString(value.integrity) ?? normalizeOptionalString(value["dist.integrity"]);
-  const filename = normalizeOptionalString(value.filename);
-  return name && version && integrity ? { name, version, integrity, filename } : undefined;
-}
-
-async function runNpmProofCommand(params: {
-  argv: string[];
-  cwd: string;
-  failureMessage: string;
-}): Promise<unknown> {
-  try {
-    const result = await runCommandWithTimeout(params.argv, {
-      cwd: params.cwd,
-      timeoutMs: NPM_RELEASE_PROOF_TIMEOUT_MS,
-      env: {
-        COREPACK_ENABLE_DOWNLOAD_PROMPT: "0",
-        NPM_CONFIG_IGNORE_SCRIPTS: "true",
-      },
-    });
-    if (result.code !== 0 || result.stdoutTruncatedBytes) {
-      throw new Error(params.failureMessage);
-    }
-    return JSON.parse(result.stdout.trim()) as unknown;
-  } catch {
-    throw new Error(params.failureMessage);
-  }
-}
-
-async function hashNpmTarballIntegrity(tarballPath: string): Promise<string> {
-  const hash = createHash("sha512");
-  for await (const chunk of createReadStream(tarballPath)) {
-    hash.update(chunk);
-  }
-  return `sha512-${hash.digest("base64")}`;
-}
-
-async function verifyPublishedNpmRelease(params: {
-  bundleHash: string;
-  version: string;
-}): Promise<string> {
-  const temporaryRoot = await fs.mkdtemp(
-    path.join(resolvePreferredOpenClawTmpDir(), "openclaw-worker-npm-proof-"),
-  );
-  try {
-    const published = parseNpmPackageIdentity(
-      resolveNpmJsonEntries(
-        await runNpmProofCommand({
-          argv: [
-            "npm",
-            "view",
-            `openclaw@${params.version}`,
-            "name",
-            "version",
-            "dist.integrity",
-            "--json",
-            `--registry=${OPENCLAW_NPM_REGISTRY}`,
-          ],
-          cwd: temporaryRoot,
-          failureMessage: `OpenClaw ${params.version} is not published; use the worker bundle install`,
-        }),
-      )[0],
-    );
-    if (
-      published?.name !== "openclaw" ||
-      published.version !== params.version ||
-      !NPM_SHA512_INTEGRITY_PATTERN.test(published.integrity)
-    ) {
-      throw new Error(
-        `Cannot verify exact public npm release openclaw@${params.version}; use the worker bundle install`,
-      );
-    }
-    const packedValue = await runNpmProofCommand({
-      argv: [
-        "npm",
-        "pack",
-        `openclaw@${params.version}`,
-        "--pack-destination",
-        temporaryRoot,
-        "--ignore-scripts",
-        "--json",
-        `--registry=${OPENCLAW_NPM_REGISTRY}`,
-      ],
-      cwd: temporaryRoot,
-      failureMessage:
-        "Unable to verify the installed OpenClaw package; use the worker bundle install",
-    });
-    const packed = parseNpmPackageIdentity(resolveNpmJsonEntries(packedValue)[0]);
-    if (!packed?.filename || path.basename(packed.filename) !== packed.filename) {
-      throw new Error("npm pack returned incomplete worker package metadata");
-    }
-    const packedTarballPath = path.join(temporaryRoot, packed.filename);
-    let packedTarballIntegrity: string;
-    try {
-      packedTarballIntegrity = await hashNpmTarballIntegrity(packedTarballPath);
-    } catch {
-      throw new Error(
-        "Unable to verify the installed OpenClaw package; use the worker bundle install",
-      );
-    }
-    if (
-      packed.name !== published.name ||
-      packed.version !== published.version ||
-      packed.integrity !== published.integrity ||
-      packedTarballIntegrity !== published.integrity
-    ) {
-      throw new Error(
-        `Installed OpenClaw ${params.version} does not match the published package; use the worker bundle install`,
-      );
-    }
-    const extractedRoot = path.join(temporaryRoot, "package");
-    await fs.mkdir(extractedRoot);
-    await tar.extract({
-      cwd: extractedRoot,
-      file: packedTarballPath,
-      preservePaths: false,
-      strict: true,
-      strip: 1,
-    });
-    const packedBundle = await prepareWorkerBundle({
-      packageRoot: extractedRoot,
-      cacheDir: path.join(temporaryRoot, "bundle-cache"),
-      openclawVersion: params.version,
-    });
-    if (packedBundle.bundleHash !== params.bundleHash) {
-      throw new Error(
-        `Published OpenClaw ${params.version} does not match the prepared worker bundle; use the worker bundle install`,
-      );
-    }
-    return published.integrity;
-  } finally {
-    await fs.rm(temporaryRoot, { recursive: true, force: true });
-  }
 }
 
 async function isCachedTarball(filePath: string): Promise<boolean> {
@@ -539,44 +362,5 @@ export function createWorkerBundleProducer(
       pruning = operation.catch(() => undefined);
       await operation;
     },
-  };
-}
-
-/**
- * Selects the exact npm package only after the public tarball's canonical worker manifest proves
- * parity with the running gateway bundle.
- */
-export async function resolveWorkerNpmInstallationArtifact(params: {
-  bundle: WorkerBundleArtifact;
-  packageRoot?: string;
-  isPackageInstall?: WorkerNpmPackageInstallCheck;
-  verifyRelease?: WorkerNpmReleaseVerifier;
-}): Promise<WorkerNpmArtifact> {
-  const version = params.bundle.openclawVersion.trim();
-  if (!isExactSemverVersion(version)) {
-    throw new Error(
-      `Worker npm install requires the exact published gateway version; expected ${version}`,
-    );
-  }
-  const packageRoot = resolvePackageRoot(params.packageRoot);
-  const packageInstall = params.isPackageInstall
-    ? await params.isPackageInstall(packageRoot)
-    : await isReleasedPackageInstall(packageRoot);
-  if (!packageInstall) {
-    throw new Error(
-      "Worker npm install requires the gateway to run from a packaged release install",
-    );
-  }
-  const packageIntegrity = await (params.verifyRelease ?? verifyPublishedNpmRelease)({
-    bundleHash: params.bundle.bundleHash,
-    version,
-  });
-  return {
-    install: "npm",
-    bundleHash: params.bundle.bundleHash,
-    openclawVersion: version,
-    packageIntegrity,
-    protocolFeatures: params.bundle.protocolFeatures,
-    packageSpec: `openclaw@${version}`,
   };
 }

@@ -10,11 +10,7 @@ import { createDeferred } from "../../../test/helpers/promise.js";
 import { createSuiteLogPathTracker } from "../../logging/log-test-helpers.js";
 import { flushLogger, resetLogger, setLoggerOverride } from "../../logging/logger.js";
 import { createDiagnosticLogRecordCapture } from "../../logging/test-helpers/diagnostic-log-capture.js";
-import {
-  DESKTOP_OBSERVE_PATH,
-  handleDesktopObserveUpgrade,
-  mintDesktopObserverToken,
-} from "./observe-bridge.js";
+import { handleDesktopObserveUpgrade, mintDesktopObserverToken } from "./observe-bridge.js";
 import {
   resolveDesktopObserveRequester,
   type DesktopObserveRequester,
@@ -125,9 +121,7 @@ async function createProxyHarness(
     ...(params.preauth ? { preauth: params.preauth } : {}),
     requester: params.requester,
   });
-  const ws = new WebSocket(
-    `ws://127.0.0.1:${address.port}${DESKTOP_OBSERVE_PATH}?token=${minted.token}`,
-  );
+  const ws = new WebSocket(`ws://127.0.0.1:${address.port}/desktop/observe?token=${minted.token}`);
   cleanup.push(async () => ws.terminate());
   await new Promise<void>((resolve, reject) => {
     ws.once("open", resolve);

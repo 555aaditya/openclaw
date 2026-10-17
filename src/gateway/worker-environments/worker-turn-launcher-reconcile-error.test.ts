@@ -79,7 +79,6 @@ it("settles a stale-build turn when a lost shared node rejects its stop acknowle
     getConfig: () => ({}),
     resolveProvider: () => provider,
     prepareInstallation: async () => installation,
-    bootstrapWorker: vi.fn(),
     placementStore: createWorkerSessionPlacementGate(placements),
     nodeTunnelManager,
     logger: { warn },

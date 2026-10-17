@@ -1,4 +1,19 @@
 // Gateway Protocol schema module defines protocol validation shapes.
+// Gateway Protocol schema module defines protocol validation shapes.
+// Gateway Protocol schema module defines protocol validation shapes.
+// Gateway Protocol schema module defines protocol validation shapes.
+// Gateway Protocol schema module defines protocol validation shapes.
+// Gateway Protocol schema module defines protocol validation shapes.
+// Gateway Protocol schema module defines protocol validation shapes.
+// Gateway Protocol schema module defines protocol validation shapes.
+// Gateway Protocol schema module defines protocol validation shapes.
+// Gateway Protocol schema module defines protocol validation shapes.
+// Gateway Protocol schema module defines protocol validation shapes.
+// Gateway Protocol schema module defines protocol validation shapes.
+// Gateway Protocol schema module defines protocol validation shapes.
+// Gateway Protocol schema module defines protocol validation shapes.
+// Gateway Protocol schema module defines protocol validation shapes.
+// Gateway Protocol schema module defines protocol validation shapes.
 import { Type, type Static } from "typebox";
 import { NODE_WORKER_CAPACITY_MAX } from "../worker-capacity.js";
 import { closedObject } from "./closed-object.js";
@@ -63,10 +78,6 @@ export const WorkerTunnelStatusSchema = Type.Union([
 ]);
 
 /** Closed app ids a worker desktop may advertise and launch. */
-export const WorkerDesktopAppIdSchema = Type.Union([
-  Type.Literal("browser"),
-  Type.Literal("terminal"),
-]);
 
 /** Actionable issue attached only to runtime targets that need operator intervention. */
 export const RuntimeTargetIssueSchema = Type.Union([
@@ -154,9 +165,6 @@ export const WorkerEnvironmentMetadataSchema = closedObject({
   tunnelStatus: WorkerTunnelStatusSchema,
   error: Type.Optional(NonEmptyString),
   desktop: Type.Optional(Type.Boolean()),
-  desktopApps: Type.Optional(
-    Type.Array(WorkerDesktopAppIdSchema, { maxItems: 8, uniqueItems: true }),
-  ),
 });
 
 function createEnvironmentSummaryProperties() {
@@ -186,22 +194,6 @@ function createEnvironmentSummaryProperties() {
     desktopAvailability: Type.Optional(DesktopAvailabilitySchema),
     issues: Type.Optional(Type.Array(RuntimeTargetIssueSchema, { minItems: 1, maxItems: 8 })),
     worker: Type.Optional(WorkerEnvironmentMetadataSchema),
-    preparation: Type.Optional(
-      closedObject({
-        purpose: Type.Union([Type.Literal("reserve"), Type.Literal("build")]),
-        key: NonEmptyString,
-        details: Type.Optional(
-          closedObject({
-            demandAtMs: Type.Integer({ minimum: 0 }),
-            expiresAtMs: Type.Integer({ minimum: 0 }),
-            consumedAtMs: Type.Union([Type.Integer({ minimum: 0 }), Type.Null()]),
-            project: Type.Optional(
-              closedObject({ label: Type.Optional(NonEmptyString), baseCommit: NonEmptyString }),
-            ),
-          }),
-        ),
-      }),
-    ),
   };
 }
 
@@ -227,30 +219,6 @@ export const EnvironmentsListParamsSchema = closedObject({
   runtimeId: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
   projection: Type.Optional(Type.Literal("profiles")),
   includeDesktopSetup: Type.Optional(Type.Boolean()),
-  includePreparedDetails: Type.Optional(Type.Boolean()),
-});
-
-/** Provider-authored machine choice for one configured worker profile. */
-export const WorkerMachineOptionSchema = closedObject({
-  id: Type.String({ minLength: 1, maxLength: 128 }),
-  label: Type.String({ minLength: 1, maxLength: 128 }),
-  cpu: Type.Optional(Type.Integer({ minimum: 1, maximum: 65_536 })),
-  memoryGb: Type.Optional(Type.Integer({ minimum: 1, maximum: 65_536 })),
-  default: Type.Optional(Type.Boolean()),
-  os: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
-});
-
-export const WorkerMachineOptionsSchema = Type.Array(WorkerMachineOptionSchema, {
-  minItems: 1,
-  maxItems: 64,
-});
-
-/** Provider-authored operating system choice for one configured worker profile. */
-export const WorkerOperatingSystemSchema = closedObject({
-  id: Type.String({ minLength: 1, maxLength: 64 }),
-  label: Type.String({ minLength: 1, maxLength: 64 }),
-  default: Type.Optional(Type.Boolean()),
-  disabledReason: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
 });
 
 /** Placement execution modes shared by runtime requirements and worker providers. */
@@ -264,10 +232,6 @@ const WorkerEnvironmentProfileSummarySchema = closedObject({
   id: NonEmptyString,
   providerId: NonEmptyString,
   inference: Type.Optional(Type.Literal("worker")),
-  readyWorkers: Type.Optional(Type.Integer({ minimum: 0 })),
-  providerDisplayId: Type.Optional(
-    Type.String({ pattern: "^[a-z][a-z0-9-]{0,63}(?![\\s\\S])", maxLength: 64 }),
-  ),
   trust: Type.Optional(EnvironmentTrustSchema),
   executionMode: Type.Optional(WorkerExecutionModeSchema),
   executionModes: Type.Optional(
@@ -275,10 +239,6 @@ const WorkerEnvironmentProfileSummarySchema = closedObject({
       Type.Tuple([WorkerExecutionModeSchema]),
       Type.Tuple([Type.Literal("worker-turn"), Type.Literal("remote-exec")]),
     ]),
-  ),
-  machines: Type.Optional(WorkerMachineOptionsSchema),
-  operatingSystems: Type.Optional(
-    Type.Array(WorkerOperatingSystemSchema, { minItems: 1, maxItems: 8 }),
   ),
 });
 
@@ -289,18 +249,11 @@ export const EnvironmentsListResultSchema = closedObject({
   requiredProfile: Type.Optional(NonEmptyString),
   environments: Type.Array(EnvironmentSummarySchema),
   profiles: Type.Optional(Type.Array(WorkerEnvironmentProfileSummarySchema)),
-  preparedPool: Type.Optional(
-    closedObject({
-      maxTotal: Type.Integer({ minimum: 0 }),
-      reservedEnvironmentIds: Type.Array(NonEmptyString, { uniqueItems: true }),
-    }),
-  ),
 });
 
 /** Status lookup request for one environment id. */
 export const EnvironmentsStatusParamsSchema = closedObject({
   environmentId: NonEmptyString,
-  includePreparedDetails: Type.Optional(Type.Boolean()),
 });
 
 /** Status lookup result for one environment id. */
@@ -315,18 +268,6 @@ export const EnvironmentsCreateParamsSchema = closedObject({
 /** Create result uses the same public summary shape as list and status. */
 export const EnvironmentsCreateResultSchema = closedObject(createEnvironmentSummaryProperties());
 
-/** Prepares a configured profile's local Git project without dispatching a session. */
-export const EnvironmentsPrepareParamsSchema = closedObject({
-  profileId: NonEmptyString,
-  projectPath: NonEmptyString,
-});
-
-export const EnvironmentsPrepareResultSchema = closedObject({
-  environmentId: NonEmptyString,
-  preparationKey: NonEmptyString,
-  reused: Type.Boolean(),
-});
-
 /** Destroys one durable worker environment by its gateway-owned id. */
 export const EnvironmentsDestroyParamsSchema = closedObject({
   environmentId: NonEmptyString,
@@ -336,57 +277,20 @@ export const EnvironmentsDestroyParamsSchema = closedObject({
 /** Destroy result exposes the terminal worker lifecycle state. */
 export const EnvironmentsDestroyResultSchema = closedObject(createEnvironmentSummaryProperties());
 
-export const WorkerDesktopObserveParamsSchema = closedObject({
-  environmentId: NonEmptyString,
-  control: Type.Optional(Type.Boolean()),
-});
-
-// Transport is an open enum-string; future transports may add split streamPath/controlPath
-// fields additively without replacing the phase-1 RFB contract.
-export const WorkerDesktopObserveResultSchema = closedObject({
-  transport: Type.String({ enum: ["rfb"] }),
-  wsPath: NonEmptyString,
-  expiresAtMs: Type.Integer({ minimum: 0 }),
-  control: Type.Boolean(),
-  // Permission to request resizing, not proof that the RFB server supports it.
-  canResize: Type.Optional(Type.Boolean()),
-  vncPassword: Type.Optional(NonEmptyString),
-});
-
-export const WorkerDesktopLaunchParamsSchema = closedObject({
-  environmentId: NonEmptyString,
-  app: WorkerDesktopAppIdSchema,
-});
-
-export const WorkerDesktopLaunchResultSchema = closedObject({
-  app: WorkerDesktopAppIdSchema,
-  status: Type.Literal("ready"),
-});
-
-export type EnvironmentStatus = Static<typeof EnvironmentStatusSchema>;
-export type WorkerEnvironmentState = Static<typeof WorkerEnvironmentStateSchema>;
-export type WorkerTunnelStatus = Static<typeof WorkerTunnelStatusSchema>;
-export type WorkerDesktopAppId = Static<typeof WorkerDesktopAppIdSchema>;
 export type RuntimeTargetIssue = Static<typeof RuntimeTargetIssueSchema>;
 export type WorkerSlotSummary = Static<typeof WorkerSlotSummarySchema>;
 export type RequiredNodeCommandState = Static<typeof RequiredNodeCommandStateSchema>;
 export type RequiredNodeCommand = Static<typeof RequiredNodeCommandSchema>;
+export type WorkerEnvironmentState = Static<typeof WorkerEnvironmentStateSchema>;
+export type WorkerTunnelStatus = Static<typeof WorkerTunnelStatusSchema>;
 export type WorkerEnvironmentMetadata = Static<typeof WorkerEnvironmentMetadataSchema>;
-export type WorkerMachineOption = Static<typeof WorkerMachineOptionSchema>;
-export type WorkerOperatingSystem = Static<typeof WorkerOperatingSystemSchema>;
 export type WorkerExecutionMode = Static<typeof WorkerExecutionModeSchema>;
 export type EnvironmentSummary = Static<typeof EnvironmentSummarySchema>;
 export type EnvironmentsCreateParams = Static<typeof EnvironmentsCreateParamsSchema>;
 export type EnvironmentsCreateResult = Static<typeof EnvironmentsCreateResultSchema>;
-export type EnvironmentsPrepareParams = Static<typeof EnvironmentsPrepareParamsSchema>;
-export type EnvironmentsPrepareResult = Static<typeof EnvironmentsPrepareResultSchema>;
 export type EnvironmentsDestroyParams = Static<typeof EnvironmentsDestroyParamsSchema>;
 export type EnvironmentsDestroyResult = Static<typeof EnvironmentsDestroyResultSchema>;
 export type EnvironmentsListParams = Static<typeof EnvironmentsListParamsSchema>;
 export type EnvironmentsListResult = Static<typeof EnvironmentsListResultSchema>;
 export type EnvironmentsStatusParams = Static<typeof EnvironmentsStatusParamsSchema>;
 export type EnvironmentsStatusResult = Static<typeof EnvironmentsStatusResultSchema>;
-export type WorkerDesktopObserveParams = Static<typeof WorkerDesktopObserveParamsSchema>;
-export type WorkerDesktopObserveResult = Static<typeof WorkerDesktopObserveResultSchema>;
-export type WorkerDesktopLaunchParams = Static<typeof WorkerDesktopLaunchParamsSchema>;
-export type WorkerDesktopLaunchResult = Static<typeof WorkerDesktopLaunchResultSchema>;

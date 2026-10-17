@@ -628,40 +628,6 @@ reports that outcome as `uncertain`; it must not be treated as proof of cancella
 or permission to retry with a new request ID. Pre-dispatch authority checks and
 the adapter's final page-session and URL checks remain required.
 
-## Worker provider allocation authority
-
-Worker runtime and enrollment grants may include `nodeBootstrap.linuxToolchainSetup`, a core-owned POSIX script that prepares a supported Node before invoking bootstrap JavaScript. Providers execute it only for Linux targets, using the same operation authority and command budget as bootstrap. It carries no credentials. macOS and Windows providers retain their image-provided Node contract.
-
-The Gateway supplies `assertCurrent()` in the options passed to worker providers'
-`provision` and `prepareProvision` methods. This required runtime callback binds
-the operation to the live environment owner and any requesting run. Invoke it
-after awaited preparation and immediately before an allocation, checkpoint fork,
-or adoption. A non-aborted `signal` does not prove that the caller still has
-authority. Providers with project preparation must compose this callback with
-`project.assertCurrent()` so both owners remain current.
-
-The callback belongs to the provision attempt. Carry it into a returned prepared
-allocation closure, but never serialize it or retain it in a durable or reusable
-preparation record. After the attempt closes, the callback rejects retained work.
-Teardown keeps its existing cleanup authority and must still settle an owned
-lease when the requesting run has ended.
-
-Project preparation can return optional `recipePreparation` diagnostics with the
-recipe source, ignored-property note, phase durations, and a failure reason plus
-an output tail of at most 16 KiB. The optional transport callback
-`recordRecipePreparation` records diagnostics before a declared recipe rejects.
-These records contain neither command definitions nor environment values.
-An optional `captureSkipped` reason means detected setup failed best effort:
-continue enrollment, but suppress checkpoint capture for that allocation,
-including later teardown. Keep these recorded facts under the same live
-provisioning authority; they do not grant new allocation or execution authority.
-
-The legacy optional parameter shape remains source-compatible until the next
-declared breaking Plugin SDK revision. It is not a capability-free runtime path:
-current hosts supply this assertion, and bundled providers reject missing
-allocation authority before performing work. An older host must be updated to
-use these providers.
-
 ## Harness execution identity
 
 The harness host's closure-bound `preparedEnvironment()` returns non-secret
@@ -753,56 +719,6 @@ Choice, ordered Score, and Boolean-probability batches. Retained handles reject
 after consumer retirement. See [decision models](/plugins/sdk-overview/capabilities#decision-models-contract-version-1)
 for provider selection, lifecycle, failure handling, limits, and diagnostics.
 
-## Setup secret egress
-
-Worker providers can optionally implement `runSetupCommand` to run repository
-binding lifecycle commands over their owned lease transport. The host supplies
-the prepared workspace and HOME, a script factory accepting only the bounded
-remote environment, and a live attached-environment/repository authority guard.
-The provider rechecks that guard after awaits and immediately before launch.
-Returning `undefined` retains the normal node tunnel; a protected transport error
-must reject instead of falling back. Project preparation's script factory accepts
-the same bounded prepared environment. Secrets and host proxy credentials remain
-owned by the setup-egress capability below.
-
-The private official-plugin entrypoint `openclaw/plugin-sdk/secret-egress-runtime`
-exports `withSetupSecretEgress(options, run)` alongside `withConfiguredModelEgress`.
-Both use the same worker-owned, revocable job grant lifecycle. Setup options
-require a job-owned `AbortSignal` and an explicit map of environment names to
-shared-store SecretRefs:
-
-```ts
-const { withSetupSecretEgress } = await import("openclaw/plugin-sdk/secret-egress-runtime");
-await withSetupSecretEgress(
-  {
-    signal: job.signal,
-    secrets: {
-      REGISTRY_TOKEN: { source: "store", provider: "default", id: "REGISTRY_TOKEN" },
-    },
-  },
-  async ({ remoteEnv, caBundle, hostEnv, revoke }) => {
-    await bridge.run({ remoteEnv, caBundle, hostEnv, revoke });
-  },
-);
-```
-
-The host bridge must keep `hostEnv` on the credential-owning host. It contains
-authenticated upstream proxy URLs and local CA paths. Only `remoteEnv` (sealed
-sentinels) and `caBundle` (public trust contents) may cross to the remote job;
-the bridge installs remote proxy and CA settings itself. Store values and their
-allowed hosts are selected together through the shared-state read worker, and
-only selected protected secrets are registered. Missing and agent-readable
-entries fail before the callback runs.
-
-Register process termination listeners inside the callback, after the grant's
-revocation listener is installed. Abort the job signal before termination, or
-call `revoke()` synchronously first. Retained credentials stop authorizing egress
-after cancellation, explicit revocation, callback settlement, or worker failure.
-The callback must join its process and bridge cleanup before returning. The
-helper then stops the worker and removes temporary CA files; it does not manage
-remote processes itself. This capability adds no profile keys or stored-data
-migration.
-
 <a id="api-runtime-tasks" />
 
 The former Tasks runtime is no longer available. See [removed Tasks and TaskFlow APIs](/plugins/sdk-migration/removed-surfaces#tasks-and-taskflow-apis-removed) for native-owner alternatives.
@@ -823,10 +739,10 @@ including explicit refreshes. Keep HTTP validators with that value so eviction,
 clear, and failed refreshes retire the representation and its validators together.
 The loader must treat the previous value as immutable.
 
-### Worker provisioning status
+<a id="worker-provider-allocation-authority" />
+<a id="setup-secret-egress" />
+<a id="worker-provisioning-status" />
 
-Worker providers can call `options.reportStartStatus` during provisioning to publish
-attempt-scoped snapshot or cold-start facts. Environment status and session
-placement expose these facts as `startStatus`; the host closes the callback when
-the attempt finishes or loses authority. Report capture progress only when capture
-is claimed. These display facts do not change allocation or enrollment ownership.
+## Retired plugin worker integration
+
+Plugin worker provisioning, its setup-secret grants, machine catalogs, and prepared images have been removed. These former section links are retained for older references. See [retired plugin provisioning](/gateway/cloud-workers#retired-plugin-provisioning) for the remaining paired-device and standalone sandbox options.

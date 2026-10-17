@@ -11,20 +11,12 @@ import {
   recordChildProcessSpawn,
   withGitProcessOperation,
 } from "../../process/spawn-diagnostics.js";
-import { workerSshCommandOptions } from "./ssh.js";
+import { workerCommandOptions } from "./worker-command-options.js";
 import type { WorkspaceInventoryWriteCommand } from "./workspace-inventory-computation.js";
 import { workspaceInventoryError } from "./workspace-inventory-error.js";
 
 const STDERR_LIMIT = 4_096;
 const COMMAND_KILL_GRACE_MS = 300;
-
-/** Exact rsync exemptions, prepared once without walking input file contents. */
-export async function readWorkspaceStagedInputDirectories(rootDir: string): Promise<string[]> {
-  return await runGitWorkerOperation(
-    { type: "workspace.inventory.staged-directories", input: { rootDir } },
-    { inputBytes: Buffer.byteLength(rootDir) },
-  );
-}
 
 export async function readWorkspaceTransferPaths(
   filePath: string,
@@ -63,22 +55,6 @@ async function writeInventory(
   }
 }
 
-export async function filterExistingGitTransferList(params: {
-  gitRoot: string;
-  preparedListPath: string;
-  outputPath: string;
-  signal?: AbortSignal;
-}): Promise<string> {
-  return await writeInventory(
-    {
-      type: "workspace.inventory.existing",
-      input: { gitRoot: params.gitRoot, preparedListPath: params.preparedListPath },
-    },
-    params.outputPath,
-    params.signal,
-  );
-}
-
 export async function runWorkspaceInventoryCommandToFile(params: {
   argv: string[];
   inputPath?: string;
@@ -107,7 +83,7 @@ export async function runWorkspaceInventoryCommandToFile(params: {
     input = params.inputPath ? await fs.open(params.inputPath, "r") : undefined;
     params.signal.throwIfAborted();
     const boundedOutput = params.maxOutputBytes !== undefined;
-    const env = params.baseEnv ?? workerSshCommandOptions({ timeoutMs: params.timeoutMs }).baseEnv;
+    const env = params.baseEnv ?? workerCommandOptions({ timeoutMs: params.timeoutMs }).baseEnv;
     const child = spawn(command, args, {
       env: command === "git" ? gitReadOnlyEnvironment(args, env) : env,
       stdio: [input?.fd ?? "ignore", boundedOutput ? "pipe" : output.fd, "pipe"],

@@ -6,8 +6,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
 import { rawDataToString } from "@openclaw/gateway-client/websocket-data";
+import { expectDefined } from "@openclaw/normalization-core/expect";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
-import { Type } from "typebox";
 import { Value } from "typebox/value";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
@@ -57,9 +57,7 @@ import {
 import { createOperationalRunInstanceRef } from "../agents/admitted-run-context.js";
 import { listRunningSessions, waitForExecScope } from "../agents/bash-process-registry.js";
 import { runExecProcess } from "../agents/bash-tools.exec-runtime.js";
-import { hasModelFallbackStop } from "../agents/failover-error.js";
 import { prepareCoreToolPolicy } from "../agents/prepared-tool-surface.js";
-import * as agentSessionSdk from "../agents/sessions/sdk.js";
 import { createToolSurfacePresentationForTest } from "../agents/tool-surface-plan.test-support.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { formatErrorMessage } from "../infra/errors.js";
@@ -67,6 +65,7 @@ import { saveExecApprovals } from "../infra/exec-approvals-store.test-support.js
 import { runExec } from "../process/exec.js";
 import { getProcessSupervisor } from "../process/supervisor/index.js";
 import { withEnvAsync } from "../test-utils/env.js";
+import * as workerComputerRuntime from "./computer-runtime.js";
 import * as workerTranscriptRuntime from "./embedded-agent-transcript.runtime.js";
 import {
   buildWorkerConnectParams,
@@ -100,25 +99,6 @@ import { registerWorkerReplayWindowTests } from "./worker-runtime-replay.suite.j
 import { createWorkerToolSurfaceForTest } from "./worker-tool-surface.test-support.js";
 import { createWorkerRuntimeEnvironment, runWorkerDescriptor } from "./worker.runtime.js";
 
-const browserRuntimeMocks = vi.hoisted(() => ({
-  createWorkerBrowserToolRuntime: vi.fn(),
-  dispose: vi.fn(),
-}));
-
-vi.mock("./browser-runtime.js", () => {
-  browserRuntimeMocks.createWorkerBrowserToolRuntime.mockImplementation(async () => ({
-    tool: {
-      name: "browser",
-      label: "Browser",
-      description: "Control the attached worker browser.",
-      parameters: Type.Object({}),
-      execute: async () => ({ content: [{ type: "text", text: "ok" }] }),
-    },
-    dispose: browserRuntimeMocks.dispose,
-  }));
-  return { createWorkerBrowserToolRuntime: browserRuntimeMocks.createWorkerBrowserToolRuntime };
-});
-
 // Compile the real lazy runtimes during collection, not inside the first turn.
 // Cold imports must not consume these integration cases' lifecycle deadlines.
 await Promise.all([import("./embedded-agent.runtime.js"), import("../agents/bash-tools.js")]);
@@ -137,10 +117,7 @@ const MODEL_REF = { provider: "openai", model: "gpt-5.6-luna" } as const;
 const BUNDLE_HASH = Array.from({ length: 64 }, () => "a").join("");
 const CREDENTIAL = ["worker", "fixture", "admission"].join("-");
 const WORKER_INFERENCE_START_TIMEOUT_MS = 90_000;
-const BROWSER = {
-  cdpUrl: "http://127.0.0.1:9222",
-  launcherPath: "/usr/local/bin/openclaw-worker-browser",
-};
+
 function computerDescriptor(): NonNullable<WorkerLaunchDescriptor["assignment"]["computer"]> {
   return {
     nodeId: "worker-desktop",
@@ -261,7 +238,6 @@ type FakeGatewayOptions = {
   heartbeatIntervalMs?: number;
   computerSnapshot?: string;
   computerCleanupFailure?: boolean;
-  onComputerClose?: () => void;
 };
 
 function assistantMessage(
@@ -391,9 +367,6 @@ class FakeWorkerGateway {
         this.computerRequests.push(parsed.params);
         const closing = parsed.params.command === "computer.act";
         this.applicationOrder.push(closing ? "computer:close" : "computer:snapshot");
-        if (closing) {
-          this.options.onComputerClose?.();
-        }
         if (this.options.computerCleanupFailure && closing) {
           this.send(socket, {
             type: "res",
@@ -961,8 +934,6 @@ function managedCommand() {
 }
 
 afterEach(async () => {
-  browserRuntimeMocks.createWorkerBrowserToolRuntime.mockClear();
-  browserRuntimeMocks.dispose.mockClear();
   for (const gateway of gateways.splice(0)) {
     await gateway.stop();
   }
@@ -1048,63 +1019,69 @@ registerWorkerPromptTests({ setup, modelRef: MODEL_REF });
 
 registerWorkerGatewayToolAvailabilityTests({ setup });
 
-it("settles Browser, computer, and transcript owners concurrently before finishing", async () => {
-  const browserRelease = createDeferred();
-  let browserPending = false;
-  let overlappingComputerClose = false;
+it("settles computer and transcript owners concurrently before finishing", async ({ signal }) => {
+  const computerRelease = createDeferred();
+  let computerPending = false;
   let overlappingTranscriptSettlement = false;
   const { gateway, launch } = await setup({
     inferencePlans: ["computer", "text"],
     computerSnapshot: createSolidPngBuffer(512, 512, { r: 0, g: 128, b: 255 }).toString("base64"),
-    onComputerClose: () => {
-      overlappingComputerClose = browserPending;
-      browserRelease.resolve();
-    },
   });
-  browserRuntimeMocks.dispose.mockImplementationOnce(async () => {
-    browserPending = true;
-    await browserRelease.promise;
-    browserPending = false;
-    gateway.applicationOrder.push("browser:disposed");
-  });
+  const createComputer = workerComputerRuntime.createWorkerComputerTool;
+  const computerSpy = vi
+    .spyOn(workerComputerRuntime, "createWorkerComputerTool")
+    .mockImplementation((params) =>
+      createComputer({
+        ...params,
+        registerRunCleanup: (cleanup) =>
+          expectDefined(
+            params.registerRunCleanup,
+            "worker computer cleanup owner",
+          )(async (reason) => {
+            computerPending = true;
+            await computerRelease.promise;
+            try {
+              await cleanup(reason);
+            } finally {
+              computerPending = false;
+            }
+          }),
+      }),
+    );
   const createTranscript = workerTranscriptRuntime.createWorkerTranscriptRuntime;
   const transcriptSpy = vi
     .spyOn(workerTranscriptRuntime, "createWorkerTranscriptRuntime")
-    .mockImplementation((client, signal) => {
-      const runtime = createTranscript(client, signal);
+    .mockImplementation((client, abortSignal) => {
+      const runtime = createTranscript(client, abortSignal);
       const settle = runtime.withSessionWriteSettlement;
       runtime.withSessionWriteSettlement = (operation) => {
-        overlappingTranscriptSettlement ||= browserPending;
+        if (computerPending) {
+          overlappingTranscriptSettlement = true;
+          computerRelease.resolve();
+        }
         return settle(operation);
       };
       return runtime;
     });
-  launch.assignment.toolAuthority.allowedToolNames = ["browser", "computer"];
-  launch.assignment.browser = { ...BROWSER };
+  launch.assignment.toolAuthority.allowedToolNames = ["computer"];
   launch.assignment.computer = computerDescriptor();
+  const running = runWorkerDescriptor(launch);
   try {
-    await expect(runWorkerDescriptor(launch)).resolves.toMatchObject({ status: "completed" });
+    await expect(withinTest(running, signal)).resolves.toMatchObject({ status: "completed" });
   } finally {
-    browserRelease.resolve();
+    computerRelease.resolve();
+    await running.catch(() => undefined);
     transcriptSpy.mockRestore();
+    computerSpy.mockRestore();
   }
 
   expect(gateway.inferenceRequests[0]?.context.tools?.map((tool) => tool.name)).toEqual([
-    "browser",
     "computer",
   ]);
-  expect(browserRuntimeMocks.createWorkerBrowserToolRuntime).toHaveBeenCalledWith({
-    descriptor: launch.assignment.browser,
-    sessionKey: `agent:worker-agent:worker:${SESSION_ID}`,
-    stateDir: expect.any(String),
-    workspaceDir: await realpath(launch.assignment.workspaceDir),
-  });
-  expect(browserRuntimeMocks.dispose).toHaveBeenCalledOnce();
-  expect(overlappingComputerClose).toBe(true);
   expect(overlappingTranscriptSettlement).toBe(true);
-  expect(gateway.applicationOrder.indexOf("browser:disposed")).toBeLessThan(
-    gateway.applicationOrder.indexOf("live:lifecycle:finishing"),
-  );
+  expect(
+    gateway.computerRequests.filter((request) => request.command === "computer.act"),
+  ).toHaveLength(1);
   expect(gateway.applicationOrder.indexOf("computer:close")).toBeLessThan(
     gateway.applicationOrder.indexOf("live:lifecycle:finishing"),
   );
@@ -1112,47 +1089,6 @@ it("settles Browser, computer, and transcript owners concurrently before finishi
     gateway.applicationOrder.findLastIndex((entry) => entry.startsWith("transcript:")),
   ).toBeLessThan(gateway.applicationOrder.indexOf("live:lifecycle:finishing"));
 });
-
-it.each(["error", "setup"] as const)(
-  "retains browser disposal failure together with the %s outcome",
-  async (outcome) => {
-    const { gateway, launch } = await setup({
-      inferencePlans: [outcome === "error" ? "error" : "text"],
-    });
-    launch.assignment.toolAuthority.allowedToolNames = ["browser"];
-    launch.assignment.browser = { ...BROWSER };
-    const createSession =
-      outcome === "setup"
-        ? vi
-            .spyOn(agentSessionSdk, "createAgentSession")
-            .mockRejectedValueOnce(new Error("fixture setup failed"))
-        : undefined;
-    browserRuntimeMocks.dispose.mockRejectedValueOnce(new Error("fixture browser cleanup failed"));
-    try {
-      if (outcome === "setup") {
-        const error = await runWorkerDescriptor(launch).catch((cause: unknown) => cause);
-        expect(formatErrorMessage(error)).toContain("fixture setup failed");
-        expect(formatErrorMessage(error)).toContain("fixture browser cleanup failed");
-        expect(hasModelFallbackStop(error)).toBe(true);
-        expect(gateway.liveEventRequests).toHaveLength(0);
-      } else {
-        await expect(runWorkerDescriptor(launch)).resolves.toMatchObject({ status: "failed" });
-        expect(gateway.liveEventRequests.at(-1)?.event.payload).toMatchObject({
-          phase: "finishing",
-          stopReason: "error",
-          error: expect.stringContaining("fixture browser cleanup failed"),
-          replayInvalid: true,
-        });
-        expect(gateway.liveEventRequests.at(-1)?.event.payload).toMatchObject({
-          error: expect.stringContaining("fixture provider failed"),
-        });
-      }
-      expect(browserRuntimeMocks.dispose).toHaveBeenCalledOnce();
-    } finally {
-      createSession?.mockRestore();
-    }
-  },
-);
 
 it.each(["error", "cancelled"] as const)(
   "keeps desktop images through RPC, transcript, and inference before failed cleanup (%s)",
@@ -1218,27 +1154,6 @@ it.each(["error", "cancelled"] as const)(
     }
   },
 );
-
-it.each([
-  { authority: ["browser"] as const, browser: undefined },
-  {
-    authority: ["read"] as const,
-    browser: BROWSER,
-  },
-])("fails before inference when Browser authority and descriptor disagree", async (testCase) => {
-  const { gateway, launch } = await setup();
-  launch.assignment.toolAuthority.allowedToolNames = [...testCase.authority];
-  if (testCase.browser) {
-    launch.assignment.browser = testCase.browser;
-  } else {
-    delete launch.assignment.browser;
-  }
-
-  await expect(runWorkerDescriptor(launch)).rejects.toThrow(
-    "Worker Browser authority and launch descriptor must be provided together",
-  );
-  expect(gateway.inferenceRequests).toHaveLength(0);
-});
 
 registerWorkerGatewayToolRpcTests({ setup });
 

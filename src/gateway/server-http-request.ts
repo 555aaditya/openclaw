@@ -37,8 +37,6 @@ import {
   classifyNodeWorkerBundleTransferPath,
   classifyNodeWorkspaceTransferPath,
   classifyWorkerGatewayPath,
-  classifyWorkerBootstrapArtifactTransferPath,
-  WORKER_BOOTSTRAP_ARTIFACT_TRANSFER_PATH,
 } from "./gateway-http-route-contracts.js";
 import type { authorizePluginGatewayHttpRequestOrReply } from "./http-auth-utils.js";
 import {
@@ -383,17 +381,6 @@ export function createGatewayHttpRequestHandler(
       addAdmittedStage(scopedRequestPath.startsWith("/__openclaw__/native-hook"), async () =>
         (await getNativeHookRelayModule()).handleNativeHookRelayHttpRequest(transferRequest),
       );
-      addAdmittedStage(
-        classifyWorkerBootstrapArtifactTransferPath(scopedRequestPath) !== "outside",
-        () =>
-          handleArtifactTransferHttpRequest({
-            classifyPath: classifyWorkerBootstrapArtifactTransferPath,
-            routePrefix: `${WORKER_BOOTSTRAP_ARTIFACT_TRANSFER_PATH}/artifacts/`,
-            ...transferRequest,
-            callback: opts.handleWorkerBootstrapArtifactTransferRequest,
-          }),
-      );
-
       addAdmittedStage(classifyNodeWorkerBundleTransferPath(scopedRequestPath) !== "outside", () =>
         handleArtifactTransferHttpRequest({
           classifyPath: classifyNodeWorkerBundleTransferPath,

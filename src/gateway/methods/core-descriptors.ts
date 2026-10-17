@@ -7,9 +7,6 @@ const SIDECAR_CONTROL_PLANE_WRITE = { startup: true, controlPlaneWrite: true } a
 const UNADVERTISED = { advertise: false } as const;
 const OBSERVATION = { lifetime: "observation" } as const;
 const SESSION_WRITE = { sessionAccess: { mode: "write" } } as const;
-const PORTAL_SESSION_WRITE = {
-  sessionAccess: { mode: "write", allowOwnSessionScope: true, requiredTool: "portal" },
-} as const;
 
 // This is the canonical core method policy table: every core handler must appear here so
 // listing, authorization, startup availability, and write throttling stay in sync.
@@ -510,11 +507,9 @@ export const CORE_GATEWAY_METHOD_SPECS = [
   // Update campaign mutations share update.run's admin and control-plane write policy.
   ["update.hold", "update", "operator.admin", "2026.8", CONTROL_PLANE_WRITE],
   ["sessions.catalog.startTerminal", "session-catalog", "operator.admin", "2026.8"],
-  ["worker.desktop.observe", "environments", "operator.admin", "2026.8", { startup: true }],
   ["projects.list", "projects", "operator.read", "2026.8"],
   ["projects.register", "projects", "operator.admin", "2026.8"],
   ["projects.remove", "projects", "operator.admin", "2026.8"],
-  ["worker.desktop.launch", "environments", "operator.admin", "2026.8", { startup: true }],
   // Store CRUD shares the auxiliary secrets runtime owner and appends for stable indices.
   ["secrets.store.list", null, "operator.admin", "2026.8"],
   ["secrets.store.set", null, "operator.admin", "2026.8", CONTROL_PLANE_WRITE],
@@ -530,7 +525,6 @@ export const CORE_GATEWAY_METHOD_SPECS = [
     { description: "Search GitHub repositories that can be cloned as managed projects." },
   ],
   ["desktop.observe", "environments", "operator.admin", "2026.8", { startup: true }],
-  ["desktop.launch", "environments", "operator.admin", "2026.8", { startup: true }],
   ["device.scopes.requestUpgrade", "devices", "operator.read", "2026.8"],
   ["device.scopes.waitUpgrade", "devices", "operator.read", "2026.8", OBSERVATION],
   ["portal.list", "portals", "operator.read", "2026.8"],
@@ -622,7 +616,6 @@ export const CORE_GATEWAY_METHOD_SPECS = [
   ["plugins.catalog.browse", "plugins", "operator.read", "2026.9"],
   ["plugins.catalog.categories", "plugins", "operator.read", "2026.9"],
   ["plugins.catalog.get", "plugins", "operator.read", "2026.9"],
-  ["environments.prepare", "environments", "operator.admin", "2026.9", SIDECAR_CONTROL_PLANE_WRITE],
   ["models.authRefresh", "models-auth-status", "operator.admin", "2026.9", CONTROL_PLANE_WRITE],
   ["models.authLogin", "models-auth-login", "operator.admin", "2026.9", CONTROL_PLANE_WRITE],
   ["models.authSetApiKey", "models-auth-status", "operator.admin", "2026.9", CONTROL_PLANE_WRITE],
@@ -665,9 +658,6 @@ export const CORE_GATEWAY_METHOD_SPECS = [
   // Self-service personal instructions never authorize shared workspace writes.
   ["users.personalFile.get", "users", "operator.read", "2026.9"],
   ["users.personalFile.set", "users", "operator.read", "2026.9"],
-  ["portal.session.list", "portals", "operator.write", "2026.9", PORTAL_SESSION_WRITE],
-  ["portal.session.open", "portals", "operator.write", "2026.9", PORTAL_SESSION_WRITE],
-  ["portal.session.close", "portals", "operator.write", "2026.9", PORTAL_SESSION_WRITE],
   ["cron.history", "cron", "operator.read", "2026.9"],
   ["presence.activity", "system", "operator.read", "2026.9"],
   ["presence.query", "presence", "operator.read", "2026.9"],

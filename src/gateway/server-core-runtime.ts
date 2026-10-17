@@ -407,11 +407,7 @@ export async function startGatewayCoreRuntime(input: {
             !descriptor.name.startsWith("environments.session."))) &&
         (workerPlacementControlAvailable || descriptor.name !== "sessions.dispatch") &&
         (workerPlacementControlAvailable ||
-          (descriptor.name !== "sessions.reclaim" && descriptor.name !== "sessions.move")) &&
-        (workerEnvironmentService ||
-          (descriptor.name !== "desktop.launch" &&
-            descriptor.name !== "worker.desktop.observe" &&
-            descriptor.name !== "worker.desktop.launch")),
+          (descriptor.name !== "sessions.reclaim" && descriptor.name !== "sessions.move")),
     );
     return createGatewayMethodRegistry(
       [

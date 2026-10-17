@@ -19,19 +19,24 @@ import type { WorkerSessionPlacementGate } from "./placement-worker-gate.js";
 import { WorkerSessionAlreadyAttachedError } from "./session-attachment.js";
 import type { WorkerEnvironmentState } from "./state.js";
 import type {
-  PreparedEnvironmentPlacementBinding,
   WorkerEnvironmentRecord,
   WorkerEnvironmentStore,
   WorkerEnvironmentTransitionPatch,
 } from "./store.js";
-import type { WorkerTunnelManager } from "./tunnel.js";
+import type { WorkerTunnelStopReason } from "./tunnel-contract.js";
 
 type WorkerCredentialBrokerOptions = {
   store: WorkerEnvironmentStore;
   prepareInstallation: (
     install: WorkerInstallationArtifact["install"],
   ) => Promise<WorkerInstallationArtifact>;
-  tunnelManager?: Pick<WorkerTunnelManager, "stop">;
+  tunnelManager?: {
+    stop(
+      environmentId: string,
+      ownerEpoch?: number,
+      reason?: WorkerTunnelStopReason,
+    ): Promise<void>;
+  };
   workerCredentialTtlMs?: number;
   generateWorkerCredential?: (bytes: number) => string;
   liveEvents?: Pick<WorkerLiveEventReceiver, "rotateCredential">;
@@ -220,7 +225,6 @@ export function createWorkerCredentialBroker(options: WorkerCredentialBrokerOpti
   const attachSession = async (
     request: WorkerCredentialBinding & {
       sessionId: string;
-      placementBinding?: PreparedEnvironmentPlacementBinding;
     },
   ): Promise<MintedWorkerCredential> => {
     if (options.isStopping()) {
@@ -257,7 +261,6 @@ export function createWorkerCredentialBroker(options: WorkerCredentialBrokerOpti
           from: current.state,
           to: "attached",
           expectedOwnerEpoch: request.ownerEpoch,
-          placementBinding: request.placementBinding,
           patch: {
             attachedSessionIds: [request.sessionId],
             credential: {

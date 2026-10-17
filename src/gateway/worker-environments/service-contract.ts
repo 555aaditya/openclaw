@@ -1,24 +1,12 @@
 import { createHash } from "node:crypto";
 import type {
-  EnvironmentsPrepareParams,
-  EnvironmentsPrepareResult,
   SessionPlacementMachine,
   SessionsReclaimParams,
-  WorkerDesktopLaunchParams,
-  WorkerDesktopLaunchResult,
-  WorkerDesktopObserveResult as ProtocolWorkerDesktopObserveResult,
 } from "../../../packages/gateway-protocol/src/index.js";
 import type { DevicePlacementRequirement } from "../../agents/harness/types.js";
 import type { RequiredSessionPlacementAdmission } from "../../agents/session-placement-admission.types.js";
 import type { SessionSourceAssertion } from "../../config/sessions/session-source-authority.js";
-import type {
-  WorkerDesktopApp,
-  WorkerMachineOption,
-  WorkerOperatingSystem,
-  WorkerProfile,
-} from "../../plugins/capability-provider.types.js";
-import type { DesktopObserveRequester } from "../desktop/observe-requester.js";
-import type { WorkerEnvironmentPreparation } from "./environment-record.js";
+import type { WorkerProfile } from "../../plugins/capability-provider.types.js";
 import type { WorkerPlacementAuthorization } from "./placement-authorization.js";
 import type {
   WorkerPlacementMoveSource,
@@ -73,19 +61,8 @@ export type WorkerEnvironmentServiceRecord = {
   idleSinceAtMs: number | null;
   destroyRequestedAtMs: number | null;
   attachedSessionIds: readonly string[];
-  desktopAvailable: boolean;
-  desktopApps: readonly WorkerDesktopApp["id"][];
   tunnelStatus: WorkerTunnelStatus;
-  preparation?:
-    | (WorkerEnvironmentPreparation & { project?: { label?: string; baseCommit: string } })
-    | null;
   error?: string;
-};
-
-export type { WorkerDesktopLaunchResult } from "../../../packages/gateway-protocol/src/index.js";
-
-export type WorkerDesktopObserveResult = Omit<ProtocolWorkerDesktopObserveResult, "transport"> & {
-  transport: "rfb";
 };
 
 /** Request-facing lifecycle methods, kept separate from persistence and provider internals. */
@@ -101,8 +78,6 @@ export type WorkerEnvironmentServiceContract = {
     | import("../../../packages/gateway-protocol/src/schema/session-processes.js").SessionsProcessesListResult
     | import("../../../packages/gateway-protocol/src/schema/session-processes.js").SessionsProcessesStopResult
   >;
-  /** Current explicit provider attestation, never the persisted legacy default. */
-  getDedicatedNodeLeaseSignal(environmentId: string): AbortSignal | undefined;
   captureSessionAttachment(identity: WorkerEnvironmentSessionIdentity): {
     binding: WorkerEnvironmentAttachment;
     assertCurrent(): void;
@@ -153,41 +128,21 @@ export type WorkerEnvironmentServiceContract = {
     close: () => Promise<void>;
   }>;
   list(): WorkerEnvironmentServiceRecord[];
-  readPreparedPoolSummary(): { maxTotal: number; reservedEnvironmentIds: string[] };
-  readReadyWorkerTarget(profileId: string): number;
   get(environmentId: string): WorkerEnvironmentServiceRecord | undefined;
   inventoryVersion(): number;
   readMachineShape(
     environmentId: string,
     prepared?: WorkerEnvironmentPlacementFacts,
   ): SessionPlacementMachine | undefined;
-  machineShapeVersion(): number;
   supportsExecutionMode(profileId: string, mode: WorkerPlacementExecutionMode): boolean;
-  readProviderDisplayId(profileId: string): string | undefined;
-  listMachineOptions(profileId: string): Promise<readonly WorkerMachineOption[] | undefined>;
-  listOperatingSystems(profileId: string): Promise<readonly WorkerOperatingSystem[] | undefined>;
-  prepare(
-    request: EnvironmentsPrepareParams,
-    authorize?: () => void,
-  ): Promise<EnvironmentsPrepareResult>;
   create(
     profileId: string,
     idempotencyKey: string,
-    machineClass?: string,
     executionMode?: WorkerPlacementExecutionMode,
-    projectPath?: string,
     signal?: AbortSignal,
-    os?: string,
-    runSetupScript?: boolean,
   ): Promise<WorkerEnvironmentServiceRecord>;
   destroy(environmentId: string): Promise<WorkerEnvironmentServiceRecord>;
   destroyUnattached(environmentId: string): Promise<WorkerEnvironmentServiceRecord>;
-  observeDesktop(request: {
-    environmentId: string;
-    control: boolean;
-    requester?: DesktopObserveRequester;
-  }): Promise<WorkerDesktopObserveResult>;
-  launchDesktopApp(request: WorkerDesktopLaunchParams): Promise<WorkerDesktopLaunchResult>;
   startTunnel(request: WorkerTunnelRequest): Promise<WorkerTunnelHandle>;
   stopTunnel(environmentId: string, ownerEpoch?: number): Promise<void>;
 };
@@ -202,8 +157,6 @@ export type WorkerPlacementDispatchRequest = WorkerSessionPlacementDispatchIdent
   devicePlacement?: DevicePlacementRequirement;
   idempotencyKey?: string;
   deviceId?: string;
-  machineClass?: string;
-  os?: string;
   inheritedProfile?: {
     providerId: string;
     profileSnapshot: WorkerProfile;
@@ -229,13 +182,7 @@ export class WorkerPlacementAdmissionTargetError extends Error {
 
 export type WorkerPlacementMoveDestination = Pick<
   WorkerPlacementDispatchRequest,
-  | "profileId"
-  | "executionMode"
-  | "devicePlacement"
-  | "deviceId"
-  | "machineClass"
-  | "os"
-  | "inheritedProfile"
+  "profileId" | "executionMode" | "devicePlacement" | "deviceId" | "inheritedProfile"
 >;
 
 export type WorkerPlacementReclaimRequest = WorkerSessionPlacementIdentity & {

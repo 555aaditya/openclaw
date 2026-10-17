@@ -33,7 +33,6 @@ import {
 import { claimOpenClawStateOwnership } from "../../state/openclaw-state-ownership-operations.js";
 import { withEnvAsync } from "../../test-utils/env.js";
 import { observeMainThreadSql } from "../../test-utils/main-thread-sql-spies.test-support.js";
-import { completeWorkerNodeSetupForTest } from "./node-enrollment.test-support.js";
 import { createWorkerEnvironmentStore, type WorkerEnvironmentStore } from "./store.js";
 import { createWorkerEnvironmentStoreKernel } from "./store.kernel.js";
 import { workerCredential, workerReadyPatch } from "./store.test-support.js";
@@ -199,7 +198,7 @@ it.each([
   },
 );
 
-it("shares committed inventory and pairing publications across database aliases", async () => {
+it("shares committed inventory across database aliases", async () => {
   const directory = tempDirs.make("worker-inventory-alias-");
   const stateDir = path.join(directory, "original");
   const database = openOpenClawStateDatabase({ env: { OPENCLAW_STATE_DIR: stateDir } });
@@ -215,19 +214,11 @@ it("shares committed inventory and pairing publications across database aliases"
   const intent = await createIntent(store, "alias-environment");
   expect(alias.get(intent.environmentId)).toEqual(intent);
   await provision(store, intent.environmentId);
-  const enrollment = await store.ensureNodeEnrollment(intent.environmentId);
-  await completeWorkerNodeSetupForTest({
-    baseDir: aliasDir,
-    store: alias,
-    setupId: enrollment.nodeSetupId!,
-    deviceId: "alias-device",
-    completedAtMs: 2_000,
-  });
   expect(alias.get(intent.environmentId)).toEqual(store.get(intent.environmentId));
-  expect(store.get(intent.environmentId)?.nodeDeviceId).toBe("alias-device");
+  expect(store.get(intent.environmentId)?.state).toBe("provisioning");
   await alias.close();
   expect(() => alias.get(intent.environmentId)).toThrow("inventory has closed");
-  expect(store.get(intent.environmentId)?.nodeDeviceId).toBe("alias-device");
+  expect(store.get(intent.environmentId)?.state).toBe("provisioning");
   await closeOpenClawStateDatabaseByPathAsync(aliasPath);
   expect(() => store.get(intent.environmentId)).toThrow();
 });

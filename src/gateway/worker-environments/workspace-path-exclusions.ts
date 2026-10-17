@@ -1,9 +1,6 @@
 import { compileFunction } from "node:vm";
 import { STAGED_INPUT_PATHS_JS } from "../../media/staged-inputs.js";
-import {
-  MATERIALIZED_SANDBOX_SKILLS_WORKSPACE,
-  MANAGED_SANDBOX_SKILLS_PATH_JS,
-} from "../../shared/sandbox-workspace-paths.js";
+import { MANAGED_SANDBOX_SKILLS_PATH_JS } from "../../shared/sandbox-workspace-paths.js";
 
 const DERIVED_WORKSPACE_DIRECTORY_NAMES = [
   "__pycache__",
@@ -17,8 +14,7 @@ const DERIVED_WORKSPACE_FILE_NAMES = [".DS_Store"] as const;
 const DERIVED_WORKSPACE_FILE_SUFFIXES = [".pyc", ".pyo"] as const;
 export const WORKER_ATTACHMENT_DIRECTORY_PREFIX = "openclaw-inbound-";
 const UUID_HEX = "[0-9a-f]";
-// randomUUID creates lowercase UUIDv4 names. This exact character-class pattern
-// has the same meaning in a regular expression and an rsync exclusion glob.
+// randomUUID creates lowercase UUIDv4 names; match their exact path segment.
 export const WORKER_ATTACHMENT_DIRECTORY_PATTERN =
   WORKER_ATTACHMENT_DIRECTORY_PREFIX +
   [
@@ -58,14 +54,6 @@ function isDerivedWorkspacePath(relativePath, retainedInput = false) {
 
 export const isDerivedWorkspacePath: (relativePath: string, retainedInput?: boolean) => boolean =
   compileFunction(`${WORKSPACE_PATH_EXCLUSIONS_JS}\nreturn isDerivedWorkspacePath;`)();
-
-export const DERIVED_WORKSPACE_RSYNC_EXCLUDES = [
-  `/${MATERIALIZED_SANDBOX_SKILLS_WORKSPACE}`,
-  ...DERIVED_WORKSPACE_DIRECTORY_NAMES,
-  ...DERIVED_WORKSPACE_FILE_NAMES,
-  ...DERIVED_WORKSPACE_FILE_SUFFIXES.map((suffix) => `*${suffix}`),
-  WORKER_ATTACHMENT_DIRECTORY_PATTERN,
-] as const;
 
 // Standalone node capture/reset scripts cannot import fs-safe. Read only the
 // bounded regular marker, rejecting parent aliases and binding bytes to its inode.

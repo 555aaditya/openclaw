@@ -54,11 +54,6 @@ export type WorkspaceManifestValueInputs = {
     source: { root: string; tree?: never } | { root: string; tree: string };
   };
   "workspace.manifest.serialize": { manifest: WorkerWorkspaceManifest };
-  "workspace.manifest.overlay": {
-    source: WorkerWorkspaceManifest;
-    prepared: WorkerWorkspaceManifest;
-    incoming: WorkerWorkspaceManifest;
-  };
   "workspace.reconcile.preflight": {
     root: string;
     base: WorkerWorkspaceManifest;
@@ -98,7 +93,6 @@ export type WorkspaceManifestValueOutputs = {
   "workspace.manifest.nodes": WorkspaceComputationHashResult<Array<[string, WorkspaceNode]>>;
   "workspace.manifest.tree-input": null;
   "workspace.manifest.serialize": { raw: string; manifestRef: string };
-  "workspace.manifest.overlay": WorkspaceManifestCapture;
   "workspace.reconcile.preflight": WorkspaceComputationHashResult<{
     applyPaths: Set<string>;
     conflictPaths: string[];

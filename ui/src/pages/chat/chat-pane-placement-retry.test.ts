@@ -66,7 +66,7 @@ describe("durable placement move retry", () => {
   it.each([
     { kind: "gateway" },
     { kind: "device", deviceId: "build-device" },
-    { kind: "profile", profileId: "cloud", os: "windows/wsl2", machineClass: "fast" },
+    { kind: "profile", profileId: "paired-runner" },
   ] satisfies SessionMoveTarget[])(
     "retries the exact $kind intent without a destination picker",
     async (target) => {

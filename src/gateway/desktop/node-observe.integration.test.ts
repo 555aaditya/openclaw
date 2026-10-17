@@ -1,27 +1,12 @@
-import fs from "node:fs/promises";
 import http from "node:http";
 import net from "node:net";
-import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WebSocket, type RawData } from "ws";
 import { rawDataToString } from "../../../packages/gateway-client/src/websocket-data.js";
-import { GATEWAY_CLIENT_IDS } from "../../../packages/gateway-protocol/src/client-info.js";
 import { createDeferred } from "../../../test/helpers/promise.js";
-import { NODE_WORKER_DESKTOP_STREAM_COMMAND } from "../../infra/node-commands.js";
-import { NODE_WORKER_SUPERVISOR_PROTOCOL_FEATURE } from "../../infra/node-runner-inventory.js";
-import {
-  invokeNodeDesktopStream,
-  invokeNodeWorkerDesktopStream,
-} from "../../node-host/desktop-stream-command.js";
+import { invokeNodeDesktopStream } from "../../node-host/desktop-stream-command.js";
 import { NODE_DESKTOP_STREAM_COMMAND } from "../../shared/node-desktop-stream.js";
-import type {
-  NodeWorkerSupervisorNodeProof,
-  NodeWorkerSupervisorTransport,
-} from "../node-registry-private.js";
 import type { NodeRegistry } from "../node-registry.js";
-import { environmentsHandlers } from "../server-methods/environments.js";
-import { createWorkerNodeDesktopCarrier } from "../worker-environments/node-desktop-carrier.js";
-import * as workerSupport from "../worker-environments/service.test-support.js";
 import { createNodeDesktopService } from "./node-source.js";
 import { createNodeDesktopStreamBroker } from "./node-stream-broker.js";
 import { handleDesktopObserveUpgrade } from "./observe-bridge.js";
@@ -318,154 +303,6 @@ describe("paired node desktop observe integration", () => {
           stop: async () => service.stopNode(nodeSession.nodeId),
         });
       }
-    },
-  );
-});
-
-function workerNodeProof(nodeId: string): NodeWorkerSupervisorNodeProof {
-  return {
-    nodeId,
-    connId: "worker-conn-1",
-    pairingIdentity: "worker-identity-1",
-    pairingGeneration: "worker-generation-1",
-    clientId: GATEWAY_CLIENT_IDS.NODE_HOST,
-    clientMode: "node",
-    protocolFeature: NODE_WORKER_SUPERVISOR_PROTOCOL_FEATURE,
-    workerHost: { enabled: true, capacity: { total: 1, available: 0 } },
-    commands: [],
-  };
-}
-
-async function observeEnvironmentDesktop(
-  workerEnvironmentService: ReturnType<typeof workerSupport.createService>,
-  environmentId: string,
-) {
-  const respond = vi.fn();
-  await environmentsHandlers["desktop.observe"]?.({
-    params: { source: { kind: "environment", environmentId }, control: false },
-    respond,
-    context: { workerEnvironmentService },
-  } as never);
-  const [ok, result, error] = respond.mock.calls.at(0) ?? [];
-  expect(error).toBeUndefined();
-  expect(ok).toBe(true);
-  return result as { transport: "rfb"; wsPath: string; control: boolean };
-}
-
-describe("worker environment node desktop observe integration", () => {
-  workerSupport.setupWorkerEnvironmentServiceSuite();
-
-  it.each(["owner-stop", "peer-eof"])(
-    "carries concurrent worker viewers and settles on %s",
-    async (closeMode) => {
-      const endAfterRequest = createDeferred();
-      const rfb = await startRfbHarness(
-        3,
-        closeMode === "peer-eof" ? endAfterRequest.promise : undefined,
-      );
-      const completedInvocations: boolean[] = [];
-      const passwordFilePath = path.join(workerSupport.testState.root, "vnc.password");
-      await fs.writeFile(passwordFilePath, "memory-only-password\n", { mode: 0o600 });
-      const record = await workerSupport.seedReadyNodeDesktop("worker-node-desktop-byte-flow", {
-        ...workerSupport.DESKTOP,
-        port: rfb.port,
-        passwordFilePath,
-      });
-      if (!record.nodeDeviceId) {
-        throw new Error("expected durable worker node id");
-      }
-
-      const desktopRegistry = createDesktopSessionRegistry({ lingerMs: 10 });
-      const streamBroker = createNodeDesktopStreamBroker();
-      cleanups.push(async () => desktopRegistry.stopAll());
-      const proof = workerNodeProof(record.nodeDeviceId);
-      const pairingRegistry = {
-        getForPairingGeneration: (nodeId: string, generation: string) =>
-          nodeId === proof.nodeId && generation === proof.pairingGeneration ? proof : undefined,
-        isConnectionCurrentPairingState: async (connId: string) => connId === proof.connId,
-      } as unknown as NodeRegistry;
-      let gatewayUrl = "";
-      const invoke = vi.fn<NodeWorkerSupervisorTransport["invoke"]>(async (request) => {
-        if (!request.isDispatchAuthorized()) {
-          return { ok: false, error: { code: "STALE", message: "desktop owner is stale" } };
-        }
-        try {
-          await invokeNodeWorkerDesktopStream({
-            paramsJSON: JSON.stringify(request.params),
-            gatewayUrl,
-            signal: request.signal ?? new AbortController().signal,
-          });
-          completedInvocations.push(true);
-          return { ok: true, payload: null };
-        } catch (error) {
-          completedInvocations.push(false);
-          return {
-            ok: false,
-            error: { message: error instanceof Error ? error.message : String(error) },
-          };
-        }
-      });
-      const transport: NodeWorkerSupervisorTransport = {
-        getCurrentNode: async (nodeId) => (proof.nodeId === nodeId ? proof : undefined),
-        listCurrentNodes: async () => [proof],
-        hasCurrentRunner: (nodeId) => nodeId === proof.nodeId,
-        isCurrent: (candidate) =>
-          candidate.nodeId === proof.nodeId &&
-          candidate.connId === proof.connId &&
-          candidate.pairingGeneration === proof.pairingGeneration,
-        invoke,
-      };
-      const carrier = createWorkerNodeDesktopCarrier({
-        store: workerSupport.testState.store,
-        desktopRegistry,
-      });
-      carrier.bindRuntime({ transport, streamBroker });
-      const workerEnvironmentService = workerSupport.createService(workerSupport.createProvider(), {
-        nodeDesktopCarrier: carrier,
-        now: Date.now,
-      });
-      gatewayUrl = await startDesktopGateway({
-        desktopRegistry,
-        nodeRegistry: pairingRegistry,
-        streamBroker,
-      });
-
-      const observers = await Promise.all(
-        Array.from({ length: 3 }, async () => {
-          const observed = await observeEnvironmentDesktop(
-            workerEnvironmentService,
-            record.environmentId,
-          );
-          expect(observed).toMatchObject({ transport: "rfb", control: false });
-          return await openViewOnlyObserver(gatewayUrl, observed.wsPath);
-        }),
-      );
-
-      await expect(rfb.completion).resolves.toBeUndefined();
-      await vi.waitFor(() => expect(rfb.connectionCount()).toBe(3));
-      expect(invoke).toHaveBeenCalledWith(
-        expect.objectContaining({
-          command: NODE_WORKER_DESKTOP_STREAM_COMMAND,
-          params: {
-            ticket: expect.stringMatching(/^[a-f0-9]{48}$/u),
-            attachPath: expect.stringMatching(/^\/node-desktop\/attach\?ticket=[a-f0-9]{48}$/u),
-            port: rfb.port,
-            passwordFilePath,
-          },
-        }),
-      );
-      if (closeMode === "peer-eof") {
-        await expectPeerEof({ observers, completedInvocations, finish: endAfterRequest.resolve });
-        await workerEnvironmentService.destroy(record.environmentId);
-      } else {
-        await expectObserversClosed({
-          observers,
-          peers: rfb.peers,
-          stop: async () => workerEnvironmentService.destroy(record.environmentId),
-        });
-      }
-      expect(workerSupport.testState.store.get(record.environmentId)?.state).toBe("destroyed");
-      expect(invoke.mock.calls[0]?.[0].signal?.aborted).toBe(true);
     },
   );
 });

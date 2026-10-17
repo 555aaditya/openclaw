@@ -166,19 +166,6 @@ export function WhereChip(props: { params: WhereChipOptions }) {
     );
     const localName = props.params.gatewayName.trim() || t("newSession.local");
     const label = props.params.state.kind === "local" ? localName : props.params.state.label;
-    const configurationSummary =
-      props.params.state.kind === "cloud"
-        ? [
-            props.params.state.operatingSystems.find(
-              (os) => os.id === props.params.state.selectedOsId,
-            )?.label,
-            props.params.state.cloudMachines.find(
-              (machine) => machine.id === props.params.state.selectedMachineId,
-            )?.label,
-          ]
-            .filter(Boolean)
-            .join(" · ")
-        : "";
     const query = props.params.environmentQuery.trim().toLocaleLowerCase();
     const matches = (...values: (string | undefined)[]) =>
       values.some((value) => value?.toLocaleLowerCase().includes(query));
@@ -208,7 +195,6 @@ export function WhereChip(props: { params: WhereChipOptions }) {
             t("newSession.cloud"),
             profile.id,
             profile.providerId,
-            profile.providerDisplayId,
             resolveCloudProfileIconData(profile).label,
             profile.trust === "disposable"
               ? t("newSession.environmentDisposable")
@@ -243,7 +229,6 @@ export function WhereChip(props: { params: WhereChipOptions }) {
       cloudPresentation,
       localName,
       label,
-      configurationSummary,
       showLocal,
       devices,
       hosted,
@@ -263,17 +248,14 @@ export function WhereChip(props: { params: WhereChipOptions }) {
       label={`${t("newSession.where")}: ${view().label}`}
       value={view().label}
       icon={triggerIcon()}
-      summary={view().configurationSummary}
       triggerAttributes={{
-        "aria-label": `${t("newSession.where")}: ${view().label}${view().configurationSummary ? `, ${view().configurationSummary}` : ""}`,
+        "aria-label": `${t("newSession.where")}: ${view().label}`,
         "aria-description":
           props.params.state.kind === "cloud" && view().cloudPresentation.label
             ? t("newSession.cloudWorkerProvider", { provider: view().cloudPresentation.label })
             : undefined,
         "data-cloud-profile": props.params.cloudProfileId || undefined,
         "data-hosted-runtime": props.params.state.hostedRuntimeId || undefined,
-        "data-machine-class": props.params.machineClass || undefined,
-        "data-os": props.params.os || undefined,
         "data-device-id": props.params.deviceId || undefined,
         "data-auto-device": props.params.autoDevice ? "true" : undefined,
       }}
@@ -462,10 +444,6 @@ export function WhereChip(props: { params: WhereChipOptions }) {
               params={{
                 profiles: view().cloudProfiles,
                 selectedId: props.params.cloudProfileId,
-                selectedOs: props.params.state.selectedOsId,
-                selectedMachine: props.params.state.selectedMachineId,
-                onSelectOs: props.params.onSelectCloudOs,
-                onSelectMachine: props.params.onSelectCloudMachine,
                 submitting: view().busy,
                 compact: true,
                 disabled: Boolean(props.params.cloudDisabledReason),

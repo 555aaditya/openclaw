@@ -40,8 +40,6 @@ const injectedWorkerService = vi.hoisted(() => {
   const service = {
     list: () => [...records.values()],
     get: (environmentId: string) => records.get(environmentId),
-    readPreparedPoolSummary: () => ({ maxTotal: 4, reservedEnvironmentIds: [] }),
-    readReadyWorkerTarget: () => 1,
     create: async (profileId: string, idempotencyKey: string) => {
       const existingId = idempotency.get(idempotencyKey);
       if (existingId) {
@@ -61,8 +59,6 @@ const injectedWorkerService = vi.hoisted(() => {
         idleSinceAtMs: null,
         destroyRequestedAtMs: null,
         attachedSessionIds: [],
-        desktopAvailable: false,
-        desktopApps: [],
         tunnelStatus: "stopped",
       };
       records.set(environmentId, record);

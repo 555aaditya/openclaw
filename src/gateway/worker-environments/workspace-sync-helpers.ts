@@ -1,22 +1,9 @@
-import { createHash, randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
-import { readRegularFile } from "@openclaw/fs-safe/advanced";
-import { root as fsSafeRoot } from "@openclaw/fs-safe/root";
-import { isRecord } from "@openclaw/normalization-core/record-coerce";
-import { isMissingPathError } from "../../infra/errno.js";
 import { hasNodeErrorCode } from "../../infra/path-guards.js";
 import { redactSensitiveText } from "../../logging/redact.js";
 import type { CommandOptions, SpawnResult } from "../../process/exec.js";
-import { WORKER_BUNDLE_RSYNC_RECEIVER_PATH } from "../../shared/worker-bundle-hash.js";
 import { sleep } from "../../utils/sleep.js";
-import {
-  type PreparedWorkerSsh,
-  workerSshCommandOptions,
-  workerSshCommandPrefix,
-  workerSshRemoteCommand,
-} from "./ssh.js";
 import type { WorkerWorkspaceCommand, WorkerLocalWorkspaceSyncRequest } from "./tunnel-contract.js";
 import { boundedWorkerError } from "./worker-error.js";
 import {
@@ -25,28 +12,10 @@ import {
   serializeRemoteWorkspaceHashMemo,
   type WorkspaceHashMemo,
 } from "./workspace-hash-memo.js";
-import { MAX_WORKSPACE_MANIFEST_BYTES } from "./workspace-inventory-limits.js";
 import {
   createRemoteWorkspaceManifestScript,
   REMOTE_WORKSPACE_MANIFEST_JS,
 } from "./workspace-sync-scripts.js";
-
-const MANIFEST_REF_PATTERN = /^sha256:[a-f0-9]{64}$/u;
-const INBOUND_QUOTA_INITIAL_POLL_MS = 25;
-const INBOUND_QUOTA_MAX_POLL_MS = 250;
-export const WORKER_WORKSPACE_RSYNC_DESTINATION = "openclaw-rsync-destination";
-
-export type WorkerWorkspaceActionsOptions = {
-  environmentId: string;
-  sharedHost?: boolean;
-  ownerSignal: AbortSignal;
-  waitForPrepared: () => Promise<PreparedWorkerSsh>;
-  runner: {
-    run(argv: string[], options: CommandOptions): Promise<SpawnResult>;
-  };
-  tasks: Set<Promise<unknown>>;
-  bundleHash: string;
-};
 
 export function waitForQuiescenceRenewal(
   signal: AbortSignal,
@@ -79,106 +48,6 @@ export function workspaceSyncError(result: SpawnResult): Error {
   return new Error(
     detail ? `Worker workspace sync failed: ${detail}` : "Worker workspace sync failed",
   );
-}
-
-export function workerWorkspaceRsyncRemoteCommand(
-  prepared: PreparedWorkerSsh,
-  port = prepared.port,
-): string {
-  return workerSshRemoteCommand(workerSshCommandPrefix(prepared, port));
-}
-
-type WorkerWorkspaceRsyncReceiverMode = "accepted-next" | "git-pack" | "workspace-root";
-
-function workerWorkspaceRsyncReceiverPath(params: {
-  receiverEntryPath: string;
-  remoteWorkspaceDir: string;
-  canonicalHome: string;
-  remoteRelative: string;
-  mode: WorkerWorkspaceRsyncReceiverMode;
-  nonce: string;
-}): string {
-  const context = Buffer.from(
-    JSON.stringify([params.remoteWorkspaceDir, params.canonicalHome, params.remoteRelative]),
-  ).toString("base64url");
-  const command = ["node", params.receiverEntryPath, params.mode, context, params.nonce];
-  if (command.some((word) => !/^[A-Za-z0-9_./-]+$/u.test(word))) {
-    throw new Error("Worker workspace rsync receiver command is not shell-safe");
-  }
-  return command.join(" ");
-}
-
-export function createWorkerWorkspaceRsyncReceiverPathFactory(params: {
-  receiverEntryPath: string;
-  remoteWorkspaceDir: string;
-  canonicalHome: string;
-  remoteRelative: string;
-}): (mode: "git-pack" | "workspace-root") => string {
-  return (mode) =>
-    workerWorkspaceRsyncReceiverPath({
-      ...params,
-      mode,
-      nonce: randomBytes(16).toString("hex"),
-    });
-}
-
-export function workerAcceptedWorkspaceRsyncReceiverPath(params: {
-  receiverEntryPath: string;
-  remoteWorkspaceDir: string;
-  nonce: string;
-}): string {
-  const workspaceRootMarker = "/.openclaw-worker/workspaces/";
-  const markerIndex = params.remoteWorkspaceDir.lastIndexOf(workspaceRootMarker);
-  if (markerIndex < 1) {
-    throw new Error("Accepted workspace path is outside the managed workspace root");
-  }
-  const canonicalHome = params.remoteWorkspaceDir.slice(0, markerIndex);
-  const remoteRelative = params.remoteWorkspaceDir.slice(markerIndex + 1);
-  return workerWorkspaceRsyncReceiverPath({
-    receiverEntryPath: params.receiverEntryPath,
-    remoteWorkspaceDir: params.remoteWorkspaceDir,
-    canonicalHome,
-    remoteRelative,
-    mode: "accepted-next",
-    nonce: params.nonce,
-  });
-}
-
-export function workerWorkspaceRsyncReceiverEntryPath(bundleHash: string): string {
-  if (!/^[a-f0-9]{64}$/u.test(bundleHash)) {
-    throw new Error("Worker workspace rsync receiver bundle hash is invalid");
-  }
-  return `.openclaw-worker/${bundleHash}/${WORKER_BUNDLE_RSYNC_RECEIVER_PATH}`;
-}
-
-export async function resolveRemoteWorkspaceManifest(
-  runWorkspaceCommand: (command: WorkerWorkspaceCommand) => Promise<SpawnResult>,
-  remoteWorkspaceDir: string,
-  expectedRef: string,
-): Promise<string> {
-  const baseDigest = MANIFEST_REF_PATTERN.test(expectedRef) ? expectedRef.slice(7) : "";
-  if (!baseDigest) {
-    throw new Error("Worker workspace base manifest reference is invalid");
-  }
-  const resolved = await runWorkspaceCommand({
-    transportRetry: "idempotent",
-    argv: [
-      "node",
-      "-e",
-      REMOTE_WORKSPACE_MANIFEST_JS,
-      remoteWorkspaceDir,
-      "",
-      "resolve",
-      baseDigest,
-    ],
-  });
-  if (!workerWorkspaceCommandSucceeded(resolved)) {
-    throw workspaceSyncError(resolved);
-  }
-  if (parseManifestRef(resolved.stdout.trim()) !== expectedRef) {
-    throw new Error("Worker workspace base manifest resolution returned the wrong reference");
-  }
-  return baseDigest;
 }
 
 export async function captureRemoteWorkspaceManifest(params: {
@@ -282,10 +151,6 @@ export async function resolveWorkerWorkspaceGitAuthor(
   return { name, email };
 }
 
-export function stableWorkerPathComponent(value: string, length: number): string {
-  return createHash("sha256").update(value).digest("hex").slice(0, length);
-}
-
 export function validateWorkspaceSyncRequest(request: WorkerLocalWorkspaceSyncRequest): void {
   if (!request.sessionId.trim()) {
     throw new Error("Worker workspace session id must be non-empty");
@@ -304,125 +169,4 @@ export function validateWorkspaceSyncRequest(request: WorkerLocalWorkspaceSyncRe
       throw new Error("Worker workspace Git author metadata is invalid");
     }
   }
-}
-
-export function parseRemoteWorkspaceSetup(
-  stdout: string,
-  remoteRelative: string,
-): { canonicalHome: string; remoteWorkspaceDir: string } {
-  let response: unknown;
-  try {
-    response = JSON.parse(stdout);
-  } catch {
-    throw new Error("Worker workspace setup returned an invalid response");
-  }
-  const record = isRecord(response) ? response : undefined;
-  const canonicalHome = record?.canonicalHome;
-  const remoteWorkspaceDir = record?.canonicalWorkspace;
-  if (
-    record?.tag !== "openclaw-workspace-setup-v1" ||
-    typeof canonicalHome !== "string" ||
-    !path.posix.isAbsolute(canonicalHome) ||
-    path.posix.normalize(canonicalHome) !== canonicalHome ||
-    typeof remoteWorkspaceDir !== "string" ||
-    !path.posix.isAbsolute(remoteWorkspaceDir) ||
-    path.posix.normalize(remoteWorkspaceDir) !== remoteWorkspaceDir ||
-    remoteWorkspaceDir === "/" ||
-    remoteWorkspaceDir !== path.posix.join(canonicalHome, remoteRelative)
-  ) {
-    throw new Error("Worker workspace setup returned an invalid response");
-  }
-  return { canonicalHome, remoteWorkspaceDir };
-}
-
-export function parseManifestRef(stdout: string): string {
-  const lines = stdout.split(/\r?\n/u).filter(Boolean);
-  const manifestRef = lines.length === 1 ? lines[0] : undefined;
-  if (!manifestRef || !MANIFEST_REF_PATTERN.test(manifestRef)) {
-    throw new Error("Worker workspace sync returned an invalid manifest reference");
-  }
-  return manifestRef;
-}
-
-export async function readTransferredManifest(filePath: string): Promise<string> {
-  const { buffer } = await readRegularFile({ filePath, maxBytes: MAX_WORKSPACE_MANIFEST_BYTES });
-  return buffer.toString("utf8");
-}
-
-async function assertInboundDirectoryQuota(
-  directory: string,
-  limits: { bytes: number; entries: number },
-): Promise<void> {
-  const root = await fsSafeRoot(directory);
-  let bytes = 0;
-  for await (const entry of root.walk("", {
-    order: "filesystem",
-    maxEntries: limits.entries,
-    symlinkPolicy: "skip",
-  })) {
-    if (entry.kind === "file") {
-      bytes += entry.size;
-    }
-    if (entry.kind === "truncated" || bytes > limits.bytes) {
-      throw new Error(
-        `Cloud workspace inbound transfer exceeds its ${limits.bytes} byte or ${limits.entries} entry limit`,
-      );
-    }
-  }
-}
-
-export async function runBoundedInboundRsync(params: {
-  argv: string[];
-  destinationRoot: string;
-  entryLimit: number;
-  totalByteLimit: number;
-  ownerSignal: AbortSignal;
-  runTask: (argv: string[], options: CommandOptions) => Promise<SpawnResult>;
-  timeoutMs: number;
-}): Promise<SpawnResult> {
-  const quotaAbort = new AbortController();
-  const signal = AbortSignal.any([params.ownerSignal, quotaAbort.signal]);
-  const transfer = params.runTask(
-    params.argv,
-    workerSshCommandOptions({ timeoutMs: params.timeoutMs, signal }),
-  );
-  const transferSettled = transfer.then(
-    () => true,
-    () => true,
-  );
-  let quotaFailure: { error: unknown } | undefined;
-  let pollIntervalMs = INBOUND_QUOTA_INITIAL_POLL_MS;
-  // Rsync reports logical updates, not partial files or retry residue. Back off
-  // the canonical tree scan, then always recheck once more before acceptance.
-  try {
-    while (!(await Promise.race([transferSettled, delay(pollIntervalMs).then(() => false)]))) {
-      await assertInboundDirectoryQuota(params.destinationRoot, {
-        bytes: params.totalByteLimit,
-        entries: params.entryLimit,
-      }).catch((error: unknown) => {
-        // Rsync renames temporary files during active scans; the final scan stays strict.
-        if (!isMissingPathError(error)) {
-          throw error;
-        }
-      });
-      pollIntervalMs = Math.min(pollIntervalMs * 2, INBOUND_QUOTA_MAX_POLL_MS);
-    }
-  } catch (error) {
-    quotaFailure = { error };
-    quotaAbort.abort(error);
-  }
-  let result: SpawnResult;
-  try {
-    result = await transfer;
-  } catch (error) {
-    throw quotaFailure ? quotaFailure.error : error;
-  }
-  if (quotaFailure) {
-    throw quotaFailure.error;
-  }
-  await assertInboundDirectoryQuota(params.destinationRoot, {
-    bytes: params.totalByteLimit,
-    entries: params.entryLimit,
-  });
-  return result;
 }

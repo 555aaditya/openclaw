@@ -14,6 +14,12 @@ import * as processExec from "../process/exec.js";
 import { getSessionWorkAdmissionRelease } from "../sessions/session-lifecycle-admission.js";
 import { closeOpenClawStateDatabaseAsync } from "../state/openclaw-state-db.js";
 import type { ChatAbortControllerEntry } from "./chat-abort.js";
+import {
+  AUTHORIZATION,
+  TOKEN,
+  URL as REPOSITORY_URL,
+  fixture,
+} from "./server.sessions.create.clone-identity.test-support.js";
 import { controlUiClient } from "./server.sessions.create.projects.test-support.js";
 import { loadGatewaySessionEntryReadOnlyAsync } from "./session-utils-store.js";
 import { dispatchInboundMessageMock } from "./test-helpers.js";
@@ -21,12 +27,6 @@ import {
   directSessionReq,
   setupGatewaySessionsHandlerTestHarness,
 } from "./test/server-sessions.test-helpers.js";
-import {
-  AUTHORIZATION,
-  TOKEN,
-  URL as REPOSITORY_URL,
-  fixture,
-} from "./worker-environments/repository-git-pack.test-support.js";
 
 vi.mock("../agents/github-oauth-client.js", () => ({
   verifyGitHubCredential: async () => ({
@@ -52,7 +52,7 @@ test.each(
 )(
   "sessions.create fences $operation Git effects when its identity is $identity",
   async ({ operation, identity }) => {
-    const git = await fixture({ setupRecipe: false });
+    const git = await fixture();
     vi.stubEnv("OPENCLAW_STATE_DIR", git.root);
     vi.stubEnv("GH_TOKEN", "");
     vi.stubEnv("GITHUB_TOKEN", "");

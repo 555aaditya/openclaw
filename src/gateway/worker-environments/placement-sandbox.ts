@@ -1,41 +1,26 @@
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import type { SandboxBackendHandle } from "../../agents/sandbox/backend-handle.types.js";
 import { resolveSandboxConfigForAgent } from "../../agents/sandbox/config.js";
-import { createSandboxFsBridge } from "../../agents/sandbox/fs-bridge.js";
-import { createPreprovisionedSshSandboxBackend } from "../../agents/sandbox/ssh-backend.js";
-import type { SandboxConfig, SandboxContext } from "../../agents/sandbox/types.js";
+import type { SandboxContext } from "../../agents/sandbox/types.js";
 import { resolveSessionSkillResourceMounts } from "../../agents/session-placement-skill-resources.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import type { WorkerSessionPlacementRecord } from "./placement-record.js";
 import { isWorkerEnvironmentAttachedTo } from "./placement-target.js";
 import type { WorkerEnvironmentService } from "./service.js";
-import { resolveWorkerSshSandboxSettings } from "./ssh.js";
 
 type ActiveRemoteExecPlacement = Extract<WorkerSessionPlacementRecord, { state: "active" }>;
 
-type PlacementSandboxEnvironmentService = Pick<WorkerEnvironmentService, "get"> &
-  Partial<Pick<WorkerEnvironmentService, "resolveSshIdentity">>;
+type PlacementSandboxEnvironmentService = Pick<WorkerEnvironmentService, "get">;
 
 type RemoteExecPlacementSandbox = SandboxContext & {
   placementExecutionMode: "remote-exec";
-} & (
-    | {
-        backendId: "node";
-        placementNodeId: string;
-        placementEnvironmentId: string;
-        placementSessionId: string;
-        placementOwnerEpoch: number;
-      }
-    | {
-        backendId: "ssh";
-        backend: SandboxBackendHandle;
-        placementNodeId?: never;
-        placementEnvironmentId?: never;
-        placementSessionId?: never;
-        placementOwnerEpoch?: never;
-      }
-  );
+} & {
+  backendId: "node";
+  placementNodeId: string;
+  placementEnvironmentId: string;
+  placementSessionId: string;
+  placementOwnerEpoch: number;
+};
 
 function requireRemoteWorkspaceDir(value: string, nodeCarrier: boolean): string {
   // Paired nodes report their own native paths, which can differ from the Gateway platform.
@@ -53,7 +38,7 @@ function requireRemoteWorkspaceDir(value: string, nodeCarrier: boolean): string 
   return value;
 }
 
-/** Builds the node or SSH sandbox owned by one exact active placement generation. */
+/** Builds the paired-node sandbox owned by one exact active placement generation. */
 export async function createRemoteExecPlacementSandbox(params: {
   config?: OpenClawConfig;
   environments: PlacementSandboxEnvironmentService;
@@ -69,10 +54,11 @@ export async function createRemoteExecPlacementSandbox(params: {
     !isWorkerEnvironmentAttachedTo(environment, placement) ||
     environment.environmentId !== placement.environmentId ||
     !environment.leaseId ||
-    Boolean(environment.nodeDeviceId) === Boolean(environment.sshEndpoint)
+    !environment.nodeDeviceId ||
+    Boolean(environment.sshEndpoint)
   ) {
     throw new Error(
-      `Remote-exec placement ${placement.sessionId} has no matching active node or SSH environment`,
+      `Remote-exec placement ${placement.sessionId} has no matching active paired-node environment`,
     );
   }
 
@@ -131,41 +117,6 @@ export async function createRemoteExecPlacementSandbox(params: {
       placementOwnerEpoch: environment.ownerEpoch,
     };
   }
-  const sshEndpoint = environment.sshEndpoint;
-  const resolveSshIdentity = params.environments.resolveSshIdentity;
-  if (!sshEndpoint || !resolveSshIdentity) {
-    throw new Error("Remote-exec SSH sandbox identity resolver is unavailable");
-  }
-  const identity = await resolveSshIdentity(environment.environmentId);
-  assertCurrentEnvironment();
-  const ssh = resolveWorkerSshSandboxSettings({ ssh: sshEndpoint, identity });
-  const cfg: SandboxConfig = {
-    ...base,
-    mode: "all",
-    backend: "ssh",
-    scope: "session",
-    workspaceAccess: "rw",
-    docker,
-    ssh: {
-      ...base.ssh,
-      ...ssh,
-      workspaceRoot: path.posix.dirname(remoteWorkspaceDir),
-    },
-    browser: { ...base.browser, enabled: false, allowHostControl: false },
-    prune: { idleHours: 0, maxAgeDays: 0 },
-  };
-  const backend = await createPreprovisionedSshSandboxBackend(
-    {
-      sessionKey: placement.sessionKey,
-      scopeKey: placement.sessionKey,
-      workspaceDir: params.workspaceDir,
-      agentWorkspaceDir: params.workspaceDir,
-      cfg,
-    },
-    { runtimeId, remoteWorkspaceDir },
-  );
-  assertCurrentEnvironment();
-  const sandbox: RemoteExecPlacementSandbox = { ...common, backendId: "ssh", backend };
-  sandbox.fsBridge = backend.createFsBridge?.({ sandbox }) ?? createSandboxFsBridge({ sandbox });
-  return sandbox;
+
+  throw new Error("Remote-exec placement transport is retired; use a paired device worker");
 }

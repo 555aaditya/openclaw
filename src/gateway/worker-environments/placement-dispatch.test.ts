@@ -11,7 +11,6 @@ import {
   type OpenClawStateDatabase,
 } from "../../state/openclaw-state-db.js";
 import { closeStateDatabaseForTest } from "../../test-utils/database-cleanup.js";
-import { resolveWorkerPlacementDestination } from "./placement-destination.js";
 import {
   type DispatchStage,
   type PlacementStore,
@@ -95,50 +94,25 @@ describe("worker placement dispatch", () => {
     expect(states).toEqual(["requested", "provisioning", "syncing", "starting", "active"]);
   });
 
-  it.each([false, true])(
-    "provisions an inherited dispatch with its exact profile and setup authority (%s)",
-    async (runSetupScript) => {
-      const harness = await createTestHarness();
-      const inheritedProfile = {
-        providerId: "fake",
-        profileSnapshot: { install: "bundle" as const, settings: { region: "parent" } },
-      };
+  it("provisions an inherited dispatch with its exact profile", async () => {
+    const harness = await createTestHarness();
+    const inheritedProfile = {
+      providerId: "fake",
+      profileSnapshot: { install: "bundle" as const, settings: { region: "parent" } },
+    };
 
-      await harness.service.dispatch({
-        ...REQUEST,
-        inheritedProfile,
-        runSetupScript,
-        machineClass: "beast",
-        os: "os-a",
-      });
-
-      expect(harness.environments.createWithRequest).toHaveBeenCalledWith({
-        profileId: REQUEST.profileId,
-        idempotencyKey: expect.stringMatching(/^session-dispatch:/u),
-        machineClass: "beast",
-        executionMode: REQUEST.executionMode,
-        projectPath: path.join(root, "workspace"),
-        os: "os-a",
-        runSetupScript,
-        inheritedProfile,
-        admittedIntent: inheritedProfile,
-      });
-    },
-  );
-
-  it("normalizes profile OS overrides and rejects choices without a profile", () => {
-    const cfg = { cloudWorkers: { profiles: { cloud: { provider: "fake" } } } };
-    expect(resolveWorkerPlacementDestination({ cfg, profileId: " cloud ", os: " os-a " })).toEqual({
-      ok: true,
-      value: { profileId: "cloud", os: "os-a" },
+    await harness.service.dispatch({
+      ...REQUEST,
+      inheritedProfile,
     });
-    for (const target of [
-      { profileId: "cloud", os: " " },
-      { deviceId: "device", os: "os-a" },
-      { os: "os-a" },
-    ]) {
-      expect(resolveWorkerPlacementDestination({ cfg, ...target }).ok).toBe(false);
-    }
+
+    expect(harness.environments.createWithRequest).toHaveBeenCalledWith({
+      profileId: REQUEST.profileId,
+      idempotencyKey: expect.stringMatching(/^session-dispatch:/u),
+      executionMode: REQUEST.executionMode,
+      signal: undefined,
+      inheritedProfile,
+    });
   });
 
   it("reports the final durable placement after startup failure teardown", async () => {
@@ -677,7 +651,7 @@ describe("worker placement dispatch", () => {
     expect(harness.log.filter((entry) => entry === "placement:failed")).toHaveLength(1);
   });
 
-  it("adopts an exact active environment after restart without reprovisioning", async () => {
+  it("adopts an exact active node after restart without reprovisioning", async () => {
     const harness = await createTestHarness();
     await harness.environments.attachSession({
       environmentId: harness.ready.environmentId,
@@ -685,11 +659,18 @@ describe("worker placement dispatch", () => {
       sessionId: REQUEST.sessionId,
     });
     await harness.placements.seedActive(harness.attached.ownerEpoch, "remote-exec");
+    vi.mocked(harness.environments.get).mockReturnValue({
+      ...harness.attached,
+      nodeDeviceId: "paired-node",
+      sshEndpoint: null,
+      profileSnapshot: { ...harness.attached.profileSnapshot, executionMode: "remote-exec" },
+    });
     harness.log.length = 0;
 
     await harness.service.reconcile();
 
-    expect(harness.log).toEqual(["environment:reconcile", "tunnel:attached", "placement:adopted"]);
+    expect(harness.log).toEqual(["environment:reconcile", "placement:adopted"]);
+    expect(harness.environments.startTunnel).not.toHaveBeenCalled();
     expect(harness.environments.createWithRequest).not.toHaveBeenCalled();
     expect(harness.environments.destroy).not.toHaveBeenCalled();
   });

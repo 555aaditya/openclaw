@@ -2,17 +2,17 @@ import { afterEach, describe, expect, it } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import { openNodeSqliteDatabase } from "../infra/node-sqlite.js";
 import type { EngineConnection } from "../infra/sql-connection.js";
+import { extractSqliteTableSchema } from "../infra/sqlite-schema-sql.js";
 import { createUpdateRun } from "../infra/update-run-ledger.js";
 import { OPENCLAW_STATE_SCHEMA_VERSION } from "./openclaw-state-db-contract.js";
-import { ensureNodeWorkerPreparedWorkspaceSchema } from "./openclaw-state-db-schema-additive.js";
 import {
   closeOpenClawStateDatabaseForTest,
   detectOpenClawStateDatabaseSchemaMigrations,
   openOpenClawStateDatabase,
   repairOpenClawStateDatabaseSchema,
-  runOpenClawStateWriteTransaction,
 } from "./openclaw-state-db.js";
 import { removePreparedWorkerOwnershipColumns } from "./openclaw-state-schema-v17.test-support.js";
+import { OPENCLAW_STATE_SCHEMA_SQL } from "./openclaw-state-schema.js";
 
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
 const migrationPaths = ["runtime open", "doctor repair"] as const;
@@ -148,34 +148,6 @@ describe("prepared worker schema migration", () => {
     },
   );
 
-  it("creates node ownership only on first use and retries after an outer rollback", () => {
-    const options = {
-      env: { OPENCLAW_STATE_DIR: tempDirs.make("openclaw-prepared-first-use-") },
-    };
-    const { db } = openOpenClawStateDatabase(options);
-    const readTable = () =>
-      db
-        .prepare("SELECT name FROM sqlite_schema WHERE name = 'node_worker_prepared_workspaces'")
-        .get();
-    expect(readTable()).toBeUndefined();
-    expect(() =>
-      runOpenClawStateWriteTransaction(() => {
-        ensureNodeWorkerPreparedWorkspaceSchema(db);
-        expect(readTable()).toBeDefined();
-        throw new Error("registration rejected");
-      }, options),
-    ).toThrow("registration rejected");
-    expect(readTable()).toBeUndefined();
-    runOpenClawStateWriteTransaction(() => ensureNodeWorkerPreparedWorkspaceSchema(db), options);
-    expect(readTable()).toBeDefined();
-    closeOpenClawStateDatabaseForTest();
-    expect(
-      openOpenClawStateDatabase(options)
-        .db.prepare("SELECT * FROM node_worker_prepared_workspaces")
-        .all(),
-    ).toEqual([]);
-  });
-
   it.each(migrationCases)(
     "preserves v$version workers and unresolved cleanup through $via",
     ({ version, via }) => {
@@ -282,7 +254,7 @@ describe("prepared worker schema migration", () => {
     },
   );
 
-  it("enforces complete preparation facts and retains consumed bindings on canonical reopen", () => {
+  it("retains historical preparation facts and consumed bindings on canonical reopen", () => {
     const { options } = createLegacyWorkers();
     const { db } = openOpenClawStateDatabase(options);
     const setPreparation = db.prepare(`UPDATE worker_environments SET preparation_key = ?,
@@ -300,7 +272,8 @@ describe("prepared worker schema migration", () => {
       expect(() => setPreparation.run(...tuple)).toThrow(/CHECK constraint failed/);
     }
     setPreparation.run(preparationKey, 10, 100, 20);
-    ensureNodeWorkerPreparedWorkspaceSchema(db);
+    // Seed a retained pre-retirement table; no runtime allocator creates this storage now.
+    db.exec(extractSqliteTableSchema(OPENCLAW_STATE_SCHEMA_SQL, "node_worker_prepared_workspaces"));
     db.prepare(`INSERT INTO node_worker_prepared_workspaces (
       preparation_key, cache_key, gateway_namespace, workspace_dir, home_dir, source_manifest_ref, prepared_manifest_ref,
       state, environment_id, session_id, session_key, owner_epoch, created_at_ms, bound_at_ms

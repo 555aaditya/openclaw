@@ -275,7 +275,6 @@ export type OpenClawStateReadCommand =
   | { type: "voicewake.triggers" }
   | { type: "voicewake.routing" }
   | { type: "operator.channelPolicy" }
-  | { type: "preparedPoolPresence.read" }
   | {
       type: "sessionRepositoryWorkspaces.find";
       owners: readonly RepositoryWorkspaceOwner[];

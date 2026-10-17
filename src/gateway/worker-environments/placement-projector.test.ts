@@ -75,8 +75,6 @@ function environmentFixture(overrides: Partial<Environment> = {}): Environment {
     idleSinceAtMs: null,
     destroyRequestedAtMs: null,
     attachedSessionIds: ["session-1"],
-    desktopAvailable: false,
-    desktopApps: [],
     tunnelStatus: "stopped",
     ...overrides,
   };

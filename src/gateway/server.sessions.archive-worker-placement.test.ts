@@ -94,7 +94,7 @@ test("sessions.patch retries failed cleanup during unrelated dispatch and reject
     getConfig: () => ({}),
     resolveProvider: () => undefined,
     prepareInstallation: unexpectedWorkerWork,
-    bootstrapWorker: unexpectedWorkerWork,
+    ensureNodeWorkerBundle: unexpectedWorkerWork,
   });
   const reclaimStarted = createDeferredCore();
   const releaseReclaim = createDeferredCore();

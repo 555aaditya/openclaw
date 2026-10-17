@@ -281,8 +281,6 @@ export async function invokeSessionDispatch(
   context: GatewayRequestContext,
   target: {
     profileId?: string;
-    machineClass?: string;
-    os?: string;
     deviceId?: string;
     autoDevice?: true;
   } = {
@@ -312,7 +310,7 @@ export async function invokeSessionMove(
     abandonSource?: true;
     target:
       | { kind: "gateway" }
-      | { kind: "profile"; profileId: string; machineClass?: string; os?: string }
+      | { kind: "profile"; profileId: string }
       | { kind: "device"; deviceId: string };
   },
   sessionMutationAuthorization?: SessionMutationAuthorization,

@@ -1,6 +1,6 @@
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
-import { expect, it, vi } from "vitest";
+import { expect, it } from "vitest";
 import {
   LOCAL_GIT_WORKSPACE_RESPONSES,
   captureUiProofEnabled,
@@ -19,7 +19,7 @@ async function takeScreenshot(page: Parameters<typeof openEnvironmentPicker>[0])
 }
 
 suite.define(() => {
-  it("shows catalog skeletons, then uses provider capabilities and fallback defaults", async () => {
+  it("shows catalog skeletons until device profiles and paired hosts are available", async () => {
     await suite.withPage(
       { locale: "en-US", serviceWorkers: "block", viewport: { width: 1440, height: 900 } },
       async ({ page }) => {
@@ -61,54 +61,30 @@ suite.define(() => {
           ],
           profiles: [
             {
-              id: "Daytona Crabbox",
-              providerId: "crabbox",
-              machines: [
-                { id: "small", label: "Small", cpu: 4, memoryGb: 8 },
-                { id: "large", label: "Large", cpu: 8, memoryGb: 16 },
-              ],
+              id: "Build host",
+              providerId: "device",
             },
-            { id: "GCP", providerId: "crabbox" },
-            { id: "Machine0", providerId: "crabbox" },
+            { id: "Lab", providerId: "device" },
+            { id: "Workstation", providerId: "device" },
           ],
         });
-        const daytona = picker.getByRole("button", { name: "Daytona Crabbox", exact: true });
-        await daytona.waitFor();
-        await daytona.hover();
-        const configuration = picker.locator(".new-session-page__cloud-configuration");
-        await configuration.waitFor();
-        expect(await configuration.getByText("Operating system", { exact: true }).count()).toBe(0);
-        await configuration.getByText("Machine", { exact: true }).waitFor();
-        expect(
-          await configuration.locator('[data-value="machine:small"]').getAttribute("aria-pressed"),
-        ).toBe("true");
-        expect(await picker.locator(".new-session-page__cloud-configuration").count()).toBe(1);
-        const plus = picker.locator('[data-action="manage-cloud-workers"]');
-        const chevron = daytona.locator(".new-session-page__submenu-chevron");
-        await plus.waitFor({ state: "visible" });
-        await chevron.waitFor({ state: "visible" });
-        await vi.waitFor(async () => {
-          const [plusBox, chevronBox] = await Promise.all([
-            plus.boundingBox(),
-            chevron.boundingBox(),
-          ]);
-          expect(plusBox).not.toBeNull();
-          expect(plusBox?.width).toBeLessThanOrEqual(20);
-          expect(chevronBox).not.toBeNull();
-          expect(
-            Math.abs(
-              (plusBox?.x ?? 0) +
-                (plusBox?.width ?? 0) / 2 -
-                ((chevronBox?.x ?? 0) + (chevronBox?.width ?? 0) / 2),
-            ),
-          ).toBeLessThanOrEqual(4);
-        });
+        const profile = picker.getByRole("button", { name: "Build host", exact: true });
+        await profile.waitFor();
+        expect(await profile.isEnabled()).toBe(true);
+        expect(await picker.locator('[data-value="device:studio"]').isEnabled()).toBe(true);
+        await expect.poll(() => loading.count()).toBe(0);
         if (captureUiProofEnabled) {
           await writeFile(
-            path.join(suite.artifactDir, "environment-picker-capabilities-after.png"),
+            path.join(suite.artifactDir, "environment-picker-profiles-after.png"),
             await takeScreenshot(page),
           );
         }
+        await profile.click();
+        await expect
+          .poll(() => page.locator("#new-session-where-trigger").getAttribute("data-cloud-profile"))
+          .toBe("Build host");
+        expect(await gateway.getRequests("sessions.create")).toHaveLength(0);
+        expect(await gateway.getRequests("sessions.dispatch")).toHaveLength(0);
       },
     );
   });

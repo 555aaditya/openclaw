@@ -28,10 +28,10 @@ import { closeStateDatabaseForTest } from "../../test-utils/database-cleanup.js"
 import type { WorkerLaunchPlan } from "../../worker/launch-descriptor.js";
 import { NODE_WORKER_WORKSPACE_STDOUT_MAX_BYTES } from "../../worker/node-workspace-protocol.js";
 import { parseMessageWithAttachments } from "../chat-attachments.js";
-import { result as processResult } from "./bootstrap.test-support.js";
 import { projectWorkerSessionTurnClaim } from "./placement-record.js";
 import { createWorkerSessionPlacementGate } from "./placement-worker-gate.js";
 import type { WorkerTurnTunnelHandle } from "./tunnel-contract.js";
+import { result as processResult } from "./worker-command.test-support.js";
 import {
   environmentForTunnel,
   expectUncalled,

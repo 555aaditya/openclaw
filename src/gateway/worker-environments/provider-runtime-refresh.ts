@@ -1,4 +1,3 @@
-import type { WorkerProvider } from "../../plugins/types.js";
 import { createDeferredCore } from "../../shared/deferred.js";
 import { notifyListeners, registerListener } from "../../shared/listeners.js";
 import { sameWorkerBuild } from "../../worker/worker-build-identity.js";
@@ -33,21 +32,16 @@ type WorkerRuntimeRefreshOptions = Pick<
   | "isStopping"
   | "placementStore"
   | "ensureNodeWorkerBundle"
-  | "bootstrapWorker"
   | "credentialBroker"
 > &
-  Pick<
-    ReturnType<typeof createWorkerProviderOwnerLifecycle>,
-    "requireCurrentOwner" | "stopOwner" | "identityResolverFor"
-  >;
+  Pick<ReturnType<typeof createWorkerProviderOwnerLifecycle>, "requireCurrentOwner" | "stopOwner">;
 
 export function createWorkerRuntimeRefresher(options: WorkerRuntimeRefreshOptions) {
-  const { store, callBootstrap, requireCurrentOwner, stopOwner, identityResolverFor } = options;
+  const { store, callBootstrap, requireCurrentOwner, stopOwner } = options;
   const { ensurePendingCredential } = options.credentialBroker;
   const inFlight = new Map<string, WorkerRuntimeRefreshInFlight>();
   const refresh = async (
     record: WorkerEnvironmentRecord,
-    provider: WorkerProvider,
     installation: WorkerInstallationArtifact | undefined,
     signal?: AbortSignal,
   ) => {
@@ -117,17 +111,7 @@ export function createWorkerRuntimeRefresher(options: WorkerRuntimeRefreshOption
               onProgress: reportProgress,
             });
           }
-          if (!record.sshEndpoint) {
-            throw new Error("Worker runtime refresh has no transport");
-          }
-          return options.bootstrapWorker({
-            operationId: record.provisionOperationId,
-            sshEndpoint: record.sshEndpoint,
-            installation,
-            resolveIdentity: identityResolverFor(record, provider, record.leaseId!),
-            signal: refreshSignal,
-            assertCurrent,
-          });
+          throw new Error("Worker runtime transport is retired; use a paired device worker");
         });
         if (!sameWorkerBuild(receipt, installation)) {
           throw new Error("Worker runtime refresh returned a mismatched build receipt");

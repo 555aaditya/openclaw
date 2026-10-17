@@ -45,7 +45,6 @@ export type GatewayHttpServerOptions = {
   joinRateLimiter?: AuthRateLimiter;
   /** Authenticator/dispatcher for the reserved node worker bundle namespace. */
   handleNodeWorkerBundleTransferRequest?: ArtifactTransferHttpCallback;
-  handleWorkerBootstrapArtifactTransferRequest?: ArtifactTransferHttpCallback;
   /** Authenticator/dispatcher for the reserved node workspace transfer namespace. */
   handleNodeWorkspaceTransferRequest?: NodeWorkspaceTransferHttpCallback;
   getReadiness?: ReadinessChecker;

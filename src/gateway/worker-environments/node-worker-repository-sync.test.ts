@@ -15,7 +15,6 @@ import {
   parseRemoteWorkspaceManifestEnvelope,
   type RemoteWorkspaceManifestEnvelope,
 } from "./workspace-hash-memo.js";
-import { createWorkerWorkspaceActions } from "./workspace-sync.js";
 
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
 
@@ -61,43 +60,6 @@ it.each([
   } finally {
     await service.closeAll();
   }
-});
-
-it("rejects repository sources on SSH before invoking any remote command", async () => {
-  const run = vi.fn();
-  const waitForPrepared = vi.fn();
-  const actions = createWorkerWorkspaceActions({
-    environmentId: "environment-ssh",
-    ownerSignal: new AbortController().signal,
-    runner: { run },
-    waitForPrepared,
-    tasks: new Set(),
-    bundleHash: "a".repeat(64),
-  });
-  await expect(
-    actions.syncWorkspace({
-      sessionId: "session-ssh",
-      generation: 1,
-      source: {
-        kind: "repository",
-        url: "https://github.com/example/repository.git",
-        branch: "openclaw/session",
-      },
-    }),
-  ).rejects.toThrow("managed node");
-  await expect(
-    actions.reconcileWorkspace({
-      remoteWorkspaceDir: "/worker/workspace",
-      baseManifestRef: `sha256:${"b".repeat(64)}`,
-      source: {
-        kind: "repository",
-        referenceManifestRef: `sha256:${"b".repeat(64)}`,
-        prepareCheckpoint: vi.fn(),
-      },
-    }),
-  ).rejects.toThrow("managed node");
-  expect(waitForPrepared).not.toHaveBeenCalled();
-  expect(run).not.toHaveBeenCalled();
 });
 
 it.each([

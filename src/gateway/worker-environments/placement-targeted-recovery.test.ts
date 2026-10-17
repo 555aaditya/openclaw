@@ -16,18 +16,15 @@ import { createWorkerWorkspaceOperationCoordinator } from "./workspace-operation
 import { createWorkerWorkspaceRecoveryFixture } from "./workspace-recovery.test-support.js";
 
 async function seedAttached(environmentId: string) {
-  await support.seedBootstrapping(environmentId);
-  await support.testState.store.transition({
-    environmentId,
-    from: "bootstrapping",
-    to: "ready",
-    patch: support.readyPatch(environmentId, {
+  await support.seedReady(environmentId, {
+    receipt: {
       ...support.BOOTSTRAP_RECEIPT,
+      installKind: "bundle",
       protocolFeatures: [
         WORKER_EXECUTION_CONTEXT_PROTOCOL_FEATURE,
         WORKER_EXECUTION_AUTHORITY_PROTOCOL_FEATURE,
       ],
-    }),
+    },
   });
   return support.testState.store.transition({
     environmentId,
@@ -78,7 +75,7 @@ describe("targeted worker placement recovery", () => {
     });
   });
 
-  it("does not wait for a sibling provider inspection; full sweeps still inspect and maintain it", async () => {
+  it("does not wait for a sibling provider inspection; full sweeps still inspect it", async () => {
     const targetId = "worker-target";
     const siblingId = "worker-sibling";
     const identity = await seedAttached(targetId);
@@ -92,7 +89,6 @@ describe("targeted worker placement recovery", () => {
     const inspectionStarted = createDeferredCore();
     const releaseInspection = createDeferredCore();
     const inspected: string[] = [];
-    const maintainProviders = vi.fn(async () => {});
     const environments = support.createService(
       support.createProvider({
         inspect: async ({ leaseId }) => {
@@ -104,7 +100,6 @@ describe("targeted worker placement recovery", () => {
           return { status: "active" };
         },
       }),
-      { maintainProviders },
     );
     const dispatch = await createDispatch(environments, placements);
     const uninstall = installWorkerPlacementReconcileGuard({
@@ -128,11 +123,9 @@ describe("targeted worker placement recovery", () => {
       await uninstall();
     }
     inspected.length = 0;
-    maintainProviders.mockClear();
     const prune = vi.spyOn(support.testState.store, "pruneTerminalEnvironments");
     await dispatch.reconcileActive();
     expect(inspected.toSorted()).toEqual([`lease:${siblingId}`, `lease:${targetId}`]);
-    expect(maintainProviders).toHaveBeenCalledOnce();
     expect(prune).toHaveBeenCalledOnce();
     expect(placements.get(REQUEST.sessionId)?.state).toBe("active");
     expect(first).toBe("target-finished");

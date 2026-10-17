@@ -268,7 +268,6 @@ process.stdin.pipe(child.stdin);
               let activateDuringDestroy = false;
               const provider: WorkerProvider = {
                 id: "synthetic",
-                requiresNodeEnrollment: true,
                 supportedExecutionModes: ["worker-turn"],
                 resolveAllocation: async () => {
                   throw new Error("Expected an existing warm allocation");
@@ -297,7 +296,7 @@ process.stdin.pipe(child.stdin);
                   tarballSha256: "b".repeat(64),
                   tarballPath: state.path("unused-bundle"),
                 }),
-                bootstrapWorker: async () => {
+                ensureNodeWorkerBundle: async () => {
                   throw new Error("Warm allocation already bootstrapped");
                 },
                 nodeTunnelManager: tunnels,

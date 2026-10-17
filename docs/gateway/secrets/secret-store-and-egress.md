@@ -165,51 +165,6 @@ Current limits:
 - Automatic shared-store secret egress applies only to Gateway-hosted exec. Sandbox and remote `node` exec receive neither proxy variables nor sentinels, so shared-store `secret` entries are unavailable there. Provider-native harness subprocesses also do not use this proxy. The explicit Crabbox command below grants a configured model credential separately.
 - Background subprocesses retain their original secret snapshot until they exit or are stopped. Changes to stored credentials or destination bindings require a new run and a new command; stop existing commands to revoke their older grants immediately.
 
-## Job-scoped setup grants
-
-Official plugins can prepare one job with an explicit selection of shared-store
-SecretRefs through `withSetupSecretEgress` in
-`openclaw/plugin-sdk/secret-egress-runtime`. This capability reads only the named
-`kind: "secret"` entries and their allowed-host bindings in one coherent
-read-worker snapshot. Unrelated secrets and agent-readable `env` entries are not
-loaded or registered. A missing or non-secret selection fails before launching
-the job; changes to the store apply to the next job's snapshot.
-
-Cloud worker profiles select these jobs with `settings.setupSecrets`, a bounded
-map of POSIX environment names to store SecretRefs. Only protected entries with
-exact destination bindings qualify. A committed devcontainer `secrets` property
-requests names from this approved map; it cannot select another store entry or
-grant destinations. Missing mappings are reported together before repository
-commands run. See [cloud environment files](/gateway/cloud-workers/environment-file).
-
-Profile setup, preparation, and post-create/start use Crabbox native `egress run`
-on the worker's owned coordinator Linux lease. Crabbox 0.77.0 or newer permits
-public destinations for ordinary HTTPS package downloads, while the Gateway
-substitutes each sentinel only at that secret's bound host. This job does not
-require `secrets.egressProxy.enabled`. Unsupported leases, unavailable helpers or
-proxy service, and old CLIs fail with repair guidance before repository code.
-No-secret jobs retain their existing transport.
-Protected setup exports only HTTPS proxy settings and unsets inherited
-`HTTP_PROXY` and `http_proxy` values. Plain HTTP downloads go directly from the
-lease and never receive substituted secrets.
-
-The job receives remote sentinel environment values and public CA bundle
-contents. Its authenticated upstream proxy environment belongs only on the
-credential-owning host, never in the remote environment or a snapshot. The host
-bridge supplies remote proxy and CA settings. Setup and model jobs share the
-same worker-owned grant lifecycle: cancellation revokes access synchronously
-before process termination, and completion or failure revokes the grant, stops
-the proxy, and removes temporary CA files. See the
-[SDK runtime contract](/plugins/sdk-runtime#setup-secret-egress).
-
-Setup secrets no longer disable snapshots. Compatibility records use sorted
-environment names and store references with a protected-egress identity, never
-values or sentinel bytes. Capture removes runner-owned CA files and Crabbox
-command staging. No runner-generated credential config is retained; repository
-configuration stays owned by the repository. Legacy `setupEnv` requires Doctor
-repair against existing bound store entries; values are never forwarded or
-rewritten by that migration.
-
 ## Model credentials for Crabbox commands
 
 The Crabbox plugin lets a foreground application in a Linux lease call an
@@ -341,3 +296,9 @@ Use a file SecretRef on a supported credential field instead:
 For `mode: "singleValue"`, the SecretRef `id` is `"value"`. For `mode: "json"`, use an absolute JSON pointer such as `"/providers/xai/apiKey"`.
 
 See [SecretRef Credential Surface](/reference/secretref-credential-surface) for the fields that accept SecretRefs.
+
+<a id="job-scoped-setup-grants" />
+
+## Retired plugin worker integration
+
+Plugin worker provisioning, its setup-secret grants, machine catalogs, and prepared images have been removed. These former section links are retained for older references. See [retired plugin provisioning](/gateway/cloud-workers#retired-plugin-provisioning) for the remaining paired-device and standalone sandbox options.

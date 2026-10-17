@@ -390,14 +390,9 @@ export function createWorkerEnvironmentSessionAttachments(
             !["destroyed", "failed", "orphaned"].includes(environment.state),
           );
           if (reused && attachment && environment) {
-            if (
-              environment.profileId !== request.profileId ||
-              (request.machineClass !== undefined &&
-                environment.profileSnapshot.machineClass !== request.machineClass) ||
-              (request.os !== undefined && environment.profileSnapshot.os !== request.os)
-            ) {
+            if (environment.profileId !== request.profileId) {
               throw new Error(
-                "Conversation already owns a different environment; stop it before selecting another profile or machine",
+                "Conversation already owns a different environment; stop it before selecting another profile",
               );
             }
             if (environment.destroyRequestedAtMs !== null) {
@@ -422,13 +417,10 @@ export function createWorkerEnvironmentSessionAttachments(
               request.sessionId,
               request.idempotencyKey,
             ]);
-            const intent = await providerLifecycle.prepareIntent(request.profileId, {
-              machineClass: request.machineClass,
-              os: request.os,
+            const intent = providerLifecycle.resolveProfile(request.profileId, {
               signal,
             });
             assertCurrent();
-            providerLifecycle.assertPreparedIntentCurrent(request.profileId, intent);
             const environmentIntent = deriveEnvironmentIntent(allocationKey);
             let reservationCreated = false;
             const reserved = await options
@@ -465,7 +457,6 @@ export function createWorkerEnvironmentSessionAttachments(
                 const assertProvisionCurrent = () => {
                   try {
                     assertCurrent();
-                    providerLifecycle.assertPreparedIntentCurrent(request.profileId, intent);
                   } catch (error) {
                     authorityFailure ??= { error };
                     throw error;

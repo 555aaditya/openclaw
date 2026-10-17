@@ -76,7 +76,6 @@ export async function createHarness(
     workspacePath?: string;
     resolveWorkspace?: DispatchOptions["resolveWorkspace"];
     withPreparedRecovery?: DispatchOptions["withPreparedRecovery"];
-    requiresNodeEnrollment?: boolean;
     priorWorkspaceResultConflict?: { paths: string[]; stagedResultRef: string };
     priorWorkspaceResultConflictLookup?: WorkspaceResultConflictLookup;
     reconcileConflictPaths?: string[];
@@ -354,34 +353,12 @@ export async function createHarness(
     expiresAtMs: 10_000,
   };
   const environments: WorkerDispatchEnvironmentService &
-    Pick<
-      WorkerEnvironmentService,
-      "recordError" | "requestDestroy" | "requiresNodeEnrollment" | "readMachineShape"
-    > = {
+    Pick<WorkerEnvironmentService, "recordError" | "requestDestroy" | "readMachineShape"> = {
     fenceWorkerTurnForRecovery:
       createWorkerSessionPlacementGate(placementStore).fenceWorkerTurnForRecovery,
-    requiresNodeEnrollment: vi.fn(() => options.requiresNodeEnrollment === true),
     readMachineShape: () => undefined,
     recordError: vi.fn((record) => record),
     supportsProviderExecutionMode: vi.fn(() => true),
-    assertPreparedIntentCurrent: vi.fn(),
-    prepareProjectIntent: vi.fn(async (_profileId, request) => ({
-      providerId: request?.inherited?.providerId ?? ready.providerId,
-      profileSnapshot: request?.inherited?.profileSnapshot ?? ready.profileSnapshot,
-    })),
-    getPreparedCandidates: vi.fn(() => []),
-    bindPreparedWorkspace: vi.fn(async (request) => ({
-      assertCurrent: request.assertCurrent,
-      gatewayNamespace: "dispatch-fixture",
-      environmentId: request.environmentId,
-      preparationKey: request.preparationKey,
-      cacheKey: request.cacheKey,
-      workspaceDir: "/worker/workspace",
-      homeDir: "/worker/home",
-      sourceManifestRef: MANIFEST_REF,
-      preparedManifestRef: MANIFEST_REF,
-    })),
-    schedulePreparedRefill: vi.fn(),
     createWithRequest: vi.fn<WorkerDispatchEnvironmentService["createWithRequest"]>(
       async ({ inheritedProfile }) => {
         fail("create");

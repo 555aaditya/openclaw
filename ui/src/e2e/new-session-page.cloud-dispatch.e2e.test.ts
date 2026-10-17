@@ -11,9 +11,9 @@ import {
 const suite = createNewSessionPageE2eSuite();
 
 suite.define(() => {
-  it("dispatches an optionless cloud profile without a machine override", async () => {
+  it("dispatches the selected device profile after switching destinations", async () => {
     await suite.withPage({ locale: "en-US", serviceWorkers: "block" }, async ({ page }) => {
-      const sessionKey = "agent:main:optionless-cloud";
+      const sessionKey = "agent:main:selected-profile";
       const gateway = await installMockGateway(page, {
         operatorScopes: ["operator.admin", "operator.read", "operator.write"],
         workspaceGit: true,
@@ -30,13 +30,9 @@ suite.define(() => {
             profiles: [
               {
                 id: "aws",
-                providerId: "crabbox",
-                machines: [
-                  { id: "standard", label: "Standard", default: true },
-                  { id: "fast", label: "Fast" },
-                ],
+                providerId: "device",
               },
-              { id: "machine0", providerId: "crabbox" },
+              { id: "build-host", providerId: "device" },
             ],
           },
           "worktrees.branches": {
@@ -55,25 +51,25 @@ suite.define(() => {
       const place = page.locator(".oc-popover.new-session-page__where-popover");
       await trigger.click();
       await place.getByRole("button", { name: "aws", exact: true }).click();
-      await place.getByRole("button", { name: "Fast", exact: true }).click();
-      await expect.poll(() => trigger.getAttribute("data-machine-class")).toBe("fast");
-      await place.getByRole("button", { name: "machine0", exact: true }).click();
-      await expect.poll(() => trigger.getAttribute("data-cloud-profile")).toBe("machine0");
-      await expect.poll(() => trigger.getAttribute("data-machine-class")).toBeNull();
-      await expect
-        .poll(() => place.getByRole("button", { name: "machine0", exact: true }).isDisabled())
-        .toBe(false);
-      await expect.poll(() => place.getByText("Machine", { exact: true }).isVisible()).toBe(false);
-      await expect.poll(() => place.locator('[data-value^="machine:"]:visible').count()).toBe(0);
-      await captureUiProof(suite, page, "optionless-cloud-profile.png");
+      await expect.poll(() => trigger.getAttribute("data-cloud-profile")).toBe("aws");
+      await trigger.click();
+      const target = place.getByRole("button", { name: "build-host", exact: true });
+      expect(await target.isEnabled()).toBe(true);
+      await target.click();
+      await expect.poll(() => trigger.getAttribute("data-cloud-profile")).toBe("build-host");
+      await captureUiProof(suite, page, "selected-profile.png");
       await page.keyboard.press("Escape");
 
-      await page.locator(".new-session-page__message").fill("Use the configured machine size");
+      await page.locator(".new-session-page__message").fill("Use the selected device profile");
       await page.getByRole("button", { name: "Start session" }).click();
       const dispatch = await gateway.waitForRequest("sessions.dispatch");
-      expect(dispatch.params).toEqual({ key: sessionKey, agentId: "main", profileId: "machine0" });
+      expect(dispatch.params).toEqual({
+        key: sessionKey,
+        agentId: "main",
+        profileId: "build-host",
+      });
       await pollLocatorText(page.locator(".chat-thread")).toContain(
-        "Use the configured machine size",
+        "Use the selected device profile",
       );
       await pollLocatorText(
         page.locator('.chat-thread .chat-working-indicator[role="status"]'),

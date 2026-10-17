@@ -46,7 +46,11 @@ describe("conversation environment presentation participants", () => {
   afterEach(() => closeOpenClawAgentDatabases());
 
   function fixture() {
-    const provision = vi.fn(async () => ({ leaseId: "lease-one", ssh: support.SSH_ENDPOINT }));
+    const provision = vi.fn(async () => ({
+      leaseId: "lease-one",
+      node: { deviceId: "node-one" },
+      sharedHost: true,
+    }));
     const service = support.createService(support.createProvider({ provision }));
     const create = vi.spyOn(service, "createSessionAttachment");
     const clients: GatewayClient[] = [owner, steerer].map((person) => ({

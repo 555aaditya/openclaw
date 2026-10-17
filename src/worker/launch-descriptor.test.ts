@@ -433,33 +433,16 @@ describe("worker launch descriptor", () => {
     }
   });
 
-  it("accepts only a closed absolute loopback browser attachment descriptor", () => {
-    const descriptor = launchDescriptor();
-    descriptor.assignment.browser = {
-      cdpUrl: "http://127.0.0.1:9222",
-      launcherPath: "/usr/local/bin/openclaw-worker-browser",
-      launcherArgs: ["literal;$(text)", "arg with spaces"],
-    };
-    expect(parseWorkerLaunchDescriptor(structuredClone(descriptor))).toEqual(descriptor);
-
-    const browser = descriptor.assignment.browser;
-    const cases: unknown[] = [
-      { ...browser, unexpected: true },
-      { ...browser, cdpUrl: "https://127.0.0.1:9222" },
-      { ...browser, cdpUrl: "http://localhost:9222" },
-      { ...browser, cdpUrl: "http://127.0.0.1" },
-      { ...browser, cdpUrl: "http://127.0.0.1:9222/json/version" },
-      { ...browser, launcherPath: "openclaw-worker-browser" },
-      { ...browser, launcherPath: "/app\0" },
-      { ...browser, launcherPath: `/${"x".repeat(4096)}` },
-      { ...browser, launcherArgs: ["arg\0"] },
-      { ...browser, launcherArgs: Array(33).fill("a") },
-      { ...browser, launcherArgs: ["x".repeat(4097)] },
-      { ...browser, launcherArgs: Array(3).fill("x".repeat(4096)) },
-    ];
-    for (const invalidBrowser of cases) {
-      expectInvalidDescriptor(withAssignment({ browser: invalidBrowser }, descriptor));
-    }
+  it("rejects the retired Browser attachment descriptor", () => {
+    expectInvalidDescriptor(
+      withAssignment({
+        browser: {
+          cdpUrl: "http://127.0.0.1:9222",
+          launcherPath: "/usr/local/bin/openclaw-worker-browser",
+          launcherArgs: [],
+        },
+      }),
+    );
   });
 
   it("requires a computer descriptor and grant together and rejects target substitution fields", () => {

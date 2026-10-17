@@ -259,7 +259,7 @@ export function resolveChatPaneDesktopTarget(
       const nodeId = normalizeOptionalString(placement.runner.deviceId);
       return placement.runner.status === "available" && nodeId ? `node:${nodeId}` : null;
     }
-    return normalizeOptionalString(placement.environmentId) ?? null;
+    return null;
   }
   const execNode = normalizeOptionalString(session.execNode);
   return execNode ? `node:${execNode}` : "gateway";

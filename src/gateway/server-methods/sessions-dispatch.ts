@@ -125,8 +125,6 @@ async function withWorkerSessionTarget(
           cfg,
           profileId: params.profileId,
           deviceId: params.deviceId,
-          machineClass: params.machineClass,
-          os: params.os,
         })
       : { ok: true as const, value: undefined };
   if (!destination.ok) {

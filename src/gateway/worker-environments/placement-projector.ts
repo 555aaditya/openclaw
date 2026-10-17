@@ -7,6 +7,7 @@ import type {
   SessionPlacementWorkerRuntimeInstall,
 } from "../../../packages/gateway-protocol/src/index.js";
 import { DEVICE_WORKER_PROVIDER_ID } from "./device-provider-identity.js";
+import { hasRetiredWorkerMoveOverrides } from "./placement-move-intent.types.js";
 import type { WorkerPlacementMoveIntent } from "./placement-move-intent.types.js";
 import type { WorkerEnvironmentPlacementFacts } from "./placement-read-projection.types.js";
 import type { WorkerSessionPlacementRecord } from "./placement-record.js";
@@ -192,6 +193,14 @@ export function createWorkerPlacementRunnerAvailabilityReader(params: {
 export function projectWorkerPlacementMove(
   intent: WorkerPlacementMoveIntent,
 ): SessionPlacementMove {
+  if (hasRetiredWorkerMoveOverrides(intent.target) && intent.target.kind === "profile") {
+    return {
+      target: { kind: "profile", profileId: intent.target.profileId },
+      updatedAtMs: intent.updatedAtMs,
+      error:
+        "Stored move requires retired worker provider overrides; stop this placement before selecting a new target",
+    };
+  }
   return {
     target: intent.target,
     updatedAtMs: intent.updatedAtMs,

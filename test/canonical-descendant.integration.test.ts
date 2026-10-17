@@ -1649,29 +1649,46 @@ describe("canonical descendant lifecycle through real owners", () => {
           const starts = fixture.native.calls.filter(
             (call) => call.method === "thread/start",
           ).length;
-          const guest = await fixture.turn(childKey, "guest probe", {
-            senderId: "guest",
-            senderIsOwner: false,
-            inspectTools: async ({ bridge }) => {
-              expect(bridge.specs).toEqual(inherited);
-              expect(bridge.availableTools.some((tool) => tool.name === toolName)).toBe(true);
-              const before = { calls: calls.length, initializations };
-              const denied = await bridge.handleToolCall({
-                threadId: childBinding.threadId,
-                turnId: "current",
-                callId: "guest-probe",
-                namespace: null,
-                tool: toolName,
-                arguments: {},
-              });
-              // An unconnected OAuth requester receives local sign-in guidance,
-              // never the previously authenticated caller's transport or result.
-              expect(JSON.stringify(denied.contentItems)).toContain("needs requester sign-in");
-              expect({ calls: calls.length, initializations }).toEqual(before);
-            },
-          });
-          expect(guest.threadId).toBe(childBinding.threadId);
+          const runGuestProbe = async (hasAdvertisedCatalog: boolean) => {
+            const before = { calls: calls.length, initializations };
+            const guest = await fixture.turn(childKey, "guest probe", {
+              senderId: "guest",
+              senderIsOwner: false,
+              inspectTools: async ({ bridge }) => {
+                expect(bridge.specs).toEqual(inherited);
+                expect(bridge.availableTools.some((tool) => tool.name === toolName)).toBe(
+                  hasAdvertisedCatalog,
+                );
+                const denied = await bridge.handleToolCall({
+                  threadId: childBinding.threadId,
+                  turnId: "current",
+                  callId: "guest-probe",
+                  namespace: null,
+                  tool: toolName,
+                  arguments: {},
+                });
+                if (hasAdvertisedCatalog) {
+                  // A known declaration can offer local sign-in guidance without the
+                  // previously authenticated requester's transport or result.
+                  expect(denied).toMatchObject({ executionStarted: true });
+                  expect(JSON.stringify(denied.contentItems)).toContain("needs requester sign-in");
+                } else {
+                  // Forked native declarations persist, but a cold child has no live
+                  // requester catalog from which to materialize an executor.
+                  expect(denied).toMatchObject({ success: false, executionStarted: false });
+                  expect(JSON.stringify(denied.contentItems)).toContain(
+                    `OpenClaw tool is not available for this turn: ${toolName}`,
+                  );
+                }
+              },
+            });
+            expect(guest.threadId).toBe(childBinding.threadId);
+            expect({ calls: calls.length, initializations }).toEqual(before);
+            expect(mcpOAuth.startMcpOAuthAuthorization).not.toHaveBeenCalled();
+          };
+          await runGuestProbe(false);
           expect((await runProbe(childKey, inherited)).threadId).toBe(childBinding.threadId);
+          await runGuestProbe(true);
           const beforeRestart = initializations;
           for (const key of [source.sessionKey, childKey]) {
             await retireSessionMcpRuntime({

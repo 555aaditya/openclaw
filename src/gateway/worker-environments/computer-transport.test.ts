@@ -12,13 +12,11 @@ import {
   rotateAgentRunRegistryLifecycleGeneration,
   validateAgentRunDelegatedAuthority,
 } from "../../infra/agent-run-registry.js";
-import { NODE_WORKER_DESKTOP_COMPUTER_COMMAND } from "../../infra/node-commands.js";
 import type { PluginApprovalRequestPayload } from "../../infra/plugin-approvals.js";
 import { createEmptyPluginRegistry } from "../../plugins/registry-empty.js";
 import { resetPluginRuntimeStateForTest, setActivePluginRegistry } from "../../plugins/runtime.js";
 import { createDeferredCore } from "../../shared/deferred.js";
 import { createWorkerComputerTool } from "../../worker/computer-runtime.js";
-import { createDesktopSessionRegistry } from "../desktop/session-registry.js";
 import { createTestApprovalFixture } from "../exec-approval-manager.test-support.js";
 import {
   createOperatorClient,
@@ -80,12 +78,6 @@ const revocations: Array<{ name: string; revoke(harness: Harness): void }> = [
     },
   },
   {
-    name: "private runner proof",
-    revoke: (h) => {
-      h.state.privateCurrent = false;
-    },
-  },
-  {
     name: "operational run",
     revoke: (h) => {
       claimAgentRunDelegatedAuthority(createOperationalRunInstanceRef(h.claim.runId));
@@ -135,7 +127,7 @@ describe("session computer transport", () => {
   it.each(["snapshot", "type"] as const)(
     "preserves native permission details for attached %s commands",
     async (action) => {
-      const h = createHarness(true);
+      const h = createHarness();
       const { transport } = await h.prepare();
       const details = { capabilities: ["screenRecording"], state: "restart-required" };
       h.publicInvoke.mockResolvedValueOnce({
@@ -181,7 +173,6 @@ describe("session computer transport", () => {
     await expect(createWorkerComputerService(h.options).prepare(h.claim)).rejects.toThrow(
       "Session desktop placement is no longer active",
     );
-    expect(h.privateInvoke).not.toHaveBeenCalled();
     expect(h.publicInvoke).not.toHaveBeenCalled();
   });
 
@@ -214,57 +205,6 @@ describe("session computer transport", () => {
     await service.close();
     expect(h.nativeExecutionIds).toHaveLength(3);
     expect(new Set(h.nativeExecutionIds).size).toBe(1);
-  });
-
-  it("pauses agent input during human control and resumes after release", async () => {
-    const h = createHarness();
-    const desktopRegistry = createDesktopSessionRegistry();
-    const service = createWorkerComputerService({ ...h.options, desktopRegistry });
-    const prepared = await service.prepare(h.claim);
-    const transport = prepared!.bind(h.run, h.workerSource);
-    await desktopRegistry.activate({
-      sourceKey: h.state.environment.environmentId,
-      ownerEpoch: h.state.environment.ownerEpoch,
-    });
-    const dispatched = createDeferredCore<AbortSignal>();
-    h.privateInvoke.mockImplementationOnce(async (invocation) => {
-      const signal = invocation.signal!;
-      dispatched.resolve(signal);
-      await new Promise<void>((_resolve, reject) => {
-        signal.addEventListener(
-          "abort",
-          () => {
-            const reason: unknown = signal.reason;
-            reject(
-              reason instanceof Error
-                ? reason
-                : new Error("Computer transport aborted", { cause: reason }),
-            );
-          },
-          { once: true },
-        );
-      });
-      return { ok: true, payload: { ok: true } };
-    });
-    const input = transport.invoke(request("type"));
-    const rejected = expect(input).rejects.toThrow("operator has control");
-    const inputSignal = await dispatched.promise;
-    const observer = desktopRegistry.attachObserver(h.state.environment.environmentId, {
-      control: true,
-      ownerEpoch: h.state.environment.ownerEpoch,
-      close: vi.fn(),
-    });
-    expect(observer).toBeDefined();
-    await rejected;
-    expect(inputSignal.aborted).toBe(true);
-    await expect(transport.invoke(request("type"))).rejects.toThrow("release control");
-    await expect(transport.invoke(request("snapshot"))).resolves.toEqual({ ok: true });
-    observer!.release();
-    await expect(transport.invoke(request("type"))).rejects.toThrow("fresh screenshot");
-    await expect(transport.invoke(request("snapshot"))).resolves.toEqual({ ok: true });
-    await expect(transport.invoke(request("type"))).resolves.toEqual({ ok: true });
-    await service.close();
-    await desktopRegistry.stopAll();
   });
 
   it("preserves bounded native close causes in the worker RPC error", async () => {
@@ -313,16 +253,14 @@ describe("session computer transport", () => {
   });
 
   it("reports an offline runner before preparing a disconnected desktop", async () => {
-    const sharedHost = true;
-    const h = createHarness(sharedHost);
+    const h = createHarness();
     vi.spyOn(h.state.context!.nodeRegistry, "get").mockReturnValue(undefined);
     await expect(h.prepare()).rejects.toBeInstanceOf(WorkerRunnerUnavailableError);
-    expect(h.privateInvoke).not.toHaveBeenCalled();
     expect(h.publicInvoke).not.toHaveBeenCalled();
     expect(h.options.placements.validateTurnClaim(h.claim)).toBe(true);
   });
 
-  it("routes snapshots and classified input to the exact private node without public fallback", async () => {
+  it("routes snapshots and classified input to the exact paired node", async () => {
     const h = createHarness();
     const { transport, prepared } = await h.prepare();
     expect(transport.computerUse).toEqual(COMPUTER_USE);
@@ -331,26 +269,19 @@ describe("session computer transport", () => {
     await transport.invoke(request("type"));
     const physicalId = h.nativeExecutionIds[0];
     expect(physicalId).not.toBe(EXECUTION_ID);
-    expect(h.privateInvoke.mock.calls.map(([call]) => call.params)).toEqual([
-      { operation: "capabilities" },
+    expect(
+      h.publicInvoke.mock.calls.map(([call]) => ({ command: call.command, params: call.params })),
+    ).toEqual([
       {
-        operation: "snapshot",
-        providerGeneration: COMPUTER_USE.provider.generation,
+        command: "screen.snapshot",
         params: { ...request("snapshot").commandParams, executionId: physicalId },
       },
       {
-        operation: "act",
-        providerGeneration: COMPUTER_USE.provider.generation,
+        command: "computer.act",
         params: { ...request("type").commandParams, executionId: physicalId },
       },
     ]);
-    expect(
-      h.privateInvoke.mock.calls.every(
-        ([call]) =>
-          call.node.nodeId === "desktop-node" &&
-          call.command === NODE_WORKER_DESKTOP_COMPUTER_COMMAND,
-      ),
-    ).toBe(true);
+    expect(h.publicInvoke.mock.calls.every(([call]) => call.nodeId === "desktop-node")).toBe(true);
     expect(h.classifyRisk).toHaveBeenCalledWith({
       command: "computer.act",
       params: { ...request("type").commandParams, executionId: physicalId },
@@ -359,7 +290,6 @@ describe("session computer transport", () => {
       level: "ordinary",
       family: "fixture_input",
     });
-    expect(h.publicInvoke).not.toHaveBeenCalled();
     await prepared.close("completion");
   });
 
@@ -371,32 +301,29 @@ describe("session computer transport", () => {
       /bound/,
     );
     await transport.invoke(request("snapshot"));
-    h.privateInvoke.mockClear();
+    h.publicInvoke.mockClear();
     await expect(transport.invoke(request("type", NEXT_EXECUTION_ID))).rejects.toThrow(
       /execution owner changed/,
     );
     await expect(transport.invoke(request("close", NEXT_EXECUTION_ID))).rejects.toThrow(
       /execution owner changed/,
     );
-    expect(h.privateInvoke).not.toHaveBeenCalled();
     expect(h.publicInvoke).not.toHaveBeenCalled();
     await prepared.close("completion");
   });
 
   it("keeps independent bound attempts separate even when execution IDs are copied", async () => {
-    const sharedHost = true;
-    const h = createHarness(sharedHost);
+    const h = createHarness();
     const { transport, prepared } = await h.prepare();
     const projection = prepared.bind(h.run, h.workerSource);
     await transport.invoke(request("snapshot"));
     const firstPhysicalId = h.nativeExecutionIds[0]!;
     expect(firstPhysicalId).not.toBe(EXECUTION_ID);
-    h.privateInvoke.mockClear();
     h.publicInvoke.mockClear();
+
     await expect(projection.invoke(request("close", firstPhysicalId))).resolves.toEqual({
       ok: true,
     });
-    expect(h.privateInvoke).not.toHaveBeenCalled();
     expect(h.publicInvoke).not.toHaveBeenCalled();
     await expect(projection.invoke(request("type", firstPhysicalId))).rejects.toThrow(/closed/);
     await transport.invoke(request("type"));
@@ -414,19 +341,19 @@ describe("session computer transport", () => {
   it("rejects a close envelope submitted as a snapshot before any node dispatch", async () => {
     const h = createHarness();
     const { transport, prepared } = await h.prepare();
-    h.privateInvoke.mockClear();
+    h.publicInvoke.mockClear();
     await expect(
       transport.invoke({ ...request("close"), command: "screen.snapshot" }),
     ).rejects.toThrow(/invalid worker computer request/);
     expect(h.policyHandle).not.toHaveBeenCalled();
-    expect(h.privateInvoke).not.toHaveBeenCalled();
+    expect(h.publicInvoke).not.toHaveBeenCalled();
     await prepared.close("completion");
   });
 
   it.each(["commands", "provider"] as const)(
     "honors a paired host's live %s revocation during policy work",
     async (surface) => {
-      const h = createHarness(true);
+      const h = createHarness();
       const { transport, prepared } = await h.prepare();
       h.state.beforePolicy = async () => {
         await Promise.resolve();
@@ -502,13 +429,10 @@ describe("session computer transport", () => {
     }
   });
 
-  it.each([
-    { sharedHost: true, boundary: "policy" },
-    { sharedHost: true, boundary: "pairing" },
-  ] as const)(
-    "withholds native input when only the RPC grant closes during $boundary (shared host: $sharedHost)",
-    async ({ sharedHost, boundary }) => {
-      const h = createHarness(sharedHost);
+  it.each([{ boundary: "policy" }, { boundary: "pairing" }] as const)(
+    "withholds native input when only the RPC grant closes during $boundary",
+    async ({ boundary }) => {
+      const h = createHarness();
       const service = createWorkerComputerService(h.options);
       const prepared = await service.prepare(h.claim);
       if (!prepared) {
@@ -558,12 +482,11 @@ describe("session computer transport", () => {
       h.state.beforeDispatch = undefined;
       await service.close();
       expect(h.nativeExecutionIds).toEqual([physicalId, physicalId]);
-      const calls = sharedHost ? h.publicInvoke.mock.calls : h.privateInvoke.mock.calls;
-      expect(calls.at(-1)?.[0].params).toMatchObject(
-        sharedHost
-          ? { action: "__close_execution", executionId: physicalId }
-          : { operation: "close", executionId: physicalId },
-      );
+      const calls = h.publicInvoke.mock.calls;
+      expect(calls.at(-1)?.[0].params).toMatchObject({
+        action: "__close_execution",
+        executionId: physicalId,
+      });
     },
   );
 
@@ -653,7 +576,9 @@ describe("session computer transport", () => {
         await service.close();
       }
       expect(h.nativeExecutionIds).toHaveLength(1);
-      expect(h.privateInvoke.mock.calls.at(-1)?.[0].params).toMatchObject({ operation: "close" });
+      expect(h.publicInvoke.mock.calls.at(-1)?.[0].params).toMatchObject({
+        action: "__close_execution",
+      });
       expect(retainedError).toBeInstanceOf(Error);
     },
   );
@@ -669,14 +594,13 @@ describe("session computer transport", () => {
         entered.resolve();
         await policy.promise;
       };
-      h.privateInvoke.mockClear();
+      h.publicInvoke.mockClear();
       const invoked = transport.invoke(request("type"));
       const rejected = expect(invoked).rejects.toThrow();
       await entered.promise;
       revocation.revoke(h);
       policy.resolve();
       await rejected;
-      expect(h.privateInvoke).not.toHaveBeenCalled();
       expect(h.publicInvoke).not.toHaveBeenCalled();
       await prepared.close("cancellation");
     },
@@ -693,25 +617,21 @@ describe("session computer transport", () => {
       entered.resolve();
       await result.promise;
     };
-    h.privateInvoke.mockClear();
+    h.publicInvoke.mockClear();
     const invoked = transport.invoke(request("type"));
     const rejected = expect(invoked).rejects.toThrow();
     await entered.promise;
     revocation.revoke(h);
     result.resolve();
     await rejected;
-    expect(h.privateInvoke).toHaveBeenCalledOnce();
-    expect(h.publicInvoke).not.toHaveBeenCalled();
+    expect(h.publicInvoke).toHaveBeenCalledOnce();
     await prepared.close("cancellation");
   });
 
-  it.each([
-    { sharedHost: false, revoke: "policy" },
-    { sharedHost: true, revoke: "commands" },
-  ] as const)(
-    "releases its native execution after $revoke revocation (shared host: $sharedHost)",
-    async ({ sharedHost, revoke }) => {
-      const h = createHarness(sharedHost);
+  it.each([{ revoke: "policy" }, { revoke: "commands" }] as const)(
+    "releases its native execution after $revoke revocation",
+    async ({ revoke }) => {
+      const h = createHarness();
       const { transport, prepared } = await h.prepare();
       await transport.invoke(request("snapshot"));
       const physicalId = h.nativeExecutionIds[0];
@@ -721,24 +641,17 @@ describe("session computer transport", () => {
         h.state.config = { gateway: { nodes: { commands: { deny: ["computer.act"] } } } };
       }
       await expect(transport.invoke(request("type"))).rejects.toThrow();
-      h.privateInvoke.mockClear();
       h.publicInvoke.mockClear();
+
       h.policyHandle.mockClear();
 
       await expect(prepared.close("revoked")).resolves.toBeUndefined();
-      const nativeInvoke = sharedHost ? h.publicInvoke : h.privateInvoke;
+      const nativeInvoke = h.publicInvoke;
       expect(nativeInvoke).toHaveBeenCalledExactlyOnceWith(
-        expect.objectContaining(
-          sharedHost
-            ? {
-                command: "computer.act",
-                params: { action: "__close_execution", executionId: physicalId, reason: "revoked" },
-              }
-            : {
-                command: NODE_WORKER_DESKTOP_COMPUTER_COMMAND,
-                params: { operation: "close", executionId: physicalId, reason: "revoked" },
-              },
-        ),
+        expect.objectContaining({
+          command: "computer.act",
+          params: { action: "__close_execution", executionId: physicalId, reason: "revoked" },
+        }),
       );
       expect(h.policyHandle).not.toHaveBeenCalled();
       await expect(transport.invoke(request("type"))).rejects.toThrow(/closed/);
@@ -746,84 +659,57 @@ describe("session computer transport", () => {
   );
 
   it("prevents plugin policy overrides from replacing the execution owner", async () => {
-    const sharedHost = true;
-    const h = createHarness(sharedHost);
+    const h = createHarness();
     const { transport, prepared } = await h.prepare();
     await transport.invoke(request("snapshot"));
-    h.privateInvoke.mockClear();
     h.publicInvoke.mockClear();
+
     h.policyHandle.mockImplementationOnce((policy) =>
       policy.invokeNode({ params: request("type", NEXT_EXECUTION_ID).commandParams }),
     );
     await expect(transport.invoke(request("type"))).rejects.toThrow(/replace.*execution owner/);
-    expect(h.privateInvoke).not.toHaveBeenCalled();
     expect(h.publicInvoke).not.toHaveBeenCalled();
     await prepared.close("completion");
   });
 
-  it.each([false, true])(
-    "releases owned resources without re-entering an input policy (shared host: %s)",
-    async (sharedHost) => {
-      const h = createHarness(sharedHost);
-      const sourceCheck = vi.spyOn(h.workerSource, "assertCurrent");
-      const { transport, prepared } = await h.prepare();
-      await transport.invoke(request("snapshot"));
-      releaseAgentRunDelegatedAuthority(h.authority);
-      h.releaseClaim();
-      h.privateInvoke.mockClear();
-      h.publicInvoke.mockClear();
-      h.policyHandle.mockClear();
-      h.policyHandle.mockImplementationOnce((policy) =>
-        policy.invokeNode({ params: request("type").commandParams }),
-      );
-      sourceCheck.mockClear();
-      await prepared.close("completion");
-      await prepared.close("completion");
-      await expect(transport.invoke(request("type"))).rejects.toThrow(/closed/);
-      expect(sourceCheck).not.toHaveBeenCalled();
-      expect(h.policyHandle).not.toHaveBeenCalled();
-      if (sharedHost) {
-        expect(h.publicInvoke).toHaveBeenCalledExactlyOnceWith(
-          expect.objectContaining({
-            command: "computer.act",
-            params: { ...request("close").commandParams, executionId: h.nativeExecutionIds[0] },
-          }),
-        );
-        expect(h.privateInvoke).not.toHaveBeenCalled();
-      } else {
-        expect(h.privateInvoke).toHaveBeenCalledExactlyOnceWith(
-          expect.objectContaining({
-            params: {
-              operation: "close",
-              executionId: h.nativeExecutionIds[0],
-              reason: "completion",
-            },
-          }),
-        );
-        expect(h.publicInvoke).not.toHaveBeenCalled();
-      }
-    },
-  );
+  it("releases owned resources without re-entering an input policy", async () => {
+    const h = createHarness();
+    const sourceCheck = vi.spyOn(h.workerSource, "assertCurrent");
+    const { transport, prepared } = await h.prepare();
+    await transport.invoke(request("snapshot"));
+    releaseAgentRunDelegatedAuthority(h.authority);
+    h.releaseClaim();
+    h.publicInvoke.mockClear();
+
+    h.policyHandle.mockClear();
+    h.policyHandle.mockImplementationOnce((policy) =>
+      policy.invokeNode({ params: request("type").commandParams }),
+    );
+    sourceCheck.mockClear();
+    await prepared.close("completion");
+    await prepared.close("completion");
+    await expect(transport.invoke(request("type"))).rejects.toThrow(/closed/);
+    expect(sourceCheck).not.toHaveBeenCalled();
+    expect(h.policyHandle).not.toHaveBeenCalled();
+    expect(h.publicInvoke).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        command: "computer.act",
+        params: { ...request("close").commandParams, executionId: h.nativeExecutionIds[0] },
+      }),
+    );
+  });
 
   it.each(
     revocations.filter(({ name }) =>
-      [
-        "lease",
-        "owner epoch",
-        "node connection",
-        "node pairing",
-        "private runner proof",
-        "Gateway context",
-      ].includes(name),
+      ["lease", "owner epoch", "node connection", "node pairing", "Gateway context"].includes(name),
     ),
   )("never sends cleanup to a replacement $name owner", async (revocation) => {
     const h = createHarness();
     const { transport, prepared } = await h.prepare();
     await transport.invoke(request("snapshot"));
-    h.privateInvoke.mockClear();
+    h.publicInvoke.mockClear();
     revocation.revoke(h);
     await prepared.close("completion");
-    expect(h.privateInvoke).not.toHaveBeenCalled();
     expect(h.publicInvoke).not.toHaveBeenCalled();
   });
 
@@ -840,7 +726,7 @@ describe("session computer transport", () => {
       }
       const transport = prepared.bind(h.run, h.workerSource);
       await transport.invoke(request("snapshot"));
-      h.privateInvoke.mockClear();
+      h.publicInvoke.mockClear();
       const entered = createDeferredCore();
       const released = createDeferredCore();
       h.state.afterDispatch = async () => {
@@ -865,12 +751,12 @@ describe("session computer transport", () => {
         await Promise.all([firstStop, secondStop]);
       }
       expect(completed).toHaveLength(2);
-      expect(h.privateInvoke.mock.calls[0]?.[0].params).toMatchObject({
-        operation: "close",
+      expect(h.publicInvoke.mock.calls[0]?.[0].params).toMatchObject({
+        action: "__close_execution",
         executionId: h.nativeExecutionIds[0],
       });
       await service.close();
-      expect(h.privateInvoke).toHaveBeenCalledOnce();
+      expect(h.publicInvoke).toHaveBeenCalledOnce();
     },
   );
 

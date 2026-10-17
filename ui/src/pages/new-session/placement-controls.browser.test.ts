@@ -50,10 +50,7 @@ it.each([
         cloudProfiles: [
           {
             id: profileId,
-            providerId: "crabbox",
-            providerDisplayId: "aws",
-            operatingSystems: [{ id: "windows", label: "Windows (WSL2)", default: true }],
-            machines: [{ id: "large", label: "Large", default: true }],
+            providerId: "device",
           },
         ],
       },
@@ -136,9 +133,11 @@ it.each([
     } else {
       expect(workspaceBox.left).toBeGreaterThanOrEqual(envBox.right);
     }
-    const summary = environment.querySelector<HTMLElement>(".new-session-page__trigger-summary")!;
-    expect(summary.textContent).toBe("Windows (WSL2) · Large");
-    expect(summary.checkVisibility()).toBe(width > 560);
+    expect(environment.querySelector(".new-session-page__trigger-label")?.textContent).toBe(
+      profileId,
+    );
+    expect(environment.dataset.cloudProfile).toBe(profileId);
+    expect(environment.querySelector(".new-session-page__trigger-summary")).toBeNull();
     for (const trigger of [environment, workspaceTrigger]) {
       const box = trigger.getBoundingClientRect();
       expect(box.left).toBeGreaterThanOrEqual(0);
@@ -182,11 +181,11 @@ it.each([
     await expect
       .element(
         page.getByRole("button", {
-          name: `Where: ${profileId}, Windows (WSL2) · Large`,
+          name: `Where: ${profileId}`,
           exact: true,
         }),
       )
-      .toHaveAccessibleDescription("Cloud worker provider: AWS");
+      .toHaveAccessibleDescription("Cloud worker provider: device");
     // Exercise the real workspace popover after reflow, not a static label facsimile.
     await page.getByRole("button", { name: `What: ${workspaceLabel}`, exact: true }).click();
     await page.getByRole("button", { name: workspaceLabel, exact: true }).click();

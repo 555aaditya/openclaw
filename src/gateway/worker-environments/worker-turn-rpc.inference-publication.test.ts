@@ -88,13 +88,7 @@ describe("worker inference inventory publication", () => {
         ...support.BUNDLE_ARTIFACT,
         protocolFeatures: receipt.protocolFeatures,
       }));
-      const bootstrapping = await support.seedBootstrapping(environmentId);
-      await store.transition({
-        environmentId,
-        from: bootstrapping.state,
-        to: "ready",
-        patch: support.readyPatch(environmentId, receipt),
-      });
+      await support.seedReady(environmentId, { receipt: { ...receipt, installKind: "bundle" } });
       const attached = await store.transition({
         environmentId,
         from: "ready",

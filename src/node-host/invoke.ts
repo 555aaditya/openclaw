@@ -37,7 +37,6 @@ import {
   NODE_FS_LIST_DIR_COMMAND,
   NODE_MCP_TOOLS_CALL_COMMAND,
   NODE_TERMINAL_UPLOAD_COMMAND,
-  NODE_WORKER_DESKTOP_COMPUTER_COMMAND,
 } from "../infra/node-commands.js";
 import { stageTerminalUpload } from "../infra/terminal-file-upload.js";
 import { logWarn } from "../logger.js";
@@ -48,7 +47,6 @@ import {
   type NodeHostClient,
   type NodeInvokeResponder,
 } from "./client.js";
-import { invokeNodeWorkerComputerCommand, type NodeWorkerComputer } from "./computer-command.js";
 import { invokeNodeDesktopStream } from "./desktop-stream-command.js";
 import {
   handleClaudeCliNodeInvoke,
@@ -89,7 +87,6 @@ type NodeHostPrivateInvokeRuntime = NodeHostInvokeRuntime & {
   workerBundleInstaller?: NodeWorkerBundleInstallerControl;
   workerSupervisor?: NodeWorkerSupervisorControl;
   workerWorkspace?: NodeWorkerWorkspaceRuntime;
-  workerComputer?: NodeWorkerComputer;
 };
 
 type McpToolsCallParams = ReturnType<typeof decodeMcpToolsCallParams>;
@@ -309,13 +306,6 @@ async function dispatchInvoke(
 ) {
   const command = frame.command ?? "";
   const response = createNodeInvokeResponder(client, frame);
-  if (
-    (command === NODE_WORKER_DESKTOP_COMPUTER_COMMAND && !runtime.workerComputer) ||
-    (runtime.workerComputer && (command === "screen.snapshot" || command === "computer.act"))
-  ) {
-    await response.error("UNAVAILABLE", "computer command is unavailable on this node transport");
-    return;
-  }
   const workerSupervisorResult = await invokeNodeWorkerSupervisorCommand({
     command,
     paramsJSON: frame.paramsJSON,
@@ -511,15 +501,7 @@ async function dispatchInvoke(
     const { pluginCommandIo: io, pluginCommandContext: context } = runtime;
     const pluginResult = await withNodeHostPluginInvocation(
       { context, sessionKey: frame.sessionKey, signal: runtime.signal },
-      async (invokeContext) =>
-        command === NODE_WORKER_DESKTOP_COMPUTER_COMMAND
-          ? await invokeNodeWorkerComputerCommand({
-              paramsJSON: frame.paramsJSON,
-              computer: runtime.workerComputer!,
-              invoke: (innerCommand, paramsJSON) =>
-                invokePlugin(innerCommand, paramsJSON, undefined, invokeContext),
-            })
-          : await invokePlugin(command, frame.paramsJSON, io, invokeContext),
+      async (invokeContext) => await invokePlugin(command, frame.paramsJSON, io, invokeContext),
     );
     if (pluginResult !== null) {
       await runtime.flushPluginCommandIo?.();

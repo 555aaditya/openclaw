@@ -24,7 +24,7 @@ import {
   WorkerTunnelOwnerDisconnectedError,
   type WorkerTunnelHandle,
 } from "./tunnel-contract.js";
-import { success } from "./tunnel.test-support.js";
+import { success } from "./worker-command.test-support.js";
 import { failHandedOffTurn } from "./worker-turn-failure.js";
 import {
   createWorkerTurnTunnel,

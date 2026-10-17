@@ -17,7 +17,6 @@ export const NODE_WORKER_BUNDLE_STATUS_VERSION = 1;
 export const NODE_WORKER_PORTAL_STREAM_VERSION = 1;
 export const NODE_WORKER_ENVIRONMENT_SESSION_VERSION = 1;
 export const NODE_WORKER_STATUS_WAIT_VERSION = 1;
-export const NODE_WORKER_PREPARED_WORKSPACE_VERSION = 1;
 export const NODE_WORKER_NATIVE_INFERENCE_VERSION = 1;
 export const NODE_WORKER_INFERENCE_SETUP_ERROR =
   "Worker-local inference is not configured on this node. Add a compatible model under " +
@@ -88,7 +87,6 @@ const WorkerHost = z
       environmentSession: z.literal(NODE_WORKER_ENVIRONMENT_SESSION_VERSION).optional(),
       statusWait: z.literal(NODE_WORKER_STATUS_WAIT_VERSION).optional(),
       deviceFolders: z.literal(true).optional(),
-      preparedWorkspace: z.literal(NODE_WORKER_PREPARED_WORKSPACE_VERSION).optional(),
       capturedExecPolicy: z.literal(true).optional(),
       workspaceQuiescence: z.literal(NODE_WORKER_WORKSPACE_QUIESCENCE_VERSION).optional(),
       launchToolNames: LaunchToolNames.optional(),

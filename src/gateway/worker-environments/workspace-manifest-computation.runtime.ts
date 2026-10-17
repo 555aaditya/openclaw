@@ -20,7 +20,6 @@ import type {
   WorkspaceManifestComputationOperations,
   WorkspaceManifestValueInputs,
 } from "./workspace-manifest-computation.js";
-import { applyWorkspaceSourceOverlay } from "./workspace-manifest-overlay.js";
 import {
   parseWorkerWorkspaceManifest,
   serializeWorkerWorkspaceManifest,
@@ -151,14 +150,6 @@ export async function executeWorkspaceManifestComputation(
         manifest: parseWorkerWorkspaceManifest(raw, manifestRef),
         manifestRef,
       };
-    }
-    case "workspace.manifest.overlay": {
-      const input = decodeManifestValue(command);
-      const raw = serializeWorkerWorkspaceManifest(
-        applyWorkspaceSourceOverlay(input.source, input.prepared, input.incoming),
-      );
-      const manifestRef = `sha256:${createHash("sha256").update(raw).digest("hex")}`;
-      return { manifest: parseWorkerWorkspaceManifest(raw, manifestRef), manifestRef };
     }
     case "workspace.manifest.serialize": {
       const input = decodeManifestValue(command);

@@ -209,7 +209,7 @@ describe("Where chip", () => {
     const container = renderPicker(
       true,
       undefined,
-      { autoDevice: true },
+      { autoDevice: true, cloudProfiles: [{ id: "paired-runner", providerId: "device" }] },
       { onSelectDevice, onSelectCloudProfile, onEnvironmentQueryInput, onConnectMachine },
     );
     const destinations = container.querySelectorAll<HTMLButtonElement>(
@@ -222,7 +222,10 @@ describe("Where chip", () => {
       destination.click();
     }
     expect(onSelectDevice).toHaveBeenCalledTimes(4);
-    expect(onSelectCloudProfile).toHaveBeenCalledExactlyOnceWith("aws", true);
+    expect(onSelectDevice.mock.calls).toEqual(
+      expect.arrayContaining([[""], ["runner"], ["alpha-device"], ["beta-device"]]),
+    );
+    expect(onSelectCloudProfile).toHaveBeenCalledExactlyOnceWith("paired-runner");
 
     expect(capacityCaption(container.querySelector('[data-value="device:runner"]'))).toBe(
       "1 of 2 session slots in use",
@@ -240,49 +243,20 @@ describe("Where chip", () => {
     expect(onConnectMachine).toHaveBeenCalledOnce();
   });
 
-  it.each([
-    {
-      os: "windows/wsl2",
-      machineClass: "tiny",
-      label: "aws",
-      machine: "Tiny Windows",
-    },
-  ])(
-    "preserves $label while filtering its cloud card from search",
-    ({ os, machineClass, label, machine }) => {
-      const container = renderPicker(
-        true,
-        undefined,
-        {
-          cloudProfileId: "aws",
-          os,
-          machineClass,
-          cloudProfiles: [
-            {
-              id: "aws",
-              providerId: "crabbox",
-              operatingSystems: [
-                { id: "linux", label: "Linux", default: true },
-                { id: "windows/wsl2", label: "Windows (WSL2)" },
-              ],
-              machines: [
-                { id: "tiny", label: "Tiny Linux", os: "linux", default: true },
-                { id: "tiny", label: "Tiny Windows", os: "windows/wsl2", default: true },
-                { id: "custom", label: "Custom" },
-              ],
-            },
-          ],
-        },
-        { environmentQuery: "unmatched-environment" },
-      );
-      expect(container.querySelector('[data-value="cloud:aws"]')).toBeNull();
-      expect(container.querySelector(".new-session-page__trigger-label")?.textContent).toBe(label);
-      expect(container.querySelector(".new-session-page__trigger-summary")?.textContent).toBe(
-        `${os === "windows/wsl2" ? "Windows (WSL2)" : "Linux"} · ${machine}`,
-      );
-      expect(container.querySelector("openclaw-select-picker")).toBeNull();
-    },
-  );
+  it("preserves the selected profile label while filtering its card from search", () => {
+    const container = renderPicker(
+      true,
+      undefined,
+      {
+        cloudProfileId: "runner",
+        cloudProfiles: [{ id: "runner", providerId: "device" }],
+      },
+      { environmentQuery: "unmatched-environment" },
+    );
+    expect(container.querySelector('[data-value="cloud:runner"]')).toBeNull();
+    expect(container.querySelector(".new-session-page__trigger-label")?.textContent).toBe("runner");
+    expect(container.querySelector("openclaw-select-picker")).toBeNull();
+  });
 
   it("renders devices for writers while cloud and Connect remain admin-only", () => {
     const writer = renderPicker(false);

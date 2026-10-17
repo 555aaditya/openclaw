@@ -124,31 +124,14 @@ function normalizeOperationId(value: string): string {
 function normalizeWorkerPlacementMoveTarget(
   target: WorkerPlacementMoveTarget,
 ): WorkerPlacementMoveTarget {
-  if (target.kind !== "profile" && Object.hasOwn(target, "os")) {
-    throw new Error("Worker placement move operating system requires a profile target");
+  if (Object.hasOwn(target, "os") || Object.hasOwn(target, "machineClass")) {
+    throw new Error("Worker provider machine and operating-system overrides have been retired");
   }
   switch (target.kind) {
     case "gateway":
       return { kind: "gateway" };
-    case "profile": {
-      const machineClass = target.machineClass;
-      return {
-        kind: "profile",
-        profileId: boundedIdentifier(target.profileId, "move profile id"),
-        ...(target.os === undefined
-          ? {}
-          : { os: boundedIdentifier(target.os, "move operating system", MOVE_OS_MAX_LENGTH) }),
-        ...(machineClass === undefined
-          ? {}
-          : {
-              machineClass: boundedIdentifier(
-                machineClass,
-                "move machine class",
-                MOVE_MACHINE_CLASS_MAX_LENGTH,
-              ),
-            }),
-      };
-    }
+    case "profile":
+      return { kind: "profile", profileId: boundedIdentifier(target.profileId, "move profile id") };
     case "device":
       return { kind: "device", deviceId: boundedIdentifier(target.deviceId, "move device id") };
   }
@@ -210,12 +193,22 @@ export function workerPlacementMoveFromRow(row: MoveRow): WorkerPlacementMoveInt
   if (row.target_kind === "gateway" && row.target_id === null) {
     target = { kind: "gateway" };
   } else if (row.target_kind === "profile" && row.target_id !== null) {
-    target = normalizeWorkerPlacementMoveTarget({
+    target = {
       kind: "profile",
-      profileId: row.target_id,
-      ...(row.target_os === null ? {} : { os: row.target_os }),
-      ...(row.target_machine_class === null ? {} : { machineClass: row.target_machine_class }),
-    });
+      profileId: boundedIdentifier(row.target_id, "move profile id"),
+      ...(row.target_os === null
+        ? {}
+        : { os: boundedIdentifier(row.target_os, "stored operating system", MOVE_OS_MAX_LENGTH) }),
+      ...(row.target_machine_class === null
+        ? {}
+        : {
+            machineClass: boundedIdentifier(
+              row.target_machine_class,
+              "stored machine class",
+              MOVE_MACHINE_CLASS_MAX_LENGTH,
+            ),
+          }),
+    };
   } else if (row.target_kind === "device" && row.target_id !== null) {
     target = { kind: "device", deviceId: boundedIdentifier(row.target_id, "move device id") };
   } else {

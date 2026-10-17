@@ -18,7 +18,7 @@ import { createTestGatewayScheduler } from "../test-utils/gateway-scheduler-cloc
 import { withTimeout } from "../utils/with-timeout.js";
 import { createGatewayAuthRateLimiter } from "./auth-rate-limit.js";
 import type { ResolvedGatewayAuth } from "./auth.js";
-import { DESKTOP_OBSERVE_PATH, mintDesktopObserverToken } from "./desktop/observe-bridge.js";
+import { mintDesktopObserverToken } from "./desktop/observe-bridge.js";
 import { PLUGIN_NODE_CAPABILITY_PATH_PREFIX } from "./plugin-node-capability.js";
 import { MAX_PREAUTH_PAYLOAD_BYTES } from "./server-constants.js";
 import { attachGatewayUpgradeHandler } from "./server-http-upgrades.js";
@@ -768,7 +768,7 @@ describe("gateway plugin node capability auth", () => {
             control: false,
             attachment: { kind: "unix-socket", socketPath: localSocketPath },
           });
-          const url = `ws://127.0.0.1:${listener.port}${DESKTOP_OBSERVE_PATH}?token=${minted.token}`;
+          const url = `ws://127.0.0.1:${listener.port}/desktop/observe?token=${minted.token}`;
           const ws = new WebSocket(url);
           const received = new Promise<Buffer>((resolve, reject) => {
             ws.once("message", (data) => resolve(Buffer.from(data as Buffer)));
@@ -792,7 +792,7 @@ describe("gateway plugin node capability auth", () => {
           markGatewayRestartDraining();
           try {
             await expectWsRejected(
-              `ws://127.0.0.1:${listener.port}${DESKTOP_OBSERVE_PATH}?token=${draining.token}`,
+              `ws://127.0.0.1:${listener.port}/desktop/observe?token=${draining.token}`,
               {},
               503,
             );

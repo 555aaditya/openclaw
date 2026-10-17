@@ -67,14 +67,14 @@ export function registerWorkerInferenceEnvironmentTests(
     const runtime = createDeviceWorkerRuntime({ getPairedDevice: async () => null });
     const provision = vi.spyOn(runtime.provider, "provision");
     const prepareInstallation = vi.fn();
-    const bootstrapWorker = vi.fn();
+    const ensureNodeWorkerBundle = vi.fn();
     const service = createWorkerEnvironmentService({
       store,
       scheduler: createTestGatewayScheduler(),
       getConfig: () => config,
       resolveProvider: (id) => (id === "device" ? runtime.provider : undefined),
       prepareInstallation,
-      bootstrapWorker,
+      ensureNodeWorkerBundle,
     });
     try {
       const context = { ...mockContext(service), getRuntimeConfig: () => config };
@@ -103,7 +103,7 @@ export function registerWorkerInferenceEnvironmentTests(
       );
       expect(provision).not.toHaveBeenCalled();
       expect(prepareInstallation).not.toHaveBeenCalled();
-      expect(bootstrapWorker).not.toHaveBeenCalled();
+      expect(ensureNodeWorkerBundle).not.toHaveBeenCalled();
       expect(store.list()).toEqual([]);
     } finally {
       await service.stop();

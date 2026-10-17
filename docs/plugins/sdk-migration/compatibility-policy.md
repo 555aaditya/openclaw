@@ -187,14 +187,12 @@ versioned SDK migration.
 
 ### Gateway worker environment creation
 
-`GatewayRequestHandlerOptions` from `core` and `gateway-runtime` retains the
-worker-environment creation contract shipped in OpenClaw 2026.9.5. When
-`context.workerEnvironmentService` is available, its `create` method accepts
-positional arguments in this order: `profileId`, `idempotencyKey`, `machineClass?`,
-`executionMode?`, `projectPath?`, `signal?`, `os?`, and `runSetupScript?`.
-Retries that avoid duplicate effects and caller cancellation keep their existing behavior across
-host upgrades. Changing this contract requires an explicitly approved SDK
-migration.
+The plugin worker-provider capability and its legacy `machineClass` and `os`
+creation inputs are retired in this breaking Plugin SDK revision. The earlier
+positional-signature compatibility promise no longer applies to those inputs.
+Use the built-in paired-device placement flow and configured `device` profiles;
+there is no replacement plugin provisioning registration. See [retired plugin
+provisioning](/gateway/cloud-workers#retired-plugin-provisioning).
 
 ### Gateway placement and publication readers
 

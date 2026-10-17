@@ -62,7 +62,7 @@ describe("application placement delivery recovery", () => {
       const { startup, input, chatSubmissions, client } = createPlacementStartupHarness(request);
       input.recovery = {
         ...input.recovery,
-        target: { kind: "profile", profileId: "aws", machineClass: "fast" },
+        target: { kind: "profile", profileId: "paired-runner" },
         attachments: [{ type: "file", mimeType: "text/plain", content: "SGk=" }],
       };
       writeSessionPlacementRecovery(input.recovery);
@@ -105,8 +105,7 @@ describe("application placement delivery recovery", () => {
           [1, 2].map(() => ({
             key: input.recovery.sessionKey,
             agentId: input.recovery.agentId,
-            profileId: "aws",
-            machineClass: "fast",
+            profileId: "paired-runner",
           })),
         );
         expect(chatSubmissions.readInitial(input.recovery.sessionKey, client)?.pendingRunId).toBe(

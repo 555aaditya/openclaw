@@ -52,7 +52,7 @@ const MODIFIER_TEXT_ACTIONS = new Set<ComputerToolAction>([
 const POINTER_OR_KEYBOARD_ACTIONS = new Set<ComputerToolAction>(COMPUTER_ACT_V1_ACTION_NAMES);
 
 export function isComputerActAction(action: ComputerToolAction): boolean {
-  return action !== "take_control" && INPUT_ACTIONS.has(action);
+  return INPUT_ACTIONS.has(action);
 }
 
 export function computerActionNeedsFrame(

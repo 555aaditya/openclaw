@@ -98,7 +98,7 @@ export async function maybeSpawnVisibleSession(params: {
   ) {
     throw new ToolInputError(
       'Omit placement for local execution or use {kind: "local"} with no cloud selectors. ' +
-        'For a configured cloud profile, use {kind: "profile", profileId, os?, machineClass?} with non-empty selectors, visible=true, and worktree=true.',
+        'For a configured cloud profile, use {kind: "profile", profileId} with a non-empty profileId, visible=true, and worktree=true.',
     );
   }
   const placement = requestedPlacement?.kind === "profile" ? requestedPlacement : undefined;
@@ -527,8 +527,6 @@ export async function maybeSpawnVisibleSession(params: {
           key: childSessionKey,
           sessionId,
           profileId: placement.profileId,
-          os: placement.os,
-          machineClass: placement.machineClass,
           task: taskMessage,
           runTimeoutSeconds,
           callGateway: cloudGatewayCall,

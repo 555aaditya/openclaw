@@ -17,30 +17,16 @@ function remoteExecPlacement() {
   });
 }
 
-function attachedEnvironment() {
+function nodeEnvironment() {
   return {
     ...createDispatchEnvironmentFixtures().attached,
     environmentId,
     ownerEpoch: 7,
-    sshEndpoint: {
-      host: "worker.example.test",
-      port: 2202,
-      fallbackPorts: [22],
-      user: "worker",
-      hostKey: "ssh-ed25519 AAAA",
-      keyRef: { source: "file", provider: "worker-keys", id: "/key" },
-    },
-  } satisfies NonNullable<ReturnType<WorkerEnvironmentService["get"]>>;
-}
-
-function nodeEnvironment() {
-  return {
-    ...attachedEnvironment(),
     providerId: "device",
     nodeDeviceId: "paired-node-1",
     sharedHost: true,
     sshEndpoint: null,
-  };
+  } satisfies NonNullable<ReturnType<WorkerEnvironmentService["get"]>>;
 }
 
 function sandboxFor(
@@ -54,31 +40,6 @@ function sandboxFor(
   });
 }
 
-it("binds the exact SSH managed worktree and placement generation into the runtime", async () => {
-  const placement = remoteExecPlacement();
-  const environment = attachedEnvironment();
-  const resolveSshIdentity = vi.fn(async () => ({
-    kind: "material" as const,
-    contents: "private-key-material",
-  }));
-
-  const sandbox = await sandboxFor({ get: () => environment, resolveSshIdentity }, placement);
-
-  expect(resolveSshIdentity).toHaveBeenCalledWith(environmentId);
-  expect(sandbox).toMatchObject({
-    enabled: true,
-    placementExecutionMode: "remote-exec",
-    backendId: "ssh",
-    runtimeId: "remote-exec:worker:environment-1:7:11",
-    workspaceDir: "/local/managed-worktree",
-    containerWorkdir: remoteWorkspaceDir,
-    backend: { workdir: remoteWorkspaceDir, workdirRoots: [remoteWorkspaceDir] },
-  });
-  for (const key of ["placementEnvironmentId", "placementSessionId", "placementOwnerEpoch"]) {
-    expect(sandbox).not.toHaveProperty(key);
-  }
-});
-
 it.each([
   { platform: "POSIX", nodeWorkspaceDir: remoteWorkspaceDir },
   {
@@ -90,9 +51,8 @@ it.each([
   async ({ nodeWorkspaceDir }) => {
     const placement = { ...remoteExecPlacement(), remoteWorkspaceDir: nodeWorkspaceDir };
     const environment = nodeEnvironment();
-    const resolveSshIdentity = vi.fn();
 
-    const sandbox = await sandboxFor({ get: () => environment, resolveSshIdentity }, placement);
+    const sandbox = await sandboxFor({ get: () => environment }, placement);
 
     expect(sandbox).toMatchObject({
       enabled: true,
@@ -107,7 +67,6 @@ it.each([
       containerWorkdir: nodeWorkspaceDir,
     });
     expect([sandbox.backend, sandbox.fsBridge]).toEqual([undefined, undefined]);
-    expect(resolveSshIdentity).not.toHaveBeenCalled();
   },
 );
 
@@ -131,47 +90,6 @@ it.each([
       { ...remoteExecPlacement(), remoteWorkspaceDir: workspaceDir },
     ),
   ).rejects.toThrow("invalid managed workspace path");
-});
-
-it("rejects Windows workspace paths for the POSIX SSH carrier", async () => {
-  const environment = attachedEnvironment();
-  const resolveSshIdentity = vi.fn();
-
-  await expect(
-    sandboxFor(
-      { get: () => environment, resolveSshIdentity },
-      { ...remoteExecPlacement(), remoteWorkspaceDir: String.raw`C:\Users\Node\workspace` },
-    ),
-  ).rejects.toThrow("invalid managed workspace path");
-  expect(resolveSshIdentity).not.toHaveBeenCalled();
-});
-
-it.each([
-  {
-    label: "stale owner epoch",
-    replacement: { ownerEpoch: 8 },
-  },
-  {
-    label: "different attached session",
-    replacement: { attachedSessionIds: ["replacement-session"] },
-  },
-  {
-    label: "different SSH endpoint",
-    replacement: {
-      sshEndpoint: { ...attachedEnvironment().sshEndpoint, host: "replacement.example.test" },
-    },
-  },
-])("rejects a $label after awaited SSH identity preparation", async ({ replacement }) => {
-  const placement = remoteExecPlacement();
-  let environment = attachedEnvironment();
-  const resolveSshIdentity = vi.fn(async () => {
-    environment = { ...environment, ...replacement };
-    return { kind: "material" as const, contents: "private-key-material" };
-  });
-
-  await expect(
-    sandboxFor({ get: () => environment, resolveSshIdentity }, placement),
-  ).rejects.toThrow("lost its exact environment");
 });
 
 it.each([

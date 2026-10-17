@@ -22,7 +22,11 @@ const session = {
   sessionId: "session-id",
   kind: "direct",
   updatedAt: 1,
-  placement: { state: "active", environmentId: "worker-1" },
+  placement: {
+    state: "active",
+    environmentId: "node:desktop-node",
+    runner: { kind: "device", deviceId: "desktop-node", status: "available" },
+  },
 } as GatewaySessionRow;
 const activePlacement = {
   state: "active",
@@ -30,24 +34,18 @@ const activePlacement = {
   createdAtMs: 1,
   updatedAtMs: 1,
   stateChangedAtMs: 1,
-  environmentId: "worker-1",
+  environmentId: "node:desktop-node",
+  runner: { kind: "device", deviceId: "desktop-node", status: "available" },
   activeOwnerEpoch: 1,
   workerBundleHash: "a".repeat(64),
   workspaceBaseManifestRef: "base",
   remoteWorkspaceDir: "/workspace",
 } satisfies NonNullable<GatewaySessionRow["placement"]>;
 const environment: EnvironmentsListResult["environments"][number] = {
-  id: "worker-1",
-  type: "worker",
+  id: "node:desktop-node",
+  type: "node",
   status: "available",
   desktop: true,
-  worker: {
-    providerId: "test",
-    state: "attached",
-    ageMs: 1,
-    attachedSessionIds: ["session-id"],
-    tunnelStatus: "connected",
-  },
 };
 const selection = {
   tab: { target: "node", node: "browser-node", profile: "session-profile", targetId: "target-1" },
@@ -147,7 +145,7 @@ describe("session active resource discovery", () => {
     });
     f.controller.sync(f.owner);
     await settle();
-    expect(f.desktopSource()).toBe("worker-1");
+    expect(f.desktopSource()).toBe("node:desktop-node");
     expect(f.slots()).not.toContain("browser");
   });
 
@@ -212,9 +210,9 @@ describe("session active resource discovery", () => {
       const source = f.desktopSource;
       f.controller.sync(f.owner);
       await settle();
-      expect(source()).toBe("worker-1");
+      expect(source()).toBe("node:desktop-node");
       f.owner.placement = { ...activePlacement, updatedAtMs: 99, lastTranscriptAckCursor: 10 };
-      expect(source()).toBe("worker-1");
+      expect(source()).toBe("node:desktop-node");
       const pending = createDeferred<unknown>();
       f.request.mockImplementationOnce(async () => pending.promise);
       if (change === "session instance") {
@@ -311,7 +309,7 @@ describe("session active resource discovery", () => {
       pending.resolve({ session: described });
       await settle();
       expect(f.commit).not.toHaveBeenCalled();
-      expect(f.desktopSource()).not.toBe("worker-1");
+      expect(f.desktopSource()).not.toBe("node:desktop-node");
     },
   );
 
@@ -334,7 +332,9 @@ describe("session active resource discovery", () => {
       "browser.request",
       "environments.status",
     ]);
-    expect(f.request).toHaveBeenCalledWith("environments.status", { environmentId: "worker-1" });
+    expect(f.request).toHaveBeenCalledWith("environments.status", {
+      environmentId: "node:desktop-node",
+    });
     expect(f.request).toHaveBeenCalledWith("browser.request", {
       method: "GET",
       path: "/tabs",
@@ -358,7 +358,7 @@ describe("session active resource discovery", () => {
     f.owner.browserAvailable = false;
     f.controller.sync(f.owner);
     await settle();
-    expect(f.desktopSource()).toBe("worker-1");
+    expect(f.desktopSource()).toBe("node:desktop-node");
     f.owner.placement = { ...activePlacement, state: "local" };
     f.request.mockResolvedValueOnce({ session: { ...session, placement: f.owner.placement } });
     f.controller.invalidate();
@@ -423,21 +423,23 @@ describe("session active resource discovery", () => {
   });
 
   it.each([
-    { name: "missing attachment identity", row: { ...session, sessionId: undefined } },
+    { name: "missing session identity", row: { ...session, sessionId: undefined } },
     { name: "another session", row: { ...session, key: "agent:main:other" } },
     { name: "offline environment", row: session, env: { ...environment, status: "unavailable" } },
     {
-      name: "another worker owner",
-      row: session,
-      env: {
-        ...environment,
-        worker: { ...environment.worker, attachedSessionIds: ["someone-else"] },
+      name: "another device",
+      row: {
+        ...session,
+        placement: {
+          ...activePlacement,
+          runner: { kind: "device", deviceId: "another-node", status: "available" },
+        },
       },
     },
   ])("ignores $name", async ({ name, row, env }) => {
     const f = fixture();
     f.owner.browserTab = undefined;
-    if (name === "missing attachment identity") {
+    if (name === "missing session identity") {
       f.owner.browserAvailable = false;
     }
     f.request.mockImplementation(async (method) =>
@@ -445,7 +447,7 @@ describe("session active resource discovery", () => {
     );
     f.controller.sync(f.owner);
     await settle();
-    if (name === "missing attachment identity") {
+    if (name === "missing session identity") {
       expect(f.request.mock.calls.map(([method]) => method)).toEqual(["sessions.describe"]);
     }
     expect(f.commit).not.toHaveBeenCalled();

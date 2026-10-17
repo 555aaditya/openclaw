@@ -158,21 +158,10 @@ async function createBuildRecoveryHarness(
   const environments: WorkerTurnEnvironmentService &
     Parameters<typeof createWorkerPlacementDispatchService>[0]["environments"] = {
     ...unusedEnvironments(),
-    fenceWorkerTurnForRecovery:
-      createWorkerSessionPlacementGate(placements).fenceWorkerTurnForRecovery,
-    prepareProjectIntent: async () => {
-      throw new Error("unexpected prepared intent");
-    },
-    assertPreparedIntentCurrent: vi.fn(),
-    getPreparedCandidates: () => [],
-    schedulePreparedRefill: vi.fn(),
-    bindPreparedWorkspace: async () => {
-      throw new Error("unexpected prepared binding");
-    },
-    recordError: vi.fn(() => {
-      throw new Error("unexpected provisioning interruption");
-    }),
     supportsProviderExecutionMode: vi.fn(() => true),
+    recordError: vi.fn(async () => {
+      throw new Error("unexpected worker environment error");
+    }),
     get: () => environment,
     acquireTurnCredential: async (claim) => {
       if (options.pendingResult) {
@@ -220,6 +209,8 @@ async function createBuildRecoveryHarness(
     attachSession: vi.fn(async () => {
       throw new Error("unexpected worker session attachment");
     }),
+    fenceWorkerTurnForRecovery:
+      createWorkerSessionPlacementGate(placements).fenceWorkerTurnForRecovery,
     createWithRequest: vi.fn(async () => {
       throw new Error("unexpected worker environment creation");
     }),

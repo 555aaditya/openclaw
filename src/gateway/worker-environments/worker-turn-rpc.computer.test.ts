@@ -87,6 +87,18 @@ describe("worker computer RPC authority", () => {
       ok: false,
       closeReason: "invalid-frame",
     });
+    await expect(
+      workerService.executeComputer(identity, {
+        command: "computer.act",
+        paramsJson: JSON.stringify({
+          action: "__take_control",
+          executionId: "00000000-0000-4000-8000-000000000001",
+        }),
+      }),
+    ).resolves.toEqual({
+      ok: false,
+      closeReason: "invalid-frame",
+    });
     expect(executeComputer).not.toHaveBeenCalled();
   });
 });

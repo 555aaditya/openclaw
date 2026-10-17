@@ -46,7 +46,6 @@ import {
 } from "./node-worker-workspace-drain.js";
 import type { NodeWorkspaceTransferService } from "./node-workspace-transfer-service.js";
 import type { WorkerSessionTurnClaim } from "./placement-record.js";
-import { readWorkerProjectPreparation } from "./preparation-identity.schema.js";
 import { WorkerEnvironmentInventoryClosedError } from "./store-errors.js";
 import type { WorkerEnvironmentRecord } from "./store.js";
 import {
@@ -133,10 +132,6 @@ export function createNodeWorkerTunnelManager(options: NodeWorkerTunnelManagerOp
   const isEnvironmentOwner = (entry: NodeTunnelEntry): boolean =>
     hasDurableBinding(entry) && isLiveEntry(entry);
 
-  const readPreparation = (entry: NodeTunnelEntry) =>
-    readWorkerProjectPreparation(
-      options.getEnvironment(entry.environmentId)?.profileSnapshot.project,
-    );
   const findNode = async (
     entry: NodeEnvironmentOwner,
     signal: AbortSignal,
@@ -190,14 +185,12 @@ export function createNodeWorkerTunnelManager(options: NodeWorkerTunnelManagerOp
     }
     const signal = AbortSignal.any(signals);
     const deviceFolder = command.deviceFolder ?? entry.deviceFolder;
-    const preparationKey = deviceFolder === undefined ? readPreparation(entry)?.key : undefined;
     let nativeContractError: Error | undefined;
     const input: NodeWorkerWorkspaceExecInput = {
       gatewayNamespace,
       environmentId: entry.environmentId,
       sessionId: entry.sessionId,
-      ...(deviceFolder === undefined ? {} : { deviceFolder }),
-      ...(preparationKey === undefined ? {} : { preparationKey, sessionKey: command.sessionKey }),
+      ...(deviceFolder === undefined ? {} : { deviceFolder, sessionKey: command.sessionKey }),
       generation: entry.ownerEpoch,
       argv: [...command.argv],
       ...(command.input === undefined ? {} : { input: command.input }),
@@ -366,7 +359,7 @@ export function createNodeWorkerTunnelManager(options: NodeWorkerTunnelManagerOp
       gatewayNamespace,
       expectedBundleHash: entry.expectedBuild.bundleHash,
       placementGeneration: claim.placementGeneration,
-      ...(readPreparation(entry) || entry.deviceFolder ? { sessionKey: getSessionKey() } : {}),
+      ...(entry.deviceFolder ? { sessionKey: getSessionKey() } : {}),
       descriptor: plan,
     });
     const { validateRestoredWorkspace, getSessionKey, ...workspaceActions } =

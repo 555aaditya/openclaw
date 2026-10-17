@@ -25,8 +25,6 @@ it.each([
       idleSinceAtMs: null,
       sharedHost: false,
       attachedSessionIds: [],
-      desktopAvailable: false,
-      desktopApps: [],
       tunnelStatus: "stopped",
     };
 

@@ -45,7 +45,7 @@ function remoteSession() {
   };
 }
 const catalog = {
-  profiles: [{ id: "cloud", providerId: "crabbox", providerDisplayId: "aws" }],
+  profiles: [{ id: "cloud", providerId: "device" }],
   environments: [
     {
       id: "node:runner",
@@ -331,8 +331,6 @@ suite.define(() => {
     const target = {
       kind: "profile" as const,
       profileId: "cloud",
-      os: "windows/wsl2",
-      machineClass: "fast",
     };
     const retry = {
       expected: { generation: 4, environmentId: "worker:notes", ownerEpoch: 7 },
@@ -437,17 +435,12 @@ suite.define(() => {
       await suite.closeBrowserContext(context);
     }
   });
-  it("offers only required profile defaults for an ordinary Move", async () => {
+  it("offers only the required profile for an ordinary Move", async () => {
     const context = await suite.newBrowserContext({ viewport: { width: 1280, height: 900 } });
     const page = await context.newPage();
     const required = {
       id: "cloud",
-      providerId: "crabbox",
-      machines: [{ id: "fast", label: "Fast" }],
-      operatingSystems: [
-        { id: "linux", label: "Linux" },
-        { id: "windows", label: "Windows" },
-      ],
+      providerId: "device",
     };
     const gateway = await installMockGateway(page, {
       featureMethods: ["chat.startup", "sessions.move", "environments.list"],
@@ -464,7 +457,7 @@ suite.define(() => {
         "sessions.list": chatSessionListResponse([remoteSession()]),
         "environments.list": {
           ...catalog,
-          profiles: [required, { id: "other", providerId: "crabbox" }],
+          profiles: [required, { id: "other", providerId: "device" }],
         },
       },
     });
@@ -487,7 +480,7 @@ suite.define(() => {
       );
       expect(await dialog.locator('[data-value="device:runner"]').isDisabled()).toBe(true);
       expect(await dialog.locator('[data-value="cloud:other"]').isDisabled()).toBe(true);
-      expect(await dialog.locator('[data-value^="machine:"], [data-value^="os:"]').count()).toBe(0);
+
       await gateway.deferNext("sessions.move");
       await dialog.getByRole("button", { name: "Move session", exact: true }).click();
       expect((await gateway.waitForRequest("sessions.move")).params).toEqual({

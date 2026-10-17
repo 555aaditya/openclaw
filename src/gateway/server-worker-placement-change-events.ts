@@ -3,7 +3,6 @@ import { emitSessionsChanged } from "./server-methods/session-change-event.js";
 import type { WorkerPlacementRunnerAvailabilityReader } from "./worker-environments/placement-projector.js";
 import type { WorkerSessionPlacementIdentity } from "./worker-environments/placement-record.js";
 import type { WorkerSessionPlacementStore } from "./worker-environments/placement-store.js";
-import type { WorkerEnvironmentService } from "./worker-environments/service.js";
 
 export function createGatewayWorkerPlacementChangePublisher(params: {
   placements: Pick<WorkerSessionPlacementStore, "subscribeChanges">;
@@ -52,12 +51,10 @@ export function createGatewayWorkerPlacementChangePublisher(params: {
 
 export function subscribeGatewayWorkerPlacementMetadataChanges(params: {
   placements: Pick<WorkerSessionPlacementStore, "readChangeSnapshot" | "readProjection">;
-  environments: Pick<WorkerEnvironmentService, "subscribeMachineShapeChanged">;
   runnerAvailability: WorkerPlacementRunnerAvailabilityReader;
   getSessionChangeContext?: () => Parameters<typeof emitSessionsChanged>[0] | undefined;
   warn: (message: string) => void;
 }) {
-  const profiles = new Set<string>();
   const nodes = new Set<string>();
   let stopped = false;
   let pending: Promise<void> | undefined;
@@ -68,20 +65,14 @@ export function subscribeGatewayWorkerPlacementMetadataChanges(params: {
     if (pending) {
       return;
     }
-    // Catalog creation, machine options, and OS discovery can publish together.
+    // Coalesce paired-node availability changes before publishing session metadata.
     pending = Promise.resolve().then(async () => {
       try {
-        while (profiles.size || nodes.size) {
-          const batch = [...profiles];
+        while (nodes.size) {
           const changedNodes = new Set(nodes);
-          profiles.clear();
           nodes.clear();
           try {
-            const placements = new Map(
-              (batch.length ? await params.placements.readChangeSnapshot(batch) : []).map(
-                (placement) => [placement.sessionId, placement],
-              ),
-            );
+            const placements = new Map<string, WorkerSessionPlacementIdentity>();
             if (changedNodes.size) {
               const identities = await params.placements.readChangeSnapshot();
               const projection = await params.placements.readProjection(
@@ -129,10 +120,6 @@ export function subscribeGatewayWorkerPlacementMetadataChanges(params: {
       }
     });
   };
-  const unsubscribe = params.environments.subscribeMachineShapeChanged((profileId) => {
-    profiles.add(profileId);
-    schedule();
-  });
   return {
     runnerChanged(nodeId: string) {
       if (stopped) {
@@ -143,9 +130,7 @@ export function subscribeGatewayWorkerPlacementMetadataChanges(params: {
     },
     async stop() {
       stopped = true;
-      profiles.clear();
       nodes.clear();
-      unsubscribe();
       await pending;
     },
   };

@@ -10,12 +10,6 @@ const programOwners = [
   "src/gateway/worker-environments/workspace-manifest-script.runtime.ts",
   "src/worker/workspace-seed-retention.ts",
 ];
-const receiverOwner = "src/worker/workspace-rsync-receiver.ts";
-const receiverPrograms = [
-  "REMOTE_WORKSPACE_ACCEPTED_RSYNC_RECEIVER_JS",
-  "REMOTE_WORKSPACE_RSYNC_RECEIVER_JS",
-];
-
 function importedCompileCalls(ast) {
   const root = { parent: undefined, bindings: new Map(), functionScope: true };
   const calls = [];
@@ -169,50 +163,9 @@ function staticProgramCalls(contents, parse) {
             "",
           )
         : undefined;
-    const selection =
-      argument?.type === "ConditionalExpression" &&
-      argument.consequent.type === "Identifier" &&
-      argument.alternate.type === "Identifier" &&
-      argument.consequent.name === receiverPrograms[0] &&
-      argument.alternate.name === receiverPrograms[1] &&
-      node.arguments.length === 2 &&
-      node.arguments[1].type === "ArrayExpression" &&
-      node.arguments[1].elements.length === 1 &&
-      node.arguments[1].elements[0]?.value === "require"
-        ? argument
-        : undefined;
-    calls.push({ node, signature, selection, contract: staticProgramContract(node) });
+    calls.push({ node, signature, contract: staticProgramContract(node) });
   }
   return calls;
-}
-
-function receiverCaptureSource(contents, parse) {
-  const marker = `//#region ${receiverOwner}\n`;
-  const start = contents.indexOf(marker);
-  const calls = staticProgramCalls(contents, parse).filter(({ selection }) => selection);
-  if (start < 0 || calls.length !== 1 || calls[0].node.start < start) {
-    throw new Error("Unsupported workspace rsync receiver capture layout");
-  }
-  const prefix = contents.slice(0, start);
-  const declarations = new Set(
-    parse(prefix, { ecmaVersion: "latest", sourceType: "module" })
-      .body.filter((node) => node.type === "VariableDeclaration")
-      .flatMap((node) => node.declarations.map((declaration) => declaration.id.name)),
-  );
-  if (!receiverPrograms.every((name) => declarations.has(name))) {
-    throw new Error("Workspace rsync receiver programs must precede the entrypoint");
-  }
-  const callee = contents.slice(calls[0].node.callee.start, calls[0].node.callee.end);
-  // Import only the bundled library prefix: the final region validates argv and starts rsync.
-  return (
-    prefix +
-    receiverPrograms
-      .map(
-        (name) =>
-          `globalThis.__openclawCaptureStaticFunction(${JSON.stringify(name)}, ${callee}, ${name}, ["require"]);`,
-      )
-      .join("\n")
-  );
 }
 
 function protectBuiltinWrites(originalContents, parse) {
@@ -302,8 +255,6 @@ export async function createStandaloneCodegenAdapter({
     }
     entries.add(path.join(distRoot, matches[0]));
   }
-  const receiverEntry = path.join(distRoot, "worker/workspace-rsync-receiver.mjs");
-  entries.add(receiverEntry);
   const captureRoot = path.join(outputRoot, "static-codegen");
   fs.mkdirSync(captureRoot, { recursive: true });
   const resultPath = path.join(captureRoot, "programs.json");
@@ -341,9 +292,6 @@ fs.writeFileSync(${JSON.stringify(resultPath)}, JSON.stringify([...records.value
               return undefined;
             }
             let contents = await fs.promises.readFile(filename, "utf8");
-            if (filename === receiverEntry) {
-              contents = receiverCaptureSource(contents, parse);
-            }
             for (const { node, signature } of staticProgramCalls(contents, parse).toSorted(
               (left, right) => right.node.start - left.node.start,
             )) {
@@ -391,7 +339,7 @@ fs.writeFileSync(${JSON.stringify(resultPath)}, JSON.stringify([...records.value
     throw new Error(`Static program capture failed: ${run.error ?? run.stderr}`);
   }
   const programs = JSON.parse(fs.readFileSync(resultPath, "utf8"));
-  const expectedPrograms = programOwners.length + receiverPrograms.length;
+  const expectedPrograms = programOwners.length;
   if (programs.length !== expectedPrograms) {
     throw new Error(`Expected ${expectedPrograms} static programs, captured ${programs.length}`);
   }
@@ -454,12 +402,10 @@ export function createStandaloneCodegenTransform({ programs, parse, aot = false 
       contents = guarded.contents;
       const calls = staticProgramCalls(contents, parse);
       let count = 0;
-      for (const { node, signature, selection, contract } of calls.toSorted(
+      for (const { node, signature, contract } of calls.toSorted(
         (left, right) => right.node.start - left.node.start,
       )) {
-        const expression = selection
-          ? `(${contents.slice(selection.test.start, selection.test.end)} ? ${functions.get(selection.consequent.name)} : ${functions.get(selection.alternate.name)})`
-          : (functions.get(signature) ?? contracts.get(contract));
+        const expression = functions.get(signature) ?? contracts.get(contract);
         if (!expression) {
           residuals.push({ filename, expression: contents.slice(node.start, node.end) });
           continue;

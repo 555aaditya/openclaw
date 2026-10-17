@@ -4,7 +4,7 @@ import type {
   GatewayRequestContext,
   GatewayRequestHandlerOptions,
 } from "../../gateway/server-methods/types.js";
-import type { WorkerTunnelHandle } from "../../gateway/worker-environments/tunnel.js";
+import type { WorkerWorkspaceTunnelHandle as WorkerTunnelHandle } from "../../gateway/worker-environments/tunnel-contract.js";
 import {
   createFollowupRun,
   createMinimalRunAgentTurnParams,
@@ -86,7 +86,8 @@ describe("webchat admission to plugin node duplex authority", () => {
         await import("../../gateway/node-invoke-plugin-policy.test-helpers.js");
       const { runWithGatewayRequestEnvelope } = await import("../../gateway/server-methods.js");
       const { createGatewayNodesRuntime } = await import("../../gateway/server-plugins.js");
-      const { success } = await import("../../gateway/worker-environments/tunnel.test-support.js");
+      const { success } =
+        await import("../../gateway/worker-environments/worker-command.test-support.js");
       const { createPluginRecord } = await import("../../plugins/loader-records.js");
       const { markPluginRegistryActive, markPluginRegistryRetired, revokePluginRecord } =
         await import("../../plugins/registry-lifecycle.js");

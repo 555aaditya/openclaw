@@ -6,7 +6,6 @@ import {
 } from "../agents/sandbox/registry.kernel.js";
 import { listRegistryWorktreesInDatabase } from "../agents/worktrees/registry-read.kernel.js";
 import { readWorktreeRunLeaseStateInDatabase } from "../agents/worktrees/run-lease-owner.js";
-import { readPreparedPoolPresenceDemandInDatabase } from "../gateway/worker-environments/prepared-pool-presence-store.worker.js";
 import {
   readWorkerEnvironmentFacts,
   readWorkerEnvironmentPrunePage,
@@ -22,7 +21,6 @@ export function readStateRegistryCommand(
     OpenClawStateReadCommand,
     {
       type:
-        | "preparedPoolPresence.read"
         | "workerEnvironments.snapshot"
         | "workerEnvironments.pruneCandidates"
         | "agentDeletionJournal.status"
@@ -35,9 +33,6 @@ export function readStateRegistryCommand(
     }
   >,
 ) {
-  if (command.type === "preparedPoolPresence.read") {
-    return { type: command.type, demand: readPreparedPoolPresenceDemandInDatabase(db) };
-  }
   if (command.type === "workerEnvironments.snapshot") {
     return {
       type: command.type,

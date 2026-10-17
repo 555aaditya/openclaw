@@ -11,8 +11,6 @@ import {
 import {
   NODE_WORKER_BUNDLE_INSTALL_COMMAND,
   NODE_WORKER_CAPACITY_EXHAUSTED_ERROR_CODE,
-  NODE_WORKER_DESKTOP_LAUNCH_COMMAND,
-  NODE_WORKER_DESKTOP_STREAM_COMMAND,
   NODE_WORKER_ENVIRONMENT_STOP_COMMAND,
   NODE_WORKER_PROCESSES_COMMAND,
   NODE_WORKER_PORTAL_STREAM_COMMAND,
@@ -20,7 +18,6 @@ import {
   NODE_WORKER_SUPERVISOR_LAUNCH_COMMAND,
   NODE_WORKER_SUPERVISOR_STATUS_COMMAND,
   NODE_WORKER_WORKSPACE_EXEC_COMMAND,
-  NODE_WORKER_WORKSPACE_PREPARE_COMMAND,
   NODE_WORKER_WORKSPACE_RETAIN_COMMAND,
 } from "../infra/node-commands.js";
 import { logWarn } from "../logger.js";
@@ -38,10 +35,6 @@ import {
   type NodeWorkerSupervisorReceipt,
 } from "../worker/node-supervisor-protocol.js";
 import {
-  parseNodeWorkerPreparedWorkspaceInput,
-  type NodeWorkerPreparedWorkspaceResult,
-} from "../worker/node-workspace-prepared-protocol.js";
-import {
   parseNodeWorkerWorkspaceExecInput,
   type NodeWorkerWorkspaceExecResult,
 } from "../worker/node-workspace-protocol.js";
@@ -58,8 +51,6 @@ import {
   type WorkerConnectionEndpoint,
 } from "../worker/worker-connection-endpoint.js";
 import { parseNodeWorkerProcessInput } from "../worker/worker-process-observation.js";
-import { invokeNodeWorkerDesktopLaunch } from "./desktop-launch-command.js";
-import { invokeNodeWorkerDesktopStream } from "./desktop-stream-command.js";
 import type { NodeWorkerBundleInstallerControl } from "./node-worker-bundle-installer.js";
 import { NodeWorkerCapacityExhaustedError } from "./node-worker-capacity.js";
 import {
@@ -78,7 +69,6 @@ type NodeWorkerSupervisorCommandPayload =
   | NodeWorkerBundleInstallResult
   | NodeWorkerSupervisorReceipt
   | NodeWorkerWorkspaceExecResult
-  | NodeWorkerPreparedWorkspaceResult
   | NodeWorkerWorkspaceRetainResult
   | { status: "ready" }
   | null;
@@ -143,8 +133,6 @@ export async function invokeNodeWorkerSupervisorCommand(params: {
     string,
     () => Promise<NodeWorkerSupervisorCommandPayload | undefined> | undefined
   > = {
-    [NODE_WORKER_WORKSPACE_PREPARE_COMMAND]: () =>
-      workspace?.prepare(parseNodeWorkerPreparedWorkspaceInput(paramsJSON), signal),
     [NODE_WORKER_BUNDLE_INSTALL_COMMAND]: () => {
       if (!bundleInstaller) {
         return undefined;
@@ -221,12 +209,8 @@ export async function invokeNodeWorkerSupervisorCommand(params: {
           }
         : retained;
     },
-    [NODE_WORKER_DESKTOP_STREAM_COMMAND]: () =>
-      supervisor && invokeNodeWorkerDesktopStream(params).then(() => null),
     [NODE_WORKER_PORTAL_STREAM_COMMAND]: () =>
       supervisor && invokeNodeWorkerPortalStream(params).then(() => null),
-    [NODE_WORKER_DESKTOP_LAUNCH_COMMAND]: () =>
-      supervisor && invokeNodeWorkerDesktopLaunch({ paramsJSON, signal }),
     [NODE_WORKER_PROCESSES_COMMAND]: () =>
       supervisor?.observeProcesses(parseNodeWorkerProcessInput(paramsJSON), signal),
     [NODE_WORKER_ENVIRONMENT_STOP_COMMAND]: () =>
@@ -260,7 +244,6 @@ export async function invokeNodeWorkerSupervisorCommand(params: {
   }
   const workspaceCommand =
     params.command === NODE_WORKER_WORKSPACE_EXEC_COMMAND ||
-    params.command === NODE_WORKER_WORKSPACE_PREPARE_COMMAND ||
     params.command === NODE_WORKER_WORKSPACE_RETAIN_COMMAND;
   try {
     const payload = await invoke();

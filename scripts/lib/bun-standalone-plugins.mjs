@@ -126,12 +126,10 @@ export async function selectStandalonePluginModules(runtimeRoot, moduleEntries, 
   if (!selection.omitted.length) {
     return moduleEntries;
   }
-  const { resolveNodeBootstrapRuntimeChunks } =
-    await import("../../src/gateway/worker-environments/node-bootstrap-runtime-chunks.ts");
-  const { files } = await resolveNodeBootstrapRuntimeChunks(
+  const { selectStandaloneRuntimeChunks } = await import("./standalone-runtime-chunks.ts");
+  const files = await selectStandaloneRuntimeChunks(
     runtimeRoot,
     moduleEntries,
-    [],
     new Set(selection.omittedDirs),
   );
   return files;

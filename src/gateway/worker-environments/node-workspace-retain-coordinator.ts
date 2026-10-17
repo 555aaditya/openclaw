@@ -35,7 +35,6 @@ export type NodeWorkerBundleRetention = {
   currentBuild: () => Promise<
     Readonly<Pick<WorkerAdmissionHandshake, "bundleHash" | "openclawVersion">>
   >;
-  isEnvironmentOwnedNode: (nodeId: string) => boolean;
 };
 
 type NodeWorkspaceRetainCoordinatorOptions = {
@@ -160,7 +159,6 @@ export function createNodeWorkspaceRetainCoordinator(
     preparedPlacements: Map<string, PreparedPlacement>,
     dispatch: { started: boolean },
   ): Promise<void> => {
-    // Environment-owned cloud nodes prepare under their enrollment/mode owner.
     // Persistent hosts keep the current build when installed; maintenance never installs it.
     const bundleRetention = options.bundleRetention;
     const bundleRetentionSupported =
@@ -173,15 +171,9 @@ export function createNodeWorkspaceRetainCoordinator(
             return undefined;
           })
         : undefined;
-    const hostBuild =
-      bundleRetention && !bundleRetention.isEnvironmentOwnedNode(node.nodeId)
-        ? currentBuild
-        : undefined;
+    const hostBuild = currentBuild;
     const isCurrent = () =>
-      !stopped &&
-      transport === currentTransport &&
-      currentTransport.isCurrent(node) &&
-      (!hostBuild || !bundleRetention?.isEnvironmentOwnedNode(node.nodeId));
+      !stopped && transport === currentTransport && currentTransport.isCurrent(node);
     const preparedManifestRefs = new Map<string, (() => readonly string[] | null) & Disposable>();
     try {
       if (stopped) {
@@ -214,16 +206,8 @@ export function createNodeWorkspaceRetainCoordinator(
         }
       })();
       const environments = nodeEnvironments(options, node.nodeId);
-      // Provisioning and refresh install before recording receipts. Keep the current build until
-      // every live environment records it, so an acknowledged generation cannot prune it.
-      const retainCurrentBuild =
-        currentBuild &&
-        (hostBuild ||
-          environments.some(
-            (environment) =>
-              !isTerminalWorkerEnvironmentState(environment.state) &&
-              environment.bootstrapReceipt?.bundleHash !== currentBuild.bundleHash,
-          ));
+      // Paired hosts retain the installed current build independently of environment leases.
+      const retainCurrentBuild = currentBuild;
       const environmentIds = new Set(environments.map((environment) => environment.environmentId));
       const retainedBundleHashes = [
         ...new Set([

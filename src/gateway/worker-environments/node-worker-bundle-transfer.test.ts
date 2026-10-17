@@ -41,7 +41,7 @@ describe("node worker bundle transfer", () => {
     const source = path.join(root, "source");
     const tarballPath = path.join(root, "bundle.tgz");
     await fs.mkdir(source, { recursive: true });
-    const artifacts = ["github-exec-launcher.mjs", "worker.mjs", "workspace-rsync-receiver.mjs"];
+    const artifacts = ["github-exec-launcher.mjs", "worker.mjs"];
     for (const artifact of artifacts) {
       await fs.writeFile(path.join(source, artifact), "export {};\n", { mode: 0o700 });
     }

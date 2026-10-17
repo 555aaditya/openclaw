@@ -11,6 +11,7 @@ import { openOpenClawStateDatabase } from "../../state/openclaw-state-db.js";
 import { closeStateDatabaseForTest } from "../../test-utils/database-cleanup.js";
 import { STALE_WORKER_BUILD_REASON } from "./admission.js";
 import type { WorkerInstallationArtifact } from "./bundle.js";
+import type { WorkerEnvironmentNodeTunnel } from "./environment-access.js";
 import { createPlacementFailureActions } from "./placement-dispatch-failure.js";
 import { createWorkerPlacementDispatchStartup } from "./placement-dispatch-startup.js";
 import {
@@ -23,7 +24,6 @@ import { createHarness, createRecoveryService } from "./placement-dispatch-test-
 import { placementTurnOwner } from "./placement-record.js";
 import { createWorkerSessionPlacementStore } from "./placement-store.js";
 import * as support from "./service.test-support.js";
-import type { WorkerTunnelManager } from "./tunnel.js";
 import { stagePendingWorkerWorkspaceResult } from "./workspace-recovery.test-support.js";
 import {
   hasWorkerWorkspaceResultRef,
@@ -251,6 +251,15 @@ describe("worker placement restart recovery", () => {
       sweep: false,
     },
     {
+      failure: "remote-exec placement retains a retired SSH lease",
+      executionMode: "remote-exec",
+      snapshotMode: "remote-exec",
+      nodeBacked: false,
+      providerSupportsMode: true,
+      expectedError: "requires a node lease",
+      sweep: false,
+    },
+    {
       failure: "runtime sweep observes a changed provider execution mode",
       executionMode: "remote-exec",
       snapshotMode: "remote-exec",
@@ -297,49 +306,40 @@ describe("worker placement restart recovery", () => {
     expect(harness.log).not.toContain("placement:adopted");
   });
 
-  it.each([
-    { transport: "node", nodeBacked: true },
-    { transport: "SSH", nodeBacked: false },
-  ] as const)(
-    "adopts an exact remote-exec $transport lease from its durable provider after profile changes",
-    async ({ nodeBacked }) => {
-      const placements = createPlacementStore();
-      const harness = await createHarness(support.testState.stateDb, placements);
-      await harness.environments.attachSession({
-        environmentId: harness.ready.environmentId,
-        ownerEpoch: harness.ready.ownerEpoch,
-        sessionId: REQUEST.sessionId,
-      });
-      const environment = {
-        ...harness.attached,
-        providerId: "durable-provider",
-        profileSnapshot: {
-          ...harness.attached.profileSnapshot,
-          executionMode: "remote-exec" as const,
-        },
-        ...(nodeBacked ? { nodeDeviceId: "durable-node", sshEndpoint: null } : {}),
-      };
-      vi.mocked(harness.environments.get).mockReturnValue(environment);
-      const supportsProviderExecutionMode = vi.mocked(
-        harness.environments.supportsProviderExecutionMode,
-      );
-      await harness.placements.seedActive(environment.ownerEpoch, "remote-exec");
+  it("adopts an exact remote-exec node lease from its durable provider after profile changes", async () => {
+    const placements = createPlacementStore();
+    const harness = await createHarness(support.testState.stateDb, placements);
+    await harness.environments.attachSession({
+      environmentId: harness.ready.environmentId,
+      ownerEpoch: harness.ready.ownerEpoch,
+      sessionId: REQUEST.sessionId,
+    });
+    const environment = {
+      ...harness.attached,
+      providerId: "durable-provider",
+      profileSnapshot: {
+        ...harness.attached.profileSnapshot,
+        executionMode: "remote-exec" as const,
+      },
+      nodeDeviceId: "durable-node",
+      sshEndpoint: null,
+    };
+    vi.mocked(harness.environments.get).mockReturnValue(environment);
+    const supportsProviderExecutionMode = vi.mocked(
+      harness.environments.supportsProviderExecutionMode,
+    );
+    await harness.placements.seedActive(environment.ownerEpoch, "remote-exec");
 
-      await harness.service.reconcile();
+    await harness.service.reconcile();
 
-      expect(harness.placements.current()).toMatchObject({
-        state: "active",
-        executionMode: "remote-exec",
-      });
-      expect(supportsProviderExecutionMode).toHaveBeenCalledWith("durable-provider", "remote-exec");
-      expect(harness.environments.destroy).not.toHaveBeenCalled();
-      if (nodeBacked) {
-        expect(harness.environments.startTunnel).not.toHaveBeenCalled();
-      } else {
-        expect(harness.environments.startTunnel).toHaveBeenCalledOnce();
-      }
-    },
-  );
+    expect(harness.placements.current()).toMatchObject({
+      state: "active",
+      executionMode: "remote-exec",
+    });
+    expect(supportsProviderExecutionMode).toHaveBeenCalledWith("durable-provider", "remote-exec");
+    expect(harness.environments.destroy).not.toHaveBeenCalled();
+    expect(harness.environments.startTunnel).not.toHaveBeenCalled();
+  });
 
   it.each([
     { creation: "profile", matchingEnvironmentExists: true },
@@ -795,39 +795,41 @@ describe("worker placement restart recovery", () => {
         protocolFeatures: currentReceipt.protocolFeatures,
       };
       const recoveryState = { started: false };
-      support.testState.prepareInstallation = vi.fn(async (install) => {
-        if (install === "bundle" && recoveryState.started && failure === "bundle") {
-          throw new Error("bundle unavailable");
-        }
-        return install === "bundle" ? currentBundle : support.NPM_ARTIFACT;
+      const failRecovery = vi.fn(() => {
+        throw new Error(`${failure} unavailable`);
       });
-      const tunnelManager = {
+      support.testState.prepareInstallation = vi.fn(async () => {
+        if (recoveryState.started && failure === "bundle") {
+          return failRecovery();
+        }
+        return currentBundle;
+      });
+      const nodeTunnelManager: WorkerEnvironmentNodeTunnel = {
         status: () => "stopped" as const,
-        start: vi.fn(),
+        start: vi.fn(async () => {
+          throw new Error("Pending recovery must not open a node tunnel");
+        }),
+        observeProcesses: vi.fn(),
         stop: vi.fn(async () => {}),
         stopAll: vi.fn(async () => {}),
-      } as unknown as WorkerTunnelManager;
+      };
       const provider = support.createProvider({
         inspect: async () => {
           if (recoveryState.started && failure === "provider") {
-            throw new Error("provider unavailable");
+            return failRecovery();
           }
-          return { status: "active" };
+          return { status: "active", sharedHost: true };
         },
       });
-      const workerService = support.createService(provider, { tunnelManager });
+      const workerService = support.createService(provider, { nodeTunnelManager });
       const placements = createWorkerSessionPlacementStore({
         database: support.testState.stateDb,
         now: () => support.testState.nowMs,
       });
       const recovery = await createRecoveryService(placements, workerService);
       const environmentId = "worker-stale-recovery";
-      const bootstrapping = await support.seedBootstrapping(environmentId);
-      await support.testState.store.transition({
-        environmentId,
-        from: bootstrapping.state,
-        to: "ready",
-        patch: support.readyPatch(environmentId, currentReceipt),
+      await support.seedReady(environmentId, {
+        receipt: { ...currentReceipt, installKind: "bundle" },
       });
       const attached = await workerService.attachSession({
         environmentId,
@@ -860,6 +862,7 @@ describe("worker placement restart recovery", () => {
 
       await recovery.reconcile();
 
+      expect(failRecovery).toHaveBeenCalled();
       expect(placements.get(active.sessionId)).toMatchObject({
         state: "active",
         turnClaim: { claimId: claim.claimId, runId: claim.runId },
@@ -869,7 +872,7 @@ describe("worker placement restart recovery", () => {
         state: "attached",
         destroyRequestedAtMs: null,
       });
-      expect(tunnelManager.start).not.toHaveBeenCalled();
+      expect(nodeTunnelManager.start).not.toHaveBeenCalled();
     },
   );
   it.each([

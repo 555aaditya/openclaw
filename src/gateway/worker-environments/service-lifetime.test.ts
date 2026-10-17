@@ -4,236 +4,16 @@ import {
   createGatewaySchedulerClock,
   createTestGatewayScheduler,
 } from "../../test-utils/gateway-scheduler-clock.js";
+import type { WorkerEnvironmentNodeTunnel } from "./environment-access.js";
 import * as support from "./service.test-support.js";
 import { WorkerEnvironmentInventoryClosedError } from "./store-errors.js";
 import { WorkerTunnelOwnerDisconnectedError } from "./tunnel-contract.js";
-import type { WorkerTunnelManager } from "./tunnel.js";
 
 type WorkerEnvironmentServiceError = support.WorkerEnvironmentServiceError;
 type WorkerLifecycleLease = support.WorkerLifecycleLease;
 
 describe("worker environment service", () => {
   support.setupWorkerEnvironmentServiceSuite();
-
-  it.each([false, true])(
-    "withdraws dedicated access before persistence settles (rejected=%s)",
-    async (rejected) => {
-      const node = await support.seedReadyNodeDesktop("preview-withdrawal");
-      let sharedHost: boolean | undefined = false;
-      const service = support.createService(
-        support.createProvider({
-          resolveAllocation: async () => ({ leaseId: node.leaseId!, sharedHost: false }),
-          inspect: async () => ({ status: "active", sharedHost }),
-        }),
-      );
-      await service.reconcileOnce();
-      const qualification = service.getDedicatedNodeLeaseSignal(node.environmentId)!;
-      expect(qualification.aborted).toBe(false);
-      const entered = createDeferred();
-      const finish = createDeferred();
-      const store = support.testState.store;
-      const persist = store.reconcileSharedHost.bind(store);
-      vi.spyOn(store, "reconcileSharedHost").mockImplementationOnce(async (input) => {
-        entered.resolve();
-        await finish.promise;
-        if (rejected) {
-          throw new Error("fixture persistence failure");
-        }
-        return persist(input);
-      });
-      sharedHost = undefined;
-      const reconciliation = service.reconcileOnce();
-      try {
-        await entered.promise;
-        expect(qualification.aborted).toBe(true);
-        expect(service.getDedicatedNodeLeaseSignal(node.environmentId)).toBeUndefined();
-      } finally {
-        finish.resolve();
-        await reconciliation;
-      }
-      expect(service.getDedicatedNodeLeaseSignal(node.environmentId)).toBeUndefined();
-    },
-  );
-
-  it("requires fresh explicit dedicated-node inspection for restricted previews without changing legacy classification", async () => {
-    const node = await support.seedReadyNodeDesktop("preview-dedicated");
-    let sharedHost: boolean | undefined;
-    let inspectionFails = false;
-    const provider = support.createProvider({
-      resolveAllocation: async () => ({ leaseId: node.leaseId!, sharedHost: false }),
-      inspect: async () => {
-        if (inspectionFails) {
-          throw new Error("provider temporarily unavailable");
-        }
-        return { status: "active", ...(sharedHost === undefined ? {} : { sharedHost }) };
-      },
-    });
-    const service = support.createService(provider);
-    expect(Boolean(service.getDedicatedNodeLeaseSignal(node.environmentId))).toBe(false);
-    await service.reconcileOnce();
-    expect(service.get(node.environmentId)?.sharedHost).toBe(false);
-    expect(Boolean(service.getDedicatedNodeLeaseSignal(node.environmentId))).toBe(false);
-    sharedHost = false;
-    await service.reconcileOnce();
-    expect(Boolean(service.getDedicatedNodeLeaseSignal(node.environmentId))).toBe(true);
-    const firstQualification = service.getDedicatedNodeLeaseSignal(node.environmentId)!;
-    await service.reconcileOnce();
-    expect(service.getDedicatedNodeLeaseSignal(node.environmentId)).toBe(firstQualification);
-    expect(firstQualification.aborted).toBe(false);
-    inspectionFails = true;
-    await service.reconcileOnce();
-    expect(service.getDedicatedNodeLeaseSignal(node.environmentId)).toBe(firstQualification);
-    expect(firstQualification.aborted).toBe(false);
-    inspectionFails = false;
-    sharedHost = undefined;
-    await service.reconcileOnce();
-    expect(service.get(node.environmentId)?.sharedHost).toBe(false);
-    expect(Boolean(service.getDedicatedNodeLeaseSignal(node.environmentId))).toBe(false);
-    expect(firstQualification.aborted).toBe(true);
-    sharedHost = false;
-    await service.reconcileOnce();
-    expect(Boolean(service.getDedicatedNodeLeaseSignal(node.environmentId))).toBe(true);
-    sharedHost = true;
-    await service.reconcileOnce();
-    expect(Boolean(service.getDedicatedNodeLeaseSignal(node.environmentId))).toBe(false);
-    sharedHost = false;
-    await service.reconcileOnce();
-    expect(Boolean(service.getDedicatedNodeLeaseSignal(node.environmentId))).toBe(true);
-    await service.stop();
-    expect(Boolean(service.getDedicatedNodeLeaseSignal(node.environmentId))).toBe(false);
-    const restarted = support.createService(provider);
-    expect(Boolean(restarted.getDedicatedNodeLeaseSignal(node.environmentId))).toBe(false);
-    await restarted.reconcileOnce();
-    expect(Boolean(restarted.getDedicatedNodeLeaseSignal(node.environmentId))).toBe(true);
-    const epoch = restarted.get(node.environmentId)!.ownerEpoch;
-    const restartedQualification = restarted.getDedicatedNodeLeaseSignal(node.environmentId)!;
-    await support.testState.store.revokeEnvironmentCredential(node.environmentId);
-    expect(restarted.getDedicatedNodeLeaseSignal(node.environmentId)).toBe(restartedQualification);
-    expect(restartedQualification.aborted).toBe(false);
-    await support.testState.store.revokeEnvironmentCredential(node.environmentId, {
-      expectedOwnerEpoch: epoch,
-      fenceWorkspaceTransfers: true,
-    });
-    expect(Boolean(restarted.getDedicatedNodeLeaseSignal(node.environmentId))).toBe(false);
-    expect(restartedQualification.aborted).toBe(true);
-  });
-
-  it("exposes the catalog display identity without allocating a worker", () => {
-    const provider = support.createProvider({ resolveDisplayId: () => "aws" });
-    const provision = vi.spyOn(provider, "provision");
-    const service = support.createService(provider);
-    expect(service.readProviderDisplayId("development")).toBe("aws");
-    expect(provision).not.toHaveBeenCalled();
-    expect(support.testState.store.list()).toEqual([]);
-  });
-
-  it("warms machine catalogs at startup only for nonterminal environment profiles", async () => {
-    const { store } = support.testState;
-    const active = await store.createIntent({
-      environmentId: "startup-worker",
-      providerId: "fake",
-      profileId: "development",
-      profileSnapshot: { settings: { region: "test" } },
-      provisionOperationId: "provision:startup",
-    });
-    await store.createIntent({
-      environmentId: "terminal-worker",
-      providerId: "fake",
-      profileId: "terminal",
-      profileSnapshot: { settings: { region: "terminal" } },
-      provisionOperationId: "provision:terminal",
-    });
-    await store.transition({ environmentId: "terminal-worker", from: "requested", to: "failed" });
-    support.testState.config.cloudWorkers!.profiles!.terminal = {
-      provider: "fake",
-      settings: { region: "terminal" },
-    };
-    const listMachineOptions = vi.fn(async () => [
-      { id: "medium", label: "Medium", cpu: 4, memoryGb: 16, default: true },
-    ]);
-    const listOperatingSystems = vi.fn(async () => [
-      { id: "linux", label: "Linux", default: true },
-    ]);
-    const service = support.createService(
-      support.createProvider({ listMachineOptions, listOperatingSystems }),
-    );
-    service.installReconcileEnvironmentGuard(async () => {});
-    expect(service.readMachineShape(active.environmentId)).toBeUndefined();
-    service.start();
-    await support.waitForFast(() =>
-      expect(service.readMachineShape(active.environmentId)).toEqual({
-        class: "medium",
-        os: "linux",
-        osLabel: "Linux",
-        cpu: 4,
-        memoryGb: 16,
-      }),
-    );
-    expect(listMachineOptions).toHaveBeenCalledExactlyOnceWith({ region: "test" });
-    expect(listOperatingSystems).toHaveBeenCalledExactlyOnceWith({ region: "test" });
-    expect(store.get(active.environmentId)?.profileSnapshot).toEqual(active.profileSnapshot);
-  });
-
-  it.each(["service", "scheduler"] as const)(
-    "keeps maintenance off reconciliation and allocation while %s shutdown aborts and drains it",
-    async (closingOwner) => {
-      const { promise: pending, resolve: finish } = createDeferred();
-      const maintainProviders = vi.fn(async (_signal: AbortSignal) => pending);
-      const scheduler = createTestGatewayScheduler();
-      const workerService = support.createService(support.createProvider(), {
-        maintainProviders,
-        scheduler,
-      });
-      let stopped = false;
-      let stopping: Promise<void> | undefined;
-      try {
-        await workerService.reconcileOnce();
-        await workerService.reconcileOnce();
-        expect(maintainProviders).toHaveBeenCalledOnce();
-        await expect(
-          workerService.createWithRequest({
-            profileId: "development",
-            idempotencyKey: "during-maintenance",
-          }),
-        ).resolves.toMatchObject({ state: "ready" });
-        if (closingOwner === "scheduler") {
-          scheduler.beginClose();
-          expect(maintainProviders.mock.calls[0]![0].aborted).toBe(true);
-        }
-        stopping = workerService.stop().then(() => {
-          stopped = true;
-        });
-        expect(maintainProviders.mock.calls[0]![0].aborted).toBe(true);
-        await Promise.resolve();
-        expect(stopped).toBe(false);
-      } finally {
-        finish();
-        await (stopping ?? workerService.stop());
-        await scheduler.stop();
-      }
-      expect(stopped).toBe(true);
-      await workerService.reconcileOnce();
-      expect(maintainProviders).toHaveBeenCalledOnce();
-    },
-  );
-
-  it("reports failed maintenance and retries on the next sweep", async () => {
-    const warn = vi.fn();
-    const maintainProviders = vi.fn(async () => {
-      throw new Error("fixture maintenance failure");
-    });
-    const workerService = support.createService(support.createProvider(), {
-      maintainProviders,
-      logger: { warn },
-    });
-    await workerService.reconcileOnce();
-    await support.waitForFast(() => expect(warn).toHaveBeenCalledOnce());
-    await workerService.reconcileOnce();
-    await support.waitForFast(() => expect(maintainProviders).toHaveBeenCalledTimes(2));
-    expect(warn).toHaveBeenCalledWith(
-      "Worker provider maintenance sweep failed; cleanup will retry",
-    );
-  });
 
   it("reconciles unrelated leases concurrently", async () => {
     await support.seedReady("worker-concurrent-a");
@@ -244,7 +24,7 @@ describe("worker environment service", () => {
       inspect: async (lease) => {
         inspected.push(lease);
         await blocked;
-        return { status: "active" };
+        return { status: "active", sharedHost: true };
       },
     });
 
@@ -261,7 +41,7 @@ describe("worker environment service", () => {
     );
   });
 
-  it("coalesces targeted and full inspection while retaining full-sweep maintenance", async () => {
+  it("coalesces targeted and full inspection while retaining full-sweep cleanup", async () => {
     const targetId = "worker-targeted-overlap";
     const siblingId = "worker-full-sweep-sibling";
     await support.seedReady(targetId);
@@ -276,13 +56,10 @@ describe("worker environment service", () => {
       } else {
         siblingStarted.resolve();
       }
-      return { status: "active" as const };
+      return { status: "active" as const, sharedHost: true };
     });
-    const maintainProviders = vi.fn(async () => {});
     const prune = vi.spyOn(support.testState.store, "pruneTerminalEnvironments");
-    const workerService = support.createService(support.createProvider({ inspect }), {
-      maintainProviders,
-    });
+    const workerService = support.createService(support.createProvider({ inspect }));
     const uninstall = workerService.installReconcileEnvironmentGuard(async (_id, core) => {
       await core();
     });
@@ -292,7 +69,6 @@ describe("worker environment service", () => {
     try {
       await targetStarted.promise;
       expect(inspect.mock.calls.map(([lease]) => lease.leaseId)).toEqual([`lease:${targetId}`]);
-      expect(maintainProviders).not.toHaveBeenCalled();
       expect(prune).not.toHaveBeenCalled();
       direct = workerService.reconcileEnvironment(targetId);
       full = workerService.reconcileOnce();
@@ -304,7 +80,6 @@ describe("worker environment service", () => {
       await uninstall();
     }
     expect(inspect).toHaveBeenCalledTimes(2);
-    expect(maintainProviders).toHaveBeenCalledOnce();
     expect(prune).toHaveBeenCalledOnce();
   });
 
@@ -399,11 +174,11 @@ describe("worker environment service", () => {
   it("defers unreachable worker stops instead of failing Gateway shutdown", async () => {
     const disconnected = new WorkerTunnelOwnerDisconnectedError("node is not connected");
     const workerService = support.createService(support.createProvider(), {
-      tunnelManager: {
+      nodeTunnelManager: {
         stopAll: vi.fn(async () => {
           throw disconnected;
         }),
-      } as unknown as WorkerTunnelManager,
+      } as unknown as WorkerEnvironmentNodeTunnel,
     });
 
     await expect(workerService.stop()).resolves.toBeUndefined();
@@ -417,17 +192,17 @@ describe("worker environment service", () => {
     const provision = vi.fn(async () => {
       provisionStarted.resolve();
       await provisionPending;
-      return { leaseId: "lease-stop-timeout", ssh: support.SSH_ENDPOINT };
+      return { leaseId: "lease-stop-timeout", sharedHost: true, node: { deviceId: "node-1" } };
     });
     const stopAll = vi.fn(async () => {
       tunnelsStopped.resolve();
     });
     const tunnelManager = {
       stopAll,
-    } as unknown as WorkerTunnelManager;
+    } as unknown as WorkerEnvironmentNodeTunnel;
     const workerService = support.createService(support.createProvider({ provision }), {
       providerCallTimeoutMs: 5,
-      tunnelManager,
+      nodeTunnelManager: tunnelManager,
     });
     const creationResult = workerService
       .createWithRequest({
@@ -473,7 +248,7 @@ describe("worker environment service", () => {
     await support.seedReady(environmentId);
     const time = createGatewaySchedulerClock();
     const scheduler = createTestGatewayScheduler(time.clock);
-    const inspect = vi.fn(async () => ({ status: "active" as const }));
+    const inspect = vi.fn(async () => ({ status: "active" as const, sharedHost: true }));
     const liveEvents = support.createLiveEvents();
     const unsubscribeTurnClaimClosed = vi.fn();
     const placementStore = {
@@ -526,7 +301,7 @@ describe("worker environment service", () => {
   it("closes new guarded reconciliation and drains the admitted operation on uninstall", async () => {
     const environmentId = "worker-guard-uninstall";
     await support.seedReady(environmentId);
-    const inspect = vi.fn(async () => ({ status: "active" as const }));
+    const inspect = vi.fn(async () => ({ status: "active" as const, sharedHost: true }));
     const workerService = support.createService(support.createProvider({ inspect }));
     const { promise: guardPending, resolve: releaseGuard } = createDeferred();
     const { promise: guardStarted, resolve: signalGuardStarted } = createDeferred();
@@ -560,7 +335,7 @@ describe("worker environment service", () => {
     async (method) => {
       const environmentId = "worker-guard-stop";
       await support.seedReady(environmentId);
-      const inspect = vi.fn(async () => ({ status: "active" as const }));
+      const inspect = vi.fn(async () => ({ status: "active" as const, sharedHost: true }));
       const workerService = support.createService(support.createProvider({ inspect }));
       const { promise: guardPending, resolve: releaseGuard } = createDeferred();
       const { promise: guardStarted, resolve: signalGuardStarted } = createDeferred();
@@ -596,18 +371,27 @@ describe("worker environment service", () => {
 
   it("rejects a create queued before service shutdown once its lock is acquired", async () => {
     const { promise: bootstrapPending, resolve: finishBootstrap } = createDeferred();
-    support.testState.bootstrapWorker = vi.fn(async () => {
+    let installerSettled = false;
+    support.testState.ensureNodeWorkerBundle = vi.fn(async () => {
       await bootstrapPending;
+      installerSettled = true;
       return support.BOOTSTRAP_RECEIPT;
     });
     const provision = vi.fn(support.createProvider().provision);
-    const workerService = support.createService(support.createProvider({ provision }));
+    const destroy = vi.fn(async () => {
+      expect(installerSettled).toBe(true);
+    });
+    const workerService = support.createService(support.createProvider({ provision, destroy }));
     const first = workerService.createWithRequest({
       profileId: "development",
       idempotencyKey: "request-queued-before-stop",
     });
+    const firstResult = expect(first).rejects.toMatchObject({
+      code: "bootstrap_failure",
+      message: expect.stringContaining("Worker provisioning owner is no longer current"),
+    });
     await support.waitForFast(() =>
-      expect(support.testState.bootstrapWorker).toHaveBeenCalledTimes(1),
+      expect(support.testState.ensureNodeWorkerBundle).toHaveBeenCalledTimes(1),
     );
     const queued = workerService.createWithRequest({
       profileId: "development",
@@ -617,41 +401,60 @@ describe("worker environment service", () => {
       code: "invalid_state",
     } satisfies Partial<WorkerEnvironmentServiceError>);
 
-    const stopping = workerService.stop();
-    finishBootstrap?.();
-
-    await expect(first).resolves.toMatchObject({ state: "ready" });
-    await queuedResult;
-    await stopping;
+    let stopped = false;
+    const stopping = workerService.stop().then(() => {
+      stopped = true;
+    });
+    try {
+      await Promise.resolve();
+      expect(stopped).toBe(false);
+      expect(installerSettled).toBe(false);
+      expect(destroy).not.toHaveBeenCalled();
+    } finally {
+      finishBootstrap();
+      await Promise.all([firstResult, queuedResult, stopping]);
+    }
+    expect(stopped).toBe(true);
     expect(provision).toHaveBeenCalledTimes(1);
+    expect(destroy).toHaveBeenCalledOnce();
+    expect(support.testState.store.list()[0]).toMatchObject({ state: "failed", leaseId: null });
   });
 
   it("drains a destroy accepted before service shutdown while it waits for the lock", async () => {
-    const { promise: bootstrapPending, resolve: finishBootstrap } = createDeferred();
-    support.testState.bootstrapWorker = vi.fn(async () => {
-      await bootstrapPending;
-      return support.BOOTSTRAP_RECEIPT;
+    const environmentId = "worker-destroy-before-stop";
+    await support.seedReady(environmentId);
+    const { promise: inspectionPending, resolve: finishInspection } = createDeferred();
+    const entered = createDeferred();
+    let inspectionSettled = false;
+    const inspect = vi.fn(async () => {
+      entered.resolve();
+      await inspectionPending;
+      inspectionSettled = true;
+      return { status: "active" as const, sharedHost: true };
     });
-    const destroy = vi.fn(async () => {});
-    const workerService = support.createService(support.createProvider({ destroy }));
-    const creation = workerService.createWithRequest({
-      profileId: "development",
-      idempotencyKey: "request-destroy-before-stop",
+    const destroy = vi.fn(async () => {
+      expect(inspectionSettled).toBe(true);
     });
-    await support.waitForFast(() =>
-      expect(support.testState.bootstrapWorker).toHaveBeenCalledTimes(1),
-    );
-    const environmentId = support.testState.store.list()[0]?.environmentId;
-    expect(environmentId).toBeTruthy();
-    const teardown = workerService.destroy(environmentId!);
+    const workerService = support.createService(support.createProvider({ inspect, destroy }));
+    const reconciliation = workerService.reconcileEnvironment(environmentId).catch(() => undefined);
+    await entered.promise;
+    const teardown = workerService.destroy(environmentId);
     const teardownResult = expect(teardown).resolves.toMatchObject({ state: "destroyed" });
 
-    const stopping = workerService.stop();
-    finishBootstrap?.();
-
-    await expect(creation).resolves.toMatchObject({ state: "ready" });
-    await teardownResult;
-    await stopping;
+    let stopped = false;
+    const stopping = workerService.stop().then(() => {
+      stopped = true;
+    });
+    try {
+      await Promise.resolve();
+      expect(stopped).toBe(false);
+      expect(inspectionSettled).toBe(false);
+      expect(destroy).not.toHaveBeenCalled();
+    } finally {
+      finishInspection();
+      await Promise.all([reconciliation, teardownResult, stopping]);
+    }
+    expect(stopped).toBe(true);
     expect(destroy).toHaveBeenCalledTimes(1);
   });
 
@@ -676,17 +479,22 @@ describe("worker environment service", () => {
   it("drains accepted operations after readiness rejects during shutdown", async () => {
     const durableStore = support.testState.store;
     const { promise: bootstrapPending, resolve: finishBootstrap } = createDeferred();
-    support.testState.bootstrapWorker = vi.fn(async () => {
+    support.testState.ensureNodeWorkerBundle = vi.fn(async () => {
       await bootstrapPending;
       return support.BOOTSTRAP_RECEIPT;
     });
-    const workerService = support.createService(support.createProvider());
+    const destroy = vi.fn(async () => {});
+    const workerService = support.createService(support.createProvider({ destroy }));
     const creation = workerService.createWithRequest({
       profileId: "development",
       idempotencyKey: "request-stop-after-reconcile-failure",
     });
+    const creationResult = expect(creation).rejects.toMatchObject({
+      code: "bootstrap_failure",
+      message: expect.stringContaining("Worker provisioning owner is no longer current"),
+    });
     await support.waitForFast(() =>
-      expect(support.testState.bootstrapWorker).toHaveBeenCalledTimes(1),
+      expect(support.testState.ensureNodeWorkerBundle).toHaveBeenCalledTimes(1),
     );
     try {
       vi.spyOn(durableStore, "ready").mockRejectedValueOnce(
@@ -704,28 +512,33 @@ describe("worker environment service", () => {
       await reconciliationResult;
       await Promise.resolve();
       expect(stopped).toBe(false);
+      expect(destroy).not.toHaveBeenCalled();
       finishBootstrap?.();
 
-      await expect(creation).resolves.toMatchObject({ state: "ready" });
+      await creationResult;
       await stopping;
       expect(stopped).toBe(true);
       expect(durableStore.list()).toHaveLength(1);
+      expect(durableStore.list()[0]).toMatchObject({ state: "failed", leaseId: null });
+      expect(destroy).toHaveBeenCalledOnce();
     } finally {
       finishBootstrap();
     }
   });
 
-  it("retains a bootstrap lease when scheduler shutdown precedes service teardown", async () => {
+  it("retains an admitted node lease when scheduler shutdown interrupts runtime refresh", async () => {
     const environmentId = "worker-scheduler-bootstrap";
-    const initial = await support.seedBootstrapping(environmentId);
+    const initial = await support.seedReady(environmentId, {
+      receipt: { ...support.BOOTSTRAP_RECEIPT, installKind: "bundle", bundleHash: "b".repeat(64) },
+    });
     const entered = createDeferred();
     const finishProducer = createDeferred();
     let signal: AbortSignal | undefined;
-    support.testState.bootstrapWorker = vi.fn(async (input) => {
+    support.testState.ensureNodeWorkerBundle = vi.fn(async (input) => {
       signal = input.signal;
       entered.resolve();
       await finishProducer.promise;
-      input.signal.throwIfAborted();
+      input.signal?.throwIfAborted();
       return support.BOOTSTRAP_RECEIPT;
     });
     const destroy = vi.fn(async () => {});
@@ -753,16 +566,12 @@ describe("worker environment service", () => {
     }
   });
 
-  it.each(["bootstrap", "inspection", "bundle", "npm", "refresh"] as const)(
+  it.each(["inspection", "bundle", "refresh"] as const)(
     "cancels startup %s before teardown and retains its actual producer until settlement",
     async (kind) => {
       const environmentId = "worker-owner-cancellation";
-      const preparing = kind === "bundle" || kind === "npm";
-      const initial = await (kind === "refresh"
-        ? support.seedReadyNodeDesktop(environmentId)
-        : kind === "bootstrap" || preparing
-          ? support.seedBootstrapping(environmentId, kind === "npm" ? "npm" : "bundle")
-          : support.seedReady(environmentId));
+      const preparing = kind === "bundle";
+      const initial = await support.seedReady(environmentId);
       const entered = createDeferred();
       const finishProducer = createDeferred();
       let activeSignal: AbortSignal | undefined;
@@ -773,21 +582,12 @@ describe("worker environment service", () => {
         await finishProducer.promise;
         producerSettled = true;
       };
-      if (kind === "bootstrap") {
-        support.testState.bootstrapWorker = vi.fn(async ({ signal }) => {
-          await holdProducer(signal);
-          signal.throwIfAborted();
-          return support.BOOTSTRAP_RECEIPT;
-        });
-      }
       if (preparing || kind === "refresh") {
         support.testState.prepareInstallation = vi.fn(async (install) => {
           if (install === kind) {
             await holdProducer();
           }
-          return install === "bundle"
-            ? { ...support.BUNDLE_ARTIFACT, bundleHash: "c".repeat(64) }
-            : support.NPM_ARTIFACT;
+          return { ...support.BUNDLE_ARTIFACT, bundleHash: "c".repeat(64) };
         });
       }
       const destroy = vi.fn(async () => {});
@@ -796,7 +596,9 @@ describe("worker environment service", () => {
           if (kind === "inspection") {
             await holdProducer(signal);
           }
-          return { status: kind === "inspection" ? "unknown" : "active" };
+          return kind === "inspection"
+            ? { status: "unknown" }
+            : { status: "active", sharedHost: true };
         },
         destroy,
       });

@@ -19,7 +19,6 @@ import {
 } from "./workspace-inventory-limits.js";
 import {
   createWorkspaceGitTransferList,
-  filterExistingGitTransferList,
   runWorkspaceInventoryCommandToFile,
 } from "./workspace-sync-inventory.js";
 import { preflightWorkerWorkspace } from "./workspace-sync-preflight.js";
@@ -218,26 +217,6 @@ describe("runWorkspaceInventoryCommandToFile", () => {
       }
     },
   );
-
-  it("fully persists a filtered Git transfer list after a positive short write", async () => {
-    const root = tempDirs.make("openclaw-workspace-filter-short-write-");
-    const preparedListPath = path.join(root, "prepared");
-    const outputPath = path.join(root, "filtered");
-    await fs.mkdir(path.join(root, "nested"));
-    await Promise.all([
-      fs.writeFile(path.join(root, "alpha.txt"), "alpha"),
-      fs.writeFile(path.join(root, "nested", "beta.txt"), "beta"),
-      fs.writeFile(preparedListPath, "alpha.txt\0missing.txt\0nested/beta.txt\0"),
-    ]);
-    const shortWriteObserved = injectPositiveShortWrite(outputPath);
-
-    await filterExistingGitTransferList({ gitRoot: root, preparedListPath, outputPath });
-
-    expect(shortWriteObserved()).toBe(true);
-    await expect(fs.readFile(outputPath)).resolves.toEqual(
-      Buffer.from("alpha.txt\0nested/beta.txt\0"),
-    );
-  });
 
   it("force-kills a command that ignores abort termination", async ({ signal, onTestFinished }) => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-workspace-sync-"));

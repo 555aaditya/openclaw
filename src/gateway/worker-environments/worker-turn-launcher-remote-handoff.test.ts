@@ -50,7 +50,7 @@ import {
   MANIFEST_REF,
   OWNER_EPOCH,
   SESSION_ID,
-  browserEnvironment,
+  attachedEnvironment,
   cleanupWorkerTurnLauncherTest,
   createWorkerSessionTurnPlacementProvider,
   openSessionManager,
@@ -126,8 +126,7 @@ describe("worker turn launcher remote handoff", () => {
     const toolResult = makeTextToolResult("call-1", "read", "result", false, 12);
     await manager.appendMessageAsync(toolResult);
     let descriptor: WorkerLaunchDescriptor | undefined;
-    const environment = browserEnvironment();
-    environment.desktop!.apps![0]!.args = ["-File", "C:\\ProgramData\\OpenClaw\\browser.ps1"];
+    const environment = attachedEnvironment();
     const bootstrapReceipt = expectDefined(environment.bootstrapReceipt, "bootstrap receipt");
     const acknowledgeCredentialDelivery = vi.fn(async () => true);
     const reconcileWorkspace = vi.fn(
@@ -262,7 +261,7 @@ describe("worker turn launcher remote handoff", () => {
             ...input,
             userTurnTranscriptRecorder: recorder,
             gatewayUiCommandTarget: { connId: "requesting-ui", profileId: "requester" },
-            toolsAllow: ["browser"],
+            toolsAllow: ["read"],
             workspaceDir: path.join(root, "stale-caller-workspace"),
             transcriptPrompt: "Canonical transcript request",
             extraSystemPrompt: "Keep the worker guidance.",
@@ -346,12 +345,8 @@ describe("worker turn launcher remote handoff", () => {
     expect(verifiedRuntimeIdentity).not.toHaveProperty("approvalOwnerPluginId");
     expect(assignment).not.toHaveProperty("admittedRunContext");
     expect(assignment).not.toHaveProperty("gatewayUiCommandTarget");
-    expect(assignment.toolAuthority.allowedToolNames).toEqual(["browser"]);
-    expect(assignment.browser).toEqual({
-      cdpUrl: "http://127.0.0.1:9222",
-      launcherPath: "/usr/local/bin/openclaw-worker-browser",
-      launcherArgs: ["-File", "C:\\ProgramData\\OpenClaw\\browser.ps1"],
-    });
+    expect(assignment.toolAuthority.allowedToolNames).toEqual(["read"]);
+
     expect(assignment.initialMessages).toEqual([
       wireUser(expect.stringContaining("Compacted durable context"), expect.any(Number)),
       wireUser(expect.stringMatching(/^\[[^\]]+\] Earlier request$/u), 10),
@@ -432,7 +427,7 @@ describe("worker turn launcher remote handoff", () => {
       reconcileWorkspace: vi.fn(reconcileUnchangedLocalWorkspace),
     });
     const environments = environmentForTunnel({
-      get: vi.fn(() => browserEnvironment()),
+      get: vi.fn(() => attachedEnvironment()),
       startTunnel: vi.fn(async () => tunnel),
     });
     const provider = createWorkerSessionTurnPlacementProvider({ environments, placements });
@@ -441,11 +436,7 @@ describe("worker turn launcher remote handoff", () => {
       runIdentity("run-persisted-user"),
       {
         ...turn("run-persisted-user"),
-        config: {
-          ...turn("run-persisted-user").config,
-          plugins: { entries: { browser: { enabled: false } } },
-        },
-        toolsAllow: ["browser"],
+        toolsAllow: ["read"],
         suppressNextUserMessagePersistence: true,
         images: inlineImages,
         imageOrder: ["inline", "offloaded", "inline"],
@@ -472,8 +463,8 @@ describe("worker turn launcher remote handoff", () => {
     const verifiedRuntimeIdentity = await verifyIdentity(assignment);
     expect(verifiedRuntimeIdentity).not.toHaveProperty("executionIdentity");
     expect(verifiedRuntimeIdentity).not.toHaveProperty("approvalOwnerPluginId");
-    expect(assignment.toolAuthority.allowedToolNames).toEqual([]);
-    expect(assignment.browser).toBeUndefined();
+    expect(assignment.toolAuthority.allowedToolNames).toEqual(["read"]);
+
     expect(assignment.initialMessages).toMatchObject([
       { role: "user" },
       { role: "assistant", content: [{ id: "shared-call" }] },

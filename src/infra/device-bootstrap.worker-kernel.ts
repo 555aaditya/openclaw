@@ -2,11 +2,9 @@ import { asDateTimestampMs } from "@openclaw/normalization-core/number-coercion"
 import {
   CONTROL_UI_OWNER_BOOTSTRAP_PROFILE,
   deviceBootstrapProfilesEqual,
-  normalizeDeviceBootstrapHandoffProfile,
   normalizeDeviceBootstrapProfile,
   resolveBootstrapProfileScopesForRole,
   type DeviceBootstrapProfile,
-  type DeviceBootstrapProfileInput,
 } from "../shared/device-bootstrap-profile.js";
 import { roleScopesAllow } from "../shared/operator-scope-compat.js";
 import type { OpenClawStateDatabase } from "../state/openclaw-state-db.js";
@@ -22,13 +20,11 @@ import {
   type DeviceBootstrapBoundContextInput,
 } from "./device-bootstrap.worker-types.js";
 import { normalizeDevicePublicKeyBase64Url } from "./device-identity.js";
-import { hasCloudWorkerSetupDeviceBinding } from "./device-pairing-cloud-worker.js";
 import { devicePairingMutation } from "./device-pairing-dispatch.worker.js";
 import {
   requestDevicePairingMutationAdmission,
   withDevicePairingMutationAdmission,
 } from "./device-pairing-mutation.worker.js";
-import type { CloudWorkerSetupCompletionPublication } from "./device-pairing-read.types.js";
 import {
   confirmDevicePairSetupCompletionDeliveryInTransaction,
   consumeDeviceBootstrapTokenWithSetupCompletionInTransaction,
@@ -46,8 +42,7 @@ import type {
 import { generatePairingToken, verifyPairingToken } from "./pairing-token.js";
 import { runSqliteReadOperationSync } from "./sqlite-schema-facts.js";
 
-// Outlive generic setup credentials; cloud-worker completion also binds durably
-// on its environment row, independently of this retained delivery outcome.
+// Keep completion delivery outcomes beyond the generic setup credential lifetime.
 const DEVICE_PAIR_SETUP_COMPLETION_RETENTION_MS = 2 * DEVICE_BOOTSTRAP_TOKEN_TTL_MS;
 
 type DeviceBootstrapStateFile = Record<string, DeviceBootstrapTokenRecord>;
@@ -76,6 +71,7 @@ function bootstrapProfileAllowsRequest(params: {
   requestedScopes: readonly string[];
 }): boolean {
   return (
+    params.allowedProfile.purpose !== "cloud-worker" &&
     params.allowedProfile.roles.includes(params.requestedRole) &&
     roleScopesAllow({
       role: params.requestedRole,
@@ -135,6 +131,9 @@ function issueDeviceBootstrapTokenRecord(
   params: { profile: DeviceBootstrapProfile; setupId?: string; nowMs: number },
   state = loadState(params.nowMs),
 ): { token: string; expiresAtMs: number } {
+  if (params.profile.purpose === "cloud-worker") {
+    throw new Error("Managed worker bootstrap profiles are retired");
+  }
   const token = generatePairingToken();
   const issuedAtMs = asDateTimestampMs(params.nowMs);
   const expiresAtMs =
@@ -156,58 +155,17 @@ function issueDeviceBootstrapTokenRecord(
   return { token, expiresAtMs };
 }
 
-/** Reuse one environment-owned setup credential across provider replay. */
-function ensureDevicePairSetupBootstrapToken(params: {
-  profile: DeviceBootstrapProfileInput;
-  setupId: string;
+function consumeDeviceBootstrapTokenWithSetupCompletion(params: {
+  token: string;
+  deviceId: string;
+  completedAtMs: number;
   nowMs: number;
-}):
-  | { status: "pending"; token: string; expiresAtMs: number; setupId: string }
-  | { status: "completed"; setupId: string; deviceId: string } {
-  const setupId = params.setupId.trim();
-  if (!setupId) {
-    throw new Error("Device setup id must be non-empty.");
-  }
-  const completion = loadDevicePairSetupCompletionRecord(setupId, params.nowMs);
-  if (completion) {
-    return { status: "completed", setupId, deviceId: completion.deviceId };
-  }
-  const state = loadState(params.nowMs);
-  const existing = Object.values(state).find((record) => record.setupId === setupId);
-  const profile = normalizeDeviceBootstrapHandoffProfile(params.profile);
-  if (existing) {
-    if (!deviceBootstrapProfilesEqual(existing.profile, profile)) {
-      throw new Error("Device setup profile changed during replay.");
-    }
-    return {
-      status: "pending",
-      token: existing.token,
-      expiresAtMs: resolveDeviceBootstrapTokenExpiresAtMs(existing),
-      setupId,
-    };
-  }
-  return {
-    status: "pending",
-    ...issueDeviceBootstrapTokenRecord({ profile, setupId, nowMs: params.nowMs }, state),
-    setupId,
-  };
-}
-
-/**
- * Record that credential delivery is not yet known. Only cloud-worker setup
- * keeps its device-bound bearer until delivery is confirmed, allowing the same
- * worker to retry when its credential-bearing response never arrives.
- */
-function consumeDeviceBootstrapTokenWithSetupCompletion(
-  params: { token: string; deviceId: string; completedAtMs: number; nowMs: number },
-  recordWorkerEnvironment: (facts: CloudWorkerSetupCompletionPublication) => void,
-): { record: DeviceBootstrapTokenRecord; completion?: DevicePairSetupCompletionRecord } | null {
+}): { record: DeviceBootstrapTokenRecord; completion?: DevicePairSetupCompletionRecord } | null {
   const nowMs = params.nowMs;
   return consumeDeviceBootstrapTokenWithSetupCompletionInTransaction({
     token: params.token,
     deviceId: params.deviceId,
     completedAtMs: params.completedAtMs,
-    recordWorkerEnvironment,
     nowMs,
     // Retention follows the store clock rather than an injected event time.
     retentionNowMs: nowMs,
@@ -230,11 +188,11 @@ function clearDeviceBootstrapTokens(params: { nowMs: number }): { removed: numbe
   return { removed };
 }
 
-/** Preserve already-bound cloud-worker credentials for delivery retry. */
-function revokeDeviceBootstrapToken(
-  params: { token: string; nowMs: number },
-  database: OpenClawStateDatabase,
-): { removed: boolean; record?: DeviceBootstrapTokenRecord } {
+/** Revoke an undelivered pairing credential. */
+function revokeDeviceBootstrapToken(params: { token: string; nowMs: number }): {
+  removed: boolean;
+  record?: DeviceBootstrapTokenRecord;
+} {
   const providedToken = params.token.trim();
   if (!providedToken) {
     return { removed: false };
@@ -245,18 +203,6 @@ function revokeDeviceBootstrapToken(
     return { removed: false };
   }
   const [tokenKey, record] = found;
-  if (
-    record.setupId &&
-    record.profile?.purpose === "cloud-worker" &&
-    record.deviceId &&
-    hasCloudWorkerSetupDeviceBinding({
-      db: database.db,
-      setupId: record.setupId,
-      deviceId: record.deviceId,
-    })
-  ) {
-    return { removed: false };
-  }
   delete state[tokenKey];
   persistState(state);
   return { removed: true, record };
@@ -486,13 +432,7 @@ export const deviceBootstrapOperations = {
     (input: Parameters<typeof issueDeviceBootstrapTokenRecord>[0]) =>
       issueDeviceBootstrapTokenRecord(input),
   ),
-  "bootstrap.ensure": devicePairingMutation(ensureDevicePairSetupBootstrapToken),
-  "bootstrap.consume": devicePairingMutation(
-    (
-      input: Parameters<typeof consumeDeviceBootstrapTokenWithSetupCompletion>[0],
-      { recordWorkerEnvironment },
-    ) => consumeDeviceBootstrapTokenWithSetupCompletion(input, recordWorkerEnvironment),
-  ),
+  "bootstrap.consume": devicePairingMutation(consumeDeviceBootstrapTokenWithSetupCompletion),
   "bootstrap.confirm": devicePairingMutation(
     (input: { setupId: string; deviceId: string; nowMs: number }) =>
       confirmDevicePairSetupCompletionDeliveryInTransaction(input),
@@ -522,10 +462,7 @@ export const deviceBootstrapOperations = {
     };
   },
   "bootstrap.clear": devicePairingMutation(clearDeviceBootstrapTokens),
-  "bootstrap.revoke": devicePairingMutation(
-    (input: Parameters<typeof revokeDeviceBootstrapToken>[0], { database }) =>
-      revokeDeviceBootstrapToken(input, database),
-  ),
+  "bootstrap.revoke": devicePairingMutation(revokeDeviceBootstrapToken),
   "bootstrap.restore": devicePairingMutation(restoreGenericDeviceBootstrapToken),
   "bootstrap.redeem": devicePairingMutation(redeemDeviceBootstrapTokenProfile),
   "bootstrap.verify": devicePairingMutation(verifyDeviceBootstrapToken),

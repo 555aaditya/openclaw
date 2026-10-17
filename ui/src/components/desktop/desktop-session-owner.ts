@@ -29,24 +29,12 @@ type NodeAvailability = {
   availability: DesktopAvailability | undefined;
 };
 
-type DesktopInventory = Awaited<ReturnType<typeof loadDesktopEnvironments>>;
-type DesktopStartup = {
-  load: () => Promise<DesktopInventory>;
-  isCurrent: () => boolean;
-  resolve: (inventory: DesktopInventory) => void;
-  reject: (error: unknown) => void;
-  busy: boolean;
-};
-
 /** Synchronous admission for desktop inventory, availability, and session targets. */
 export class DesktopSessionOwner {
   private refreshId = 0;
   private availabilityRequestId = 0;
   private desktopSource: NodeAvailability | null = null;
   private availabilitySnapshot: NodeAvailability | null = null;
-  private startup: DesktopStartup | undefined;
-  startupEnvironment: EnvironmentSummary | undefined;
-  private startupTimer: ReturnType<typeof globalThis.setInterval> | undefined;
 
   constructor(
     private readonly context: DesktopSessionContext,
@@ -116,7 +104,6 @@ export class DesktopSessionOwner {
 
   invalidate(): void {
     this.refreshId += 1;
-    this.stopStartup()?.resolve(undefined);
   }
 
   targetChanged(changed: ReadonlyMap<PropertyKey, unknown>, automaticSource: boolean): boolean {
@@ -132,71 +119,6 @@ export class DesktopSessionOwner {
       changed.has("sessionKey") ||
       changed.has("documentControl")
     );
-  }
-
-  private stopStartup(): DesktopStartup | undefined {
-    globalThis.clearInterval(this.startupTimer);
-    this.startupTimer = undefined;
-    const startup = this.startup;
-    this.startup = undefined;
-    if (this.startupEnvironment) {
-      this.startupEnvironment = undefined;
-      this.notify();
-    }
-    return startup;
-  }
-
-  private async refreshStartup(): Promise<void> {
-    const startup = this.startup;
-    if (!startup || startup.busy) {
-      return;
-    }
-    if (!startup.isCurrent()) {
-      this.stopStartup()?.resolve(undefined);
-      return;
-    }
-    startup.busy = true;
-    try {
-      const inventory = await startup.load();
-      if (this.startup !== startup) {
-        return;
-      }
-      if (!startup.isCurrent() || !inventory?.pendingSource) {
-        this.stopStartup()?.resolve(startup.isCurrent() ? inventory : undefined);
-      } else {
-        this.startupEnvironment = inventory.environments.find(
-          (environment) => environment.id === inventory.pendingSource,
-        );
-        this.notify();
-      }
-    } catch (error) {
-      if (this.startup === startup) {
-        this.stopStartup()?.reject(error);
-      }
-    } finally {
-      startup.busy = false;
-    }
-  }
-
-  private async waitForStartup(
-    load: DesktopStartup["load"],
-    isCurrent: () => boolean,
-  ): Promise<DesktopInventory> {
-    const inventory = await load();
-    if (!isCurrent()) {
-      return undefined;
-    }
-    if (!inventory?.pendingSource) {
-      return inventory;
-    }
-    return await new Promise<DesktopInventory>((resolve, reject) => {
-      this.startupEnvironment = inventory.environments.find(
-        (environment) => environment.id === inventory.pendingSource,
-      );
-      this.notify();
-      this.startup = { load, isCurrent, resolve, reject, busy: false };
-      this.startupTimer = globalThis.setInterval(() => void this.refreshStartup(), 2_000);
-    });
   }
 
   loadInventory(options: {
@@ -220,15 +142,11 @@ export class DesktopSessionOwner {
       isCurrent,
       result:
         client && resolution
-          ? this.waitForStartup(
-              () =>
-                loadDesktopEnvironments(client, {
-                  target: resolution.target,
-                  isCurrent,
-                  recoverToPicker: this.context.documentMode && !this.context.embedded,
-                }),
+          ? loadDesktopEnvironments(client, {
+              target: resolution.target,
               isCurrent,
-            )
+              recoverToPicker: this.context.documentMode && !this.context.embedded,
+            })
           : Promise.resolve(undefined),
     };
   }

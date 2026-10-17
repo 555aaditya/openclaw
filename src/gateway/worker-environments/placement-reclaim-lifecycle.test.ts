@@ -5,6 +5,7 @@ import {
   NODE_WORKSPACE_QUIESCENCE_COMMAND,
   type NodeWorkerWorkspaceExecInput,
 } from "../../worker/node-workspace-protocol.js";
+import type { WorkerEnvironmentNodeTunnel } from "./environment-access.js";
 import { createNodeWorkerTunnelManager } from "./node-worker-tunnel.js";
 import * as nodeSupport from "./node-worker-tunnel.test-support.js";
 import { coordinateWorkerPlacementDispatch } from "./placement-dispatch-coordinator.js";
@@ -19,7 +20,6 @@ import { createWorkerPlacementIdleSweep } from "./placement-idle-sweep.js";
 import { createWorkerSessionPlacementStore } from "./placement-store.js";
 import { placementClaim, placementSource } from "./placement-suite.test-support.js";
 import * as support from "./service.test-support.js";
-import type { WorkerTunnelManager } from "./tunnel.js";
 
 support.setupWorkerEnvironmentServiceSuite();
 
@@ -46,17 +46,10 @@ it.each([
       ...support.BUNDLE_ARTIFACT,
       ...build,
     });
-    await support.seedBootstrapping(environmentId);
-    await environments.transition({
-      environmentId,
-      from: "bootstrapping",
-      to: "ready",
-      patch: {
-        ...support.readyPatch(environmentId, { ...build, installKind: "bundle" }),
-        nodeDeviceId: "node-fixture",
-        sharedHost: false,
-        sshEndpoint: null,
-      },
+    await support.seedReady(environmentId, {
+      receipt: { ...build, installKind: "bundle" },
+      nodeDeviceId: "node-fixture",
+      sharedHost: false,
     });
     const attached = await environments.transition({
       environmentId,
@@ -175,7 +168,12 @@ it.each([
       });
     }
     const service = support.createService(
-      support.createProvider({ supportedExecutionModes: ["worker-turn"], destroy }),
+      support.createProvider({
+        supportedExecutionModes: ["worker-turn"],
+        // Recovery must retain the seeded lease's isolation until teardown is attempted.
+        inspect: async () => ({ status: "active", sharedHost: false }),
+        destroy,
+      }),
       { nodeTunnelManager: tunnels, providerCallTimeoutMs: 1_000 },
     );
     let primaryError: unknown;
@@ -296,7 +294,7 @@ it.each([
 );
 
 it.each(["reclaim", "move", "idle suspend"] as const)(
-  "SSH %s reconciles before releasing its expired lease",
+  "Paired-node %s reconciles before releasing its expired lease",
   async (operation) => {
     const { stateDb: database, root } = support.testState;
     const placements = createWorkerSessionPlacementStore({
@@ -314,28 +312,32 @@ it.each(["reclaim", "move", "idle suspend"] as const)(
       executionMode: "remote-exec",
     });
     if (active.state !== "active") {
-      throw new Error("expected active SSH placement");
+      throw new Error("expected active paired-node placement");
     }
-    await harness.environments.attachSession({
-      environmentId,
-      ownerEpoch: harness.ready.ownerEpoch,
-      sessionId: REQUEST.sessionId,
-    });
-    const workspace = await harness.environments.startTunnel({
-      environmentId,
-      ownerEpoch: identity.ownerEpoch,
-    });
+    const workspace = harness.tunnelHandle(identity.ownerEpoch);
     const reconcileWorkspace = vi.spyOn(workspace, "reconcileWorkspace");
-    const tunnelManager = {
+    const nodeTunnelManager: WorkerEnvironmentNodeTunnel = {
       status: () => "connected" as const,
-      start: vi.fn(async () => workspace),
+      start: vi.fn(async () => ({
+        ...workspace,
+        measureLaunchTurn: () => {
+          throw new Error("No model launch belongs in a reclaim proof");
+        },
+        readLaunchToolNames: async () => [],
+        launchTurn: async () => {
+          throw new Error("No model launch belongs in a reclaim proof");
+        },
+      })),
+      observeProcesses: vi.fn(),
       stop: vi.fn(async () => {}),
       stopAll: vi.fn(async () => {}),
-    } as unknown as WorkerTunnelManager;
+    };
     const destroy = vi.fn(async () => {
       expect(reconcileWorkspace).toHaveBeenCalledOnce();
     });
-    const service = support.createService(support.createProvider({ destroy }), { tunnelManager });
+    const service = support.createService(support.createProvider({ destroy }), {
+      nodeTunnelManager,
+    });
     vi.mocked(harness.environments.get).mockImplementation(service.get);
     vi.mocked(harness.environments.startTunnel).mockImplementation(service.startTunnel);
     vi.mocked(harness.environments.stopTunnel).mockImplementation(service.stopTunnel);

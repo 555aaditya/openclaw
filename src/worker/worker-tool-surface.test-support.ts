@@ -1,4 +1,3 @@
-import { Type } from "typebox";
 import { Value } from "typebox/value";
 import { PresenceQueryParamsSchema } from "../../packages/gateway-protocol/src/schema/presence.js";
 import {
@@ -59,15 +58,6 @@ export function createWorkerToolSurfaceForTest(params: {
       runId: assignment.runId,
     }).map((tool) => [tool.name, projectAgentToolDefinition(tool)]),
   );
-  if (assignment.browser) {
-    definitions.set("browser", {
-      name: "browser",
-      label: "Browser",
-      description: "Control the attached worker browser.",
-      parameters: Type.Object({}),
-      executionMode: undefined,
-    });
-  }
   if (assignment.computer) {
     definitions.set(
       "computer",

@@ -192,11 +192,6 @@ export async function prepareNodeWorkerLaunchTransport(
       "container-isolated workers cannot reach a loopback Gateway URL; connect the node host using a Gateway address reachable from its container network",
     );
   }
-  if (options.descriptor.assignment.browser) {
-    throw new Error(
-      "container-isolated workers cannot use host browser assignments; disable browser access for isolated worker sessions",
-    );
-  }
 
   const lifecycle = options.containerLifecycle;
   if (!lifecycle) {

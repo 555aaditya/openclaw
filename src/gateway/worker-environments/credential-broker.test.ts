@@ -6,9 +6,9 @@ import {
   openOpenClawStateDatabase,
 } from "../../state/openclaw-state-db.js";
 import { STALE_WORKER_BUILD_REASON } from "./admission.js";
+import type { WorkerEnvironmentNodeTunnel } from "./environment-access.js";
 import * as support from "./service.test-support.js";
 import { createWorkerEnvironmentStore } from "./store.js";
-import type { WorkerTunnelManager } from "./tunnel.js";
 
 describe("worker environment service", () => {
   support.setupWorkerEnvironmentServiceSuite();
@@ -56,15 +56,8 @@ describe("worker environment service", () => {
 
   it("rejects attach before current bootstrap", async () => {
     const staleId = "worker-stale-attach";
-    const bootstrapping = await support.seedBootstrapping(staleId);
-    await support.testState.store.transition({
-      environmentId: staleId,
-      from: bootstrapping.state,
-      to: "ready",
-      patch: support.readyPatch(staleId, {
-        ...support.BOOTSTRAP_RECEIPT,
-        bundleHash: "c".repeat(64),
-      }),
+    await support.seedReady(staleId, {
+      receipt: { ...support.BOOTSTRAP_RECEIPT, installKind: "bundle", bundleHash: "c".repeat(64) },
     });
     const workerService = support.createService(support.createProvider());
 
@@ -167,16 +160,10 @@ describe("worker environment service", () => {
       stop: stopTunnel,
       stopAll: vi.fn(async () => {}),
       status: () => "stopped" as const,
-      desktop: {
-        acquire: vi.fn(),
-        attachObserver: vi.fn(),
-        stop: vi.fn(async () => {}),
-        stopAll: vi.fn(async () => {}),
-      },
-    } as unknown as WorkerTunnelManager;
+    } as unknown as WorkerEnvironmentNodeTunnel;
     const options = {
       generateWorkerCredential: () => [support.CREDENTIAL, String(++credentialSequence)].join("-"),
-      tunnelManager,
+      nodeTunnelManager: tunnelManager,
     };
     const first = support.createService(support.createProvider(), options);
     await first.reconcileOnce();
@@ -186,7 +173,7 @@ describe("worker environment service", () => {
     const binding = { environmentId, ownerEpoch: 2, sessionId: "session-1" };
     const lostHash = support.testState.store.getCredential(environmentId)?.credentialHash;
 
-    expect(stopTunnel).toHaveBeenCalledWith(environmentId, 1);
+    expect(stopTunnel).toHaveBeenCalledWith(environmentId, 1, undefined);
     expect(support.testState.store.get(environmentId)).toMatchObject({
       state: "attached",
       ownerEpoch: 2,

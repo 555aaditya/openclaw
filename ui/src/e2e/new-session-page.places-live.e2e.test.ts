@@ -37,81 +37,6 @@ suite.define(() => {
     }
   });
 
-  it.each(["hover", "click"] as const)(
-    "keeps cloud machines usable when the picker finishes opening after a profile %s",
-    async (input) => {
-      const context = await suite.browser.newContext({ locale: "en-US", serviceWorkers: "block" });
-      const page = await context.newPage();
-      const gateway = await installMockGateway(page, {
-        workspace: WORKSPACE,
-        workspaceGit: true,
-        methodResponses: {
-          "environments.list": {
-            environments: [],
-            profiles: [
-              {
-                id: "aws",
-                providerId: "crabbox",
-                executionMode: "worker-turn",
-                executionModes: ["worker-turn"],
-                machines: [
-                  { id: "standard", label: "Standard", default: true },
-                  { id: "fast", label: "Fast" },
-                ],
-              },
-            ],
-          },
-          "worktrees.branches": { branches: [], repositoryStatus: "git" },
-        },
-      });
-      try {
-        await page.goto(`${suite.server.baseUrl}new`);
-        await gateway.waitForRequest("environments.list");
-        const picker = page.locator(".oc-popover.new-session-page__where-popover");
-        await picker.evaluate((element) =>
-          (element as HTMLElement).style.setProperty("--oc-overlay-show-duration", "60s"),
-        );
-        const where = page.locator("#new-session-where-trigger");
-        await where.click();
-        await expect
-          .poll(() => picker.evaluate((element) => element.getAnimations().length))
-          .toBeGreaterThan(0);
-        // Hold the actual opening animation until the user has opened cloud configuration.
-        await picker.evaluate((element) => {
-          for (const animation of element.getAnimations()) {
-            animation.pause();
-            animation.currentTime = Number(animation.effect!.getComputedTiming().duration) - 1;
-          }
-        });
-        await expect
-          .poll(() =>
-            picker.getByRole("searchbox").evaluate((element) => element.matches(":focus")),
-          )
-          .toBe(true);
-        const profile = picker.locator('[data-value="cloud:aws"]');
-        await profile[input]();
-        const fast = picker.locator('[data-value="machine:fast"]');
-        await fast.waitFor();
-        await picker.evaluate((element) =>
-          Promise.all(
-            element.getAnimations().map((animation) => {
-              animation.finish();
-              return animation.finished;
-            }),
-          ),
-        );
-        if (input === "click") {
-          expect(await profile.evaluate((element) => element.matches(":focus"))).toBe(true);
-        }
-        await fast.click();
-        await expect.poll(() => where.getAttribute("data-cloud-profile")).toBe("aws");
-        await expect.poll(() => where.getAttribute("data-machine-class")).toBe("fast");
-      } finally {
-        await context.close();
-      }
-    },
-  );
-
   it("keeps an explicitly selected cloud destination when its runtime becomes incompatible", async () => {
     const context = await suite.browser.newContext({ locale: "en-US", serviceWorkers: "block" });
     const page = await context.newPage();
@@ -151,13 +76,9 @@ suite.define(() => {
           profiles: [
             {
               id: "aws",
-              providerId: "crabbox",
+              providerId: "device",
               executionMode: "worker-turn",
               executionModes: ["worker-turn"],
-              machines: [
-                { id: "standard", label: "Standard", default: true },
-                { id: "fast", label: "Fast" },
-              ],
             },
           ],
         },
@@ -174,8 +95,7 @@ suite.define(() => {
       await openEnvironmentPicker(page);
 
       const profile = page.locator('[data-value="cloud:aws"]');
-      await profile.hover();
-      await page.locator('[data-value="machine:fast"]').click();
+      await profile.click();
       await page.keyboard.press("Escape");
       await page.locator(".new-session-page__message").fill("keep this task on the cloud");
       await expect.poll(() => start.isEnabled()).toBe(true);
@@ -184,7 +104,7 @@ suite.define(() => {
       await selectChatModelOption(page.locator('[data-chat-model-option="openai/gpt-5.6-luna"]'));
       await expect.poll(() => model.textContent()).toContain("GPT-5.6 Luna");
       await expect.poll(() => where.getAttribute("data-cloud-profile")).toBe("aws");
-      await expect.poll(() => where.getAttribute("data-machine-class")).toBe("fast");
+
       await expect.poll(() => start.isDisabled()).toBe(true);
       expect(await gateway.getRequests("sessions.create")).toHaveLength(0);
       expect(await gateway.getRequests("sessions.dispatch")).toHaveLength(0);
@@ -196,7 +116,7 @@ suite.define(() => {
       await expect
         .poll(() => tooltipTitleText(profile))
         .toBe(
-          "Cloud worker provider: crabbox, The codex runtime cannot use this cloud worker. Choose a compatible cloud worker or run locally.",
+          "Cloud worker provider: device, The codex runtime cannot use this cloud worker. Choose a compatible cloud worker or run locally.",
         );
       await page.keyboard.press("Escape");
 
@@ -205,7 +125,7 @@ suite.define(() => {
         page.locator('[data-chat-model-option="anthropic/claude-sonnet-4-6"]'),
       );
       await expect.poll(() => where.getAttribute("data-cloud-profile")).toBe("aws");
-      await expect.poll(() => where.getAttribute("data-machine-class")).toBe("fast");
+
       await expect.poll(() => start.isEnabled()).toBe(true);
     } finally {
       await context.close();
@@ -216,7 +136,7 @@ suite.define(() => {
     { name: "OpenClaw", runtime: "openclaw" },
     { name: "Codex", runtime: "codex" },
   ] as const)(
-    "keeps the same multimode Crabbox profile selectable for $name",
+    "keeps the same multimode device profile selectable for $name",
     async ({ runtime }) => {
       const context = await suite.browser.newContext({ locale: "en-US", serviceWorkers: "block" });
       const page = await context.newPage();
@@ -243,7 +163,7 @@ suite.define(() => {
             profiles: [
               {
                 id: "aws",
-                providerId: "crabbox",
+                providerId: "device",
                 executionMode: "worker-turn",
                 executionModes: ["worker-turn", "remote-exec"],
               },

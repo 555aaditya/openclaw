@@ -287,19 +287,16 @@ it("admits maximum legal path sets with a populated caller-owned hash memo", asy
   });
 }, 120_000);
 
-it.each(["comparison", "overlay"] as const)(
-  "admits maximum-entry decoded manifests for %s without an estimated-size rejection",
-  async (operation) => {
-    const stagingUrl = resolveRuntimeWorkerUrl(workspaceProcessTestEntrypoints.resultStaging).href;
-    const result = await runCommandWithTimeout(
-      [
-        process.execPath,
-        ...resolveRuntimeWorkerArgv(adapterUrl).slice(0, -1),
-        "--input-type=module",
-        "--eval",
-        `
+it("admits maximum-entry decoded manifests for comparison without an estimated-size rejection", async () => {
+  const stagingUrl = resolveRuntimeWorkerUrl(workspaceProcessTestEntrypoints.resultStaging).href;
+  const result = await runCommandWithTimeout(
+    [
+      process.execPath,
+      ...resolveRuntimeWorkerArgv(adapterUrl).slice(0, -1),
+      "--input-type=module",
+      "--eval",
+      `
         import { createHash } from "node:crypto";
-        import { overlayWorkspaceManifest } from ${JSON.stringify(adapterUrl.href)};
         import { workerWorkspaceTransferPaths } from ${JSON.stringify(stagingUrl)};
         import { MAX_WORKSPACE_INVENTORY_ENTRIES, MAX_WORKSPACE_MANIFEST_BYTES } from ${JSON.stringify(limitsUrl)};
         const digest = createHash("sha256").update("").digest("hex");
@@ -311,22 +308,18 @@ it.each(["comparison", "overlay"] as const)(
         const copy = () => ({ ...base, entries: base.entries.map(entry => ({ ...entry })) });
         const current = copy();
         current.entries.at(-1).mode = 0o755;
-        const paths = ${JSON.stringify(operation)} === "comparison" ? workerWorkspaceTransferPaths(current, base) : [];
-        const output = ${JSON.stringify(operation)} === "comparison"
-          ? { changed: paths.length > 0, count: paths.length, mode: current.entries.find(entry => entry.path === paths[0])?.mode }
-          : await overlayWorkspaceManifest(base, copy(), current).then(result => ({ changed: true, count: result.manifest.entries.length, mode: result.manifest.entries.at(-1)?.mode }));
+        const paths = workerWorkspaceTransferPaths(current, base);
+        const output = { changed: paths.length > 0, count: paths.length, mode: current.entries.find(entry => entry.path === paths[0])?.mode };
         process.stdout.write(JSON.stringify({ ...output, jsonBytes }));
       `,
-      ],
-      { timeoutMs: 60_000, maxOutputBytes: 64 * 1024, killProcessTree: true },
-    );
-    expect(result.code, result.stderr).toBe(0);
-    expect(JSON.parse(result.stdout)).toEqual({
-      changed: true,
-      count: operation === "comparison" ? 1 : 250_000,
-      mode: 0o755,
-      jsonBytes: 66_000_043,
-    });
-  },
-  60_000,
-);
+    ],
+    { timeoutMs: 60_000, maxOutputBytes: 64 * 1024, killProcessTree: true },
+  );
+  expect(result.code, result.stderr).toBe(0);
+  expect(JSON.parse(result.stdout)).toEqual({
+    changed: true,
+    count: 1,
+    mode: 0o755,
+    jsonBytes: 66_000_043,
+  });
+}, 60_000);

@@ -75,20 +75,12 @@ export const NodeWorkerWorkspaceTransferInputSchema = z.union([
     direction: z.literal("download"),
     token: TransferToken,
     manifestRef: ManifestRef,
-    /** Reuse this prepared project's immutable Git objects before downloading a pack. */
-    seedKey: z
-      .string()
-      .regex(/^[a-f0-9]{64}$/u)
-      .optional(),
     /** Install attachment files only; never replace or delete workspace entries. */
     attachments: z.literal(true).optional(),
     /** Restore only the checkpoint delta onto its independently cloned Git base. */
     checkpointBaseManifestRef: ManifestRef.optional(),
   }).refine(
-    (value) =>
-      (value.seedKey === undefined || value.attachments === undefined) &&
-      (value.checkpointBaseManifestRef === undefined ||
-        (value.attachments === undefined && value.seedKey === undefined)),
+    (value) => value.checkpointBaseManifestRef === undefined || value.attachments === undefined,
   ),
   workerProtocolObject({
     direction: z.literal("upload"),

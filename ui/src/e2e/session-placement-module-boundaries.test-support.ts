@@ -121,17 +121,7 @@ export function defineSessionPlacementModuleBoundaryTests(
             profiles: [
               {
                 id: "aws",
-                providerId: "crabbox",
-                machines: [
-                  {
-                    id: "standard",
-                    label: "Standard",
-                    cpu: 32,
-                    memoryGb: 64,
-                    default: true,
-                  },
-                  { id: "fast", label: "Fast", cpu: 64, memoryGb: 128 },
-                ],
+                providerId: "device",
               },
             ],
           },
@@ -196,11 +186,9 @@ export function defineSessionPlacementModuleBoundaryTests(
         await place.getByRole("button", { name: "aws", exact: true }).click();
         const trigger = page.locator("#new-session-where-trigger");
         await expect.poll(() => trigger.getAttribute("data-cloud-profile")).toBe("aws");
-        await place.getByText("Machine", { exact: true }).waitFor();
-        await place.locator('[data-value="machine:fast"]').click();
-        await expect.poll(() => trigger.getAttribute("data-machine-class")).toBe("fast");
+
         await pollLocatorText(trigger.locator(".new-session-page__trigger-label")).toBe("aws");
-        expect(await trigger.getAttribute("aria-label")).toContain("aws, Fast");
+        expect(await trigger.getAttribute("aria-label")).toContain("aws");
         await page.keyboard.press("Escape");
         await page.locator("#new-session-project-trigger").click();
         await page.locator('.new-session-page__project-popover [data-value="workspace"]').click();
@@ -388,17 +376,14 @@ export function defineSessionPlacementModuleBoundaryTests(
           requestsBeforePersistentFailure + 1 + CLOUD_PROFILE_RETRY_DELAYS_MS.length,
         );
         await expect.poll(() => trigger.getAttribute("data-cloud-profile")).toBe("aws");
-        await expect.poll(() => trigger.getAttribute("data-machine-class")).toBe("fast");
+
         await pollLocatorText(trigger.locator(".new-session-page__trigger-label")).toBe("aws");
-        expect(await trigger.getAttribute("aria-label")).toContain("aws, Fast");
+        expect(await trigger.getAttribute("aria-label")).toContain("aws");
         await expect.poll(() => startButton.isDisabled()).toBe(false);
         await trigger.click();
         const retainedCloudProfile = place.locator('[data-value="cloud:aws"]');
         await expect.poll(() => retainedCloudProfile.isDisabled()).toBe(false);
-        await retainedCloudProfile.click();
-        const retainedMachine = place.locator('[data-value="machine:fast"]');
-        await expect.poll(() => retainedMachine.isVisible()).toBe(true);
-        expect(await retainedMachine.getAttribute("aria-pressed")).toBe("true");
+        expect(await retainedCloudProfile.getAttribute("aria-pressed")).toBe("true");
         if (captureUiProofEnabled) {
           await writeFile(
             path.join(
@@ -406,11 +391,7 @@ export function defineSessionPlacementModuleBoundaryTests(
               "cloud-profile-refresh-retention",
               "03-after-retry-exhaustion.png",
             ),
-            await takeControlUiViewportScreenshot(
-              page,
-              place.locator(".new-session-page__cloud-configuration"),
-              [retainedCloudProfile, place.locator('[data-value="machine:fast"]')],
-            ),
+            await takeControlUiViewportScreenshot(page, place, [retainedCloudProfile]),
           );
         }
         await page.keyboard.press("Escape");
@@ -447,7 +428,6 @@ export function defineSessionPlacementModuleBoundaryTests(
           key: sessionKey,
           agentId: "cloud",
           profileId: "aws",
-          machineClass: "fast",
         });
         if (captureUiProofEnabled) {
           await writeFile(

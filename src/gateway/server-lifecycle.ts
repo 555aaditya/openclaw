@@ -102,7 +102,6 @@ export async function prepareGatewayLifecycle(params: {
     desktopSessionRegistry,
     nodeDesktopStreamBroker,
     bindDeviceNodeControl,
-    bindWorkerNodeDesktopControl,
     workerPlacementRuntime,
     lifecycle,
   } = runtime;
@@ -150,7 +149,6 @@ export async function prepareGatewayLifecycle(params: {
     waitForNodeWorkerSupervisor(nodeRegistry, nodeId, options),
   );
   bindDeviceNodeControl?.(nodeWorkerSupervisorTransport);
-  bindWorkerNodeDesktopControl?.(nodeWorkerSupervisorTransport);
   const { createWatchNodeHttpRuntime } = await import("./watch-node-http.js");
   const watchNodeHttpRuntime = createWatchNodeHttpRuntime({
     nodeRegistry,

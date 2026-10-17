@@ -124,7 +124,6 @@ export type OpenClawToolsOptions = {
   /** Host-issued source for session-control schema projection; execution rechecks the caller. */
   sessionControlAuthority?: import("./admitted-run-context.js").AdmittedRunOperatorAuthority;
   /** Host-qualified restricted preview target; never permits Gateway-local ports. */
-  sessionPortalTarget?: import("./tools/session-portal-target.js").SessionPortalToolTarget;
   sandboxBrowserBridgeUrl?: string;
   allowHostBrowserControl?: boolean;
   agentSessionKey?: string;

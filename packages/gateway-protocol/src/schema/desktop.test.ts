@@ -1,11 +1,6 @@
 import { Value } from "typebox/value";
 import { describe, expect, it } from "vitest";
-import {
-  DesktopLaunchParamsSchema,
-  DesktopObserveResultSchema,
-  WorkerDesktopObserveResultSchema,
-  validateDesktopObserveParams,
-} from "../index.js";
+import { DesktopObserveResultSchema, validateDesktopObserveParams } from "../index.js";
 
 describe("desktop protocol schemas", () => {
   it("advertises optional receive-only PCM audio with a fixed format", () => {
@@ -46,7 +41,7 @@ describe("desktop protocol schemas", () => {
       ).toBe(false);
     }
   });
-  it.each([DesktopObserveResultSchema, WorkerDesktopObserveResultSchema])(
+  it.each([DesktopObserveResultSchema])(
     "keeps resize permission optional and boolean",
     (schema) => {
       const observed = {
@@ -63,7 +58,7 @@ describe("desktop protocol schemas", () => {
       }
     },
   );
-  it("accepts host, environment, and node observe sources", () => {
+  it("accepts host and node observe sources and rejects retired environments", () => {
     expect(validateDesktopObserveParams({ source: { kind: "host" }, control: true })).toBe(true);
     expect(
       validateDesktopObserveParams({
@@ -75,7 +70,7 @@ describe("desktop protocol schemas", () => {
       validateDesktopObserveParams({
         source: { kind: "environment", environmentId: "worker:one" },
       }),
-    ).toBe(true);
+    ).toBe(false);
     expect(validateDesktopObserveParams({ source: { kind: "node", nodeId: "one" } })).toBe(true);
     expect(
       validateDesktopObserveParams({
@@ -108,16 +103,7 @@ describe("desktop protocol schemas", () => {
     );
   });
 
-  it("keeps launch environment-only and desktop auth additive", () => {
-    expect(
-      Value.Check(DesktopLaunchParamsSchema, {
-        source: { kind: "environment", environmentId: "worker:one" },
-        app: "browser",
-      }),
-    ).toBe(true);
-    expect(
-      Value.Check(DesktopLaunchParamsSchema, { source: { kind: "host" }, app: "browser" }),
-    ).toBe(false);
+  it("keeps desktop auth additive", () => {
     expect(
       Value.Check(DesktopObserveResultSchema, {
         transport: "rfb",

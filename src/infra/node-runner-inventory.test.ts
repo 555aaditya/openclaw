@@ -19,7 +19,6 @@ const workerHost = {
   portalStream: 1,
   environmentSession: 1,
   statusWait: 1,
-  preparedWorkspace: 1,
   capturedExecPolicy: true,
   promptContext: 1,
 };

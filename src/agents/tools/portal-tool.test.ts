@@ -33,10 +33,10 @@ function recorder(summary: PortalSummary = portal) {
   const calls: Array<[string, unknown]> = [];
   const requestScopes: Array<[string, readonly string[] | undefined]> = [];
   const reply = (method: string) => {
-    if (method === "portal.list" || method === "portal.session.list") {
+    if (method === "portal.list") {
       return { portals: [summary] } as PortalListResult;
     }
-    if (method === "portal.close" || method === "portal.session.close") {
+    if (method === "portal.close") {
       return { closed: true } as PortalCloseResult;
     }
     return summary;
@@ -59,50 +59,6 @@ function recorder(summary: PortalSummary = portal) {
 }
 
 describe("portal tool", () => {
-  it("keeps a restricted tool on its captured worker and refuses host or alternate target selection", async () => {
-    const recorded = recorder();
-    let current = true;
-    const target = {
-      sessionKey: "agent:main:preview",
-      agentId: "main",
-      environmentId: "worker:preview",
-      assertCurrent() {
-        if (!current) {
-          throw new Error("retired target");
-        }
-      },
-    };
-    const tool = createAvailablePortalTools({
-      ...recorded,
-      senderIsOwner: false,
-      sessionPortalTarget: target,
-    })[0]!;
-    expect(Value.Check(tool.parameters, { action: "open", port: 3000 })).toBe(true);
-    expect(
-      Value.Check(tool.parameters, { action: "open", port: 3000, environmentId: "other" }),
-    ).toBe(false);
-    for (const action of ["open", "list", "close"]) {
-      await tool.execute(action, { action, port: 3000, id: "p3000" });
-    }
-    const bound = {
-      sessionKey: target.sessionKey,
-      agentId: target.agentId,
-      environmentId: target.environmentId,
-    };
-    expect(recorded.calls).toEqual([
-      ["portal.session.open", { ...bound, port: 3000 }],
-      ["portal.session.list", bound],
-      ["portal.session.close", { ...bound, id: "p3000" }],
-    ]);
-    await expect(
-      tool.execute("host", { action: "open", port: 3000, environmentId: "other" }),
-    ).rejects.toThrow("bound");
-    current = false;
-    await expect(tool.execute("stale", { action: "open", port: 3000 })).rejects.toThrow(
-      "retired target",
-    );
-    expect(recorded.calls).toHaveLength(3);
-  });
   it("uses a flat closed action schema and owner-only security gate", () => {
     const tool = createAvailablePortalTools()[0]!;
     expect(tool.parameters).toMatchObject({
@@ -113,6 +69,7 @@ describe("portal tool", () => {
     expect(Value.Check(tool.parameters, { action: "open", port: 0 })).toBe(false);
     expect(Value.Check(tool.parameters, { action: "open", port: 3000, path: "app" })).toBe(false);
     expect(Value.Check(tool.parameters, { action: "unknown" })).toBe(false);
+    expect(createAvailablePortalTools({ senderIsOwner: false })).toEqual([]);
     expect(GATEWAY_OWNER_ONLY_CORE_TOOLS).toContain("portal");
     expect(DEFAULT_GATEWAY_HTTP_TOOL_DENY).toContain("portal");
   });

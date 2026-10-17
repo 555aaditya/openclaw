@@ -240,14 +240,11 @@ function placementContext(
               idleSinceAtMs: null,
               destroyRequestedAtMs: null,
               attachedSessionIds: [],
-              desktopAvailable: false,
-              desktopApps: [],
               tunnelStatus: "stopped",
               ...environment,
             }
           : undefined,
       readMachineShape: () => undefined,
-      machineShapeVersion: () => 0,
       inventoryVersion: () => 0,
     },
   };
@@ -307,7 +304,6 @@ test.each([
       workerEnvironmentService: {
         get: getEnvironment,
         readMachineShape: () => identity.machine,
-        machineShapeVersion: () => 0,
         inventoryVersion: () => 0,
       },
       workerPlacementDiskSpaceReader: { read: () => diskSpace, version: () => 1 },

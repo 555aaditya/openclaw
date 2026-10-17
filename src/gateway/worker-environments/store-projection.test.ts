@@ -99,8 +99,6 @@ function fence(owner: Projection, after: WorkerEnvironmentFacts, token = {}) {
 }
 function expectNodeAuthority(owner: Projection) {
   expect(owner.get(id)).toEqual(environment);
-  expect(owner.hasNodeEnrollmentOwner("node")).toBe(true);
-  expect(owner.hasPendingNodeEnrollmentSetup("setup", "node")).toBe(true);
 }
 function attachment(sessionId = "session", closedAtMs: number | null = null) {
   return {
@@ -143,28 +141,6 @@ it("requires complete exact-key receipts before replacing environment authority"
   owner.install(readWorkerEnvironmentReceipt(deletion, source, [id]), owner.nextSequence(), false);
   expect(owner.get(id)).toBeUndefined();
   expect(owner.credential(id)).toBeUndefined();
-});
-
-it("keeps exact node admission predicates after bootstrap setup binding", () => {
-  const owner = acquireProjection();
-  install(owner, {
-    ...environment,
-    state: "bootstrapping",
-    nodeDeviceId: null,
-    bootstrapReceipt: null,
-    sshEndpoint: {
-      host: "worker.example.test",
-      port: 22,
-      user: "openclaw",
-      hostKey: "ssh-ed25519 AAAA",
-      keyRef: { source: "file", provider: "worker-keys", id: "/test-key" },
-    },
-  });
-  owner.publishPatch(id, { nodeDeviceId: "cloud-device-bound" }, owner.nextSequence());
-  expect(owner.hasPendingNodeEnrollmentSetup("setup", "cloud-device-bound")).toBe(true);
-  expect(owner.hasNodeEnrollmentOwner("cloud-device-bound")).toBe(true);
-  expect(owner.hasPendingNodeEnrollmentSetup("setup", "different-cloud-device")).toBe(false);
-  expect(owner.hasPendingNodeEnrollmentSetup("missing-setup", "cloud-device-bound")).toBe(false);
 });
 
 it.each([false, true])(
@@ -270,10 +246,6 @@ it.each(["unchanged", "activity", "missing", "unknown"] as const)(
 
     fence(owner, facts({ ...environment, leaseId: "replacement" }, true), token);
     expect(() => owner.get(id)).toThrow("unsettled mutation");
-    expect(() => owner.hasNodeEnrollmentOwner("node")).toThrow("unsettled mutation");
-    expect(() => owner.hasPendingNodeEnrollmentSetup("setup", "node")).toThrow(
-      "unsettled mutation",
-    );
     expect(owner.credential(id)).toEqual(credential);
     expect(owner.credentialByHash(credential.credentialHash)).toEqual(credential);
     expect(owner.withAdmission(token, () => owner.get(id))).toEqual(after.environments[0]);

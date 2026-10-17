@@ -120,8 +120,6 @@ function workerRecord(): WorkerEnvironmentServiceRecord {
     idleSinceAtMs: null,
     destroyRequestedAtMs: null,
     attachedSessionIds: ["session-sdk-e2e"],
-    desktopAvailable: false,
-    desktopApps: [],
     tunnelStatus: "stopped",
   };
 }

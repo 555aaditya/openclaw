@@ -37,9 +37,7 @@ import { wrapToolWithGatewayCallerIdentity } from "../agents/tools/gateway-calle
 import { getMachineDisplayName } from "../infra/machine-name.js";
 import { resolveRuntimeOsLabel } from "../infra/os-summary.js";
 import { setPluginToolMeta } from "../plugins/tool-metadata.js";
-import { toAgentStoreSessionKey } from "../routing/session-key.js";
 import { materializeSkillResources } from "../skills/runtime/resources.js";
-import { createWorkerBrowserToolRuntime, type WorkerBrowserRuntime } from "./browser-runtime.js";
 import { createWorkerComputerTool } from "./computer-runtime.js";
 import { createWorkerLiveRuntime, type WorkerLiveClient } from "./embedded-agent-live.runtime.js";
 import {
@@ -83,7 +81,6 @@ type RunWorkerEmbeddedTurnParams = Omit<
   toolSurface: WorkerToolSurface;
   allowedToolNames: readonly string[];
   execAuthority: WorkerLaunchPlan["assignment"]["toolAuthority"]["exec"];
-  browserRuntime?: WorkerBrowserRuntime;
   computer?: Omit<Parameters<typeof createWorkerComputerTool>[0], "runId" | "registerRunCleanup">;
   signal?: AbortSignal;
 };
@@ -97,10 +94,6 @@ export async function runWorkerEmbeddedTurn(params: RunWorkerEmbeddedTurnParams)
       )
     : undefined;
   try {
-    const browserAuthorized = params.allowedToolNames.includes("browser");
-    if (browserAuthorized !== (params.browser !== undefined)) {
-      throw new Error("Worker Browser authority and launch descriptor must be provided together.");
-    }
     if (params.allowedToolNames.includes("computer") !== (params.computer !== undefined)) {
       throw new Error("Worker computer authority and launch descriptor must be provided together.");
     }
@@ -201,19 +194,6 @@ export async function runWorkerEmbeddedTurn(params: RunWorkerEmbeddedTurnParams)
           }
         : undefined,
     );
-    const browserRuntime =
-      params.browser && activeToolNames.has("browser")
-        ? await createWorkerBrowserToolRuntime({
-            descriptor: params.browser,
-            sessionKey: toAgentStoreSessionKey({
-              agentId: params.agentId,
-              requestKey: params.sessionKey,
-            }),
-            stateDir: params.stateDir,
-            workspaceDir: params.cwd,
-            ...(params.browserRuntime ? { runtime: params.browserRuntime } : {}),
-          })
-        : undefined;
     const turnLifetime = new AbortController();
     const toolSignal = params.signal
       ? AbortSignal.any([params.signal, turnLifetime.signal])
@@ -231,7 +211,6 @@ export async function runWorkerEmbeddedTurn(params: RunWorkerEmbeddedTurnParams)
         [
           () => toolSurfaceRuntime?.cleanup(),
           () => cleanup?.("Worker turn finished"),
-          () => browserRuntime?.dispose(),
           disposeAllCodeModeRuns,
         ].map(async (dispose) => await dispose()),
       );
@@ -257,11 +236,7 @@ export async function runWorkerEmbeddedTurn(params: RunWorkerEmbeddedTurnParams)
               })
             : undefined;
         const localTools = new Map(
-          [
-            ...coreTools,
-            ...(browserRuntime ? [browserRuntime.tool] : []),
-            ...(computerTool ? [computerTool] : []),
-          ].map((tool) => [tool.name, tool]),
+          [...coreTools, ...(computerTool ? [computerTool] : [])].map((tool) => [tool.name, tool]),
         );
         const gatewayTools = new Map(
           createWorkerGatewayToolProxies(toolSurface, params.gatewayTools).map((tool) => [

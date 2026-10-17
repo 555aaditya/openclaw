@@ -1,19 +1,10 @@
-import fs from "node:fs";
 import path from "node:path";
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import {
-  fixtureReceiptClientSource,
-  openFixtureReceiptChannel,
-  type FixtureReceiptChannel,
-} from "../../test/helpers/fixture-receipts.js";
-import { withinTest } from "../../test/helpers/promise.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import type { GatewayClient } from "../gateway/client.js";
 import {
   NODE_WORKER_BUNDLE_INSTALL_COMMAND,
   NODE_WORKER_CAPACITY_EXHAUSTED_ERROR_CODE,
-  NODE_WORKER_DESKTOP_LAUNCH_COMMAND,
-  NODE_WORKER_DESKTOP_STREAM_COMMAND,
   NODE_WORKER_ENVIRONMENT_STOP_COMMAND,
   NODE_WORKER_PORTAL_STREAM_COMMAND,
   NODE_WORKER_SUPERVISOR_CANCEL_COMMAND,
@@ -39,16 +30,6 @@ import { testWorkerLaunchInput } from "./node-worker-supervisor.test-support.js"
 import { NodeWorkerWorkspaceRuntime } from "./node-worker-workspace.js";
 
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
-let receipts: FixtureReceiptChannel;
-
-beforeAll(async () => {
-  receipts = await openFixtureReceiptChannel();
-});
-
-afterAll(async () => {
-  await receipts.close();
-});
-
 afterEach(() => {
   resetPluginRuntimeStateForTest();
 });
@@ -267,141 +248,21 @@ describe("node-host worker supervisor commands", () => {
     expect(payload).not.toHaveProperty("errorText");
   });
 
-  it.each([
-    NODE_WORKER_DESKTOP_STREAM_COMMAND,
-    NODE_WORKER_DESKTOP_LAUNCH_COMMAND,
-    NODE_WORKER_PORTAL_STREAM_COMMAND,
-    NODE_WORKER_ENVIRONMENT_STOP_COMMAND,
-  ])("dispatches %s before a colliding plugin command", async (command) => {
-    const supervisor = supervisorWith(fullReceipt());
-    const pluginHandle = registerCollidingPlugin(command);
-
-    const { result } = await invokePrivate({
-      command,
-      paramsJSON: "{}",
-      supervisor,
-      signal: new AbortController().signal,
-    });
-
-    expect(pluginHandle).not.toHaveBeenCalled();
-    expect(result).toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
-  });
-
-  it.each([
-    {
-      name: "relative executable",
-      descriptor: { id: "terminal", executablePath: "openclaw-worker-terminal" },
-    },
-    {
-      name: "NUL argument",
-      descriptor: { id: "terminal", executablePath: process.execPath, args: ["bad\0"] },
-    },
-    {
-      name: "terminal CDP port",
-      descriptor: { id: "terminal", executablePath: process.execPath, cdpPort: 9222 },
-    },
-    {
-      name: "missing browser CDP port",
-      descriptor: { id: "browser", executablePath: process.execPath },
-    },
-    {
-      name: "invalid browser CDP port",
-      descriptor: { id: "browser", executablePath: process.execPath, cdpPort: 65_536 },
-    },
-  ])("rejects a worker desktop launch with $name", async ({ descriptor }) => {
-    const supervisor = supervisorWith(fullReceipt());
-
-    const { result } = await invokePrivate({
-      command: NODE_WORKER_DESKTOP_LAUNCH_COMMAND,
-      paramsJSON: JSON.stringify(descriptor),
-      supervisor,
-    });
-
-    expect(result).toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
-  });
-
-  it.each(["browser", "terminal"] as const)(
-    "runs provider-attested %s arguments literally without replay after failure",
-    async (appId) => {
-      const root = tempDirs.make("node-worker-desktop-launch-");
-      const markerPath = path.join(root, "marker");
-      const args = ["spaces stay together", "literal;$(text)"];
+  it.each([NODE_WORKER_PORTAL_STREAM_COMMAND, NODE_WORKER_ENVIRONMENT_STOP_COMMAND])(
+    "dispatches %s before a colliding plugin command",
+    async (command) => {
       const supervisor = supervisorWith(fullReceipt());
+      const pluginHandle = registerCollidingPlugin(command);
 
       const { result } = await invokePrivate({
-        command: NODE_WORKER_DESKTOP_LAUNCH_COMMAND,
-        paramsJSON: JSON.stringify({
-          id: appId,
-          executablePath: process.execPath,
-          args: [
-            "-e",
-            "require('node:fs').appendFileSync(process.argv[1], JSON.stringify(process.argv.slice(2)) + '\\n');process.exit(7)",
-            markerPath,
-            ...args,
-          ],
-          ...(appId === "browser" ? { cdpPort: 9222 } : {}),
-        }),
+        command,
+        paramsJSON: "{}",
         supervisor,
+        signal: new AbortController().signal,
       });
 
-      expect(result).toMatchObject({ ok: false, error: { code: "UNAVAILABLE" } });
-      expect(fs.readFileSync(markerPath, "utf8")).toBe(`${JSON.stringify(args)}\n`);
-    },
-  );
-
-  it.runIf(process.platform !== "win32")(
-    "kills an in-flight desktop launcher when its invoke owner closes",
-    async ({ signal }) => {
-      const root = tempDirs.make("node-worker-desktop-launch-abort-");
-      const executablePath = path.join(root, "launcher.mjs");
-      const pidPath = `${executablePath}.pid`;
-      fs.writeFileSync(
-        executablePath,
-        `#!${process.execPath}\n${fixtureReceiptClientSource(receipts.endpoint)}
-import fs from "node:fs";
-fs.writeFileSync(${JSON.stringify(pidPath)}, String(process.pid));
-sendReceipt(${JSON.stringify(pidPath)}, "ready");
-setInterval(() => {}, 1000);
-`,
-        { mode: 0o755 },
-      );
-      const controller = new AbortController();
-
-      const running = invokePrivate({
-        command: NODE_WORKER_DESKTOP_LAUNCH_COMMAND,
-        paramsJSON: JSON.stringify({ id: "terminal", executablePath }),
-        supervisor: supervisorWith(fullReceipt()),
-        signal: controller.signal,
-      });
-      let pid: number | undefined;
-      try {
-        // The durable PID write protects readiness when exit overtakes receipt delivery.
-        const settled = running.then(
-          () => expect(fs.existsSync(pidPath)).toBe(true),
-          (error: unknown) => {
-            if (!fs.existsSync(pidPath)) {
-              throw error;
-            }
-          },
-        );
-        await withinTest(Promise.race([receipts.waitFor(pidPath, "ready"), settled]), signal);
-        const launcherPid = Number(fs.readFileSync(pidPath, "utf8").trim());
-        pid = launcherPid;
-        controller.abort(new Error("desktop owner closed"));
-
-        await expect(running).resolves.toMatchObject({ result: undefined });
-        await vi.waitFor(() => expect(() => process.kill(launcherPid, 0)).toThrow());
-      } finally {
-        controller.abort();
-        try {
-          if (pid) {
-            process.kill(pid, "SIGKILL");
-          }
-        } catch {
-          // The expected path already reaped the launcher.
-        }
-        await running;
-      }
+      expect(pluginHandle).not.toHaveBeenCalled();
+      expect(result).toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
     },
   );
 

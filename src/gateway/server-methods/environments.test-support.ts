@@ -128,18 +128,14 @@ export function workerRecord(overrides: Partial<TestWorkerRecord> = {}): TestWor
     preparation: null,
     lastError: null,
     tunnelStatus: "stopped",
-    desktopAvailable: false,
-    desktopApps: [],
     ...overrides,
   } as TestWorkerRecord;
 }
 
 export const workerService = (overrides: Partial<TestWorkerService> = {}) => ({
-  getDedicatedNodeLeaseSignal: vi.fn(() => undefined),
   captureSessionAttachment: vi.fn(() => {
     throw new Error("No conversation attachment fixture");
   }),
-  readProviderDisplayId: vi.fn(() => undefined),
   getSessionAttachment: vi.fn(() => undefined),
   findSessionAttachment: vi.fn(() => undefined),
   getSessionAttachmentStatus: vi.fn(() => undefined),
@@ -156,30 +152,13 @@ export const workerService = (overrides: Partial<TestWorkerService> = {}) => ({
     throw new Error("No attached portal fixture");
   }),
   list: vi.fn(() => []),
-  readPreparedPoolSummary: vi.fn(() => ({ maxTotal: 4, reservedEnvironmentIds: [] })),
-  readReadyWorkerTarget: vi.fn(() => 1),
   get: vi.fn(() => undefined),
   inventoryVersion: vi.fn(() => 0),
   readMachineShape: () => undefined,
-  machineShapeVersion: () => 0,
   supportsExecutionMode: vi.fn(() => false),
-  listMachineOptions: vi.fn(async () => undefined),
-  listOperatingSystems: vi.fn(async () => undefined),
   create: vi.fn(async () => workerRecord()),
-  prepare: vi.fn(async () => ({
-    environmentId: "worker-1",
-    preparationKey: "project-key",
-    reused: false,
-  })),
   destroy: vi.fn(async () => workerRecord({ state: "destroyed" })),
   destroyUnattached: vi.fn(async () => workerRecord({ state: "destroyed" })),
-  observeDesktop: vi.fn(async ({ control }) => ({
-    transport: "rfb" as const,
-    wsPath: "/desktop/observe?token=abc",
-    expiresAtMs: 70_000,
-    control,
-  })),
-  launchDesktopApp: vi.fn(async ({ app }) => ({ app, status: "ready" as const })),
   ...overrides,
 });
 
@@ -188,10 +167,7 @@ export async function callEnvironmentMethod(
     | "environments.list"
     | "environments.status"
     | "environments.create"
-    | "environments.prepare"
-    | "environments.destroy"
-    | "worker.desktop.observe"
-    | "worker.desktop.launch",
+    | "environments.destroy",
   params: unknown,
   options: {
     service?: TestWorkerService;

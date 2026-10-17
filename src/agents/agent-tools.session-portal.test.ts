@@ -11,12 +11,10 @@ import "./test-helpers/fast-coding-tools.js";
 import { createOpenClawCodingTools } from "./agent-tools.js";
 
 const identity = { sessionKey: "agent:main:preview", sessionId: "conversation", agentId: "main" };
-const binding = { ...identity, environmentId: "attached", ownerEpoch: 1, generation: 1 };
 beforeEach(() => setRuntimeConfigSnapshot({}));
 afterEach(() => clearRuntimeConfigSnapshot());
 
-function context(dedicated: boolean, attached: boolean, locked = false) {
-  const signal = new AbortController().signal;
+function context(locked = false) {
   const projection = createSessionRowProjectionFixture({
     cfg: {},
     store: {
@@ -30,17 +28,6 @@ function context(dedicated: boolean, attached: boolean, locked = false) {
   return bindSessionRowProjection(
     {
       portalService: {},
-      workerEnvironmentService: {
-        getSessionAttachmentStatus: () => (attached ? { attachment: binding } : undefined),
-        captureSessionAttachment: () => {
-          if (!attached) {
-            throw new Error("no secondary attachment");
-          }
-          return { binding, assertCurrent: () => {}, touch: async () => {} };
-        },
-        get: () => ({ ...binding, leaseId: "lease", nodeDeviceId: "node", sharedHost: false }),
-        getDedicatedNodeLeaseSignal: () => (dedicated ? signal : undefined),
-      },
     } as unknown as GatewayRequestContext,
     () => projection,
   );
@@ -63,43 +50,41 @@ async function tools(
       ).tools;
 }
 
-describe("attached conversation portal tool availability", () => {
+describe("ordinary portal tool ownership", () => {
   it.each([
-    ["agent", "scoped", true, true, false, false],
-    ["gateway", "scoped", true, true, false, false],
-    ["gateway", "global", false, false, false, true],
-    ["gateway", "absent", false, true, false, false],
-    ["agent", "absent", true, false, false, false],
-    ["agent", "absent", true, true, true, false],
-    ["http", "absent", true, true, false, false],
+    { builder: "agent", owner: true, locked: false, allowed: true },
+    { builder: "agent", owner: false, locked: false, allowed: false },
+    { builder: "agent", owner: true, locked: true, allowed: true },
+    { builder: "agent", owner: false, locked: true, allowed: false },
+    { builder: "gateway", owner: true, locked: false, allowed: true },
+    { builder: "gateway", owner: false, locked: false, allowed: false },
+    { builder: "http", owner: true, locked: false, allowed: false },
+    { builder: "http", owner: false, locked: false, allowed: false },
+    { builder: "http", owner: true, locked: false, gatewayAllow: true, allowed: true },
+    { builder: "http", owner: false, locked: false, gatewayAllow: true, allowed: false },
   ] as const)(
-    "%s has %s portal access (dedicated=%s, attached=%s, locked=%s, owner=%s)",
-    async (builder, access, dedicated, attached, locked, owner) => {
-      const ctx = context(dedicated, attached, locked);
+    "$builder exposes portal=$allowed (owner=$owner, locked=$locked, configured=$gatewayAllow)",
+    async ({ builder, owner, locked, allowed, ...options }) => {
+      const cfg: OpenClawConfig = {
+        tools: { profile: "coding" },
+        ...("gatewayAllow" in options && options.gatewayAllow
+          ? { gateway: { tools: { allow: ["portal"] } } }
+          : {}),
+      };
+      const ctx = context(locked);
       await withPluginRuntimeGatewayContextResolver(
         () => ctx,
         async () => {
-          const portal = (await tools(builder, undefined, owner)).find(
-            (tool) => tool.name === "portal",
-          );
-          if (access === "scoped") {
-            expect(portal).toBeDefined();
-            expect(portal?.parameters).not.toHaveProperty("properties.environmentId");
-            expect(portal?.description).toContain("attached dedicated worker");
-            expect(
-              (await tools(builder, { tools: { profile: "coding", deny: ["portal"] } })).some(
-                (tool) => tool.name === "portal",
-              ),
-            ).toBe(false);
-          } else if (access === "global") {
+          const portal = (await tools(builder, cfg, owner)).find((tool) => tool.name === "portal");
+          if (allowed) {
             expect(portal?.parameters).toHaveProperty("properties.environmentId");
+            expect(
+              (
+                await tools(builder, { ...cfg, tools: { ...cfg.tools, deny: ["portal"] } }, owner)
+              ).some((tool) => tool.name === "portal"),
+            ).toBe(false);
           } else {
             expect(portal).toBeUndefined();
-          }
-          if (locked) {
-            expect(
-              (await tools(builder, undefined, true)).some((tool) => tool.name === "portal"),
-            ).toBe(true);
           }
         },
       );

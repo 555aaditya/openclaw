@@ -76,7 +76,7 @@
     },
     {
       "source": "/plan/worker-hibernation",
-      "destination": "/gateway/cloud-workers#warm-images"
+      "destination": "/gateway/cloud-workers#retired-plugin-provisioning"
     },
     {
       "source": "/refactor/acp",
@@ -1337,6 +1337,18 @@
     {
       "source": "/plugins/cloudflare",
       "destination": "/plugins/sdk-migration/removed-surfaces"
+    },
+    {
+      "source": "/gateway/cloud-workers/desktop",
+      "destination": "/gateway/cloud-workers#retired-plugin-provisioning"
+    },
+    {
+      "source": "/gateway/cloud-workers/environment-file",
+      "destination": "/gateway/cloud-workers#retired-plugin-provisioning"
+    },
+    {
+      "source": "/gateway/cloud-workers/warm-images",
+      "destination": "/gateway/cloud-workers#retired-plugin-provisioning"
     }
   ],
   "navigation": {
@@ -2550,15 +2562,12 @@
                       {
                         "group": "Cloud Workers",
                         "pages": [
-                          "gateway/cloud-workers/warm-images",
-                          "gateway/cloud-workers/environment-file",
                           "gateway/cloud-workers/per-project-default-profiles",
                           "gateway/cloud-workers/setup-and-bundle-installation",
                           "gateway/cloud-workers/verify-the-profile",
                           "gateway/cloud-workers/dispatching-a-session",
                           "gateway/cloud-workers/placement-and-machine-selection",
                           "gateway/cloud-workers/session-lifecycle",
-                          "gateway/cloud-workers/desktop",
                           "gateway/cloud-workers/security-model",
                           "gateway/cloud-workers/native-inference",
                           "gateway/cloud-workers/troubleshooting"

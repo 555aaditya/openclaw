@@ -56,66 +56,6 @@ describe("dispatch Stop before provider allocation", () => {
   setupSessionFixture(REQUEST);
 
   it.each([
-    { identity: REQUEST.sessionKey, inherited: false },
-    { identity: REQUEST.sessionId, inherited: false },
-    { identity: "legacy-session-alias", inherited: false },
-    { identity: REQUEST.sessionKey, inherited: true },
-  ])("preserves active $identity work (inherited: $inherited)", async ({ identity, inherited }) => {
-    const targetReader = await vi.importActual<typeof import("./session-utils-store-worker.js")>(
-      "./session-utils-store-worker.js",
-    );
-    moveDestinationMocks.prepareGatewaySessionTarget.mockImplementation((params) =>
-      targetReader.resolveGatewaySessionStoreTargetInWorker({
-        ...params,
-        onSelected: (target) => {
-          target.storeKeys.push("legacy-session-alias");
-          params.onSelected?.(target);
-        },
-      }),
-    );
-    workspace.preflight.mockReset().mockResolvedValue(undefined);
-    const placements = createWorkerSessionPlacementStore({ database: support.testState.stateDb });
-    const environments = support.createService(support.createProvider());
-    vi.spyOn(environments, "prepareProjectIntent").mockRejectedValue(
-      new Error("fixture: barrier complete"),
-    );
-    const allocate = vi.spyOn(environments, "createWithRequest");
-    const start = vi.spyOn(placements, "startDispatch");
-    const runtime = await createRuntime(placements, environments);
-    const interrupted = vi.fn();
-    const admission = await beginSessionWorkAdmission({
-      scope: `${support.testState.root}/sessions.sqlite`,
-      identities: [identity],
-      assertAllowed: () => {},
-      onInterrupt: () => {
-        interrupted();
-        admission.release();
-      },
-    });
-    const dispatch = () => runtime.dispatchService.dispatch(REQUEST);
-    try {
-      if (inherited) {
-        await expect(admission.run(dispatch)).rejects.toThrow("fixture: barrier complete");
-        expect(start).toHaveBeenCalledOnce();
-      } else {
-        await expect(dispatch()).rejects.toThrow("is busy with active work");
-        expect(workspace.preflight).not.toHaveBeenCalled();
-        expect(start).not.toHaveBeenCalled();
-        expect(await placements.getAsync(REQUEST.sessionId)).toBeUndefined();
-      }
-      expect(interrupted).not.toHaveBeenCalled();
-      expect(admission.isActive()).toBe(true);
-      expect(allocate).not.toHaveBeenCalled();
-    } finally {
-      admission.release();
-    }
-    if (!inherited) {
-      await expect(dispatch()).rejects.toThrow("fixture: barrier complete");
-      expect(start).toHaveBeenCalledOnce();
-    }
-  });
-
-  it.each([
     { targetKind: "profile", outcome: "cancel" },
     { targetKind: "device", outcome: "cancel" },
     { targetKind: "profile", outcome: "preflight-error" },
@@ -665,11 +605,35 @@ describe("dispatch Stop before provider allocation", () => {
           await releaseDestroy.promise;
         },
       );
+      const environmentId = "environment-refused-recovery";
+      const leaseId = `lease:${environmentId}`;
+      const nodeDeviceId = `node:${environmentId}`;
       const provision = vi.fn(async () => {
-        throw new Error("Refused recovery must not replay provisioning");
+        if (reason !== "started-failure") {
+          throw new Error("Refused recovery must not replay provisioning");
+        }
+        return { leaseId, node: { deviceId: nodeDeviceId }, sharedHost: true };
       });
-      const environments = support.createService(support.createProvider({ provision, destroy }));
-      const environment = await support.seedBootstrapping("environment-refused-recovery");
+      const resolveAllocation = vi.fn(async () => ({ leaseId, sharedHost: true }));
+      const environments = support.createService(
+        support.createProvider({ provision, resolveAllocation, destroy }),
+      );
+      const seedProvisioning = async (id: string) => {
+        const intent = await support.testState.store.createIntent({
+          environmentId: id,
+          providerId: "fake",
+          profileId: "development",
+          profileSnapshot: { settings: { region: "test" }, executionMode: "remote-exec" },
+          provisionOperationId: `provision:${id}`,
+        });
+        return support.testState.store.transition({
+          environmentId: id,
+          from: intent.state,
+          to: "provisioning",
+        });
+      };
+      // Device provisioning keeps its operation identity until bundle admission commits ready.
+      const environment = await seedProvisioning(environmentId);
       const placements = createWorkerSessionPlacementStore({ database: support.testState.stateDb });
       const requested = await placements.startDispatch(REQUEST);
       await placements.transition({
@@ -695,7 +659,7 @@ describe("dispatch Stop before provider allocation", () => {
       );
       moveDestinationMocks.resolveCanonicalSession.mockReturnValue(entry);
       if (reason === "started-failure") {
-        vi.mocked(support.testState.bootstrapWorker).mockRejectedValueOnce(
+        vi.mocked(support.testState.ensureNodeWorkerBundle).mockRejectedValueOnce(
           new Error("Bootstrap failed"),
         );
       }
@@ -708,7 +672,18 @@ describe("dispatch Stop before provider allocation", () => {
       });
       let exclusive: Promise<unknown> = Promise.resolve();
       if (reason === "archived-behind-same-session-destroy") {
-        const previous = await support.seedReady("environment-prior-exclusive");
+        const priorIntent = await seedProvisioning("environment-prior-exclusive");
+        const previous = await support.testState.store.transition({
+          environmentId: priorIntent.environmentId,
+          from: priorIntent.state,
+          to: "ready",
+          patch: {
+            leaseId: `lease:${priorIntent.environmentId}`,
+            nodeDeviceId: `node:${priorIntent.environmentId}`,
+            sharedHost: true,
+            ...support.readyPatch(priorIntent.environmentId),
+          },
+        });
         await environments.attachSession({
           environmentId: previous.environmentId,
           ownerEpoch: previous.ownerEpoch,
@@ -759,16 +734,38 @@ describe("dispatch Stop before provider allocation", () => {
           destroyEntered.promise.then(() => "destroy-started"),
           recovery,
         ]);
-        expect(provision).not.toHaveBeenCalled();
-        if (reason !== "started-failure") {
-          expect(support.testState.bootstrapWorker).not.toHaveBeenCalled();
+        expect(provision).toHaveBeenCalledTimes(reason === "started-failure" ? 1 : 0);
+        if (reason === "started-failure") {
+          expect(provision).toHaveBeenCalledWith(
+            { region: "test" },
+            environment.provisionOperationId,
+            expect.objectContaining({ executionMode: "remote-exec" }),
+          );
+          expect(support.testState.ensureNodeWorkerBundle).toHaveBeenCalledExactlyOnceWith(
+            expect.objectContaining({
+              reason: "provision",
+              environmentId,
+              deviceId: nodeDeviceId,
+              artifact: support.BUNDLE_ARTIFACT,
+            }),
+          );
+        } else {
+          expect(support.testState.ensureNodeWorkerBundle).not.toHaveBeenCalled();
+        }
+        if (invalidOwner) {
+          expect(resolveAllocation).toHaveBeenCalledExactlyOnceWith(
+            { region: "test" },
+            environment.provisionOperationId,
+          );
+        } else {
+          expect(resolveAllocation).not.toHaveBeenCalled();
         }
         if (invalidOwner || reason === "started-failure") {
           expect(first).toBe("destroy-started");
           expect(settled).toBe(false);
-          expect(
-            destroy.mock.calls.filter(([lease]) => lease.leaseId === environment.leaseId),
-          ).toEqual([[{ leaseId: environment.leaseId, profile: { region: "test" } }]]);
+          expect(destroy.mock.calls.filter(([lease]) => lease.leaseId === leaseId)).toEqual([
+            [{ leaseId, profile: { region: "test" } }],
+          ]);
           const interruption = startSessionWorkAdmissionInterruption({
             scope: `${support.testState.root}/sessions.sqlite`,
             identities: [REQUEST.sessionKey, REQUEST.sessionId],
@@ -794,8 +791,11 @@ describe("dispatch Stop before provider allocation", () => {
           expect(destroy).not.toHaveBeenCalled();
           expect(placements.get(REQUEST.sessionId)?.state).toBe("provisioning");
           expect(support.testState.store.get(environment.environmentId)).toMatchObject({
-            state: "bootstrapping",
-            leaseId: environment.leaseId,
+            state: "provisioning",
+            leaseId: null,
+            nodeDeviceId: null,
+            bootstrapReceipt: null,
+            provisionOperationId: environment.provisionOperationId,
             destroyRequestedAtMs: null,
           });
         }
@@ -840,7 +840,11 @@ describe("dispatch Stop before provider allocation", () => {
             replayEntered.resolve();
             await childClosed.promise;
             events.push("child-closed");
-            return { leaseId: "lease-recovery-stop", ssh: support.SSH_ENDPOINT, sharedHost: false };
+            return {
+              leaseId: "lease-recovery-stop",
+              node: { deviceId: "node-1" },
+              sharedHost: false,
+            };
           },
           resolveAllocation: async () => ({ leaseId: "lease-recovery-stop", sharedHost: false }),
           destroy,

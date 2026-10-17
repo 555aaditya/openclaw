@@ -304,7 +304,7 @@ test.each([
         getConfig: getRuntimeConfig,
         resolveProvider: (id) => (id === provider.id ? provider : undefined),
         prepareInstallation: unexpected,
-        bootstrapWorker: unexpected,
+        ensureNodeWorkerBundle: unexpected,
         placementStore: createWorkerSessionPlacementGate(placements),
       });
       try {

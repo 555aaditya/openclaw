@@ -6,7 +6,7 @@ import {
 } from "./draft-session-placement.ts";
 
 describe("new-session placement target", () => {
-  it("retains a recovered classless target when the catalog now displays a machine", () => {
+  it("retains the recovered target instead of the current draft selection", () => {
     const target = { kind: "profile" as const, profileId: "aws" };
     expect(
       resolveDraftSessionPlacement(
@@ -15,7 +15,6 @@ describe("new-session placement target", () => {
           cloudProfileId: "aws",
           deviceId: "",
           autoDevice: false,
-          cloudSelection: { os: "linux", machineClass: "small" },
         },
       ),
     ).toEqual(target);
@@ -27,7 +26,6 @@ describe("new-session placement target", () => {
         cloudProfileId: "",
         deviceId: "runner",
         autoDevice: false,
-        cloudSelection: { os: "", machineClass: "" },
       },
       target: { kind: "device", deviceId: "runner" },
     },
@@ -36,9 +34,8 @@ describe("new-session placement target", () => {
         cloudProfileId: "aws",
         deviceId: "",
         autoDevice: false,
-        cloudSelection: { os: "windows/wsl2", machineClass: "tiny" },
       },
-      target: { kind: "profile", profileId: "aws", os: "windows/wsl2", machineClass: "tiny" },
+      target: { kind: "profile", profileId: "aws" },
     },
   ])("preserves selected placement options for $target.kind", ({ place, target }) => {
     expect(resolveDraftSessionPlacement({ sessionKey: "", target: null }, place)).toEqual(target);
@@ -52,7 +49,6 @@ describe("new-session placement target", () => {
           cloudProfileId: "",
           deviceId: "",
           autoDevice: true,
-          cloudSelection: { os: "", machineClass: "" },
         },
       ),
     ).toEqual({ kind: "auto-device" });
@@ -82,7 +78,7 @@ describe("new-session placement target", () => {
         sessionKey: "agent:main:cloud",
         messageId: "message-cloud",
         message: "continue in the cloud",
-        target: { kind: "profile", profileId: "aws", os: "windows/wsl2", machineClass: "tiny" },
+        target: { kind: "profile", profileId: "aws" },
         agentId: "main",
         gatewayUrl: "ws://gateway.example",
         recoveryScope: "principal-a",
@@ -101,8 +97,6 @@ describe("new-session placement target", () => {
     ).toMatchObject({
       placement: {
         profileId: "aws",
-        os: "windows/wsl2",
-        machineClass: "tiny",
         worktreeSource: "empty",
       },
       draft: {

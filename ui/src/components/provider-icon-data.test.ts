@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  compareCloudProfiles,
+  resolveCloudProfileIconData,
   hasProviderBrandIcon,
   providerDisplayLabel,
 } from "./provider-icon-data.ts";
@@ -26,33 +26,26 @@ describe("model provider labels", () => {
   });
 });
 
-describe("cloud provider presentation", () => {
-  it.each(["google", "machine0"])(
-    "orders backend %s before local profiles, alphabetically within each group",
-    (backend) => {
-      const cloud = { id: "z-local", providerId: "crabbox", providerDisplayId: backend };
-      const infrastructure = { id: "a-aws", providerId: "aws", providerDisplayId: "constructor" };
-      expect(compareCloudProfiles(cloud, infrastructure)).toBeLessThan(0);
-      expect(compareCloudProfiles(infrastructure, cloud)).toBeGreaterThan(0);
-      expect(
-        compareCloudProfiles(
-          { id: "z-local", providerId: backend },
-          { id: "a-aws", providerId: "crabbox" },
-        ),
-      ).toBeLessThan(0);
-      const profiles = [
-        { id: "b", providerId: "incus" },
-        { id: "z", providerId: "machine0" },
-        { id: "a", providerId: "custom" },
-        { id: "y", providerId: "aws" },
-      ];
-      expect(profiles.toSorted(compareCloudProfiles).map((p) => p.id)).toEqual([
-        "y",
-        "z",
-        "a",
-        "b",
-      ]);
-      expect(profiles.map((p) => p.id)).toEqual(["b", "z", "a", "y"]);
+describe("worker profile presentation", () => {
+  it.each([
+    ["device", "server"],
+    ["machine0", "cloud"],
+    ["google", "cloud"],
+    ["docker", "cloud"],
+    ["constructor", "cloud"],
+    ["__proto__", "cloud"],
+  ] as const)(
+    "preserves provider %s identity with its supported generic icon",
+    (providerId, iconName) => {
+      expect(resolveCloudProfileIconData({ providerId })).toEqual({ label: providerId, iconName });
     },
   );
+
+  it("normalizes device identity and provides a generic missing-profile icon", () => {
+    expect(resolveCloudProfileIconData({ providerId: " DEVICE " })).toEqual({
+      label: "device",
+      iconName: "server",
+    });
+    expect(resolveCloudProfileIconData()).toEqual({ label: "", iconName: "cloud" });
+  });
 });

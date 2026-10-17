@@ -4,7 +4,6 @@ import { sessionChanges } from "../../sessions/session-row-changes.js";
 import { captureOpenClawStateWorkerContext } from "../../state/openclaw-state-worker-context.js";
 import { executeOpenClawStateWorker } from "../../state/openclaw-state-worker-store.js";
 import type { WorkerOperations } from "../../state/worker-operation-registry.js";
-import type { PreparedEnvironmentSelection } from "./environment-record.js";
 import type { WorkerPlacementAuthorization } from "./placement-authorization.js";
 import type { PlacementLifecycleReceipt } from "./placement-lifecycle.types.js";
 import type { placementLifecycleOperations } from "./placement-lifecycle.worker.js";
@@ -103,11 +102,7 @@ export function createPlacementLifecycleWorkerOps(runtime: {
         if (!facts) {
           throw new Error("Worker placement lifecycle receipt has a different session");
         }
-        if (
-          facts.joined ||
-          facts.changed === false ||
-          (captured.type === "workerPlacements.bindPrepared" && !facts.placement)
-        ) {
+        if (facts.joined || facts.changed === false) {
           return undefined;
         }
         const publication = facts.retired
@@ -265,10 +260,6 @@ export function createPlacementLifecycleWorkerOps(runtime: {
       return placement(
         await execute({ type: "workerPlacements.completeMove", input }, guard.assertCurrent),
       );
-    },
-    async bindPreparedEnvironment({ assertCurrent, ...input }: PreparedEnvironmentSelection) {
-      return (await execute({ type: "workerPlacements.bindPrepared", input }, assertCurrent))
-        .placement;
     },
     async retireSessionPlacementAsync(input: WorkerSessionPlacementRetirement, guard: Guard = {}) {
       await execute({ type: "workerPlacements.retire", input }, guard.assertCurrent);

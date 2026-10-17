@@ -216,24 +216,14 @@ export const validateEnvironmentsSessionDestroyParams = compile(
   S.EnvironmentsSessionDestroyParamsSchema,
 );
 export const validateEnvironmentsSessionExecParams = compile(S.EnvironmentsSessionExecParamsSchema);
-export const validateEnvironmentsPrepareParams = compile(S.EnvironmentsPrepareParamsSchema);
-export const validateEnvironmentsPrepareResult = compile(S.EnvironmentsPrepareResultSchema);
 export const validateEnvironmentsDestroyParams = compile(S.EnvironmentsDestroyParamsSchema);
 export const validateEnvironmentsListParams = compile(S.EnvironmentsListParamsSchema);
 export const validateEnvironmentsStatusParams = compile(S.EnvironmentsStatusParamsSchema);
 export const validatePortalListParams = compile(S.PortalListParamsSchema);
 export const validatePortalOpenParams = compile(S.PortalOpenParamsSchema);
 export const validatePortalCloseParams = compile(S.PortalCloseParamsSchema);
-export const validateSessionPortalListParams = compile(S.SessionPortalListParamsSchema);
-export const validateSessionPortalOpenParams = compile(S.SessionPortalOpenParamsSchema);
-export const validateSessionPortalCloseParams = compile(S.SessionPortalCloseParamsSchema);
-export const validateWorkerDesktopObserveParams = compile(S.WorkerDesktopObserveParamsSchema);
-export const validateWorkerDesktopObserveResult = compile(S.WorkerDesktopObserveResultSchema);
-export const validateWorkerDesktopLaunchParams = compile(S.WorkerDesktopLaunchParamsSchema);
-export const validateWorkerDesktopLaunchResult = compile(S.WorkerDesktopLaunchResultSchema);
 export const validateDesktopObserveParams = compile(S.DesktopObserveParamsSchema);
 export const validateDesktopObserveResult = compile(S.DesktopObserveResultSchema);
-export const validateDesktopLaunchParams = compile(S.DesktopLaunchParamsSchema);
 export const validateDesktopReleaseParams = compile(S.DesktopReleaseParamsSchema);
 export const validateDesktopReleaseResult = compile(S.DesktopReleaseResultSchema);
 export const validateSystemInfoParams = compile(S.SystemInfoParamsSchema);

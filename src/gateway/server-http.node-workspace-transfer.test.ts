@@ -18,7 +18,6 @@ afterEach(() => {
 
 async function withTransferServer<T>(params: {
   bundleCallback?: ArtifactTransferHttpCallback;
-  bootstrapCallback?: ArtifactTransferHttpCallback;
   callback?: NodeWorkspaceTransferHttpCallback;
   limiter?: AuthRateLimiter;
   hooks?: (req: IncomingMessage, res: ServerResponse) => Promise<boolean>;
@@ -34,7 +33,6 @@ async function withTransferServer<T>(params: {
     resolvedAuth,
     joinRateLimiter: params.limiter,
     handleNodeWorkerBundleTransferRequest: params.bundleCallback,
-    handleWorkerBootstrapArtifactTransferRequest: params.bootstrapCallback,
     handleNodeWorkspaceTransferRequest: params.callback,
     getRuntimeConfig: () => ({}),
   });
@@ -81,46 +79,6 @@ describe("node worker bundle transfer HTTP routing", () => {
         expect(rejected.status).toBe(404);
         expect(queried.status).toBe(404);
         expect(missing.headers.get("cache-control")).toBe("no-store");
-        expect(callback).toHaveBeenCalledOnce();
-        expect(hooks).not.toHaveBeenCalled();
-      },
-    });
-  });
-});
-
-describe("cloud bootstrap artifact HTTP routing", () => {
-  it("serves only an authorized exact artifact before node enrollment and reserves malformed paths", async () => {
-    const hooks = vi.fn(async () => false);
-    const callback = vi.fn<ArtifactTransferHttpCallback>(async ({ bearer, artifactKey, res }) =>
-      bearer === "bootstrap-capability"
-        ? {
-            kind: "authorized",
-            handle: () => {
-              res.end(artifactKey);
-            },
-          }
-        : { kind: "unauthorized" },
-    );
-    await withTransferServer({
-      bootstrapCallback: callback,
-      hooks,
-      run: async (origin) => {
-        const digest = "c".repeat(64);
-        const url = `${origin}/__openclaw__/worker-bootstrap/artifacts/${digest}`;
-        for (const target of [
-          url,
-          `${url}?token=bootstrap-capability`,
-          `${origin}/__openclaw__/worker-bootstrap/invalid`,
-        ]) {
-          const response = await fetch(target);
-          expect(response.status).toBe(404);
-          expect(response.headers.get("cache-control")).toBe("no-store");
-        }
-        const response = await fetch(url, {
-          headers: { authorization: "Bearer bootstrap-capability" },
-        });
-        expect(response.status).toBe(200);
-        await expect(response.text()).resolves.toBe(digest);
         expect(callback).toHaveBeenCalledOnce();
         expect(hooks).not.toHaveBeenCalled();
       },

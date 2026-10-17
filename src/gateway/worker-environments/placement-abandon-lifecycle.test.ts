@@ -128,13 +128,18 @@ it.each([
     const destroy = vi.fn(async () => {});
     const cleanupStarted = createDeferred();
     const releaseCleanup = createDeferred();
-    const cleanupFailure = new Error("desktop carrier cleanup failed");
-    const stopDesktop = vi.fn(async () => {
+    const cleanupFailure = new Error("workspace transfer cleanup failed");
+    let retiringPlacement = false;
+    let failTransferCleanup = false;
+    const closeTransfer = vi.mocked(transfer.close).mockImplementation(async () => {
+      if (!retiringPlacement) {
+        return;
+      }
       cleanupStarted.resolve();
       if (cleanup !== "complete") {
         await releaseCleanup.promise;
       }
-      if (cleanup === "failed") {
+      if (cleanup === "failed" || failTransferCleanup) {
         throw cleanupFailure;
       }
     });
@@ -148,13 +153,6 @@ it.each([
         }),
         {
           nodeTunnelManager: tunnels,
-          nodeDesktopCarrier: {
-            bindRuntime: vi.fn(),
-            launchApp: vi.fn(),
-            observe: vi.fn(),
-            stop: stopDesktop,
-            stopAll: vi.fn(async () => {}),
-          },
           placementStore: createWorkerSessionPlacementGate(placements),
         },
       );
@@ -186,7 +184,7 @@ it.each([
         // Join the failed replacement's own retirement before testing another stop.
         await expect(tunnels.stop(environmentId, attached.ownerEpoch)).rejects.toThrow();
         if (cleanup === "retired-mixed") {
-          vi.mocked(transfer.close).mockRejectedValueOnce(cleanupFailure);
+          failTransferCleanup = true;
         }
       }
       const credential = state.store.getCredential(environmentId);
@@ -203,6 +201,7 @@ it.each([
       expect(placements.validateTurnClaim(claim)).toBe(true);
       let settled = false;
       let authorized = true;
+      retiringPlacement = true;
       const moving = harness.service
         .move(
           {
@@ -258,7 +257,7 @@ it.each([
       expect(invoke).not.toHaveBeenCalled();
       expect(destroy).not.toHaveBeenCalled();
 
-      stopDesktop.mockResolvedValue(undefined);
+      closeTransfer.mockResolvedValue(undefined);
       if (cleanup === "restarted") {
         await restartDisconnectedService();
       }
@@ -348,7 +347,7 @@ it.each([
       }
     } finally {
       releaseCleanup.resolve();
-      stopDesktop.mockResolvedValue(undefined);
+      closeTransfer.mockResolvedValue(undefined);
       listNodes.mockResolvedValue(connectedNodes);
       await service.destroy(environmentId);
       await service.destroy(replacementId);

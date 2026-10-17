@@ -23,9 +23,7 @@ serveWorkerTasks<GitWorkerReply<GitWorkerResult>>(
         () => {
           switch (command.type) {
             case "workspace.inventory.select":
-            case "workspace.inventory.existing":
             case "workspace.inventory.paths":
-            case "workspace.inventory.staged-directories":
               return import("../gateway/worker-environments/workspace-inventory-computation.runtime.js").then(
                 ({ executeWorkspaceInventoryComputation }) =>
                   executeWorkspaceInventoryComputation(command),
@@ -34,7 +32,6 @@ serveWorkerTasks<GitWorkerReply<GitWorkerResult>>(
             case "workspace.manifest.snapshot":
             case "workspace.manifest.parse":
             case "workspace.manifest.serialize":
-            case "workspace.manifest.overlay":
             case "workspace.manifest.pair":
             case "workspace.manifest.staged":
             case "workspace.manifest.entries":

@@ -1,19 +1,13 @@
-import { createMemo, createSignal, For, Show, untrack } from "solid-js";
+import { createMemo, createSignal, For, untrack } from "solid-js";
 import type { SessionMoveTarget } from "../../../packages/gateway-protocol/src/index.js";
 import { registerNewSessionSetupEnglish } from "../i18n/locales/en-new-session-setup.ts";
 import { formatUiError } from "../lib/format-error.ts";
 import { t } from "../lib/reactive/i18n.ts";
-import {
-  CloudChoiceMenuItems,
-  CloudProfileMenuItems,
-  SessionMenuItem,
-} from "../pages/new-session/cloud-target-view.tsx";
+import { CloudProfileMenuItems, SessionMenuItem } from "../pages/new-session/cloud-target-view.tsx";
 import type { DevicePlacementOption } from "../pages/new-session/device-placement.ts";
 import type { DraftCloudProfile } from "../pages/new-session/discovery.ts";
-import { DraftCloudMachineState } from "../pages/new-session/draft-cloud-machine-state.ts";
 import "../styles/new-session.css";
 import { withPromiseModalHost } from "./promise-modal-host.ts";
-import { compareCloudProfiles } from "./provider-icon-data.ts";
 import { Icon } from "./solid/icon.tsx";
 
 registerNewSessionSetupEnglish();
@@ -28,7 +22,6 @@ type Options = {
   sessionLabel: string;
   activeRun: boolean;
   repositoryOnly?: boolean;
-  allowMachineOverrides?: boolean;
   gatewayDisabledReason?: string;
   deviceDisabledReason?: string;
   profileDisabledReason?: (profile: DraftCloudProfile) => string | undefined;
@@ -75,10 +68,10 @@ export function showSessionPlacementTargetDialog(
       const [selected, select] = createSignal<SessionMoveTarget | null>(
         options.mode === "move" && !options.gatewayDisabledReason ? { kind: "gateway" } : null,
       );
-      const [machineRevision, setMachineRevision] = createSignal(0);
-      const cloudMachines = new DraftCloudMachineState();
       const selectedKey = createMemo(() => targetKey(selected()));
-      const profiles = createMemo(() => catalog().profiles.toSorted(compareCloudProfiles));
+      const profiles = createMemo(() =>
+        catalog().profiles.toSorted((left, right) => left.id.localeCompare(right.id)),
+      );
       const title = () => t(`sessionsView.${options.mode}SessionTitle`);
       const dispatch = options.mode === "dispatch";
       const warning = options.mode === "restart" || (!dispatch && options.activeRun);
@@ -114,37 +107,8 @@ export function showSessionPlacementTargetDialog(
         if (!target || !selectable()) {
           return;
         }
-        if (target.kind !== "profile" || options.allowMachineOverrides === false) {
-          finish(target);
-          return;
-        }
-        const { machineClass, os } = cloudMachines.selection(target.profileId, catalog().profiles);
-        finish({ ...target, ...(machineClass ? { machineClass } : {}), ...(os ? { os } : {}) });
+        finish(target);
       };
-
-      function choices(profile: DraftCloudProfile) {
-        machineRevision();
-        const profileSelected =
-          options.allowMachineOverrides !== false && selectedKey() === `profile:${profile.id}`;
-        const machines = cloudMachines.machines(profile);
-        const operatingSystems = profile.operatingSystems ?? [];
-        return [
-          {
-            kind: "os" as const,
-            label: t("newSession.operatingSystem"),
-            choices: operatingSystems,
-            visible: profileSelected && operatingSystems.length >= 2,
-            selectedId: cloudMachines.selectedOs(profile),
-          },
-          {
-            kind: "machine" as const,
-            label: t("newSession.machine"),
-            choices: machines,
-            visible: profileSelected && machines.length > 0,
-            selectedId: cloudMachines.selection(profile.id, catalog().profiles).machineClass,
-          },
-        ];
-      }
 
       return (
         <openclaw-modal-dialog label={title()} onModal-cancel={() => finish(null)}>
@@ -224,29 +188,6 @@ export function showSessionPlacementTargetDialog(
                           onSelect: (profileId) => select({ kind: "profile", profileId }),
                         }}
                       />
-                      <For each={choices(profile())} keyed={(choice) => choice.kind}>
-                        {(choice) => (
-                          <Show when={choice().visible}>
-                            <div class="new-session-page__menu-title">{choice().label}</div>
-                            <CloudChoiceMenuItems
-                              params={{
-                                kind: choice().kind,
-                                choices: choice().choices,
-                                selectedId: choice().selectedId,
-                                submitting: false,
-                                onSelect: (id) =>
-                                  cloudMachines[choice().kind === "os" ? "selectOs" : "select"](
-                                    profile().id,
-                                    id,
-                                    catalog().profiles,
-                                    false,
-                                    () => setMachineRevision((revision) => revision + 1),
-                                  ),
-                              }}
-                            />
-                          </Show>
-                        )}
-                      </For>
                     </>
                   )}
                 </For>

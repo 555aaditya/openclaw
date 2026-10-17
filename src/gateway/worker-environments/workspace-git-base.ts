@@ -1,18 +1,7 @@
-import { createHash } from "node:crypto";
 import fsp from "node:fs/promises";
 import path from "node:path";
-import {
-  commandError,
-  gitEnvironment,
-  requireGit,
-  resolveGitRepositoryPaths,
-  runGit,
-} from "../../agents/worktrees/git.js";
-import { normalizeCloudRepo } from "../../config/cloud-worker-project-profiles.js";
+import { gitEnvironment } from "../../agents/worktrees/git.js";
 import { executeGitCommand, requireGitCommandOutput } from "../../infra/git-exec.js";
-import { hasNodeErrorCode } from "../../infra/path-guards.js";
-import type { RepositoryWorkerProjectSnapshot } from "./repository-project-source.schema.js";
-import { workerSshCommandOptions } from "./ssh.js";
 import {
   MAX_WORKSPACE_INVENTORY_PATH_BYTES,
   MAX_WORKSPACE_INVENTORY_TOTAL_BYTES,
@@ -21,99 +10,6 @@ import { runWorkspaceInventoryCommandToFile } from "./workspace-sync-inventory.j
 
 const GIT_TIMEOUT_MS = 10 * 60_000;
 const COMMIT_PATTERN = /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/u;
-
-export type WorkerLocalProjectSnapshot = {
-  key: string;
-  root: string;
-  baseCommit: string;
-  label?: string;
-};
-export type WorkerProjectSnapshot = WorkerLocalProjectSnapshot | RepositoryWorkerProjectSnapshot;
-
-export function workerProjectSeedKey(project: Pick<WorkerProjectSnapshot, "key" | "baseCommit">) {
-  return createHash("sha256").update(`${project.key}\0${project.baseCommit}`).digest("hex");
-}
-
-export function workerLocalProjectKey(namespace: string, commonDir: string): string {
-  return createHash("sha256")
-    .update(JSON.stringify([namespace, commonDir]))
-    .digest("hex");
-}
-
-export async function prepareWorkerProjectSnapshot(params: {
-  localPath: string;
-  namespace: string;
-  baseCommit?: string;
-  signal?: AbortSignal;
-}): Promise<WorkerLocalProjectSnapshot | null | undefined> {
-  params.signal?.throwIfAborted();
-  const root = await fsp.realpath(params.localPath);
-  const options = {
-    timeoutMs: GIT_TIMEOUT_MS,
-    signal: params.signal,
-    env: workerSshCommandOptions({ timeoutMs: GIT_TIMEOUT_MS }).baseEnv,
-  };
-  const gitAdmin = await fsp.lstat(path.join(root, ".git")).catch((error: unknown) => {
-    if (hasNodeErrorCode(error, "ENOENT")) {
-      return undefined;
-    }
-    throw error;
-  });
-  if (!gitAdmin) {
-    // Linked checkouts can retain their committed seed in a bare primary repository.
-    const bare = await runGit(root, ["rev-parse", "--is-bare-repository"], options);
-    params.signal?.throwIfAborted();
-    if (bare.code !== 0 || bare.stdout.trim() !== "true") {
-      if (params.baseCommit === undefined) {
-        return undefined;
-      }
-      throw new Error("Pinned worker project snapshot is no longer available");
-    }
-  }
-  const gitRoot = await fsp.realpath(
-    await requireGit(
-      root,
-      ["rev-parse", gitAdmin ? "--show-toplevel" : "--absolute-git-dir"],
-      options,
-    ),
-  );
-  if (gitRoot !== root) {
-    throw new Error("Worker git workspace sync requires the managed worktree root");
-  }
-  if (params.baseCommit !== undefined && !COMMIT_PATTERN.test(params.baseCommit)) {
-    throw new Error("Worker project snapshot is not a commit id");
-  }
-  const head = await runGit(
-    root,
-    ["rev-parse", "--verify", "--quiet", `${params.baseCommit ?? "HEAD"}^{commit}`],
-    options,
-  );
-  if (head.code === 1 && params.baseCommit === undefined) {
-    return undefined;
-  }
-  if (head.code !== 0) {
-    throw commandError("git rev-parse", head);
-  }
-  const baseCommit = head.stdout.trim();
-  if (!COMMIT_PATTERN.test(baseCommit)) {
-    throw new Error("Worker workspace Git base is not a commit id");
-  }
-  if ((await requireGit(root, ["cat-file", "-s", `${baseCommit}^{tree}`], options)) === "0") {
-    // Only a committed empty tree admits runtime-only preparation. Undefined
-    // remains unavailable/unborn; session Git metadata still travels through sync.
-    return null;
-  }
-  const { canonicalRoot, commonDir } = await resolveGitRepositoryPaths(root, options);
-  const origin = await runGit(canonicalRoot, ["remote", "get-url", "origin"], options);
-  const label =
-    (origin.code === 0 ? normalizeCloudRepo(origin.stdout) : undefined) ??
-    path.basename(canonicalRoot);
-  params.signal?.throwIfAborted();
-  // Linked session worktrees share the repository cache; their pinned commits and
-  // mutable overlays must not create a new project identity.
-  const key = workerLocalProjectKey(params.namespace, commonDir);
-  return { key, root: canonicalRoot, baseCommit, label };
-}
 
 export async function prepareWorkerWorkspaceGitPack(params: {
   root: string;

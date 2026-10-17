@@ -20,12 +20,9 @@ import {
 } from "./in-process-gateway.js";
 import {
   PORTAL_TOOL_DESCRIPTION,
-  SESSION_PORTAL_TOOL_DESCRIPTION,
   PortalOutputSchema,
   PortalToolSchema,
-  SessionPortalToolSchema,
 } from "./portal-tool-contract.js";
-import type { SessionPortalToolTarget } from "./session-portal-target.js";
 
 // Reading a portal's bearer URL is a write-scope capability: it is the same
 // credential action=open mints, so listing must ask for it explicitly.
@@ -55,12 +52,10 @@ export function createAvailablePortalTools(
   options: {
     callGateway?: InProcessGatewayCaller;
     callGatewayRequest?: AgentToolGatewayRequestCaller;
-    sessionPortalTarget?: SessionPortalToolTarget;
     senderIsOwner?: boolean;
   } = {},
 ): AnyAgentTool[] {
-  const target = options.sessionPortalTarget;
-  if (options.senderIsOwner === false && !target) {
+  if (options.senderIsOwner === false) {
     return [];
   }
   const callGateway = options.callGateway ?? callInProcessGatewayTool;
@@ -69,50 +64,32 @@ export function createAvailablePortalTools(
     {
       label: "Portal",
       name: "portal",
-      description: target ? SESSION_PORTAL_TOOL_DESCRIPTION : PORTAL_TOOL_DESCRIPTION,
-      parameters: target ? SessionPortalToolSchema : PortalToolSchema,
+      description: PORTAL_TOOL_DESCRIPTION,
+      parameters: PortalToolSchema,
       outputSchema: PortalOutputSchema,
       execute: async (_toolCallId, rawArgs) => {
         const params = rawArgs as Record<string, unknown>;
-        target?.assertCurrent();
         const action = readToolStringParam(params, "action", { required: true });
         const environmentId = readToolStringParam(params, "environmentId");
-        if (target && environmentId !== undefined) {
-          throw new ToolInputError(
-            "This portal tool is bound to the conversation's attached worker",
-          );
-        }
-        const environment = target
-          ? {
-              sessionKey: target.sessionKey,
-              agentId: target.agentId,
-              environmentId: target.environmentId,
-            }
-          : environmentId
-            ? { environmentId }
-            : {};
+        const environment = environmentId ? { environmentId } : {};
         if (action === "list") {
           // portal.list redacts the bearer URL for read-scope callers. Least-privilege
           // resolution would make every list call read-scope, hiding the URL from a
           // caller that can mint the same portal through action=open; ask with the
           // write authority this tool already requires so the listing stays usable.
-          const result = target
-            ? await callGateway<PortalListResult>("portal.session.list", environment)
-            : await callGatewayRequest<PortalListResult>({
-                method: "portal.list",
-                params: environment,
-                scopes: [PORTAL_URL_SCOPE],
-              });
-          target?.assertCurrent();
+          const result = await callGatewayRequest<PortalListResult>({
+            method: "portal.list",
+            params: environment,
+            scopes: [PORTAL_URL_SCOPE],
+          });
           return formatPortalResult({ action: "list", result });
         }
         if (action === "close") {
           const id = readToolStringParam(params, "id", { required: true });
-          const result = await callGateway<PortalCloseResult>(
-            target ? "portal.session.close" : "portal.close",
-            { id, ...environment },
-          );
-          target?.assertCurrent();
+          const result = await callGateway<PortalCloseResult>("portal.close", {
+            id,
+            ...environment,
+          });
           return formatPortalResult({ action: "close", id, result });
         }
         if (action !== "open") {
@@ -131,17 +108,13 @@ export function createAvailablePortalTools(
         if (path !== undefined && !path.startsWith("/")) {
           throw new ToolInputError("path must start with /");
         }
-        const portal = await callGateway<PortalSummary>(
-          target ? "portal.session.open" : "portal.open",
-          {
-            ...environment,
-            port,
-            ...(title !== undefined ? { title } : {}),
-            ...(description !== undefined ? { description } : {}),
-            ...(path !== undefined ? { path } : {}),
-          },
-        );
-        target?.assertCurrent();
+        const portal = await callGateway<PortalSummary>("portal.open", {
+          ...environment,
+          port,
+          ...(title !== undefined ? { title } : {}),
+          ...(description !== undefined ? { description } : {}),
+          ...(path !== undefined ? { path } : {}),
+        });
         return formatPortalResult({ action: "open", result: portal });
       },
     },

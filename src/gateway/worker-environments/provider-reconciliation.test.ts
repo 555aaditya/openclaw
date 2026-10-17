@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../test/helpers/promise.js";
+import type { WorkerEnvironmentNodeTunnel } from "./environment-access.js";
 import * as support from "./service.test-support.js";
-import type { WorkerTunnelManager } from "./tunnel.js";
 
 type WorkerEnvironmentServiceError = support.WorkerEnvironmentServiceError;
 type WorkerLifecycleLease = support.WorkerLifecycleLease;
@@ -41,17 +41,19 @@ describe("worker environment service", () => {
       ownerEpoch: 1,
     });
     expect(support.testState.store.get(environmentId)?.lastError).toBe("provider unavailable");
-    expect(support.testState.bootstrapWorker).not.toHaveBeenCalled();
+    expect(support.testState.ensureNodeWorkerBundle).not.toHaveBeenCalled();
   });
 
   it("inspects a persisted lease with its profile snapshot after profile removal", async () => {
-    await support.seedBootstrapping("worker-crash");
+    await support.seedReady("worker-crash", {
+      receipt: { ...support.BOOTSTRAP_RECEIPT, installKind: "bundle", bundleHash: "b".repeat(64) },
+    });
     support.testState.config.cloudWorkers!.profiles = {};
     const inspected: WorkerLifecycleLease[] = [];
     const provider = support.createProvider({
       inspect: async (lease) => {
         inspected.push(lease);
-        return { status: "active" };
+        return { status: "active", sharedHost: true };
       },
       provision: async () => {
         throw new Error("provision must not run for a known lease");
@@ -68,44 +70,22 @@ describe("worker environment service", () => {
       bootstrapReceipt: support.BOOTSTRAP_RECEIPT,
     });
     expect(support.testState.prepareInstallation).toHaveBeenCalledWith("bundle");
-    expect(support.testState.bootstrapWorker).toHaveBeenCalledTimes(1);
-  });
-
-  it("destroys a persisted SSH lease after its provider becomes worker-turn-only", async () => {
-    const environmentId = "worker-stale-ssh-transport";
-    await support.seedBootstrapping(environmentId);
-    const inspect = vi.fn(async () => ({ status: "active" as const }));
-    const destroy = vi.fn(async () => {});
-    const workerService = support.createService(
-      support.createProvider({
-        supportedExecutionModes: ["worker-turn"],
-        inspect,
-        destroy,
-      }),
-    );
-
-    await workerService.reconcileOnce();
-
-    expect(inspect).not.toHaveBeenCalled();
-    expect(support.testState.bootstrapWorker).not.toHaveBeenCalled();
-    expect(destroy).toHaveBeenCalledWith({
-      leaseId: `lease:${environmentId}`,
-      profile: { region: "test" },
-    });
-    expect(support.testState.store.get(environmentId)).toMatchObject({
-      state: "failed",
-      leaseId: null,
-      sshEndpoint: null,
-      lastError: "worker-turn providers must return a node lease",
-    });
+    expect(support.testState.ensureNodeWorkerBundle).toHaveBeenCalledTimes(1);
   });
 
   it.each([
-    ["node", { leaseId: "lease-direct-only-node", node: { deviceId: "device-direct-only-node" } }],
+    [
+      "node",
+      {
+        leaseId: "lease-direct-only-node",
+        sharedHost: true,
+        node: { deviceId: "device-direct-only-node" },
+      },
+    ],
   ] as const)(
     "P1: preserves a direct-only %s lease after profile removal and reconciliation",
     async (_transport, lease) => {
-      const inspect = vi.fn(async () => ({ status: "active" as const, sharedHost: false }));
+      const inspect = vi.fn(async () => ({ status: "active" as const, sharedHost: true }));
       const destroy = vi.fn(async () => {});
       const workerService = support.createService(
         support.createProvider({
@@ -136,47 +116,9 @@ describe("worker environment service", () => {
     },
   );
 
-  it("P1: destroys a persisted SSH lease when provider capabilities and its profile are removed", async () => {
-    const leaseId = "lease-unadvertised-persisted-ssh";
-    const inspect = vi.fn(async () => ({ status: "active" as const }));
-    const destroy = vi.fn(async () => {});
-    const provider = support.createProvider({
-      supportedExecutionModes: ["remote-exec"],
-      provision: async () => ({ leaseId, ssh: support.SSH_ENDPOINT }),
-      inspect,
-      destroy,
-    });
-    const workerService = support.createService(provider);
-    const environment = await workerService.createWithRequest({
-      profileId: "development",
-      idempotencyKey: "request-unadvertised-persisted-ssh",
-      executionMode: "remote-exec",
-    });
-    provider.supportedExecutionModes = undefined;
-    support.testState.config.cloudWorkers!.profiles = {};
-
-    await workerService.reconcileOnce();
-
-    expect(inspect).not.toHaveBeenCalled();
-    expect(destroy).toHaveBeenCalledWith({ leaseId, profile: { region: "test" } });
-    expect(support.testState.store.get(environment.environmentId)).toMatchObject({
-      state: "failed",
-      leaseId: null,
-      sshEndpoint: null,
-      lastError: expect.stringContaining("remote-exec"),
-    });
-  });
-
-  it("re-enters bootstrapping when the durable receipt has a stale bundle hash", async () => {
-    const bootstrapping = await support.seedBootstrapping("worker-stale");
-    await support.testState.store.transition({
-      environmentId: bootstrapping.environmentId,
-      from: "bootstrapping",
-      to: "ready",
-      patch: support.readyPatch(bootstrapping.environmentId, {
-        ...support.BOOTSTRAP_RECEIPT,
-        bundleHash: "b".repeat(64),
-      }),
+  it("refreshes an admitted node when the durable receipt has a stale bundle hash", async () => {
+    await support.seedReady("worker-stale", {
+      receipt: { ...support.BOOTSTRAP_RECEIPT, installKind: "bundle", bundleHash: "b".repeat(64) },
     });
 
     await support.createService(support.createProvider()).reconcileOnce();
@@ -185,12 +127,12 @@ describe("worker environment service", () => {
       state: "ready",
       bootstrapReceipt: support.BOOTSTRAP_RECEIPT,
     });
-    expect(support.testState.bootstrapWorker).toHaveBeenCalledTimes(1);
+    expect(support.testState.ensureNodeWorkerBundle).toHaveBeenCalledTimes(1);
   });
 
   it("keeps an admitted lease retryable when local bundle identity is unavailable", async () => {
     const environmentId = "worker-current-bundle-unavailable";
-    await support.seedReady(environmentId, "npm");
+    const admitted = await support.seedReady(environmentId);
     const attachedId = "worker-attached-bundle-unavailable";
     await support.seedReady(attachedId);
     await support.testState.store.transition({
@@ -207,16 +149,37 @@ describe("worker environment service", () => {
       throw new Error("local bundle identity is unavailable");
     });
     const destroy = vi.fn(async () => {});
-    const workerService = support.createService(support.createProvider({ destroy }));
+    const start = vi.fn(async () => {
+      throw new Error("Missing build identity must prevent node tunnel startup");
+    });
+    const nodeTunnelManager: WorkerEnvironmentNodeTunnel = {
+      status: () => "stopped",
+      start,
+      stop: vi.fn(async () => {}),
+      stopAll: vi.fn(async () => {}),
+      observeProcesses: vi.fn(async () => {
+        throw new Error("Process observation is not configured in this fixture");
+      }),
+    };
+    const workerService = support.createService(support.createProvider({ destroy }), {
+      nodeTunnelManager,
+    });
 
     await workerService.reconcileOnce();
+    await expect(
+      workerService.startTunnel({ environmentId, ownerEpoch: admitted.ownerEpoch }),
+    ).rejects.toMatchObject({
+      code: "invalid_state",
+      message: "Current worker build identity is unavailable",
+    } satisfies Partial<WorkerEnvironmentServiceError>);
 
+    expect(start).not.toHaveBeenCalled();
     expect(destroy).not.toHaveBeenCalled();
     expect(support.testState.store.get(environmentId)).toMatchObject({
       state: "ready",
       leaseId: `lease:${environmentId}`,
       bootstrapReceipt: support.BOOTSTRAP_RECEIPT,
-      lastError: "local bundle identity is unavailable",
+      lastError: null,
     });
     expect(support.testState.store.getCredential(attachedId)).toBeUndefined();
     expect(
@@ -226,88 +189,6 @@ describe("worker environment service", () => {
         sessionId: "session-1",
       }),
     ).toBeUndefined();
-  });
-
-  it.each(["ready"] as const)(
-    "tears down a persisted %s lease when mismatched npm preparation fails",
-    async (state) => {
-      const environmentId = `worker-prepare-${state}`;
-      const bootstrapping = await support.seedBootstrapping(environmentId, "npm");
-      await support.testState.store.transition({
-        environmentId,
-        from: bootstrapping.state,
-        to: "ready",
-        patch: support.readyPatch(environmentId, {
-          ...support.BOOTSTRAP_RECEIPT,
-          bundleHash: "c".repeat(64),
-        }),
-      });
-      support.testState.prepareInstallation = vi.fn(async (install) => {
-        if (install === "bundle") {
-          return support.BUNDLE_ARTIFACT;
-        }
-        throw new Error("released npm artifact is unavailable");
-      });
-      const order: string[] = [];
-      const tunnelManager = {
-        status: () => "connected" as const,
-        start: vi.fn(),
-        stop: vi.fn(async () => {
-          order.push("tunnel-stop");
-        }),
-        stopAll: vi.fn(async () => {}),
-      } as unknown as WorkerTunnelManager;
-      const destroy = vi.fn(async () => {
-        order.push("provider-destroy");
-      });
-
-      await support
-        .createService(support.createProvider({ destroy }), { tunnelManager })
-        .reconcileOnce();
-
-      expect(order).toEqual(["tunnel-stop", "provider-destroy"]);
-      expect(destroy).toHaveBeenCalledWith({
-        leaseId: `lease:${environmentId}`,
-        profile: { region: "test" },
-      });
-      expect(support.testState.store.get(environmentId)).toMatchObject({
-        state: "failed",
-        leaseId: null,
-        sshEndpoint: null,
-        teardownTerminalState: "failed",
-        lastError: "released npm artifact is unavailable",
-      });
-      expect(support.testState.prepareInstallation).toHaveBeenCalledWith("bundle");
-      expect(support.testState.prepareInstallation).toHaveBeenCalledWith("npm");
-      expect(support.testState.bootstrapWorker).not.toHaveBeenCalled();
-    },
-  );
-
-  it("uses the snapshotted npm selection after live config changes", async () => {
-    support.getDevelopmentProfile().install = "npm";
-    const provider = support.createProvider({
-      provision: async () => {
-        support.getDevelopmentProfile().install = "bundle";
-        return { leaseId: "lease-npm", ssh: support.SSH_ENDPOINT };
-      },
-    });
-
-    const result = await support
-      .createService(provider)
-      .createWithRequest({ profileId: "development", idempotencyKey: "request-npm" });
-
-    expect(result).toMatchObject({
-      state: "ready",
-      profileSnapshot: { install: "npm" },
-    });
-    expect(support.testState.prepareInstallation).toHaveBeenCalledWith("npm");
-    expect(support.testState.bootstrapWorker).toHaveBeenCalledWith({
-      operationId: result.provisionOperationId,
-      sshEndpoint: support.SSH_ENDPOINT,
-      installation: support.NPM_ARTIFACT,
-      resolveIdentity: expect.any(Function),
-      signal: expect.any(AbortSignal),
-    });
   });
 
   it("fences unknown leases before stop and retries their durable teardown", async () => {
@@ -347,8 +228,8 @@ describe("worker environment service", () => {
       }),
       stopAll: vi.fn(async () => {}),
       status: () => "connected" as const,
-    } as unknown as WorkerTunnelManager;
-    const workerService = support.createService(provider, { tunnelManager });
+    } as unknown as WorkerEnvironmentNodeTunnel;
+    const workerService = support.createService(provider, { nodeTunnelManager: tunnelManager });
     const admitted = await workerService.admitWorker(support.admissionFor("worker-unknown"));
     if (!admitted.ok) {
       throw new Error("fixture worker admission failed");
@@ -391,10 +272,10 @@ describe("worker environment service", () => {
       stop: vi.fn(async () => {}),
       stopAll: vi.fn(async () => {}),
       status: () => "stopped" as const,
-    } as unknown as WorkerTunnelManager;
+    } as unknown as WorkerEnvironmentNodeTunnel;
     const workerService = support.createService(
       support.createProvider({ inspect: async () => ({ status: "dormant" }), destroy }),
-      { tunnelManager },
+      { nodeTunnelManager: tunnelManager },
     );
 
     await workerService.reconcileOnce();
@@ -460,11 +341,11 @@ describe("worker environment service", () => {
     }
   });
 
-  it("adopts a provider-proven bootstrap teardown as failed after restart", async () => {
-    const bootstrapping = await support.seedBootstrapping("worker-bootstrap-teardown-crash");
+  it("adopts a provider-proven failed node teardown after restart", async () => {
+    const ready = await support.seedReady("worker-bootstrap-teardown-crash");
     const requested = await support.testState.store.requestDestroy({
-      environmentId: bootstrapping.environmentId,
-      state: bootstrapping.state,
+      environmentId: ready.environmentId,
+      state: ready.state,
       terminalState: "failed",
       lastError: "remote bootstrap failed",
     });
@@ -489,7 +370,7 @@ describe("worker environment service", () => {
     const workerService = support.createService(provider);
 
     await workerService.reconcileOnce();
-    expect(support.testState.store.get(bootstrapping.environmentId)).toMatchObject({
+    expect(support.testState.store.get(ready.environmentId)).toMatchObject({
       state: "destroying",
       lastError: "remote bootstrap failed",
     });
@@ -498,7 +379,7 @@ describe("worker environment service", () => {
     await workerService.reconcileOnce();
 
     expect(destroy).not.toHaveBeenCalled();
-    expect(support.testState.store.get(bootstrapping.environmentId)).toMatchObject({
+    expect(support.testState.store.get(ready.environmentId)).toMatchObject({
       state: "failed",
       leaseId: null,
       sshEndpoint: null,
@@ -534,10 +415,10 @@ describe("worker environment service", () => {
       const tunnelManager = {
         stop,
         stopAll: vi.fn(async () => {}),
-      } as unknown as WorkerTunnelManager;
+      } as unknown as WorkerEnvironmentNodeTunnel;
       const destroy = vi.fn(async () => {});
       const provider = support.createProvider({ destroy });
-      const first = support.createService(provider, { tunnelManager });
+      const first = support.createService(provider, { nodeTunnelManager: tunnelManager });
       await support.testState.store.requestDestroy({ environmentId, state: "attached" });
       await first.reconcileOnce();
       expect(support.testState.store.get(environmentId)).toMatchObject({
@@ -550,7 +431,7 @@ describe("worker environment service", () => {
 
       await first.stop();
       disconnected = false;
-      const restarted = support.createService(provider, { tunnelManager });
+      const restarted = support.createService(provider, { nodeTunnelManager: tunnelManager });
       await restarted.reconcileOnce();
       expect(stop).toHaveBeenCalledTimes(2);
       expect(destroy).toHaveBeenCalledOnce();
@@ -560,7 +441,7 @@ describe("worker environment service", () => {
 
   it("does not let an awaited old-owner stop retire a replacement attachment", async () => {
     const environmentId = "worker-replaced-during-stop";
-    await support.seedReady(environmentId);
+    await support.seedReady(environmentId, { sharedHost: false });
     const attached = await support.testState.store.transition({
       environmentId,
       from: "ready",
@@ -572,13 +453,15 @@ describe("worker environment service", () => {
     const tunnelManager = {
       stop,
       stopAll: vi.fn(async () => {}),
-    } as unknown as WorkerTunnelManager;
+    } as unknown as WorkerEnvironmentNodeTunnel;
     const service = support.createService(
       support.createProvider({ inspect: async () => ({ status: "active", sharedHost: true }) }),
-      { tunnelManager },
+      { nodeTunnelManager: tunnelManager },
     );
     const reconciling = service.reconcileOnce();
-    await vi.waitFor(() => expect(stop).toHaveBeenCalledWith(environmentId, attached.ownerEpoch));
+    await vi.waitFor(() =>
+      expect(stop).toHaveBeenCalledWith(environmentId, attached.ownerEpoch, undefined),
+    );
     await support.testState.store.transition({ environmentId, from: "attached", to: "idle" });
     const replacement = await support.testState.store.transition({
       environmentId,

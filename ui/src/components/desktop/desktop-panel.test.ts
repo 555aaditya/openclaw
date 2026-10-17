@@ -66,14 +66,14 @@ describe("embedded desktop panel presentation", () => {
     await waitForSolid(() => expect(panel.renderRoot.textContent).toContain(notice));
     await waitForSolid(() => expect(connect).toHaveBeenCalledTimes(2));
     expect(request).toHaveBeenLastCalledWith("desktop.observe", {
-      source: { kind: "environment", environmentId: desktopEnvironment.id },
+      source: { kind: "node", nodeId: "desktop-node" },
       control: false,
     });
     expect(connect.mock.calls[1]?.[0].viewOnly).toBe(true);
   });
 
   it("follows the session desktop and retires its connection before resolving a new placement", async () => {
-    const replacement = { ...desktopEnvironment, id: "worker-desktop-2" };
+    const replacement = { ...desktopEnvironment, id: "node:desktop-node-2" };
     let refresh: Promise<void> | undefined;
     const request = vi.fn(async (method: string, params?: { environmentId?: string }) => {
       if (method === "environments.status") {
@@ -109,7 +109,7 @@ describe("embedded desktop panel presentation", () => {
       environmentId: desktopEnvironment.id,
     });
     expect(request).toHaveBeenCalledWith("desktop.observe", {
-      source: { kind: "environment", environmentId: desktopEnvironment.id },
+      source: { kind: "node", nodeId: "desktop-node" },
       control: false,
     });
 
@@ -123,7 +123,7 @@ describe("embedded desktop panel presentation", () => {
     refresh = undefined;
     await waitForSolid(() => expect(connect).toHaveBeenCalledTimes(2));
     expect(request).toHaveBeenLastCalledWith("desktop.observe", {
-      source: { kind: "environment", environmentId: replacement.id },
+      source: { kind: "node", nodeId: "desktop-node-2" },
       control: false,
     });
 
@@ -449,7 +449,7 @@ describe("embedded desktop panel presentation", () => {
   it.each(["config.changed"])(
     "keeps a standalone picker selection and control across %s updates",
     async (event) => {
-      const selected = { ...desktopEnvironment, id: "worker-manual" };
+      const selected = { ...desktopEnvironment, id: "node:manual" };
       let environments = [desktopEnvironment, selected];
       const request = vi.fn(
         async (method: string, params?: { control?: boolean; environmentId?: string }) =>
@@ -513,7 +513,7 @@ describe("embedded desktop panel presentation", () => {
       const selectedConnection = connect.mock.calls.at(-1)?.[0];
       expect(selectedConnection?.viewOnly).toBe(false);
       expect(request).toHaveBeenLastCalledWith("desktop.observe", {
-        source: { kind: "environment", environmentId: selected.id },
+        source: { kind: "node", nodeId: "manual" },
         control: true,
       });
       await panel.updateComplete;
@@ -541,11 +541,15 @@ describe("embedded desktop panel presentation", () => {
     "keeps focused session updates current and retains a choice across a lookup started %s selection",
     async (lookupTiming) => {
       const sessionKey = "agent:main:focused";
-      const selected = { ...desktopEnvironment, id: "worker-manual" };
+      const selected = { ...desktopEnvironment, id: "node:manual" };
       const active = {
         key: sessionKey,
         kind: "direct",
-        placement: { state: "active", environmentId: desktopEnvironment.id },
+        placement: {
+          state: "active",
+          environmentId: desktopEnvironment.id,
+          runner: { kind: "device", deviceId: "desktop-node", status: "available" },
+        },
       };
       const reclaimed = { ...active, placement: { state: "reclaimed" } };
       let sessionRead: Promise<unknown> | undefined;
@@ -667,7 +671,7 @@ describe("embedded desktop panel presentation", () => {
       updatePanel(panel, { requestedSource: selected.id });
       await waitForSolid(() => expect(connect).toHaveBeenCalledTimes(connections + 2));
       expect(request).toHaveBeenLastCalledWith("desktop.observe", {
-        source: { kind: "environment", environmentId: selected.id },
+        source: { kind: "node", nodeId: "manual" },
         control: false,
       });
       expect(onFocusTargetChange).toHaveBeenLastCalledWith({

@@ -24,7 +24,7 @@ afterEach(() => {
 it.each(["current", "lease", "epoch", "connection", "pairing", "after-handler-load"] as const)(
   "settles shared desktop shutdown only for its captured live owner: %s",
   async (boundary) => {
-    const h = createHarness(true);
+    const h = createHarness();
     const frames: Array<{ id: string; nodeId: string; command: string; paramsJSON: string }> = [];
     // SAFETY: the fixture implements the connected node fields consumed by registry and router.
     const client = {

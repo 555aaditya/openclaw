@@ -27,11 +27,7 @@ export type WorkerTurnEnvironmentService = Pick<
   Partial<
     Pick<
       WorkerEnvironmentService,
-      | "resolveSshIdentity"
-      | "supportsNodePortal"
-      | "prepareComputer"
-      | "readRuntimeRefresh"
-      | "createGatewayTools"
+      "supportsNodePortal" | "prepareComputer" | "readRuntimeRefresh" | "createGatewayTools"
     >
   >;
 

@@ -73,8 +73,7 @@ type WorkerPlacementDispatchOptions = WorkerPlacementReclaimBarriers &
     "resolveWorkspace" | "prepareAcceptedWorkspacePublication" | "publishAcceptedWorkspace"
   > & {
     environments: WorkerDispatchEnvironmentService &
-      Pick<WorkerEnvironmentService, "recordError" | "requestDestroy"> &
-      Partial<Pick<WorkerEnvironmentService, "requiresNodeEnrollment">>;
+      Pick<WorkerEnvironmentService, "recordError" | "requestDestroy">;
     initialPlacements: readonly WorkerDispatchPlacement[];
     isShuttingDown?: () => boolean;
     runnerAvailability: WorkerPlacementRunnerAvailabilityReader;
@@ -168,21 +167,14 @@ export function createWorkerPlacementDispatchService(options: WorkerPlacementDis
       // The requested transition can acknowledge a detached caller while setup continues.
       // Revalidate that retained caller before any node or provider-side preparation.
       assertCurrent();
-      if (
-        !request.deviceId &&
-        request.devicePlacement?.requiredNodeCommands.length &&
-        environments.requiresNodeEnrollment?.(
-          request.profileId,
-          request.inheritedProfile?.providerId,
-        )
-      ) {
+      if (request.devicePlacement?.requiredNodeCommands.length) {
         const allowlist = resolveNodeCommandAllowlist(getRuntimeConfig());
         const deniedCommand = request.devicePlacement.requiredNodeCommands.find(
           (command) => !allowlist.has(command),
         );
         if (deniedCommand) {
           throw new Error(
-            `cloud worker node command ${deniedCommand} is not enabled; add it to gateway.nodes.commands.allow and approve the command on the node`,
+            `paired device command ${deniedCommand} is not enabled; add it to gateway.nodes.commands.allow and approve the command on the node`,
           );
         }
       }
@@ -196,95 +188,32 @@ export function createWorkerPlacementDispatchService(options: WorkerPlacementDis
           "Device folders require an explicit dispatch to their original paired device using the OpenClaw harness.",
         );
       }
-      if (
-        workspace.kind === "repository" &&
-        !request.deviceId &&
-        environments.requiresNodeEnrollment?.(
-          request.profileId,
-          request.inheritedProfile?.providerId,
-        ) !== true
-      ) {
-        throw new Error(
-          "Repository cloud sessions require a managed-node cloud provider or paired node. Choose one and retry dispatch.",
-        );
-      }
-      const projectPath = workspace.kind === "local" ? workspace.path : undefined;
       // Workspace preparation yields; fence the current paired node again before durable provision.
       await startup.validateDevicePlacement(request);
       assertCurrent();
-      const preparedIntent = !request.deviceId
-        ? await environments.prepareProjectIntent(request.profileId, {
-            machineClass: request.machineClass,
-            executionMode: request.executionMode,
-            projectPath,
-            ...(workspace.kind === "repository"
-              ? {
-                  repository: {
-                    agentId: request.agentId,
-                    url: workspace.repository.url,
-                    ref: workspace.repository.requestedRef ?? undefined,
-                    baseCommit: workspace.repository.baseCommit ?? undefined,
-                  },
-                }
-              : {}),
-            inherited: request.inheritedProfile,
-            signal,
-            os: request.os,
-            runSetupScript:
-              workspace.kind === "repository"
-                ? workspace.repository.runSetupScript && request.runSetupScript !== false
-                : request.runSetupScript,
-            setupAuthorized: request.runSetupScript !== undefined,
-          })
-        : undefined;
-      assertCurrent();
-      diagnostics?.mark("reserveClaim");
-      const prepared = preparedIntent
-        ? await startup.bindPreparedPlacement({
-            request,
-            placement,
-            intent: preparedIntent,
-            assertCurrent,
-          })
-        : undefined;
-      assertCurrent();
       const idempotencyKey =
         request.idempotencyKey ?? `session-dispatch:${request.sessionId}:${placement.generation}`;
-      // Select the reserve before assigning a cold environment identity.
-      const expectedEnvironmentId =
-        prepared?.environment.environmentId ??
-        deriveEnvironmentIntent(idempotencyKey).environmentId;
-      placement =
-        prepared?.placement ??
-        (await placements.transition(
-          {
-            sessionId: request.sessionId,
-            from: "requested",
-            to: "provisioning",
-            expectedGeneration: placement.generation,
-            patch: { environmentId: expectedEnvironmentId },
-          },
-          assertCurrent,
-        ));
+      const expectedEnvironmentId = deriveEnvironmentIntent(idempotencyKey).environmentId;
+      placement = await placements.transition(
+        {
+          sessionId: request.sessionId,
+          from: "requested",
+          to: "provisioning",
+          expectedGeneration: placement.generation,
+          patch: { environmentId: expectedEnvironmentId },
+        },
+        assertCurrent,
+      );
       reportPlacementTransition(onTransition, placement);
       assertCurrent();
-      if (!prepared) {
-        diagnostics?.mark("provision");
-      }
-      const environment = prepared
-        ? prepared.environment
-        : await environments.createWithRequest({
-            profileId: request.profileId,
-            idempotencyKey,
-            machineClass: request.machineClass,
-            executionMode: request.executionMode,
-            projectPath,
-            signal,
-            os: request.os,
-            runSetupScript: request.runSetupScript,
-            admittedIntent: preparedIntent,
-            inheritedProfile: request.inheritedProfile,
-          });
+      diagnostics?.mark("provision");
+      const environment = await environments.createWithRequest({
+        profileId: request.profileId,
+        idempotencyKey,
+        executionMode: request.executionMode,
+        signal,
+        inheritedProfile: request.inheritedProfile,
+      });
       return await startup.continueProvisionedDispatch({
         markPhase: diagnostics?.mark,
         request,
@@ -295,7 +224,6 @@ export function createWorkerPlacementDispatchService(options: WorkerPlacementDis
         onTransition,
         authorize: assertCurrent,
         signal,
-        ...(prepared ? { admittedNode: prepared.admittedNode } : {}),
       });
     } catch (error) {
       diagnostics?.mark("cleanup");

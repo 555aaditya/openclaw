@@ -1,23 +1,17 @@
 import { randomUUID } from "node:crypto";
 import { asOptionalObjectRecord } from "@openclaw/normalization-core/record-coerce";
-import { Value } from "typebox/value";
 import { GatewayClientRequestError } from "../../../packages/gateway-client/src/request-error.js";
 import type { OperationalRunInstanceRef } from "../../agents/admitted-run-context.js";
-import { ComputerTakeControlParamsSchema } from "../../agents/tools/computer-tool-control.js";
-import { isComputerObservationAction } from "../../agents/tools/computer-tool-shared.js";
 import type { ComputerToolTransport } from "../../agents/tools/computer-tool.js";
 import {
   getActiveAgentRunDelegatedAuthority,
   validateAgentRunDelegatedAuthority,
   type AgentRunDelegatedAuthority,
 } from "../../infra/agent-run-registry.js";
-import { NODE_WORKER_DESKTOP_COMPUTER_COMMAND } from "../../infra/node-commands.js";
-import { parseComputerUseCapabilityDescriptor } from "../../plugins/computer-use-contract.js";
 import { getActivePluginGatewayNodePolicyRegistry } from "../../plugins/runtime-state.js";
 import type { WorkerComputerLaunchDescriptor } from "../../worker/launch-descriptor.js";
 import { parseNodeWorkerComputerInput } from "../../worker/node-computer-protocol.js";
 import type { AgentRuntimeIdentity } from "../agent-runtime-identity-token.js";
-import type { DesktopSessionRegistry } from "../desktop/session-registry.js";
 import { isNodeCommandAllowed, resolveNodeCommandAllowlist } from "../node-command-policy.js";
 import { applyPluginNodeInvokePolicy } from "../node-invoke-plugin-policy.js";
 import { invokeNodeWithReadinessRetry } from "../node-invoke-readiness.js";
@@ -70,23 +64,17 @@ type WorkerComputerOwnerOptions = {
   store: Pick<WorkerEnvironmentStore, "get">;
   resolveGatewayContext: GatewayContextResolver;
   getNodeTransport: () => NodeWorkerSupervisorTransport | undefined;
-  desktopRegistry?: Pick<
-    DesktopSessionRegistry,
-    "hasController" | "onControlChanged" | "takeControl"
-  >;
   warn: (message: string) => void;
 };
 
 /** Captures one environment's desktop under its placement or conversation attachment owner. */
 export function createEnvironmentComputerTransportOwner(options: WorkerComputerOwnerOptions) {
-  // Retries can rebuild bindings and attachment preparations within one admitted run.
-  const takeoversByRun = new WeakMap<AgentRunDelegatedAuthority, Set<string>>();
   return async (
     source: WorkerEnvironmentComputerAuthority,
   ): Promise<PreparedWorkerComputer | undefined> => {
     source.assertCurrent();
     const environment = options.store.get(source.environmentId);
-    if (!environment?.nodeDeviceId || (!environment.desktop && !environment.sharedHost)) {
+    if (!environment?.nodeDeviceId || !environment.sharedHost) {
       return undefined;
     }
     const context = options.resolveGatewayContext();
@@ -131,50 +119,14 @@ export function createEnvironmentComputerTransportOwner(options: WorkerComputerO
       }
     };
     assertPlacement();
-    // Shared paired hosts retain their approved public contract; disposable workers use only
-    // their private endpoint. A failed private probe never selects another connected computer.
-    const privateNode = environment.sharedHost
-      ? undefined
-      : await nodeTransport.getCurrentNode(node.nodeId);
-    assertPlacement();
-    if (!environment.sharedHost && !privateNode) {
-      throw new Error("Session desktop node lacks the current private worker protocol");
-    }
-    let computerUse = node.computerUse;
-    if (privateNode) {
-      const result = await nodeTransport.invoke({
-        node: privateNode,
-        command: NODE_WORKER_DESKTOP_COMPUTER_COMMAND,
-        params: { operation: "capabilities" },
-        isDispatchAuthorized: sourceIsCurrent,
-      });
-      assertPlacement();
-      if (!nodeTransport.isCurrent(privateNode)) {
-        throw new Error("Session desktop private node owner changed");
-      }
-      if (!result.ok) {
-        options.warn(
-          "Session computer control is unavailable; enable the desktop provider and reprovision the worker.",
-        );
-        return undefined;
-      }
-      computerUse = parseComputerUseCapabilityDescriptor(payload(result));
-    } else if (!COMPUTER_COMMANDS.every((command) => node.commands.includes(command))) {
+    if (!COMPUTER_COMMANDS.every((command) => node.commands.includes(command))) {
       return undefined;
     }
+    const computerUse = node.computerUse;
     if (!computerUse) {
       return undefined;
     }
     const registry = getActivePluginGatewayNodePolicyRegistry();
-    if (
-      privateNode &&
-      !registry?.nodeInvokePolicies.some((entry) => entry.policy.commands.includes("computer.act"))
-    ) {
-      options.warn(
-        "Session computer control is unavailable; enable its provider plugin on the Gateway.",
-      );
-      return undefined;
-    }
     const policyOwners = COMPUTER_COMMANDS.map((command) => {
       const entry = registry?.nodeInvokePolicies.find((item) =>
         item.policy.commands.includes(command),
@@ -194,18 +146,15 @@ export function createEnvironmentComputerTransportOwner(options: WorkerComputerO
     let closing: Promise<void> | undefined;
     const activeBindings = new Set<{ close(reason: string): Promise<unknown> }>();
     const resourceBindingIsCurrent = () =>
-      environmentIsCurrent(options.store.get(environment.environmentId)) &&
-      (!privateNode || nodeTransport.isCurrent(privateNode));
+      environmentIsCurrent(options.store.get(environment.environmentId));
     const bindingIsCurrent = () =>
-      (!privateNode || nodeTransport.isCurrent(privateNode)) &&
       getActivePluginGatewayNodePolicyRegistry() === registry &&
       policyOwners.every((isCurrent) => isCurrent()) &&
-      (privateNode !== undefined ||
-        context.nodeRegistry.get(node.nodeId)?.computerUse?.provider.generation ===
-          providerGeneration);
+      context.nodeRegistry.get(node.nodeId)?.computerUse?.provider.generation ===
+        providerGeneration;
     const commandIsAllowed = (command: (typeof COMPUTER_COMMANDS)[number]) => {
       const currentNode = context.nodeRegistry.get(node.nodeId);
-      const declaredCommands = privateNode ? [...COMPUTER_COMMANDS] : (currentNode?.commands ?? []);
+      const declaredCommands = currentNode?.commands ?? [];
       return isNodeCommandAllowed({
         command,
         declaredCommands,
@@ -215,21 +164,9 @@ export function createEnvironmentComputerTransportOwner(options: WorkerComputerO
         }),
       }).ok;
     };
-    const hasController = () =>
-      options.desktopRegistry?.hasController(environment.environmentId, environment.ownerEpoch);
-
     const parseRequest = (request: Parameters<ComputerToolTransport["invoke"]>[0]) => {
       if (request.nodeId !== node.nodeId) {
         throw new Error("Computer control is bound to this session's desktop");
-      }
-      if (
-        request.command === "computer.act" &&
-        Value.Check(ComputerTakeControlParamsSchema, request.commandParams)
-      ) {
-        return {
-          operation: "take-control" as const,
-          executionId: request.commandParams.executionId,
-        };
       }
       const close =
         request.command === "computer.act" && request.commandParams.action === "__close_execution";
@@ -255,7 +192,7 @@ export function createEnvironmentComputerTransportOwner(options: WorkerComputerO
     };
 
     const send = async (
-      input: Exclude<ReturnType<typeof parseRequest>, { operation: "take-control" }>,
+      input: ReturnType<typeof parseRequest>,
       params: {
         timeoutMs?: number;
         signal?: AbortSignal;
@@ -274,35 +211,27 @@ export function createEnvironmentComputerTransportOwner(options: WorkerComputerO
         input.operation === "close"
           ? { action: "__close_execution", executionId: input.executionId, reason: input.reason }
           : input.params;
-      return privateNode
-        ? await nodeTransport.invoke({
-            node: privateNode,
-            command: NODE_WORKER_DESKTOP_COMPUTER_COMMAND,
-            params: input,
-            ...params,
-            isDispatchAuthorized: isCurrent,
-          })
-        : await invokeNodeWithReadinessRetry(
-            input.operation === "close"
-              ? {
-                  invoke: (request) =>
-                    context.nodeRegistry.invokeLifecycle({
-                      ...request,
-                      isDispatchAuthorized: isCurrent,
-                    }),
-                }
-              : context.nodeRegistry,
-            {
-              nodeId: node.nodeId,
-              expectedConnId: node.connId,
-              expectedPairingGeneration: node.pairingGeneration,
-              command,
-              params: commandParams,
-              sessionKey: source.sessionKey,
-              ...params,
-              isDispatchAuthorized: isCurrent,
-            },
-          );
+      return await invokeNodeWithReadinessRetry(
+        input.operation === "close"
+          ? {
+              invoke: (request) =>
+                context.nodeRegistry.invokeLifecycle({
+                  ...request,
+                  isDispatchAuthorized: isCurrent,
+                }),
+            }
+          : context.nodeRegistry,
+        {
+          nodeId: node.nodeId,
+          expectedConnId: node.connId,
+          expectedPairingGeneration: node.pairingGeneration,
+          command,
+          params: commandParams,
+          sessionKey: source.sessionKey,
+          ...params,
+          isDispatchAuthorized: isCurrent,
+        },
+      );
     };
 
     return {
@@ -354,12 +283,6 @@ export function createEnvironmentComputerTransportOwner(options: WorkerComputerO
         let execution: { logicalId: string; physicalId: string } | undefined;
         let bindingClosing: Promise<unknown> | undefined;
         const inFlight = new Set<Promise<unknown>>();
-        const inputControllers = new Set<AbortController>();
-        const completedTakeovers = takeoversByRun.get(runAuthority) ?? new Set<string>();
-        takeoversByRun.set(runAuthority, completedTakeovers);
-        let releaseControlListener: (() => void) | undefined;
-        let inputNeedsObservation = false;
-        let controlGeneration = 0;
         const lifetime = new AbortController();
         const assertCurrent = () => {
           if (
@@ -375,39 +298,19 @@ export function createEnvironmentComputerTransportOwner(options: WorkerComputerO
         };
         assertCurrent();
         const execute = async (
-          input: Exclude<ReturnType<typeof parseRequest>, { operation: "close" | "take-control" }>,
+          input: Exclude<ReturnType<typeof parseRequest>, { operation: "close" }>,
           request: Pick<
             Parameters<ComputerToolTransport["invoke"]>[0],
             "timeoutMs" | "signal" | "idempotencyKey"
           >,
           assertAuthorized: (() => void) | undefined,
         ) => {
-          const isInput =
-            input.operation === "act" &&
-            !isComputerObservationAction(
-              input.params.action,
-              input.params.action === "browser_dialog" ? input.params.dialogAction : undefined,
-            );
-          const controller = new AbortController();
-          if (isInput) {
-            inputControllers.add(controller);
-          }
           // RPC tool grants can close independently of the run or placement.
           // Carry their exact authority through policy work and the final dispatch.
           const assertInvocationCurrent = () => {
             assertCurrent();
             assertAuthorized?.();
-            if (isInput && hasController()) {
-              throw new Error(
-                "Computer input paused while the operator has control; use take_control when asked to resume, or release control in the Desktop panel",
-              );
-            }
-            if (isInput && inputNeedsObservation) {
-              throw new Error(
-                "COMPUTER_STALE_OBSERVATION: take a fresh screenshot after desktop control changes",
-              );
-            }
-            controller.signal.throwIfAborted();
+            request.signal?.throwIfAborted();
           };
           const command = input.operation === "snapshot" ? "screen.snapshot" : "computer.act";
           const commandParams = input.params;
@@ -421,85 +324,77 @@ export function createEnvironmentComputerTransportOwner(options: WorkerComputerO
           };
           const signal = AbortSignal.any([
             lifetime.signal,
-            controller.signal,
             ...(request.signal ? [request.signal] : []),
           ]);
-          try {
-            assertInvocationCurrent();
-            const dispatch = async (
-              params: Parameters<typeof send>[1] & { params: unknown },
-            ): Promise<InvokeResult> => {
-              const actual = parseNodeWorkerComputerInput(
-                JSON.stringify({ ...input, params: params.params }),
-              );
-              if (
-                actual.operation === "capabilities" ||
-                actual.operation === "close" ||
-                actual.params.executionId !== execution?.physicalId
-              ) {
-                throw new Error("Computer policy cannot replace the session execution owner");
-              }
-              return await send(actual, {
-                timeoutMs: params.timeoutMs,
-                signal: params.signal,
-                idempotencyKey: params.idempotencyKey,
-                ...(params.authorizeDispatch
-                  ? { authorizeDispatch: params.authorizeDispatch }
-                  : {}),
-                isDispatchAuthorized: () => isCurrent() && params.isDispatchAuthorized(),
-                onDispatchReady: params.onDispatchReady,
-              });
-            };
-            const result = await applyPluginNodeInvokePolicy({
-              context,
-              client: null,
-              agentRuntimeIdentity: identity,
-              nodeSession: node,
-              command,
-              params: commandParams,
-              sessionKey: source.sessionKey,
-              timeoutMs: request.timeoutMs,
-              idempotencyKey: request.idempotencyKey,
-              signal,
-              isInvocationCurrent: isCurrent,
-              isApprovalAuthorityActive: isCurrent,
-              privateTransport: {
-                ...(privateNode ? { commands: COMPUTER_COMMANDS } : {}),
-                isCurrent,
-                invoke: dispatch,
-              },
-            });
-            assertInvocationCurrent();
-            if (result) {
-              if (!result.ok) {
-                throw (
-                  permissionError(asOptionalObjectRecord(result.details)?.nodeError, command) ??
-                  new Error(result.message ?? "Session computer action denied")
-                );
-              }
-              return result.payloadJSON ? JSON.parse(result.payloadJSON) : result.payload;
+          assertInvocationCurrent();
+          const dispatch = async (
+            params: Parameters<typeof send>[1] & { params: unknown },
+          ): Promise<InvokeResult> => {
+            const actual = parseNodeWorkerComputerInput(
+              JSON.stringify({ ...input, params: params.params }),
+            );
+            if (
+              actual.operation === "capabilities" ||
+              actual.operation === "close" ||
+              actual.params.executionId !== execution?.physicalId
+            ) {
+              throw new Error("Computer policy cannot replace the session execution owner");
             }
-            if ((privateNode && command === "computer.act") || !commandIsAllowed(command)) {
-              throw new Error("Session computer command has no active policy or permission");
-            }
-            const raw = await dispatch({
-              params: commandParams,
-              timeoutMs: request.timeoutMs,
-              signal,
-              idempotencyKey: request.idempotencyKey,
-              isDispatchAuthorized: () => isCurrent() && commandIsAllowed(command),
+            return await send(actual, {
+              timeoutMs: params.timeoutMs,
+              signal: params.signal,
+              idempotencyKey: params.idempotencyKey,
+              ...(params.authorizeDispatch ? { authorizeDispatch: params.authorizeDispatch } : {}),
+              isDispatchAuthorized: () => isCurrent() && params.isDispatchAuthorized(),
+              onDispatchReady: params.onDispatchReady,
             });
-            assertInvocationCurrent();
-            if (!raw.ok) {
+          };
+          const result = await applyPluginNodeInvokePolicy({
+            context,
+            client: null,
+            agentRuntimeIdentity: identity,
+            nodeSession: node,
+            command,
+            params: commandParams,
+            sessionKey: source.sessionKey,
+            timeoutMs: request.timeoutMs,
+            idempotencyKey: request.idempotencyKey,
+            signal,
+            isInvocationCurrent: isCurrent,
+            isApprovalAuthorityActive: isCurrent,
+            privateTransport: {
+              isCurrent,
+              invoke: dispatch,
+            },
+          });
+          assertInvocationCurrent();
+          if (result) {
+            if (!result.ok) {
               throw (
-                permissionError(raw.error, command) ??
-                new Error(raw.error?.message ?? "Session desktop command failed")
+                permissionError(asOptionalObjectRecord(result.details)?.nodeError, command) ??
+                new Error(result.message ?? "Session computer action denied")
               );
             }
-            return payload(raw);
-          } finally {
-            inputControllers.delete(controller);
+            return result.payloadJSON ? JSON.parse(result.payloadJSON) : result.payload;
           }
+          if (!commandIsAllowed(command)) {
+            throw new Error("Session computer command has no active policy or permission");
+          }
+          const raw = await dispatch({
+            params: commandParams,
+            timeoutMs: request.timeoutMs,
+            signal,
+            idempotencyKey: request.idempotencyKey,
+            isDispatchAuthorized: () => isCurrent() && commandIsAllowed(command),
+          });
+          assertInvocationCurrent();
+          if (!raw.ok) {
+            throw (
+              permissionError(raw.error, command) ??
+              new Error(raw.error?.message ?? "Session desktop command failed")
+            );
+          }
+          return payload(raw);
         };
         const binding = {
           close(reason: string): Promise<unknown> {
@@ -507,7 +402,6 @@ export function createEnvironmentComputerTransportOwner(options: WorkerComputerO
               return bindingClosing;
             }
             lifetime.abort();
-            releaseControlListener?.();
             bindingClosing = (async () => {
               await Promise.allSettled(inFlight);
               if (!execution || !resourceBindingIsCurrent()) {
@@ -548,9 +442,7 @@ export function createEnvironmentComputerTransportOwner(options: WorkerComputerO
           async invoke(request, assertAuthorized) {
             const input = parseRequest(request);
             const logicalId =
-              input.operation === "close" || input.operation === "take-control"
-                ? input.executionId
-                : input.params.executionId;
+              input.operation === "close" ? input.executionId : input.params.executionId;
             if (execution && logicalId !== execution.logicalId) {
               throw new Error("Session computer execution owner changed");
             }
@@ -560,73 +452,12 @@ export function createEnvironmentComputerTransportOwner(options: WorkerComputerO
             assertCurrent();
             request.signal?.throwIfAborted();
             assertAuthorized?.();
-            if (input.operation === "take-control") {
-              if (!environment.desktop || !options.desktopRegistry) {
-                throw new Error("Agent takeover is unavailable for this session desktop");
-              }
-              if (!commandIsAllowed("computer.act")) {
-                throw new Error("Session computer command has no active policy or permission");
-              }
-              // Every takeover needs a replay identity before it can evict a human controller.
-              if (!request.idempotencyKey) {
-                throw new Error("Agent takeover requires an idempotency key");
-              }
-              const takeoverKey = JSON.stringify([
-                environment.environmentId,
-                environment.ownerEpoch,
-                request.idempotencyKey,
-              ]);
-              if (!completedTakeovers.has(takeoverKey)) {
-                // Even without a controller, retire observations started before takeover.
-                inputNeedsObservation = true;
-                controlGeneration += 1;
-                options.desktopRegistry.takeControl(
-                  environment.environmentId,
-                  environment.ownerEpoch,
-                );
-                completedTakeovers.add(takeoverKey);
-              }
-              assertCurrent();
-              assertAuthorized?.();
-              request.signal?.throwIfAborted();
-              if (hasController()) {
-                throw new Error(
-                  "The operator took control again; observe before requesting another takeover",
-                );
-              }
-              return { ok: true };
-            }
             // Remote execution IDs are correlation only. The Gateway alone mints
             // the native owner, so a copied UUID cannot join or close another binding.
             execution ??= { logicalId, physicalId: randomUUID() };
             activeBindings.add(binding);
-            releaseControlListener ??= options.desktopRegistry?.onControlChanged(
-              environment.environmentId,
-              environment.ownerEpoch,
-              (controlled) => {
-                inputNeedsObservation = true;
-                controlGeneration += 1;
-                if (controlled) {
-                  for (const controller of inputControllers) {
-                    controller.abort(
-                      new Error("Computer input paused while the operator has control"),
-                    );
-                  }
-                }
-              },
-            );
             input.params.executionId = execution.physicalId;
-            const observedControlGeneration = controlGeneration;
-            const operation = execute(input, request, assertAuthorized).then((result) => {
-              if (
-                input.operation === "snapshot" &&
-                controlGeneration === observedControlGeneration &&
-                !hasController()
-              ) {
-                inputNeedsObservation = false;
-              }
-              return result;
-            });
+            const operation = execute(input, request, assertAuthorized);
             inFlight.add(operation);
             void operation.finally(() => inFlight.delete(operation)).catch(() => {});
             return operation;

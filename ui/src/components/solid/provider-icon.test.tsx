@@ -43,33 +43,35 @@ it("updates provider brands, aliases, and grapheme fallbacks without retaining s
   expect(icon().classList.contains("provider-brand-icon--fallback")).toBe(false);
 });
 
-it("keeps cloud identity separate and changes from a branded service to infrastructure symbols", () => {
-  const [profile, setProfile] = createSignal<CloudProfileIdentity>({
-    providerId: "crabbox",
-    providerDisplayId: "google",
-  });
+it("updates paired-device and historical provider icons without retaining stale geometry", () => {
+  const [profile, setProfile] = createSignal<CloudProfileIdentity>({ providerId: "device" });
   const view = render(() => (
     <>
       <CloudProfileIcon profile={profile()} />
       <ProviderFallbackIcon label="   " />
     </>
   ));
-  expect(view.container.querySelector("[data-provider-icon=gcp]")).not.toBeNull();
+  const server = render(() => <Icon name="server" />);
+  const cloud = render(() => <Icon name="cloud" />);
+  const geometry = () => svgGeometry(view.container.querySelector(".cloud-profile-icon svg"));
+  expect(geometry()).toEqual(svgGeometry(server.container.querySelector("svg")));
   expect(view.container.querySelector(".provider-brand-icon--fallback")?.textContent).toBe("?");
-  setProfile({ providerId: "docker" });
+
+  setProfile({ providerId: "google" });
   flush();
+  expect(geometry()).toEqual(svgGeometry(cloud.container.querySelector("svg")));
   expect(view.container.querySelector("[data-provider-icon]")).toBeNull();
-  expect(view.container.querySelector(".cloud-profile-icon svg")?.getAttribute("viewBox")).toBe(
-    "0 0 24 24",
-  );
-  expect(view.container.querySelector(".cloud-profile-icon polygon")).toBeNull();
-  expect(view.container.querySelector(".cloud-profile-icon polyline")).not.toBeNull();
+
+  setProfile({ providerId: "device" });
+  flush();
+  expect(geometry()).toEqual(svgGeometry(server.container.querySelector("svg")));
 });
 
 it.each([
-  ["machine0", "server"],
-  ["incus", "server"],
-  ["docker", "box"],
+  ["device", "server"],
+  ["machine0", "cloud"],
+  ["incus", "cloud"],
+  ["docker", "cloud"],
   ["constructor", "cloud"],
 ] as const)("uses shared generic geometry for %s", (providerId, expectedIcon) => {
   const actual = render(() => <CloudProfileIcon profile={{ providerId }} />);

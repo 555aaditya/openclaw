@@ -95,8 +95,6 @@ export type WorkerLocalWorkspaceSyncRequest = {
   sessionId: string;
   generation: number;
   gitAuthor?: { name?: string; email?: string };
-  /** Immutable project identity from the owning environment's provisioning snapshot. */
-  projectKey?: string;
   /** Initiating-operation authority, never retained by the connected tunnel. */
   authorize?: () => void;
 };
@@ -117,18 +115,8 @@ type WorkerRepositoryCheckpointPreparation = {
   discard(): Promise<void>;
 };
 
-/** Attested by the dedicated node's one-use workspace binding. */
-export type PreparedRepositoryWorkspace = {
-  baseCommit: string;
-  workspaceDir: string;
-  sourceManifestRef: string;
-  preparedManifestRef: string;
-};
-
 type WorkerRepositoryWorkspaceSource = {
   kind: "repository";
-  /** Owner-held result of binding this exact dedicated prepared workspace. */
-  prepared?: PreparedRepositoryWorkspace;
   url: string;
   ref?: string;
   branch: string;
@@ -153,7 +141,7 @@ export type WorkerWorkspaceSyncRequest = {
   generation: number;
   gitAuthor?: { name?: string; email?: string };
   source:
-    | { kind: "local"; path: string; projectKey?: string }
+    | { kind: "local"; path: string }
     | { kind: "device-folder"; deviceId: string; path: string }
     | WorkerRepositoryWorkspaceSource;
 };

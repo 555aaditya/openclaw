@@ -460,14 +460,6 @@ span.new-session-page__select {
   justify-content: center;
 }
 
-/* The wide AWS wordmark has generous vertical whitespace in its source art.
-   Scale its paint, not the shared leading column or the compact menu icons. */
-.new-session-page__trigger .cloud-provider-icon[data-provider-icon="aws"] {
-  width: 18px;
-  height: 18px;
-  flex-basis: 18px;
-}
-
 .session-group-defaults .exec-approval-header {
   margin-bottom: 18px;
 }
@@ -901,8 +893,7 @@ span.new-session-page__select {
 
 .new-session-page__environment-option .session-menu__icon,
 .new-session-page__environment-option .session-menu__icon svg,
-.new-session-page__card-icon svg,
-.new-session-page__submenu-chevron svg {
+.new-session-page__card-icon svg {
   width: 14px;
   height: 14px;
 }
@@ -1465,12 +1456,6 @@ span.new-session-page__select {
     height: 14px;
   }
 
-  .new-session-page__trigger .cloud-provider-icon[data-provider-icon="aws"] {
-    flex-basis: 22px;
-    width: 22px;
-    height: 22px;
-  }
-
   .new-session-page__trigger-chevron--desktop {
     display: none;
   }
@@ -1568,27 +1553,6 @@ span.new-session-page__select {
   letter-spacing: 0.04em;
 }
 
-.new-session-page__cloud-configuration {
-  width: min(300px, calc(100vw - 48px));
-  padding: 0;
-  overflow-y: auto;
-  max-height: min(560px, calc(var(--auto-size-available-height, 70vh) - 2px));
-}
-
-.new-session-page__cloud-choice-list {
-  display: grid;
-  gap: 2px;
-}
-
-.new-session-page__cloud-choice-list .session-menu__text,
-.new-session-page__cloud-choice-list .session-menu__sub {
-  flex: 0 1 auto;
-}
-
-.new-session-page__cloud-choice-list .session-menu__check {
-  margin-left: auto;
-}
-
 .new-session-page__selected-summary {
   display: block;
   font-size: 11px;
@@ -1601,21 +1565,6 @@ span.new-session-page__select {
   align-items: baseline;
   min-width: 0;
   white-space: nowrap;
-}
-
-.new-session-page__cloud-config-card {
-  --openclaw-tooltip-background-color: var(--bg-elevated);
-  --openclaw-tooltip-max-width: min(510px, calc(100vw - 24px));
-}
-
-.new-session-page__cloud-configuration .new-session-page__environment-heading:first-child {
-  margin-top: 0;
-}
-
-.new-session-page__submenu-chevron {
-  display: flex;
-  flex: 0 0 14px;
-  color: var(--muted);
 }
 
 .new-session-page__devices-heading {
@@ -1643,10 +1592,6 @@ span.new-session-page__select {
 
 .new-session-page__connect-device:hover {
   background: var(--bg-hover);
-}
-
-.new-session-page__cloud-choice-list + .new-session-page__environment-heading {
-  margin-top: 20px;
 }
 
 .new-session-page__environment-detail-trigger {
@@ -1681,25 +1626,4 @@ span.new-session-page__select {
     width: 16px;
     height: 16px;
   }
-}
-
-.new-session-page__fixed-os,
-.new-session-page__fixed-machine {
-  padding: 7px 8px;
-  color: var(--text);
-  font-size: 12px;
-}
-
-.new-session-page__fixed-machine {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-
-.new-session-page__fixed-machine span {
-  white-space: nowrap;
-}
-
-.new-session-page__fixed-machine span:last-child {
-  color: var(--muted);
 }

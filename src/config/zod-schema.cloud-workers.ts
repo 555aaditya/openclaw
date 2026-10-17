@@ -24,10 +24,6 @@ const CloudWorkerProfileSchema = z
         label: "Cloud Worker Provider",
         help: "The built-in paired-device worker provider.",
       }),
-    install: z.enum(["bundle", "npm"]).optional().default("bundle").register(configUiMetadata, {
-      label: "Cloud Worker Install Method",
-      help: 'Worker installation method: "bundle" (default) transfers the gateway\'s content-hashed installed build and supports released, development, and unreleased versions; "npm" installs the exact gateway version and is available only when that version is released.',
-    }),
     suspendAfter: z
       .string()
       .refine((value) => {
@@ -42,10 +38,6 @@ const CloudWorkerProfileSchema = z
         label: "Cloud Worker Idle Suspend Duration",
         help: "Automatically reclaims an idle cloud worker after this duration, such as 45m or 2h; the next message provisions a replacement. Minimum: 1m. Leave unset to keep workers running.",
       }),
-    readyWorkers: z.number().int().nonnegative().optional().register(configUiMetadata, {
-      label: "Cloud Worker Ready Reserve Target",
-      help: "Target unassigned prepared workers per eligible project using this profile (default: 1), subject to the Gateway-wide prepared pool cap. Set 0 to disable this profile's reserves while preserving snapshot reuse. Preparing workers and unconfirmed reserve cleanup count toward the target.",
-    }),
     settings: CloudWorkerSettingsSchema.optional().register(configUiMetadata, {
       label: "Cloud Worker Provider Settings",
       help: "Settings validated by the paired-device worker provider. Use SecretRef objects for secret-bearing values; opaque settings do not gain automatic secret resolution.",
@@ -80,22 +72,6 @@ export const CloudWorkersConfigSchema = z
       label: "Required Worker Profile",
       help: "Require every session to execute on this worker profile. Sessions are placed automatically and cannot fall back to Gateway execution. Unavailable workers block turns, not Gateway startup.",
     }),
-    desktop: z.boolean().optional().register(configUiMetadata, {
-      label: "Cloud Worker Desktop (Labs)",
-      help: "Enables the experimental worker.desktop.observe surface and Control UI Desktop panel for desktop-capable cloud worker environments.",
-    }),
-    preparedPool: z
-      .strictObject({
-        maxTotal: z.number().int().nonnegative().optional().register(configUiMetadata, {
-          label: "Cloud Worker Ready Reserve Cap",
-          help: "Gateway-wide cap on unassigned prepared cloud workers across projects and profiles (default: 4). Preparing workers and unconfirmed reserve cleanup count toward the cap. Set 0 to drain unassigned reserves and disable replenishment while preserving snapshot reuse and active sessions.",
-        }),
-      })
-      .optional()
-      .register(configUiMetadata, {
-        label: "Cloud Worker Prepared Pool",
-        help: "Limits for prepared cloud workers kept ready for later sessions. Reserves incur running-machine charges until provider cleanup completes; their fixed expiry follows actual project demand and the provider's existing idle policy.",
-      }),
     projectProfiles: z
       .record(CloudWorkerProjectKeySchema, CloudWorkerProjectProfileSchema)
       .optional()

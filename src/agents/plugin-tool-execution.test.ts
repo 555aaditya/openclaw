@@ -170,7 +170,6 @@ it("withholds protected installations on the SSH backend's mutable upload view",
       createSession: async () => {
         throw new Error("No transport should run");
       },
-      preprovisionedWorkdir: { runtimeId: "review-fixture", remoteWorkspaceDir: "/guest/repo" },
     },
   );
   const capability = preparePluginToolExecutionCapabilities({

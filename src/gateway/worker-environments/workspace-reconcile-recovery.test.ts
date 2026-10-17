@@ -7,16 +7,16 @@ import { useAutoCleanupTempDirTracker } from "../../../test/helpers/temp-dir.js"
 import { ensureStagedInputDirectory, stagedInputDirectory } from "../../media/staged-inputs.js";
 import { runCommandWithTimeout } from "../../process/exec.js";
 import { MAX_WORKSPACE_INVENTORY_ENTRIES } from "./workspace-inventory-limits.js";
+import { changedPaths } from "./workspace-manifest-comparison.js";
 import {
+  MAX_RECONCILIATION_FILE_BYTES,
+  MAX_RECONCILIATION_TOTAL_BYTES,
   parseWorkerWorkspaceManifest,
   type WorkerWorkspaceManifest,
   type WorkerWorkspaceManifestEntry,
 } from "./workspace-manifest.js";
 import {
   assertWorkspaceMatchesManifest,
-  MAX_RECONCILIATION_FILE_BYTES,
-  MAX_RECONCILIATION_TOTAL_BYTES,
-  changedPaths,
   recoverWorkerWorkspaceReconciliation,
   type WorkerWorkspaceReconciliationJournal,
 } from "./workspace-reconcile.js";

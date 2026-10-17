@@ -360,8 +360,6 @@ async function withCheckpointAcceptance(failCapture = false) {
   const environments = {
     get: (): ReturnType<WorkerEnvironmentService["get"]> => ({
       ...environmentRecord(),
-      desktopAvailable: false,
-      desktopApps: [],
       tunnelStatus: "connected",
     }),
     startTunnel: async () => ({

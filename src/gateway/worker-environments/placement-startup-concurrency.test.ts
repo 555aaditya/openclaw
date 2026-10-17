@@ -22,16 +22,8 @@ async function seedActiveNode(
 ) {
   const environmentId = `worker-${index}`;
   const sessionId = `session-${index}`;
-  await support.seedBootstrapping(environmentId);
-  await support.testState.store.transition({
-    environmentId,
-    from: "bootstrapping",
-    to: "ready",
-    patch: {
-      ...support.readyPatch(environmentId, { ...support.BOOTSTRAP_RECEIPT, protocolFeatures }),
-      nodeDeviceId: `node:${environmentId}`,
-      sshEndpoint: null,
-    },
+  await support.seedReady(environmentId, {
+    receipt: { ...support.BOOTSTRAP_RECEIPT, installKind: "bundle", protocolFeatures },
   });
   const environment = await support.testState.store.transition({
     environmentId,

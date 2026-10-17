@@ -76,11 +76,6 @@ const WorkspaceInput = workerProtocolObject({
   sessionId: identifier("sessionId"),
   deviceFolder: identifier("deviceFolder", 4_096).optional(),
   sessionKey: identifier("sessionKey", 1_024).optional(),
-  preparationKey: z
-    .custom<string>((value) => typeof value === "string" && /^[a-f0-9]{64}$/u.test(value), {
-      error: "INVALID_REQUEST: preparationKey must be a SHA-256 hex digest",
-    })
-    .optional(),
   generation: z.custom<number>(
     (value) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0,
     { error: "INVALID_REQUEST: generation must be a non-negative safe integer" },
@@ -139,14 +134,10 @@ export const DEVICE_FOLDER_ATTACHMENTS_UNSUPPORTED =
 export function assertNodeWorkspaceDeviceFolderCommand(input: NodeWorkerWorkspaceExecInput): void {
   if (
     input.deviceFolder !== undefined &&
-    (input.preparationKey !== undefined ||
-      input.resetWorkspace !== undefined ||
-      input.transfer ||
-      input.seed ||
-      input.quiescence)
+    (input.resetWorkspace !== undefined || input.transfer || input.seed || input.quiescence)
   ) {
     throw new Error(
-      "INVALID_REQUEST: device folders cannot be prepared, reset, transferred, seeded, or quiesced",
+      "INVALID_REQUEST: device folders cannot be reset, transferred, seeded, or quiesced",
     );
   }
   if (

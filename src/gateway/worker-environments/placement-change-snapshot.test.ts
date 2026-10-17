@@ -1,8 +1,6 @@
 import { isMainThread } from "node:worker_threads";
 import { expect, it, vi } from "vitest";
 import { requireNodeSqlite } from "../../infra/node-sqlite.js";
-import { sessionChanges } from "../../sessions/session-row-changes.js";
-import { createDeferredCore } from "../../shared/deferred.js";
 import {
   withDisposableOpenClawStateReads,
   withOpenClawStateDatabaseReadSnapshot,
@@ -14,10 +12,7 @@ import {
 import { observeMainThreadSql } from "../../test-utils/main-thread-sql-spies.test-support.js";
 import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
 import { flushPendingSessionsChangedEvents } from "../server-methods/session-change-event.js";
-import {
-  createGatewayWorkerPlacementChangePublisher,
-  subscribeGatewayWorkerPlacementMetadataChanges,
-} from "../server-worker-placement-change-events.js";
+import { createGatewayWorkerPlacementChangePublisher } from "../server-worker-placement-change-events.js";
 import { readWorkerPlacementIdentity } from "./placement-projector.js";
 import { createWorkerSessionPlacementStore } from "./placement-store.js";
 import { sessionIdentity } from "./placement-suite.test-support.js";
@@ -34,7 +29,7 @@ const changeContext = (subscribers: string[] = []) => ({
   getSessionEventSubscriberConnIds: () => new Set(subscribers),
 });
 
-it("coalesces machine metadata bursts off thread and selects only correlated profile placements", async () => {
+it("selects only correlated profile placements from an off-thread snapshot", async () => {
   await withOpenClawTestState({ scenario: "minimal" }, async () => {
     const database = openOpenClawStateDatabase();
     const store = createWorkerSessionPlacementStore({ database, now: () => 1000 });
@@ -103,52 +98,17 @@ it("coalesces machine metadata bursts off thread and selects only correlated pro
         )
         .map((row) => row.sessionId),
     ).toEqual(expected);
-    expect((await store.readChangeSnapshot(["development"])).map((row) => row.sessionId)).toEqual(
-      expected,
-    );
-    expect(await store.readChangeSnapshot([])).toEqual([]);
-    expect(await store.readChangeSnapshot(["missing"])).toEqual([]);
-    let changed!: (profileId: string) => void;
-    const received: string[] = [];
-    const published = createDeferredCore();
-    const unlisten = sessionChanges.subscribe((change) => {
-      if ("sessionKey" in change) {
-        received.push(change.sessionKey!);
-        if (received.length === expected.length) {
-          published.resolve();
-        }
-      }
-    });
-    const context = changeContext();
-    const warn = vi.fn();
-    const changes = subscribeGatewayWorkerPlacementMetadataChanges({
-      placements: store,
-      runnerAvailability: { read: () => undefined, version: () => 0 },
-      environments: {
-        subscribeMachineShapeChanged: (listener) => {
-          changed = listener;
-          return () => {};
-        },
-      },
-      getSessionChangeContext: () => context,
-      warn,
-    });
     requireNodeSqlite();
     const calls = observeMainThreadSql();
     try {
-      for (let i = 0; i < 3; i++) {
-        changed("development");
-      }
-      await published.promise;
-      await changes.stop();
-      changed("development");
-      expect(received).toEqual(expected.map((id) => `agent:main:${id}`));
+      expect((await store.readChangeSnapshot(["development"])).map((row) => row.sessionId)).toEqual(
+        expected,
+      );
+      expect(await store.readChangeSnapshot([])).toEqual([]);
+      expect(await store.readChangeSnapshot(["missing"])).toEqual([]);
       calls.expectIdle();
-      expect(warn).not.toHaveBeenCalled();
     } finally {
-      await changes.stop();
       vi.restoreAllMocks();
-      unlisten();
       await environments.close();
     }
   });

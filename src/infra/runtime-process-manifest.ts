@@ -22,9 +22,6 @@ export function createRuntimeProcessEntrypoints(currentModuleUrl: string) {
     cronStreamMatcher: runtimeProcessEntrypoint("gateway/cron-stream-matcher.worker"),
     controlUiFile: runtimeProcessEntrypoint("gateway/control-ui-file.worker"),
     publicSessionCard: runtimeProcessEntrypoint("gateway/control-ui-public-session-card.worker"),
-    nodeBootstrapArtifact: runtimeProcessEntrypoint(
-      "gateway/worker-environments/node-bootstrap-artifact.worker",
-    ),
     nativeHookRelayClient: runtimeProcessEntrypoint(
       "agents/harness/native-hook-relay-client.worker",
     ),

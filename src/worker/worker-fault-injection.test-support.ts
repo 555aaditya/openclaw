@@ -47,7 +47,7 @@ import * as envStore from "../gateway/worker-environments/store.js";
 import { createWorkerTranscriptCommitStore } from "../gateway/worker-environments/transcript-commit-ledger.js";
 import { createWorkerTranscriptCommitter } from "../gateway/worker-environments/transcript-commit.js";
 import { onAgentRuntimeEvent } from "../infra/agent-events.js";
-import type { WorkerProvider, WorkerSshEndpoint } from "../plugins/types.js";
+import type { WorkerProvider } from "../plugins/types.js";
 import * as stateDb from "../state/openclaw-state-db.js";
 import { createTestGatewayScheduler } from "../test-utils/gateway-scheduler-clock.js";
 import { cleanupSessionStateForTest } from "../test-utils/session-state-cleanup.js";
@@ -69,13 +69,6 @@ export const RUN_ID = "fault-run";
 const BUNDLE_HASH = "a".repeat(64);
 const CREDENTIAL = ["worker", "fault", "fixture"].join("-");
 const MODEL_REF = { provider: "fake", model: "fault-model" } as const;
-const SSH_ENDPOINT: WorkerSshEndpoint = {
-  host: "worker.example.test",
-  port: 22,
-  user: "openclaw",
-  hostKey: [["ssh", "ed25519"].join("-"), "AAAA"].join(" "),
-  keyRef: { source: "file", provider: "worker-fixtures", id: "/development-key" },
-};
 const BUNDLE_ARTIFACT = {
   install: "bundle" as const,
   bundleHash: BUNDLE_HASH,
@@ -87,8 +80,13 @@ const BUNDLE_ARTIFACT = {
 };
 const PROVIDER: WorkerProvider = {
   id: "fake",
-  resolveAllocation: async () => ({ leaseId: "lease-fault", sharedHost: false }),
-  provision: async () => ({ leaseId: "lease-fault", ssh: SSH_ENDPOINT }),
+  supportedExecutionModes: ["worker-turn"],
+  resolveAllocation: async () => ({ leaseId: "lease-fault", sharedHost: true }),
+  provision: async () => ({
+    leaseId: "lease-fault",
+    node: { deviceId: "fault-device" },
+    sharedHost: true,
+  }),
   inspect: async () => ({ status: "active" }),
   destroy: async () => {},
 };
@@ -223,7 +221,7 @@ export class ComposedGatewayHarness {
       environmentId: ENVIRONMENT_ID,
       sessionId: SESSION_ID,
       credential: CREDENTIAL,
-      sshEndpoint: SSH_ENDPOINT,
+      nodeDeviceId: "fault-device",
       handshake: workerHandshake(artifact),
       rpcSetVersion: WORKER_RPC_SET_VERSION,
     });
@@ -576,8 +574,10 @@ export class ComposedGatewayHarness {
       getConfig: () => this.cfg,
       resolveProvider: (providerId) => (providerId === PROVIDER.id ? PROVIDER : undefined),
       prepareInstallation: async () => this.artifact,
-      bootstrapWorker: async () => workerHandshake(this.artifact),
-      resolveSshIdentity: async () => ({ kind: "path", path: "/keys/worker" }),
+      ensureNodeWorkerBundle: async ({ assertCurrent }) => {
+        assertCurrent?.();
+        return workerHandshake(this.artifact);
+      },
       applyTranscriptCommit: async (params) => {
         const gate = this.transcriptGate;
         if (gate?.phase === "before-apply") {

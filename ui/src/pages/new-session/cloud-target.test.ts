@@ -40,11 +40,10 @@ function mountCloudProfiles(initial: CloudProfileMenuItemsOptions, container: HT
 
 describe("cloud target menu", () => {
   it("orders Gateway catalogs while retaining placement facts and omitting unsupported kinds", async () => {
-    const machine = { id: "small", label: "Small", cpu: 2, memoryGb: 4 };
-    const profile = { id: "zeta", providerId: "crabbox", machines: [machine] };
+    const profile = { id: "zeta", providerId: "device", executionModes: ["worker-turn"] };
     const environment = { id: "node:zeta", type: "node", status: "available" };
     const request = vi.fn().mockResolvedValue({
-      profiles: [profile, { id: "alpha", providerId: "crabbox" }],
+      profiles: [profile, { id: "alpha", providerId: "device" }],
       environments: [
         environment,
         { id: "node:alpha", type: "node", status: "available" },
@@ -57,8 +56,8 @@ describe("cloud target menu", () => {
     expect(catalog.environments.map((entry) => entry.id)).toEqual(["node:alpha", "node:zeta"]);
     expect(catalog.profiles[1]).toEqual({
       id: "zeta",
-      providerId: "crabbox",
-      machines: [{ id: "small", label: "Small", cpu: 2, memoryGb: 4 }],
+      providerId: "device",
+      executionModes: ["worker-turn"],
     });
   });
 
@@ -117,151 +116,11 @@ describe("cloud target menu", () => {
     );
   });
 
-  it("shows unselected provider defaults as suggestions and selects the provider before an explicit choice", () => {
-    const container = document.createElement("div");
-    const onSelect = vi.fn();
-    const onSelectOs = vi.fn();
-    const params = {
-      profiles: [
-        {
-          id: "aws",
-          providerId: "aws",
-          operatingSystems: [
-            { id: "linux", label: "Linux", default: true },
-            { id: "windows", label: "Windows" },
-          ],
-          machines: [
-            { id: "small", label: "Small", default: true },
-            { id: "standard", label: "Standard" },
-          ],
-        },
-      ],
-      selectedId: "",
-      compact: true,
-      submitting: false,
-      onSelect,
-      onSelectOs,
-    };
-    const { update } = mountCloudProfiles(params, container);
-    const suggested = container.querySelector<HTMLButtonElement>('[data-value="os:linux"]')!;
-    expect(suggested.dataset.suggested).toBe("true");
-    expect(suggested.getAttribute("aria-pressed")).toBe("true");
-    expect(
-      container.querySelector('[data-value="machine:small"]')?.getAttribute("aria-pressed"),
-    ).toBe("true");
-    suggested.click();
-    expect(onSelect).toHaveBeenCalledExactlyOnceWith("aws", true);
-    expect(onSelectOs).toHaveBeenCalledExactlyOnceWith("linux");
-    update({ ...params, selectedId: "aws" });
-    expect(
-      container.querySelector('[data-value="os:linux"]')?.getAttribute("data-suggested"),
-    ).toBeNull();
-    expect(container.querySelector('[data-value="os:linux"]')?.getAttribute("aria-pressed")).toBe(
-      "true",
-    );
-  });
-
-  it.each([
-    {
-      machine: { id: "standard", label: "Standard", cpu: 32, memoryGb: 64 },
-      expected: "32 vCPU · 64 GB",
-    },
-    { machine: { id: "compute", label: "Compute", cpu: 48 }, expected: "48 vCPU" },
-    { machine: { id: "memory", label: "Memory", memoryGb: 256 }, expected: "256 GB" },
-    { machine: { id: "custom", label: "Custom" }, expected: "Custom" },
-  ])("renders a single machine as fixed provider configuration", ({ machine, expected }) => {
-    const container = document.createElement("div");
-    mountCloudProfiles(
-      {
-        profiles: [{ id: "aws", providerId: "aws", machines: [machine] }],
-        selectedId: "aws",
-        compact: true,
-        selectedMachine: machine.id,
-        submitting: false,
-        onSelect: vi.fn(),
-      },
-      container,
-    );
-    const machineLabel = container.querySelector(`[data-value="machine:${machine.id}"]`);
-    expect(machineLabel?.classList.contains("new-session-page__fixed-machine")).toBe(true);
-    expect(machineLabel?.textContent).toContain(expected);
-    expect(machineLabel?.tagName).toBe("SPAN");
-  });
-
-  it("forwards configuration choices and disables them while submitting", () => {
-    const container = document.createElement("div");
-    const onSelectMachine = vi.fn();
-    const onSelectOs = vi.fn();
-    const params = {
-      profiles: [
-        {
-          id: "aws",
-          providerId: "aws",
-          operatingSystems: [
-            { id: "linux", label: "Linux" },
-            { id: "macos", label: "macOS" },
-          ],
-          machines: [
-            { id: "small", label: "Small" },
-            { id: "large", label: "Large" },
-          ],
-        },
-      ],
-      selectedId: "aws",
-      compact: true,
-      selectedOs: "linux",
-      selectedMachine: "small",
-      submitting: false,
-      onSelectMachine,
-      onSelectOs,
-      onSelect: vi.fn(),
-    };
-    const { update } = mountCloudProfiles(params, container);
-    container.querySelector<HTMLButtonElement>('[data-value="machine:large"]')!.click();
-    container.querySelector<HTMLButtonElement>('[data-value="os:macos"]')!.click();
-    expect(onSelectMachine).toHaveBeenCalledExactlyOnceWith("large");
-    expect(onSelectOs).toHaveBeenCalledExactlyOnceWith("macos");
-    update({ ...params, submitting: true });
-    expect([...container.querySelectorAll("button")].every((button) => button.disabled)).toBe(true);
-  });
-
-  it("omits unavailable OS choices even when they are the current selection", () => {
-    const container = document.createElement("div");
-    mountCloudProfiles(
-      {
-        profiles: [
-          {
-            id: "aws",
-            providerId: "aws",
-            operatingSystems: [
-              { id: "linux", label: "Linux" },
-              { id: "windows", label: "Windows", disabledReason: "Install WSL2" },
-            ],
-          },
-        ],
-        selectedId: "aws",
-        compact: true,
-        selectedOs: "windows",
-        submitting: false,
-        onSelect: vi.fn(),
-      },
-      container,
-    );
-    const fixedOs = container.querySelector('[data-value="os:linux"]');
-    expect(fixedOs?.textContent).toBe("Linux");
-    expect(fixedOs?.tagName).toBe("SPAN");
-    expect(fixedOs?.hasAttribute("aria-pressed")).toBe(false);
-    expect(container.querySelector('[data-value="os:windows"]')).toBeNull();
-    expect(
-      container.querySelector('.new-session-page__cloud-configuration [aria-pressed="true"]'),
-    ).toBeNull();
-  });
-
   it("disables cloud profiles with the runtime preflight reason", () => {
     const container = document.createElement("div");
     mountCloudProfiles(
       {
-        profiles: [{ id: "aws", providerId: "crabbox" }],
+        profiles: [{ id: "aws", providerId: "device" }],
         selectedId: "",
         submitting: false,
         disabled: true,
@@ -283,7 +142,7 @@ describe("cloud target menu", () => {
     mountCloudProfiles(
       {
         profiles: [
-          { id: "aws", providerId: "crabbox" },
+          { id: "aws", providerId: "device" },
           { id: "ssh", providerId: "static-ssh" },
         ],
         selectedId: "",

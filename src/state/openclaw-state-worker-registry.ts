@@ -58,10 +58,6 @@ const loaders = {
     import("../infra/sqlite-audit-record.worker.js").then((m) => m.diagnosticOperations),
   restartSentinel: () =>
     import("../infra/restart-sentinel.worker.js").then((m) => m.restartSentinelOperations),
-  preparedPoolPresence: () =>
-    import("../gateway/worker-environments/prepared-pool-presence.worker.js").then(
-      (m) => m.preparedPoolPresenceOperations,
-    ),
   clawProvenance: () =>
     import("../claws/provenance-write.worker.js").then((m) => m.clawProvenanceOperations),
   projects: () =>

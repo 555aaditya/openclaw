@@ -359,21 +359,13 @@ export class ComputerToolSession {
       capabilities?.actions ?? COMPUTER_TOOL_ACTIONS,
       this.options.registerRunCleanup !== undefined,
     );
-    if (
-      params.action === "take_control" &&
-      !this.options.transport &&
-      !(binding.host.host === "node" && binding.host.environmentId)
-    ) {
-      throw new Error("take_control is only available for an attached or session desktop");
-    }
-    const providerAction = params.action === "take_control" ? "screenshot" : params.action;
-    if (!advertisedActions.includes(providerAction)) {
+    if (!advertisedActions.includes(params.action)) {
       throw new Error(
         `${COMPUTER_CONTRACT_MISMATCH}: computer ${targetKey} does not advertise action ${params.action}`,
       );
     }
     validateCapabilityBoundInput({
-      action: providerAction,
+      action: params.action,
       input: params.input,
       targetKey,
       capabilities,
@@ -432,31 +424,6 @@ export class ComputerToolSession {
       targetForHost?.screenIndex ??
       0;
     return { target: { ...binding.host, screenIndex }, frame, capabilities };
-  }
-
-  async takeControl(
-    resolved: ResolvedComputerTarget,
-    toolCallId: string,
-    signal?: AbortSignal,
-  ): Promise<void> {
-    this.assertOpen();
-    signal?.throwIfAborted();
-    // Human input invalidates both coordinate frames and targeted observation refs.
-    // Clear before dispatch, including uncertain failures, so no old target is reused.
-    this.setTarget(resolved.target);
-    this.observationState = undefined;
-    const binding = this.executionTargets.get(computerHostKey(resolved.target))!;
-    await binding.invoke({
-      command: COMPUTER_ACT_COMMAND,
-      commandParams: { action: "__take_control", executionId: this.options.executionId },
-      idempotencyKey: nodeToolIdempotencyKey({
-        command: COMPUTER_ACT_COMMAND,
-        scope: this.options.idempotencyScope,
-        toolCallId,
-      }),
-      signal,
-    });
-    signal?.throwIfAborted();
   }
 
   async captureScreenshot(

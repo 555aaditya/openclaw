@@ -186,11 +186,7 @@ test("required placement survives disconnect but stops setup when committed call
   vi.spyOn(workerEnvironmentService, "createWorkerEnvironmentService").mockImplementation(
     (options) => {
       const service = createService(options);
-      const { prepareProjectIntent, createWithRequest } = service;
-      service.prepareProjectIntent = (...args) => {
-        setupCalls.push("prepareProjectIntent");
-        return prepareProjectIntent(...args);
-      };
+      const { createWithRequest } = service;
       service.createWithRequest = (...args) => {
         setupCalls.push("createWithRequest");
         return createWithRequest(...args);
@@ -307,7 +303,7 @@ test("required placement survives disconnect but stops setup when committed call
           ws.close();
           await closed.promise;
         },
-        ["prepareProjectIntent", "createWithRequest"],
+        ["createWithRequest"],
         true,
       );
       expect((await disconnected.created).ok).toBe(true);

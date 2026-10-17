@@ -154,10 +154,8 @@ export async function prepareGatewayKernelState(params: {
     nodeWorkerBundleRetention,
     runtimeInstall,
     bindDeviceNodeControl,
-    bindWorkerNodeDesktopControl,
     bindNodeWorkspaceBindingResolver,
     handleNodeWorkerBundleTransferRequest,
-    handleWorkerBootstrapArtifactTransferRequest,
     handleNodeWorkspaceTransferRequest,
   } = workerEnvironmentRuntime;
   // Assigned once approval managers exist; placement dispatch must not run before then.
@@ -294,11 +292,7 @@ export async function prepareGatewayKernelState(params: {
       (method) =>
         (workerPlacementControlAvailable || method !== "sessions.dispatch") &&
         (workerPlacementControlAvailable ||
-          (method !== "sessions.reclaim" && method !== "sessions.move")) &&
-        (workerEnvironmentService ||
-          (method !== "desktop.launch" &&
-            method !== "worker.desktop.observe" &&
-            method !== "worker.desktop.launch")),
+          (method !== "sessions.reclaim" && method !== "sessions.move")),
     );
   const runtimeConfig = await startupTrace.measure("runtime.config", async () => {
     const { resolveGatewayRuntimeConfig } = await import("./server-runtime-config.js");
@@ -538,7 +532,6 @@ export async function prepareGatewayKernelState(params: {
     handleWatchNodeRequest: async (req: IncomingMessage, res: ServerResponse) =>
       (await watchNodeRequestHandler.current?.(req, res)) ?? false,
     handleNodeWorkerBundleTransferRequest,
-    handleWorkerBootstrapArtifactTransferRequest,
     handleNodeWorkspaceTransferRequest,
     workerIngressEnabled: Boolean(workerEnvironmentService),
     desktopSessionRegistry,
@@ -554,7 +547,6 @@ export async function prepareGatewayKernelState(params: {
     workerEnvironmentService,
     workerLiveEvents,
     bindDeviceNodeControl: bindDeviceNodeRuntime,
-    bindWorkerNodeDesktopControl,
     workerDispatchAuthority,
     workerPlacementRuntime,
     githubPublicationRuntime,

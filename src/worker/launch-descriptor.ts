@@ -40,7 +40,6 @@ import {
   ComputerUseCapabilityDescriptorSchema,
   type ComputerUseCapabilityDescriptor,
 } from "../plugins/computer-use-contract.js";
-import { isWorkerDesktopArgs, isWorkerDesktopString } from "../shared/worker-desktop-descriptor.js";
 import { hasExactOwnKeys, workerProtocolObject } from "./protocol-record.js";
 import { isWorkerTranscriptMessageFrameSafe } from "./transcript-message.js";
 import {
@@ -55,7 +54,6 @@ type WorkerLaunchPermissionContext =
   | { permissionMode?: never; workerContainmentRoot?: never };
 
 export type WorkerToolAuthority = z.infer<typeof ToolAuthoritySchema>;
-export type WorkerBrowserLaunchDescriptor = z.infer<typeof BrowserLaunchSchema>;
 export type WorkerComputerLaunchDescriptor = z.infer<typeof ComputerLaunchSchema>;
 export type WorkerGitHubLaunchBinding = z.infer<typeof GitHubLaunchSchema>;
 type WorkerLaunchAssignment = Omit<
@@ -128,26 +126,6 @@ const ToolAuthoritySchema = workerProtocolObject({
   ...authority,
   ...(exec === undefined ? {} : { exec }),
 }));
-const BrowserLaunchSchema = workerProtocolObject({
-  cdpUrl: z.string().refine((value) => {
-    const url = URL.parse(value);
-    return (
-      url !== null &&
-      url.protocol === "http:" &&
-      url.hostname === "127.0.0.1" &&
-      url.username === "" &&
-      url.password === "" &&
-      url.port !== "" &&
-      Number(url.port) >= 1 &&
-      Number(url.port) <= 65_535 &&
-      url.pathname === "/" &&
-      url.search === "" &&
-      url.hash === ""
-    );
-  }),
-  launcherPath: AbsoluteHostPath.refine(isWorkerDesktopString),
-  launcherArgs: z.custom<string[]>(isWorkerDesktopArgs).optional(),
-});
 const ComputerLaunchSchema = workerProtocolObject({
   nodeId: Identifier,
   computerUse: z.custom<ComputerUseCapabilityDescriptor>((value) =>
@@ -247,7 +225,6 @@ const AssignmentSchema = workerProtocolObject({
     (value) => value.nextSeq === value.ackedSeq + 1,
   ),
   toolAuthority: ToolAuthoritySchema,
-  browser: BrowserLaunchSchema.optional(),
   computer: ComputerLaunchSchema.optional(),
   github: GitHubLaunchSchema.optional(),
   permissionMode: z

@@ -7,10 +7,7 @@ import {
   listBrowserTabs,
 } from "../../components/browser/browser-client.ts";
 import type { BrowserTabSelection } from "../../components/browser/browser-target.ts";
-import {
-  desktopSourceForEnvironment,
-  loadDesktopEnvironments,
-} from "../../components/desktop/desktop-source.ts";
+import { loadDesktopEnvironments } from "../../components/desktop/desktop-source.ts";
 import { latestBrowserTabCards } from "../../lib/chat/browser-tab-preview.ts";
 import { parseCatalogSessionKey } from "../../lib/sessions/catalog-key.ts";
 import { scopedAgentParamsForSession } from "../../lib/sessions/index.ts";
@@ -393,11 +390,7 @@ export class ChatPaneActiveResources {
       // The default gateway desktop is shared, not session-owned. Only an explicit
       // assignment can justify discovery; never infer ownership from global availability.
       const source = resolveChatPaneDesktopTarget(session);
-      if (
-        !source ||
-        source === "gateway" ||
-        (desktopSourceForEnvironment({ id: source }).kind === "environment" && !session.sessionId)
-      ) {
+      if (!source || source === "gateway") {
         this.publishDesktop(owner, null);
         return;
       }
@@ -410,15 +403,7 @@ export class ChatPaneActiveResources {
         return;
       }
       const environment = target?.environments.find((entry) => entry.id === source);
-      if (
-        !environment ||
-        environment.status !== "available" ||
-        environment.desktop !== true ||
-        (environment.type === "worker" &&
-          (environment.worker?.state !== "attached" ||
-            !session.sessionId ||
-            !environment.worker.attachedSessionIds.includes(session.sessionId)))
-      ) {
+      if (!environment || environment.status !== "available" || environment.desktop !== true) {
         this.publishDesktop(owner, null);
         return;
       }

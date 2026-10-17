@@ -20,9 +20,9 @@ const mocks = vi.hoisted(() => ({
   turnFinish: vi.fn<NodeWorkerTurnStore["finish"]>(),
   drain: vi.fn<JournalWorker["drain"]>(async () => {}),
   quiescenceClose: vi.fn<NodeWorkerWorkspaceQuiescence["close"]>(async () => {}),
-  acquirePreparedWorkspace:
+  acquireManagedWorkspaceAsync:
     vi.fn<
-      typeof import("./node-worker-workspace.js").NodeWorkerWorkspaceRuntime.prototype.acquirePreparedWorkspace
+      typeof import("./node-worker-workspace.js").NodeWorkerWorkspaceRuntime.prototype.acquireManagedWorkspaceAsync
     >(),
   retain:
     vi.fn<
@@ -80,8 +80,8 @@ vi.mock("./node-worker-workspace.js", async (importOriginal) => {
   return {
     ...actual,
     NodeWorkerWorkspaceRuntime: class {
-      acquirePreparedWorkspace = mocks.acquirePreparedWorkspace;
       applyRetainSnapshot = mocks.retain;
+      acquireManagedWorkspaceAsync = mocks.acquireManagedWorkspaceAsync;
       quiescence = {
         hasActiveWork: () => false,
         close: mocks.quiescenceClose,

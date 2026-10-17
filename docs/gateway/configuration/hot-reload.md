@@ -313,14 +313,11 @@ Disabling it removes custom views and prevents new custom native UI loads;
 reload browser tabs to clear plugin JavaScript that already ran. Bundled plugin
 views and backend plugin operations remain available.
 
-Host Desktop and Cloud Worker Desktop switches update connected desktop pickers
-without a Gateway restart. Host connection changes (`managed`, `port`, and
-`passwordFile`) retire existing observations and computer holds before the next
-use creates the replacement source. Disabling a source closes its desktop observations.
-Existing system VNC services and cloud workers remain running. Re-enabling
-restores the configured host source or existing desktop-capable workers.
-Cloud worker profile provisioning remains separate: `settings.desktop` affects
-newly provisioned workers.
+The Host Desktop switch updates connected desktop pickers without a Gateway restart.
+Host connection changes (`managed`, `port`, and `passwordFile`) retire existing
+observations and computer holds before the next use creates the replacement source.
+Disabling a source closes its desktop observations. Existing system VNC services
+remain running. Re-enabling restores the configured host source.
 
 Cloud Worker profile changes apply to newly provisioned workers. Running workers
 retain their admitted provisioning settings. Reserve counts and idle-suspension

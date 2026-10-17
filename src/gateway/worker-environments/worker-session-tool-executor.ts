@@ -16,6 +16,10 @@ import {
   type InProcessGatewayCaller,
   runWithGatewayToolCleanupContext,
 } from "../../agents/tools/in-process-gateway.js";
+import {
+  SessionPortalToolSchema,
+  SESSION_PORTAL_TOOL_DESCRIPTION,
+} from "../../agents/tools/portal-tool-contract.js";
 import { createAvailablePortalTools } from "../../agents/tools/portal-tool.js";
 import { PRESENCE_QUERY_TIMEOUT_MS } from "../../agents/tools/presence-tool-contract.js";
 import { createPresenceTool } from "../../agents/tools/presence-tool.js";
@@ -604,14 +608,12 @@ export async function createWorkerGatewayTools(
   }
   const source = capability.sessionTarget;
   const toolOptions = { agentSessionKey: source.sessionKey, workerPlacement: true };
-  const portal = createAvailablePortalTools({
-    sessionPortalTarget: {
-      agentId: source.agentId,
-      sessionKey: source.sessionKey,
-      environmentId: params.identity.environmentId,
-      assertCurrent: capability.receiptAuthority,
-    },
-  })[0]!;
+  // Worker execution is bound below to the existing source-turn portal executor.
+  const portal = {
+    ...createAvailablePortalTools()[0]!,
+    description: SESSION_PORTAL_TOOL_DESCRIPTION,
+    parameters: SessionPortalToolSchema,
+  };
   const presence = createPresenceTool({
     assertSourceCurrent: capability.assertPresenceSourceCurrent,
   });

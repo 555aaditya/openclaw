@@ -48,7 +48,6 @@ import {
   type CronCreatorToolAllowlistEntry,
   type CronToolsAllowCaptureRef,
 } from "../agents/tools/cron-tool.js";
-import { prepareSessionPortalToolTarget } from "../agents/tools/session-portal-target.js";
 import {
   hasSessionControlAuthority,
   prepareSandboxSessionTools,
@@ -241,14 +240,6 @@ export async function resolveGatewayScopedTools(
     ),
   );
   const gatewayToolsCfg = params.cfg.gateway?.tools;
-  const sessionPortalTarget =
-    surface === "loopback" && params.senderIsOwner === false && !sandboxed
-      ? prepareSessionPortalToolTarget({
-          sessionKey: params.sessionKey,
-          agentId: sessionAgentId,
-          sessionId: params.sessionId,
-        })
-      : undefined;
   const defaultGatewayDeny =
     surface === "http"
       ? DEFAULT_GATEWAY_HTTP_TOOL_DENY.filter(
@@ -266,9 +257,7 @@ export async function resolveGatewayScopedTools(
     getAdmittedRunDelegatedAuthority(params.admittedRunContext);
   const ownerOnlyGatewayDeny = [
     ...(params.senderIsOwner === false || (surface === "http" && params.senderIsOwner !== true)
-      ? GATEWAY_OWNER_ONLY_CORE_TOOLS.filter(
-          (name) => name !== "sessions" && (name !== "portal" || !sessionPortalTarget),
-        )
+      ? GATEWAY_OWNER_ONLY_CORE_TOOLS.filter((name) => name !== "sessions")
       : []),
     // Attach grants also use loopback; session binding is not run authority.
     ...(params.senderIsOwner !== true &&
@@ -366,7 +355,6 @@ export async function resolveGatewayScopedTools(
   const openClawToolOptions: Parameters<typeof createOpenClawToolsAsync>[0] = {
     ...commonToolOptions(),
     computerExecutionId: params.admittedRunContext?.operationalRunInstance.instanceId,
-    sessionPortalTarget,
     gatewayConfigReadAllowed,
     agentSessionKey: params.sessionKey,
     messageToolTurnCapability:

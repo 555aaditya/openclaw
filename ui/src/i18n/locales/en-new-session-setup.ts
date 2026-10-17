@@ -61,7 +61,6 @@ const enNewSessionSetup = {
     hostedSetupHint:
       "Requires the enabled Agents API plugin, a compatible API-key model, and a hosted environment. ChatGPT subscriptions are not supported.",
     machine: "Machine",
-    operatingSystem: "Operating system",
     runsOn: "Runs on {place}",
     browse: "Browse folders",
     browseDevice: "Browse folders on {device}",
@@ -116,10 +115,6 @@ const enNewSessionSetup = {
     environmentDisposable: "Disposable",
     environmentPersistent: "Persistent",
     registerProject: "Register as project",
-    machineShape: "{cpu} vCPU · {memory} GB",
-    machineCpu: "{cpu} vCPU",
-    machineMemory: "{memory} GB",
-    machineDefault: "Default",
     browseRequiresAdmin:
       "To browse outside agent workspaces, open Inbox, select Limited access, request admin, then approve in Devices.",
     connectMachine: "Connect a device",

@@ -235,15 +235,6 @@ export function useRepositoryWorkspaceResultFixture() {
       fenceWorkerTurnForRecovery: () => {
         throw new Error("Repository result fixture does not synthesize startup claims");
       },
-      prepareProjectIntent: async () => {
-        throw new Error("unexpected local-project preparation");
-      },
-      assertPreparedIntentCurrent: vi.fn(),
-      getPreparedCandidates: () => [],
-      schedulePreparedRefill: vi.fn(),
-      bindPreparedWorkspace: async () => {
-        throw new Error("unexpected prepared binding");
-      },
       get: () => attachedEnvironment(),
       createWithRequest: vi.fn(async () => attachedEnvironment()),
       attachSession: vi.fn(async () => credential()),

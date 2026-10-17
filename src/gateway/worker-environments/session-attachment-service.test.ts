@@ -177,7 +177,11 @@ describe("conversation-owned temporary environments", () => {
   ] as const)(
     "does not reserve or allocate a machine when $presentation presentation lacks $deniedBy screen authority",
     async ({ presentation, deniedBy }) => {
-      const provision = vi.fn(async () => ({ leaseId: "lease-one", ssh: support.SSH_ENDPOINT }));
+      const provision = vi.fn(async () => ({
+        leaseId: "lease-one",
+        sharedHost: true,
+        node: { deviceId: "node-1" },
+      }));
       const service = support.createService(support.createProvider({ provision }));
       if (deniedBy === "live") {
         support.testState.config.tools = { deny: ["screen"] };
@@ -217,7 +221,11 @@ describe("conversation-owned temporary environments", () => {
   );
 
   it("cancels its exact fresh reservation if screen policy narrows before presentation", async () => {
-    const provision = vi.fn(async () => ({ leaseId: "lease-one", ssh: support.SSH_ENDPOINT }));
+    const provision = vi.fn(async () => ({
+      leaseId: "lease-one",
+      sharedHost: true,
+      node: { deviceId: "node-1" },
+    }));
     const service = support.createService(support.createProvider({ provision }));
     const reserve = support.testState.store.createSessionAttachmentIntent.bind(
       support.testState.store,
@@ -258,10 +266,14 @@ describe("conversation-owned temporary environments", () => {
   });
 
   it("reuses concurrent and changed-key retries without moving the conversation or allowing placement adoption", async () => {
-    const provision = vi.fn(async () => ({ leaseId: "lease-one", ssh: support.SSH_ENDPOINT }));
+    const provision = vi.fn(async () => ({
+      leaseId: "lease-one",
+      sharedHost: true,
+      node: { deviceId: "node-1" },
+    }));
     const service = support.createService(support.createProvider({ provision }));
     const [first, retry] = await Promise.all([
-      service.createSessionAttachment({ ...request, os: "linux", machineClass: "tiny" }, authorize),
+      service.createSessionAttachment(request, authorize),
       service.createSessionAttachment(
         { ...request, idempotencyKey: "retried-tool-call" },
         authorize,
@@ -270,19 +282,8 @@ describe("conversation-owned temporary environments", () => {
     expect(provision).toHaveBeenCalledOnce();
     expect(retry.attachment).toEqual(first.attachment);
     expect(retry.reused).toBe(true);
-    expect(
-      support.testState.store.get(first.attachment.environmentId)?.profileSnapshot,
-    ).toMatchObject({ os: "linux", machineClass: "tiny" });
-    const explicitRetry = await service.createSessionAttachment(
-      { ...request, os: "linux", machineClass: "tiny" },
-      authorize,
-    );
+    const explicitRetry = await service.createSessionAttachment(request, authorize);
     expect(explicitRetry.attachment.environmentId).toBe(first.attachment.environmentId);
-    for (const incompatible of [{ os: "windows" }, { machineClass: "large" }]) {
-      await expect(
-        service.createSessionAttachment({ ...request, ...incompatible }, authorize),
-      ).rejects.toThrow("already owns a different environment");
-    }
     expect(provision).toHaveBeenCalledOnce();
     expect(first.environment).toMatchObject({ state: "ready", attachedSessionIds: [] });
     expect(service.findSessionAttachment(identity)).toMatchObject({
@@ -293,7 +294,11 @@ describe("conversation-owned temporary environments", () => {
   });
 
   it("cancels creations registered while Stop is awaiting the inventory", async () => {
-    const provision = vi.fn(async () => ({ leaseId: "lease-one", ssh: support.SSH_ENDPOINT }));
+    const provision = vi.fn(async () => ({
+      leaseId: "lease-one",
+      sharedHost: true,
+      node: { deviceId: "node-1" },
+    }));
     const service = support.createService(support.createProvider({ provision }));
     const closeEntered = createDeferredCore();
     const releaseClose = createDeferredCore();
@@ -353,16 +358,15 @@ describe("conversation-owned temporary environments", () => {
   it.each([
     { phase: "installation", authority: "allowed" },
     { phase: "installation", authority: "run-revoked" },
-    { phase: "provider", authority: "screen-revoked" },
+    { phase: "installation", authority: "screen-revoked" },
   ] as const)(
-    "checks $authority after deferred $phase preparation before allocation without an abort",
+    "checks $authority after deferred $phase preparation before bundle installation without an abort",
     async ({ phase, authority }) => {
       const entered = createDeferredCore();
       const released = createDeferredCore();
       const signalOwner = new AbortController();
       const allocate = vi.fn(async () => ({
-        leaseId: "lease-authorized",
-        ssh: support.SSH_ENDPOINT,
+        ...support.BOOTSTRAP_RECEIPT,
       }));
       if (phase === "installation") {
         support.testState.prepareInstallation = async () => {
@@ -371,17 +375,8 @@ describe("conversation-owned temporary environments", () => {
           return support.BUNDLE_ARTIFACT;
         };
       }
-      const service = support.createService(
-        support.createProvider({
-          prepareProvision: async () => {
-            if (phase === "provider") {
-              entered.resolve();
-              await released.promise;
-            }
-            return allocate;
-          },
-        }),
-      );
+      support.testState.ensureNodeWorkerBundle = allocate;
+      const service = support.createService(support.createProvider());
       const requester: GatewayClient = {
         connId: "requesting-preview-ui",
         connect: {
@@ -447,7 +442,11 @@ describe("conversation-owned temporary environments", () => {
   );
 
   it("presents the actual reserved machine before allocation and keeps recovery behind required presentation", async () => {
-    const provision = vi.fn(async () => ({ leaseId: "lease-one", ssh: support.SSH_ENDPOINT }));
+    const provision = vi.fn(async () => ({
+      leaseId: "lease-one",
+      sharedHost: true,
+      node: { deviceId: "node-1" },
+    }));
     const service = support.createService(support.createProvider({ provision }));
     const reserved = createDeferredCore<string>();
     const presented = createDeferredCore();
@@ -540,7 +539,11 @@ describe("conversation-owned temporary environments", () => {
     const service = support.createService(
       support.createProvider({
         destroy,
-        provision: async () => ({ leaseId: `lease-${++allocations}`, ssh: support.SSH_ENDPOINT }),
+        provision: async () => ({
+          leaseId: `lease-${++allocations}`,
+          sharedHost: true,
+          node: { deviceId: "node-1" },
+        }),
       }),
     );
     const created = await service.createSessionAttachment(request, authorize);
@@ -563,7 +566,9 @@ describe("conversation-owned temporary environments", () => {
   it("reports bounded current cleanup failures without losing the original failure or lease", async () => {
     const originalFailure = "worker bootstrap could not finish";
     const firstCleanupFailure = "initial provider cleanup is unavailable";
-    vi.mocked(support.testState.bootstrapWorker).mockRejectedValue(new Error(originalFailure));
+    vi.mocked(support.testState.ensureNodeWorkerBundle).mockRejectedValue(
+      new Error(originalFailure),
+    );
     const destroy = vi.fn().mockRejectedValue(new Error(firstCleanupFailure));
     const warn = vi.fn<(message: string) => void>();
     const service = support.createService(support.createProvider({ destroy }), {
@@ -724,7 +729,11 @@ describe("conversation-owned temporary environments", () => {
   });
 
   it("does not allocate after caller revocation and expires only the unchanged idle attachment", async () => {
-    const provision = vi.fn(async () => ({ leaseId: "lease-one", ssh: support.SSH_ENDPOINT }));
+    const provision = vi.fn(async () => ({
+      leaseId: "lease-one",
+      sharedHost: true,
+      node: { deviceId: "node-1" },
+    }));
     const service = support.createService(support.createProvider({ provision }));
     await expect(
       service.createSessionAttachment(request, () => {

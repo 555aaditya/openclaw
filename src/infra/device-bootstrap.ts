@@ -10,10 +10,7 @@ import {
 import { registerOpenClawStateDatabaseLifecycleListener } from "../state/openclaw-state-db-cache.js";
 import { captureOpenClawStateWorkerContext } from "../state/openclaw-state-worker-context.js";
 import type { DeviceBootstrapOperations } from "./device-bootstrap.worker-kernel.js";
-import type {
-  CloudWorkerSetupMutationAdmission,
-  DeviceBootstrapMutationAdmission,
-} from "./device-bootstrap.worker-types.js";
+import type { DeviceBootstrapMutationAdmission } from "./device-bootstrap.worker-types.js";
 import { loadBoundDeviceBootstrapContextReadOnly } from "./device-pairing-store-readonly.js";
 import {
   DevicePairingAuthorityRefusedError,
@@ -125,24 +122,13 @@ function runBootstrapMutation<Key extends keyof DeviceBootstrapOperations>(
   return withLock(() => executeDevicePairingMutation({ type, input: input(Date.now()) }, options));
 }
 
-/** Reuse one environment-owned setup credential across provider replay. */
-export async function ensureDevicePairSetupBootstrapToken(
-  params: BootstrapParams<"bootstrap.ensure">,
-): Promise<DeviceBootstrapOperations["bootstrap.ensure"]["output"]> {
-  const { baseDir, ...input } = params;
-  return await runBootstrapMutation("bootstrap.ensure", (nowMs) => ({ ...input, nowMs }), {
-    baseDir,
-  });
-}
-
 /** Consume only while the bound device and its live handoff authority remain current. */
 export async function consumeDeviceBootstrapTokenWithSetupCompletion(
   params: BootstrapParams<"bootstrap.consume"> & {
     pairedDeviceMatches?: (device: PairedDevice | null) => boolean;
-    admitsCloudWorkerSetup?: (setup: CloudWorkerSetupMutationAdmission) => boolean;
   },
 ): Promise<DeviceBootstrapOperations["bootstrap.consume"]["output"]> {
-  const { baseDir, pairedDeviceMatches, admitsCloudWorkerSetup, ...input } = params;
+  const { baseDir, pairedDeviceMatches, ...input } = params;
   return await runBootstrapMutation("bootstrap.consume", (nowMs) => ({ ...input, nowMs }), {
     baseDir,
     onAuthorityRefused: () => null,
@@ -152,9 +138,6 @@ export async function consumeDeviceBootstrapTokenWithSetupCompletion(
         if (pairedDeviceMatches && !pairedDeviceMatches(facts.pairedDevice)) {
           throw new DevicePairingAuthorityRefusedError();
         }
-      }
-      if (facts.kind === "bootstrap.cloudWorkerSetup" && admitsCloudWorkerSetup?.(facts) !== true) {
-        throw new DevicePairingAuthorityRefusedError();
       }
     },
   });
@@ -190,7 +173,7 @@ export async function clearDeviceBootstrapTokens(
   });
 }
 
-/** Revoke a bootstrap token unless its cloud-worker environment is already bound to the token's device. */
+/** Revoke an undelivered pairing credential. */
 export async function revokeDeviceBootstrapToken(params: {
   token: string;
   baseDir?: string;

@@ -305,7 +305,8 @@ describe("worker placement startup cleanup ownership", () => {
       const environmentId = "worker-startup-fenced";
       const provision = vi.fn(async () => ({
         leaseId: "lease-startup-fenced",
-        ssh: workerEnvironmentSupport.SSH_ENDPOINT,
+        node: { deviceId: "node-1" },
+        sharedHost: true as const,
       }));
       const inspect = vi.fn(async () => ({ status: "active" as const }));
       const destroy = vi.fn(async () => {});
@@ -553,7 +554,7 @@ describe("worker placement startup cleanup ownership", () => {
 
       expect(provision).not.toHaveBeenCalled();
       expect(workerEnvironmentSupport.testState.prepareInstallation).not.toHaveBeenCalled();
-      expect(workerEnvironmentSupport.testState.bootstrapWorker).not.toHaveBeenCalled();
+      expect(workerEnvironmentSupport.testState.ensureNodeWorkerBundle).not.toHaveBeenCalled();
       expect(destroy).toHaveBeenCalledExactlyOnceWith({
         leaseId: "lease-startup-adopted",
         profile: { region: "test" },

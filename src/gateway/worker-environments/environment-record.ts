@@ -4,7 +4,6 @@ import type {
   WorkerProfile,
   WorkerSshEndpoint,
 } from "../../plugins/capability-provider.types.js";
-import type { WorkerSessionPlacementDispatchIdentity } from "./placement-record.js";
 import type { WorkerEnvironmentLeasedState, WorkerEnvironmentUnleasedState } from "./state.js";
 
 export type WorkerEnvironmentBootstrapReceipt = WorkerAdmissionHandshake & {
@@ -18,24 +17,6 @@ export type WorkerEnvironmentPreparation = {
   demandAtMs: number;
   expiresAtMs: number;
   consumedAtMs: number | null;
-};
-export type WorkerEnvironmentPreparationIntent = Omit<WorkerEnvironmentPreparation, "consumedAtMs">;
-export type PreparedEnvironmentPlacementBinding = WorkerSessionPlacementDispatchIdentity & {
-  generation: number;
-  preparationKey: string;
-  assertCurrent: () => void;
-};
-export type PreparedEnvironmentSelection = WorkerSessionPlacementDispatchIdentity & {
-  expectedGeneration: number;
-  environmentId: string;
-  ownerEpoch: number;
-  providerId: string;
-  profileId: string;
-  preparationKey: string;
-  nodeDeviceId: string;
-  leaseId: string;
-  bundleHash: string;
-  assertCurrent: import("./placement-authorization.js").WorkerPlacementAuthorization;
 };
 type RecordIdentity = { environmentId: string; providerId: string; profileId: string };
 type RecordBase = RecordIdentity & {
@@ -70,7 +51,6 @@ type LeasedRecord = {
 };
 export type WorkerEnvironmentRecord = RecordBase & (UnleasedRecord | LeasedRecord);
 export type WorkerEnvironmentIntentInput = RecordIdentity & {
-  preparation?: WorkerEnvironmentPreparationIntent;
   profileSnapshot: WorkerProfile;
   provisionOperationId: string;
 };

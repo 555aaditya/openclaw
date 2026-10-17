@@ -160,21 +160,6 @@ export function ensureDevicePairSetupBootstrapSchema(database: EngineConnection)
   ensureColumn(database, "device_bootstrap_tokens", "setup_id TEXT");
 }
 
-/** Installs environment-owned node binding columns at first cloud enrollment use. */
-export function ensureWorkerEnvironmentNodeEnrollmentSchema(database: EngineConnection): void {
-  ensureDevicePairSetupCompletionSchema(database);
-  ensureColumn(database, "worker_environments", "node_setup_id TEXT");
-  ensureColumn(database, "worker_environments", "node_device_id TEXT");
-}
-
-/** Register fixed build ownership on the dedicated node's current transaction. */
-export function ensureNodeWorkerPreparedWorkspaceSchema(database: EngineConnection): void {
-  // Prepared DDL is reusable; admitted presence still follows transaction rollback.
-  ensureTable(database, "node_worker_prepared_workspaces", {
-    errorMessage: "Node prepared workspace schema marker is missing.",
-  });
-}
-
 function ensureWorkerSessionToolStateSchema(db: EngineConnection): void {
   ensureTable(db, "worker_turn_tool_authorities");
   ensureTable(db, "worker_session_tool_operations");

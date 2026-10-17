@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { expectDefined } from "@openclaw/normalization-core/expect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WORKER_RPC_SET_VERSION } from "../../../packages/gateway-protocol/src/schema/worker-admission.js";
 import { useAutoCleanupTempDirTracker } from "../../../test/helpers/temp-dir.js";
@@ -113,13 +114,13 @@ describe("device-folder tunnel", () => {
     const launchNodeWorker = vi.fn<
       ReturnType<typeof createDeviceWorkerRuntime>["launchNodeWorker"]
     >(async ({ input }) => {
-      const acquisition = await test.runtime.acquirePreparedWorkspace({
+      const acquisition = await test.runtime.acquireManagedWorkspaceAsync({
         gatewayNamespace: input.gatewayNamespace,
         environmentId: input.descriptor.admission.environmentId,
         sessionId: input.descriptor.admission.sessionId,
         ownerEpoch: input.descriptor.admission.ownerEpoch,
         workspaceDir: input.descriptor.assignment.workspaceDir,
-        sessionKey: input.sessionKey,
+        sessionKey: expectDefined(input.sessionKey, "bound device-folder session"),
       });
       expect(acquisition?.workspaceDir).toBe(test.folder);
       acquisition?.release();

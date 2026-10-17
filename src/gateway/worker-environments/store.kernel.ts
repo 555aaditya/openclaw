@@ -1,18 +1,10 @@
-import { randomUUID } from "node:crypto";
-import { executeSqliteQueryTakeFirstSync } from "../../infra/kysely-sync.js";
 import type { OpenClawStateDatabase } from "../../state/openclaw-state-db-contract.js";
-import { ensureWorkerEnvironmentNodeEnrollmentSchema } from "../../state/openclaw-state-db-schema-additive.js";
 import type {
   WorkerEnvironmentIntentInput,
   WorkerEnvironmentRecord,
 } from "./environment-record.js";
-import {
-  createPreparedEnvironmentStoreOps,
-  workerEnvironmentPreparationColumns,
-} from "./prepared-environment-store.js";
 import { createWorkerEnvironmentSessionAttachmentStore } from "./session-attachment-store.js";
 import type { WorkerEnvironmentAttachmentRecord } from "./session-attachment.js";
-import { isTerminalWorkerEnvironmentState } from "./state.js";
 import {
   credentialInsert,
   revokeCredential,
@@ -57,7 +49,11 @@ export function createWorkerEnvironmentStoreKernel(
           provider_id: requireWorkerEnvironmentString(input.providerId, "provider id"),
           profile_id: requireWorkerEnvironmentString(input.profileId, "profile id"),
           profile_snapshot_json: json(input.profileSnapshot),
-          ...workerEnvironmentPreparationColumns(input.preparation),
+          preparation_key: null,
+          preparation_purpose: null,
+          preparation_demand_at_ms: null,
+          preparation_expires_at_ms: null,
+          preparation_consumed_at_ms: null,
           last_activated_at_ms: null,
           provision_operation_id: requireWorkerEnvironmentString(
             input.provisionOperationId,
@@ -91,7 +87,6 @@ export function createWorkerEnvironmentStoreKernel(
     return getRequiredWorkerEnvironment(db, environmentId);
   };
   return {
-    ...createPreparedEnvironmentStoreOps({ db, now, createIntent, get: findWorkerEnvironment }),
     ...createWorkerEnvironmentSessionAttachmentStore({
       db,
       now,
@@ -100,42 +95,6 @@ export function createWorkerEnvironmentStoreKernel(
     }),
     ...createWorkerEnvironmentTransitionOps(db, now),
     createIntent,
-    ensureNodeEnrollment(environmentIdInput: string): WorkerEnvironmentRecord {
-      const environmentId = requireWorkerEnvironmentString(environmentIdInput, "id");
-      ensureWorkerEnvironmentNodeEnrollmentSchema(db);
-      const current = getRequiredWorkerEnvironment(db, environmentId);
-      if (
-        isTerminalWorkerEnvironmentState(current.state) ||
-        current.destroyRequestedAtMs !== null
-      ) {
-        throw new Error(`Worker environment ${environmentId} cannot begin node enrollment`);
-      }
-      const setupId = current.nodeSetupId ?? randomUUID();
-      const completion = executeSqliteQueryTakeFirstSync(
-        db,
-        queryWorkerEnvironmentStore(db)
-          .selectFrom("device_pair_setup_completions")
-          .select("device_id")
-          .where("setup_id", "=", setupId),
-      );
-      const completedDeviceId = completion?.device_id ?? null;
-      if (
-        current.nodeDeviceId !== null &&
-        completedDeviceId !== null &&
-        current.nodeDeviceId !== completedDeviceId
-      ) {
-        throw new Error(`Worker environment ${environmentId} node enrollment identity changed`);
-      }
-      const nodeDeviceId = current.nodeDeviceId ?? completedDeviceId;
-      if (current.nodeSetupId === setupId && current.nodeDeviceId === nodeDeviceId) {
-        return current;
-      }
-      return updateWorkerEnvironmentRecord(db, environmentId, current.state, {
-        node_setup_id: setupId,
-        node_device_id: nodeDeviceId,
-        updated_at_ms: now(),
-      });
-    },
     revokeEnvironmentCredential(input: CredentialRevocationInput): void {
       const environmentId = requireWorkerEnvironmentString(input.environmentId, "id");
       if (

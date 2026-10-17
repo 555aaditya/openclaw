@@ -1,7 +1,5 @@
 import { channel } from "node:diagnostics_channel";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
-import { reserveWorkerEnvironmentNativePublication } from "../gateway/worker-environments/store-native-publication.js";
-import { sessionChanges } from "../sessions/session-row-changes.js";
 import { resolveGlobalSingleton } from "../shared/global-singleton.js";
 import { notifyListeners, registerListener } from "../shared/listeners.js";
 import { captureOpenClawStateWorkerContext } from "../state/openclaw-state-worker-context.js";
@@ -50,14 +48,8 @@ function admissionFacts(value: unknown): DevicePairingAdmissionFacts[] {
   }
   for (const entry of value) {
     if (
-      (entry.kind === "bootstrap.cloudWorkerSetup" &&
-        (typeof entry.environmentId !== "string" ||
-          typeof entry.setupId !== "string" ||
-          typeof entry.credentialDigest !== "string" ||
-          typeof entry.provisionOperationId !== "string" ||
-          typeof entry.ownerEpoch !== "number")) ||
-      ((entry.kind === "bootstrap.consume" || entry.kind === "bootstrap.token") &&
-        typeof entry.expiresAtMs !== "number")
+      (entry.kind === "bootstrap.consume" || entry.kind === "bootstrap.token") &&
+      typeof entry.expiresAtMs !== "number"
     ) {
       throw new Error("Invalid pairing admission facts");
     }
@@ -112,7 +104,6 @@ export function executeDevicePairingMutation<Key extends keyof DevicePairingWork
     const mutation = publication?.beginMutation();
     let admission: SqliteWorkerOperationAdmission | undefined;
     let published = false;
-    let publishEnvironment: ReturnType<typeof reserveWorkerEnvironmentNativePublication>;
     const install = () => {
       if (!mutation) {
         return;
@@ -121,15 +112,6 @@ export function executeDevicePairingMutation<Key extends keyof DevicePairingWork
       if (committed && !published) {
         const publishingAt = startedAt === undefined ? undefined : performance.now();
         const receipt = commitReceipt(committed.facts);
-        const environment = receipt.workerEnvironment;
-        let environmentPublished = false;
-        if (environment && publishEnvironment) {
-          context.admission.assertCurrent();
-          environmentPublished = publishEnvironment(environment.environmentId, {
-            nodeDeviceId: environment.nodeDeviceId,
-            updatedAtMs: environment.updatedAtMs,
-          });
-        }
         // A callback can throw or read publication recursively; the commit is already installed.
         published = true;
         mutation.publish(receipt);
@@ -137,9 +119,6 @@ export function executeDevicePairingMutation<Key extends keyof DevicePairingWork
           options.onNodeApproved?.(receipt.nodeApproval);
         }
         invalidatePairedCardRendererCache();
-        if (environmentPublished) {
-          sessionChanges.emit({ all: true, scope: "worker-environments" });
-        }
         if (receipt.tokensReplaced) {
           options.onTokensReplaced?.(receipt.tokensReplaced.deviceId, receipt.tokensReplaced.roles);
         }
@@ -172,11 +151,6 @@ export function executeDevicePairingMutation<Key extends keyof DevicePairingWork
               for (const fact of admissionFacts(request.facts)) {
                 options.admit?.(fact);
               }
-              if (request.stage === "commit" && captured.type === "bootstrap.consume") {
-                publishEnvironment = reserveWorkerEnvironmentNativePublication(
-                  context.admission.identity,
-                );
-              }
               if (!grant()) {
                 throw new DevicePairingAuthorityRefusedError();
               }
@@ -196,7 +170,6 @@ export function executeDevicePairingMutation<Key extends keyof DevicePairingWork
         if (
           captured.type === "bootstrap.consume" ||
           captured.type === "bootstrap.confirm" ||
-          captured.type === "bootstrap.ensure" ||
           captured.type === "bootstrap.readCompletion"
         ) {
           notifyListeners(setupChanges, context.admission.databasePath);

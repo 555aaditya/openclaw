@@ -154,7 +154,7 @@ suite.define(() => {
     });
   });
 
-  it("retries an ambiguous cloud create with the same account, session key and machine class", async () => {
+  it("retries an ambiguous cloud create with the same account, session key and profile", async () => {
     const context = await suite.browser.newContext({
       locale: "en-US",
       serviceWorkers: "block",
@@ -232,11 +232,7 @@ suite.define(() => {
           profiles: [
             {
               id: "aws",
-              providerId: "crabbox",
-              machines: [
-                { id: "standard", label: "Standard", default: true },
-                { id: "fast", label: "Fast" },
-              ],
+              providerId: "device",
             },
           ],
         },
@@ -268,10 +264,7 @@ suite.define(() => {
       await page.locator("#new-session-where-trigger").click();
       await expect.poll(() => place.getAttribute("data-test-picker-ready")).toBe("true");
       await page.locator('[data-value="cloud:aws"]').click();
-      await page.locator('[data-value="machine:fast"]').click();
-      await expect
-        .poll(() => page.locator("#new-session-where-trigger").getAttribute("data-machine-class"))
-        .toBe("fast");
+
       await page.locator(".new-session-page__message").fill(message);
       await pastePng(page.locator(".new-session-page__message"));
       await expectPastedPngImage(page.getByRole("img", { name: "pixel.png" }));
@@ -305,7 +298,7 @@ suite.define(() => {
 
       await gateway.setMethodResponse("environments.list", {
         environments: [],
-        profiles: [{ id: "aws", providerId: "crabbox" }],
+        profiles: [{ id: "aws", providerId: "device" }],
       });
       await page.reload();
       await gateway.waitForRequest("environments.list");
@@ -315,9 +308,7 @@ suite.define(() => {
       await pollLocatorText(
         page.locator("#new-session-where-trigger .new-session-page__trigger-label"),
       ).toBe("aws");
-      expect(
-        await page.locator("#new-session-where-trigger").getAttribute("data-machine-class"),
-      ).toBe("fast");
+
       await gateway.waitForRequest("models.list");
       try {
         await expect
@@ -349,7 +340,7 @@ suite.define(() => {
       await gateway.resolveDeferred("sessions.create", { key: firstKey });
 
       expect(await gateway.waitForRequest("sessions.dispatch")).toMatchObject({
-        params: { key: firstKey, agentId: "cloud", profileId: "aws", machineClass: "fast" },
+        params: { key: firstKey, agentId: "cloud", profileId: "aws" },
       });
       expect(await gateway.getRequests("sessions.send")).toHaveLength(0);
       await gateway.resolveDeferred("sessions.dispatch");
@@ -384,7 +375,7 @@ suite.define(() => {
         "agents.list": createCloudAgentsListResponse(),
         "environments.list": {
           environments: [],
-          profiles: [{ id: "aws", providerId: "crabbox" }],
+          profiles: [{ id: "aws", providerId: "device" }],
         },
         "sessions.patch": { ok: true },
         "worktrees.branches": {
@@ -495,7 +486,7 @@ suite.define(() => {
           "agents.list": createCloudAgentsListResponse(),
           "environments.list": {
             environments: [],
-            profiles: [{ id: "aws", providerId: "crabbox" }],
+            profiles: [{ id: "aws", providerId: "device" }],
           },
           "worktrees.branches": {
             branches: [{ kind: "local", name: "main" }],
@@ -653,7 +644,7 @@ suite.define(() => {
         "agents.list": createCloudAgentsListResponse(),
         "environments.list": {
           environments: [],
-          profiles: [{ id: "aws", providerId: "crabbox" }],
+          profiles: [{ id: "aws", providerId: "device" }],
         },
         "worktrees.branches": {
           branches: [{ kind: "local", name: "main" }],

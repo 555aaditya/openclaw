@@ -236,8 +236,6 @@ export const SessionsDispatchParamsSchema = Type.Object(
     profileId: Type.Optional(NonEmptyString),
     deviceId: Type.Optional(NonEmptyString),
     autoDevice: Type.Optional(Type.Literal(true)),
-    machineClass: Type.Optional(WorkerMachineClassSchema),
-    os: Type.Optional(WorkerOperatingSystemIdSchema),
   },
   {
     additionalProperties: false,
@@ -249,23 +247,13 @@ export const SessionsDispatchParamsSchema = Type.Object(
       {
         required: ["deviceId"],
         not: {
-          anyOf: [
-            { required: ["profileId"] },
-            { required: ["autoDevice"] },
-            { required: ["machineClass"] },
-            { required: ["os"] },
-          ],
+          anyOf: [{ required: ["profileId"] }, { required: ["autoDevice"] }],
         },
       },
       {
         required: ["autoDevice"],
         not: {
-          anyOf: [
-            { required: ["profileId"] },
-            { required: ["deviceId"] },
-            { required: ["machineClass"] },
-            { required: ["os"] },
-          ],
+          anyOf: [{ required: ["profileId"] }, { required: ["deviceId"] }],
         },
       },
       {
@@ -274,8 +262,6 @@ export const SessionsDispatchParamsSchema = Type.Object(
             { required: ["profileId"] },
             { required: ["deviceId"] },
             { required: ["autoDevice"] },
-            { required: ["machineClass"] },
-            { required: ["os"] },
           ],
         },
       },
@@ -332,8 +318,6 @@ export const SessionMoveGatewayTargetSchema = closedObject({
 export const SessionMoveProfileTargetSchema = closedObject({
   kind: Type.Literal("profile"),
   profileId: WorkerIdentifierSchema,
-  machineClass: Type.Optional(WorkerMachineClassSchema),
-  os: Type.Optional(WorkerOperatingSystemIdSchema),
 });
 
 /** Moves the session to one paired device worker. */

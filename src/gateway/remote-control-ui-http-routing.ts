@@ -19,7 +19,6 @@ import {
   classifyMcpAppStandalonePath,
   classifyNodeWorkerBundleTransferPath,
   classifyNodeWorkspaceTransferPath,
-  classifyWorkerBootstrapArtifactTransferPath,
   classifyWorkerGatewayPath,
 } from "./gateway-http-route-contracts.js";
 import { resolvePluginRoutePathContext } from "./server/plugins-http/path-context.js";
@@ -91,8 +90,7 @@ export function resolveRemoteControlUiHttpRoute(
       classifyMcpAppStandalonePath(candidate) !== "outside" ||
       classifyWorkerGatewayPath(candidate) !== "outside" ||
       classifyNodeWorkerBundleTransferPath(candidate) !== "outside" ||
-      classifyNodeWorkspaceTransferPath(candidate) !== "outside" ||
-      classifyWorkerBootstrapArtifactTransferPath(candidate) !== "outside"
+      classifyNodeWorkspaceTransferPath(candidate) !== "outside"
     ) {
       return undefined;
     }

@@ -31,7 +31,6 @@ import {
   isCurrentActiveWorkerEnvironment,
   matchesWorkerPlacementTarget,
 } from "./placement-target.js";
-import { WorkerRuntimeRefreshPendingError } from "./provider-runtime-refresh.js";
 import { boundedWorkerError } from "./worker-error.js";
 
 const log = createSubsystemLogger("gateway/worker-placement");
@@ -50,8 +49,8 @@ function activePlacementExecutionError(
   if (provisionedMode !== undefined && provisionedMode !== placement.executionMode) {
     return new Error("Active worker placement execution mode does not match its environment");
   }
-  if (placement.executionMode === "worker-turn" && !environment.nodeDeviceId) {
-    return new Error("Active worker-turn placement requires a node lease");
+  if (!environment.nodeDeviceId || environment.sshEndpoint) {
+    return new Error("Active worker placement requires a node lease");
   }
   if (
     !environments.supportsProviderExecutionMode(environment.providerId, placement.executionMode)
@@ -195,12 +194,6 @@ export function createPlacementRecoveryActions(
       }
       // Node leases stay authoritative while offline; their reconnect-scoped
       // tunnel is validated lazily when the next turn actually launches.
-      if (!environment.nodeDeviceId) {
-        await environments.startTunnel({
-          environmentId: environment.environmentId,
-          ownerEpoch: environment.ownerEpoch,
-        });
-      }
       await placements.adoptActive({
         sessionId: placement.sessionId,
         expectedGeneration: placement.generation,
@@ -208,11 +201,6 @@ export function createPlacementRecoveryActions(
         ownerEpoch: environment.ownerEpoch,
       });
     } catch (error) {
-      if (error instanceof WorkerRuntimeRefreshPendingError) {
-        // The provider still owns this machine. A failed runtime update closes
-        // execution until retry; it is not evidence that the lease must be reclaimed.
-        return;
-      }
       await failure.failActive(placement, error);
     }
   };

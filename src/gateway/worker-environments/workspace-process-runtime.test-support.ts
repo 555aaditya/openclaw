@@ -1,9 +1,4 @@
 export const workspaceProcessTestEntrypoints = {
-  rsyncReceiver: {
-    currentModuleUrl: import.meta.url,
-    sourceWorkerName: "../../worker/workspace-rsync-receiver",
-    distWorkerPath: "worker/workspace-rsync-receiver.js",
-  },
   manifestWorker: {
     currentModuleUrl: import.meta.url,
     sourceWorkerName: "workspace-manifest-worker",

@@ -10,7 +10,10 @@ async function requestDesktopEnvironments(
   sessionTarget: string | null | undefined,
 ): Promise<EnvironmentSummary[]> {
   // A session without placement has no desktop; only the global picker needs full inventory.
-  if (sessionTarget === null) {
+  if (
+    sessionTarget === null ||
+    (sessionTarget !== undefined && !desktopSourceForEnvironment({ id: sessionTarget }))
+  ) {
     return [];
   }
   if (sessionTarget !== undefined) {
@@ -45,7 +48,6 @@ export async function loadDesktopEnvironments(
   | {
       environments: EnvironmentSummary[];
       selectedSource: string | undefined;
-      pendingSource?: string;
     }
   | undefined
 > {
@@ -58,13 +60,6 @@ export async function loadDesktopEnvironments(
     return undefined;
   }
   const selectedEnvironment = environments.find((environment) => environment.id === selectedTarget);
-  if (selectedEnvironment?.status === "starting") {
-    return {
-      environments: [selectedEnvironment],
-      selectedSource: undefined,
-      pendingSource: selectedEnvironment.id,
-    };
-  }
   if (
     selectedEnvironment?.status === "error" ||
     (!options.recoverToPicker && selectedEnvironment && selectedEnvironment.status !== "available")
@@ -74,7 +69,12 @@ export async function loadDesktopEnvironments(
   if (
     options.recoverToPicker &&
     selectedTarget !== undefined &&
-    !environments.some((environment) => environment.id === selectedTarget && environment.desktop)
+    !environments.some(
+      (environment) =>
+        environment.id === selectedTarget &&
+        environment.desktop &&
+        desktopSourceForEnvironment(environment) !== null,
+    )
   ) {
     // Only a proven unavailable target enters the document's existing picker recovery.
     environments = await requestDesktopEnvironments(client, undefined);
@@ -87,20 +87,24 @@ export async function loadDesktopEnvironments(
       (environment) =>
         environment.id === selectedTarget &&
         environment.status === "available" &&
-        environment.desktop === true,
+        environment.desktop === true &&
+        desktopSourceForEnvironment(environment) !== null,
     )?.id,
-    environments: environments.filter((environment) => environment.desktop === true),
+    environments: environments.filter(
+      (environment) =>
+        environment.desktop === true && desktopSourceForEnvironment(environment) !== null,
+    ),
   };
 }
 
 export function desktopSourceForEnvironment(
   environment: Pick<EnvironmentSummary, "id">,
-): DesktopSource {
+): DesktopSource | null {
   if (environment.id === "gateway") {
     return { kind: "host" };
   }
   if (environment.id.startsWith("node:") && environment.id.length > "node:".length) {
     return { kind: "node", nodeId: environment.id.slice("node:".length) };
   }
-  return { kind: "environment", environmentId: environment.id };
+  return null;
 }

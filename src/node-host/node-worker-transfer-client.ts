@@ -6,7 +6,6 @@ import { pipeline } from "node:stream/promises";
 import { createGunzip } from "node:zlib";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import type { CloudflareAccessCredentials } from "../../packages/gateway-client/src/cloudflare-access.js";
-import { boundedWorkerError } from "../gateway/worker-environments/worker-error.js";
 import {
   replaceWorkerWorkspaceHashMemoEntries,
   withWorkerWorkspaceHashMemo,
@@ -44,10 +43,6 @@ import {
   type NodeWorkerWorkspaceTransferStage,
 } from "../worker/node-workspace-transfer-protocol.js";
 import {
-  prepareNodeWorkerWorkspaceOverlay,
-  type NodeWorkerPreparedWorkspaceTransfer,
-} from "./node-worker-prepared-workspace-transfer.js";
-import {
   applyNodeRepositoryCheckpoint,
   readNodeRepositoryCheckpointBase,
   withNodeRepositoryPublication,
@@ -69,7 +64,6 @@ import {
   recoverWorkspaceReplacement,
   replaceNodeWorkerDirectory,
 } from "./node-worker-workspace-replacement.js";
-import { copyNodeWorkerProjectSeedObjects } from "./node-worker-workspace-seeds.js";
 
 const TRANSFER_RESULT_MAX_BYTES = 64 * 1024;
 const transferLog = createSubsystemLogger("node-host/worker-workspace");
@@ -90,7 +84,6 @@ type WorkspaceTransferContext = {
   workspaceDir: string;
   manifestHome: string;
   transfer: NodeWorkerWorkspaceTransferInput;
-  prepared?: NodeWorkerPreparedWorkspaceTransfer;
   hashMemo?: WorkspaceHashMemo;
   signal?: AbortSignal;
 };
@@ -226,7 +219,6 @@ export function serializeNodeWorkerWorkspace<T>(
 async function downloadWorkspace(params: WorkspaceTransferOperation<"download">): Promise<string> {
   const startedAt = performance.now();
   let packDownloadMs: number | undefined;
-  let baseSource: "prepared-project-seed" | "gateway-pack" | undefined;
   params.setStage("manifest");
   const raw = await downloadBuffer(
     {
@@ -256,22 +248,6 @@ async function downloadWorkspace(params: WorkspaceTransferOperation<"download">)
     ? new Set(workerWorkspaceTransferPaths(manifest, checkpointBase, params.signal))
     : undefined;
 
-  if (params.transfer.seedKey && (!manifest.baseCommit || params.transfer.attachments)) {
-    throw new Error("Prepared project seeds require a Git workspace transfer");
-  }
-  const overlay =
-    params.prepared && !params.transfer.attachments
-      ? await prepareNodeWorkerWorkspaceOverlay({
-          prepared: params.prepared,
-          manifest,
-          manifestRef: params.transfer.manifestRef,
-          // Only initial Gateway project sync carries a seed. Accepted publication and
-          // explicit checkpoints restore exact snapshots, including setup-output deletions.
-          sourceOverlay: Boolean(params.transfer.seedKey) && !checkpointBase,
-          hashMemo: params.hashMemo,
-          signal: params.signal,
-        })
-      : undefined;
   const stagedInputs = stagedInputDirectoriesFromEntries(manifest.entries);
   const attachmentEntries = params.transfer.attachments
     ? manifest.entries.filter((entry) => entry.type === "file")
@@ -311,60 +287,31 @@ async function downloadWorkspace(params: WorkspaceTransferOperation<"download">)
     if (published.trim() !== params.transfer.manifestRef) {
       throw new Error("workspace transfer manifest publication acknowledgement is invalid");
     }
-    if (manifest.baseCommit && !checkpointBase && !overlay) {
-      try {
-        params.setStage("base");
-        let seeded = false;
-        if (params.transfer.seedKey) {
-          baseSource = "prepared-project-seed";
-          if (!params.seedsRoot || !params.gatewayNamespace) {
-            throw new Error("Prepared project seed has no machine cache owner");
-          }
-          seeded = await copyNodeWorkerProjectSeedObjects({
-            seedsRoot: params.seedsRoot,
-            gatewayNamespace: params.gatewayNamespace,
-            seedKey: params.transfer.seedKey,
-            workspaceDir: staging,
-            signal: params.signal,
-          });
-        }
-        let packPath: string | undefined;
-        if (!seeded) {
-          baseSource = "gateway-pack";
-          packPath = path.join(staging, ".openclaw-base.pack");
-          const packStartedAt = performance.now();
-          await downloadFile({
-            request: {
-              ...params.request,
-              routePath: nodeWorkspaceTransferPackPath(
-                params.environmentId,
-                params.transfer.manifestRef,
-              ),
-              method: "GET",
-            },
-            root: stagingRoot,
-            relativePath: ".openclaw-base.pack",
-          });
-          packDownloadMs = performance.now() - packStartedAt;
-        }
-        await initializeNodeWorkerGitWorkspace({
-          workspaceDir: staging,
-          manifestHome: params.manifestHome,
-          packPath,
-          baseCommit: manifest.baseCommit,
-          entries: manifest.entries,
-          signal: params.signal,
-        });
-      } catch (error) {
-        params.signal?.throwIfAborted();
-        if (baseSource === "prepared-project-seed") {
-          throw new NodeWorkerWorkspaceTransferError(
-            `workspace-transfer-failed: prepared project seed is invalid: ${boundedWorkerError(error)}`,
-            { cause: error },
-          );
-        }
-        throw error;
-      }
+    if (manifest.baseCommit && !checkpointBase) {
+      params.setStage("base");
+      const packPath = path.join(staging, ".openclaw-base.pack");
+      const packStartedAt = performance.now();
+      await downloadFile({
+        request: {
+          ...params.request,
+          routePath: nodeWorkspaceTransferPackPath(
+            params.environmentId,
+            params.transfer.manifestRef,
+          ),
+          method: "GET",
+        },
+        root: stagingRoot,
+        relativePath: ".openclaw-base.pack",
+      });
+      packDownloadMs = performance.now() - packStartedAt;
+      await initializeNodeWorkerGitWorkspace({
+        workspaceDir: staging,
+        manifestHome: params.manifestHome,
+        packPath,
+        baseCommit: manifest.baseCommit,
+        entries: manifest.entries,
+        signal: params.signal,
+      });
     }
     params.setStage("materialize");
     const blobApplyStartedAt = performance.now();
@@ -375,11 +322,7 @@ async function downloadWorkspace(params: WorkspaceTransferOperation<"download">)
     }
     await withWorkerWorkspaceHashMemo(stagingHashMemo, async () => {
       for (const entry of manifest.entries) {
-        if (
-          overlay
-            ? !overlay.changed.has(entry.path)
-            : checkpointPaths && !checkpointPaths.has(entry.path)
-        ) {
+        if (checkpointPaths && !checkpointPaths.has(entry.path)) {
           continue;
         }
         const destination = workspacePath(staging, entry.path);
@@ -402,15 +345,6 @@ async function downloadWorkspace(params: WorkspaceTransferOperation<"download">)
         });
         if (entry.type === "symlink") {
           await fsp.symlink(entry.target, destination);
-          continue;
-        }
-        if (overlay && checkpointPaths && !checkpointPaths.has(entry.path)) {
-          const source = await overlay.readSourceFile(entry);
-          await stagingRoot.create(`./${entry.path}`, source, {
-            atomic: true,
-            mode: entry.mode,
-            assertBeforeMutation: () => params.signal?.throwIfAborted(),
-          });
           continue;
         }
         const blobKey = `${entry.sha256}:${entry.size}`;
@@ -443,7 +377,7 @@ async function downloadWorkspace(params: WorkspaceTransferOperation<"download">)
     // Reuse only hashes validated on this staging filesystem. Capture still checks
     // the complete tree and current handle identities before the atomic replacement.
     params.setStage("verify");
-    if (checkpointBase && checkpointBaseRef && !overlay) {
+    if (checkpointBase && checkpointBaseRef) {
       await applyNodeRepositoryCheckpoint({
         workspaceDir: params.workspaceDir,
         stagingRoot: staging,
@@ -455,16 +389,14 @@ async function downloadWorkspace(params: WorkspaceTransferOperation<"download">)
       });
       params.hashMemo?.clear();
     } else {
-      const observed = overlay
-        ? await overlay.apply(staging)
-        : await captureManifest({
-            workspaceDir: staging,
-            manifestHome: params.manifestHome,
-            baseCommit: manifest.baseCommit,
-            referenceManifestRef: params.transfer.manifestRef,
-            hashMemo: stagingHashMemo,
-            signal: params.signal,
-          });
+      const observed = await captureManifest({
+        workspaceDir: staging,
+        manifestHome: params.manifestHome,
+        baseCommit: manifest.baseCommit,
+        referenceManifestRef: params.transfer.manifestRef,
+        hashMemo: stagingHashMemo,
+        signal: params.signal,
+      });
       if (observed !== params.transfer.manifestRef) {
         throw new Error(
           `workspace transfer materialized a different manifest (${observed}/${params.transfer.manifestRef})`,
@@ -501,7 +433,7 @@ async function downloadWorkspace(params: WorkspaceTransferOperation<"download">)
         }
         params.signal?.throwIfAborted();
       }
-    } else if (!overlay && !checkpointBase) {
+    } else if (!checkpointBase) {
       // Retain this node's Git state across the atomic workspace swap.
       const git = path.join(params.workspaceDir, ".git");
       const parent = await fsRoot(path.dirname(params.workspaceDir));
@@ -517,7 +449,7 @@ async function downloadWorkspace(params: WorkspaceTransferOperation<"download">)
       params.setStage("replace");
       await replaceNodeWorkerDirectory(params.workspaceDir, staging, "workspace", params.signal);
     }
-    if (params.hashMemo && !overlay && !checkpointBase) {
+    if (params.hashMemo && !checkpointBase) {
       replaceWorkerWorkspaceHashMemoEntries(params.hashMemo, [...stagingHashMemo]);
     }
     transferLog.debug("node worker workspace transfer completed", {
@@ -525,7 +457,7 @@ async function downloadWorkspace(params: WorkspaceTransferOperation<"download">)
       direction: "download",
       outcome: "succeeded",
       durationMs: performance.now() - startedAt,
-      ...(baseSource === undefined ? {} : { baseSource }),
+      ...(manifest.baseCommit && !checkpointBase ? { baseSource: "gateway-pack" } : {}),
       ...(packDownloadMs === undefined ? {} : { packDownloadMs }),
       blobApplyMs,
     });
@@ -654,9 +586,7 @@ export async function runNodeWorkerWorkspaceTransfer(
     stage = next;
   };
   try {
-    if (!params.prepared) {
-      await recoverWorkspaceReplacement(params.workspaceDir);
-    }
+    await recoverWorkspaceReplacement(params.workspaceDir);
     const request = {
       gatewayUrl: params.gatewayUrl,
       tlsFingerprint: params.gatewayTlsFingerprint,

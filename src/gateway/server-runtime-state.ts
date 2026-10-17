@@ -117,7 +117,6 @@ export async function createGatewayHttpTransport(params: {
   isTerminalEnabled: () => boolean;
   handleWatchNodeRequest?: (req: IncomingMessage, res: ServerResponse) => Promise<boolean>;
   handleNodeWorkerBundleTransferRequest?: ArtifactTransferHttpCallback;
-  handleWorkerBootstrapArtifactTransferRequest?: ArtifactTransferHttpCallback;
   handleNodeWorkspaceTransferRequest?: NodeWorkspaceTransferHttpCallback;
   workerIngressEnabled?: boolean;
   desktopSessionRegistry?: DesktopSessionRegistry;
@@ -358,8 +357,6 @@ export async function createGatewayHttpTransport(params: {
       rateLimiter: params.rateLimiter,
       joinRateLimiter: params.joinRateLimiter,
       handleNodeWorkerBundleTransferRequest: params.handleNodeWorkerBundleTransferRequest,
-      handleWorkerBootstrapArtifactTransferRequest:
-        params.handleWorkerBootstrapArtifactTransferRequest,
       handleNodeWorkspaceTransferRequest: params.handleNodeWorkspaceTransferRequest,
       getReadiness: params.getReadiness,
       getStartup: params.getStartup,

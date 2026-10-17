@@ -246,56 +246,50 @@ describe("environment gateway methods", () => {
     }
   });
 
-  it("discovers profile catalogs independently of inventories and preserves provider identity", async () => {
-    const machine = {
-      id: "standard",
-      label: "Standard",
-      cpu: 32,
-      memoryGb: 64,
-      default: true,
-      os: "os-a",
-    };
-    const systems = [
-      { id: "os-a", label: "OS A", default: true },
-      { id: "os-b", label: "OS B" },
-    ];
+  it("lists named device profiles independently of inventories and preserves provider identity", async () => {
     const service = workerService({
-      readProviderDisplayId: vi.fn((id) => (id === "aws" ? "azure" : undefined)),
-      listMachineOptions: vi.fn(async (id) => (id === "aws" ? [machine] : undefined)),
-      listOperatingSystems: vi.fn(async (id) => (id === "aws" ? systems : [systems[0]!])),
-      supportsExecutionMode: vi.fn((id, mode) => id === "aws" || mode === "remote-exec"),
+      supportsExecutionMode: vi.fn(() => true),
     });
     vi.mocked(readDevicePairingNodeSnapshot).mockClear();
-    const [ok, payload] = await call(
-      "environments.list",
-      { projection: "profiles", includePreparedDetails: true },
-      { service, scopes: ["operator.admin"] },
+    const respond = vi.fn();
+    await environmentsHandlers["environments.list"]?.({
+      params: { projection: "profiles" },
+      respond,
+      client: { connect: { scopes: ["operator.admin"] } },
+      context: {
+        ...mockContext(service),
+        getRuntimeConfig: () => ({
+          cloudWorkers: {
+            profiles: {
+              zeta: { provider: "device", settings: { device: "node-offline" } },
+              development: { provider: "device", settings: { device: "node-live" } },
+            },
+          },
+        }),
+      },
+    } as never);
+    expect(respond).toHaveBeenCalledExactlyOnceWith(
+      true,
+      {
+        environments: [],
+        profiles: [
+          {
+            id: "development",
+            providerId: "device",
+            executionMode: "worker-turn",
+            executionModes: ["worker-turn", "remote-exec"],
+          },
+          {
+            id: "zeta",
+            providerId: "device",
+            executionMode: "worker-turn",
+            executionModes: ["worker-turn", "remote-exec"],
+          },
+        ],
+      },
+      undefined,
     );
-    expect(ok).toBe(true);
-    expect(payload).toEqual({
-      environments: [],
-      profiles: [
-        {
-          id: "aws",
-          providerId: "crabbox",
-          providerDisplayId: "azure",
-          executionMode: "worker-turn",
-          executionModes: ["worker-turn", "remote-exec"],
-          machines: [machine],
-          operatingSystems: systems,
-          readyWorkers: 1,
-        },
-        {
-          id: "zeta",
-          providerId: "static-ssh",
-          executionMode: "remote-exec",
-          executionModes: ["remote-exec"],
-          readyWorkers: 1,
-        },
-      ],
-    });
     expect(service.list).not.toHaveBeenCalled();
-    expect(service.readPreparedPoolSummary).not.toHaveBeenCalled();
     expect(readDevicePairingNodeSnapshot).not.toHaveBeenCalled();
     expect(service.create).not.toHaveBeenCalled();
   });
@@ -395,7 +389,13 @@ describe("environment gateway methods", () => {
 
   it("creates a worker from a configured profile", async () => {
     const create = vi.fn(async () =>
-      workerRecord({ desktopAvailable: true, desktopApps: ["browser", "terminal"] }),
+      workerRecord({
+        providerId: "device",
+        profileSnapshot: { settings: { device: "node-live" } },
+        nodeDeviceId: "node-live",
+        sharedHost: true,
+        sshEndpoint: null,
+      }),
     );
     const service = workerService({ create });
     const [ok, payload] = await call("environments.create", createParams, { service });
@@ -405,14 +405,16 @@ describe("environment gateway methods", () => {
     expect(payload).toMatchObject({
       id: "worker-1",
       type: "worker",
-      desktop: true,
+      trust: "persistent",
       worker: {
-        providerId: "static-ssh",
+        providerId: "device",
+        profileId: "development",
         state: "ready",
-        desktop: true,
-        desktopApps: ["browser", "terminal"],
       },
     });
+    expect(payload).not.toHaveProperty("desktop");
+    expect(payload).not.toHaveProperty("worker.desktop");
+    expect(payload).not.toHaveProperty("worker.desktopApps");
   });
 
   it("hides provider failure details when worker creation fails", async () => {
@@ -426,79 +428,6 @@ describe("environment gateway methods", () => {
       code: ErrorCodes.UNAVAILABLE,
       message: "worker environment creation failed",
     });
-  });
-
-  it("maps desktop lifecycle errors to invalid request and hides runtime failures", async () => {
-    for (const [code, message] of [
-      ["invalid_state", "environment has no desktop"],
-      ["provider_failure", "worker desktop observe unavailable"],
-    ] as const) {
-      const detail = code === "invalid_state" ? message : "private SSH failure";
-      const service = workerService({ observeDesktop: rejectService(code, detail) });
-      const result = await call("worker.desktop.observe", workerId, { service });
-      expect(result).toEqual([
-        false,
-        undefined,
-        {
-          code: code === "invalid_state" ? ErrorCodes.INVALID_REQUEST : ErrorCodes.UNAVAILABLE,
-          message,
-        },
-      ]);
-    }
-  });
-
-  it("launches only a closed advertised desktop app and returns readiness", async () => {
-    const launchDesktopApp = vi.fn(async ({ app }: { app: "browser" | "terminal" }) => ({
-      app,
-      status: "ready" as const,
-    }));
-    const service = workerService({ launchDesktopApp });
-    const result = await call(
-      "worker.desktop.launch",
-      { environmentId: "worker-1", app: "browser" },
-      { service },
-    );
-
-    expect(result).toEqual([true, { app: "browser", status: "ready" }, undefined]);
-    expect(launchDesktopApp).toHaveBeenCalledExactlyOnceWith({
-      environmentId: "worker-1",
-      app: "browser",
-    });
-    const rejected = await call(
-      "worker.desktop.launch",
-      { environmentId: "worker-1", app: "editor" },
-      { service },
-    );
-    expect(rejected[0]).toBe(false);
-    expect(launchDesktopApp).toHaveBeenCalledOnce();
-  });
-
-  it("maps typed desktop launcher errors without exposing unknown runtime details", async () => {
-    const detail = "actionable launcher error";
-    const cases = [
-      ["desktop_app_not_found", ErrorCodes.INVALID_REQUEST, detail],
-      ["unsupported_platform", ErrorCodes.INVALID_REQUEST, detail],
-      ["launcher_failure", ErrorCodes.UNAVAILABLE, detail],
-      [
-        "provider_failure",
-        ErrorCodes.UNAVAILABLE,
-        "worker desktop app launch unavailable; try again",
-      ],
-    ] as const;
-    for (const [serviceCode, gatewayCode, message] of cases) {
-      const service = workerService({
-        launchDesktopApp: rejectService(
-          serviceCode,
-          serviceCode === "provider_failure" ? "private SSH detail" : detail,
-        ),
-      });
-      const response = await call(
-        "worker.desktop.launch",
-        { environmentId: "worker-1", app: "browser" },
-        { service },
-      );
-      expect(response[2]).toEqual({ code: gatewayCode, message });
-    }
   });
 
   it("rejects raw destruction of a session-attached worker", async () => {
@@ -570,44 +499,5 @@ describe("environment gateway methods", () => {
     expect(payload).toMatchObject({ worker: { state: "destroyed" } });
     expect(reconcileActive).toHaveBeenCalledExactlyOnceWith("worker-1");
     expect(service.destroyUnattached).toHaveBeenCalledBefore(reconcileActive);
-  });
-});
-
-describe("environments.prepare", () => {
-  const request = { profileId: "development", projectPath: "/projects/app" };
-
-  it("rejects invalid params before preparation", async () => {
-    const service = workerService();
-    const [ok, , error] = await call(
-      "environments.prepare",
-      { profileId: "development" },
-      { service },
-    );
-    expect(ok).toBe(false);
-    expect(error).toMatchObject({ code: ErrorCodes.INVALID_REQUEST });
-    expect(service.prepare).not.toHaveBeenCalled();
-  });
-
-  it("returns the admitted preparation", async () => {
-    const result = { environmentId: "worker-1", preparationKey: "project-key", reused: true };
-    const prepare = vi.fn(async () => result);
-    expect(
-      await call("environments.prepare", request, { service: workerService({ prepare }) }),
-    ).toEqual([true, result, undefined]);
-    expect(prepare).toHaveBeenCalledExactlyOnceWith(request, expect.any(Function));
-  });
-
-  it.each([
-    ["profile_not_found", ErrorCodes.INVALID_REQUEST, "unknown worker profile"],
-    ["invalid_profile", ErrorCodes.INVALID_REQUEST, "profile cannot prepare projects"],
-    ["invalid_project", ErrorCodes.INVALID_REQUEST, "project must be a local Git checkout"],
-    ["capacity", ErrorCodes.UNAVAILABLE, "prepared worker pool is full"],
-  ])("preserves actionable %s errors", async (code, rpcCode, message) => {
-    const service = workerService({ prepare: rejectService(code, message) });
-    expect(await call("environments.prepare", request, { service })).toEqual([
-      false,
-      undefined,
-      { code: rpcCode, message, details: { code } },
-    ]);
   });
 });

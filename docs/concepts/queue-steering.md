@@ -110,10 +110,7 @@ like later turns in the session, use the session's selected model account.
 Unselected session calls in a multi-person turn may use the owner's authority only for that turn's own session; other targets and session-wide discovery require a session tool with the requester's `requester_profile.id` as `user`.
 Personal instructions and other personal settings without a `user` selector
 cannot be read or changed from a turn several people have steered. The person
-should ask in their own turn with a new Control UI message. For Crabbox open-and-show requests in a
-mixed-person turn, create the environment without `presentation`, then use
-`screen` with `desktop_show` or `portal_show`, its `environmentId`, and the
-requester's `requester_profile.id` as `user`.
+should ask in their own turn with a new Control UI message.
 Different permissions (role scopes, session access cap, sandbox requirement,
 allowed agents, model access, access grant, or tool policy) queue the message as
 a followup; changes to execution policy, workspace, or bound tools can also

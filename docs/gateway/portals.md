@@ -18,24 +18,13 @@ Ask the agent to open a portal:
 
 The agent opens a portal for the application's port, then starts the development server with a background `exec` call. Opening a portal allocates its proxy route; it does not inject environment variables into your server. The agent sets `PORT` (the port it opened) and `PUBLIC_URL` (the returned token-free `publicUrl`, including its initial path) in that `exec` command's own environment, so the app binds the expected port and generates correct absolute URLs.
 
-For a session on a node-backed cloud worker, including the bundled Crabbox provider, the development server runs on the worker. Each portal connection receives its own single-use ticket, which the enrolled node redeems over a TLS-pinned WebSocket to the Gateway before connecting to the selected loopback port. This uses the existing authenticated node channel without exposing the worker to inbound traffic or creating an SSH tunnel. Stopping or replacing the worker closes its portals.
+For a session on a paired-device worker, the development server runs on the worker. Each portal connection receives its own single-use ticket, which the enrolled node redeems over a TLS-pinned WebSocket to the Gateway before connecting to the selected loopback port. This uses the existing authenticated node channel without exposing the worker to inbound traffic or creating an SSH tunnel. Stopping or replacing the worker closes its portals.
 
 A background development server continues running after the agent finishes its
 reply. Later turns in the same worker environment can inspect or stop it with
 `process`. Closing the portal only closes the proxy; it does not stop the server.
 See [Worker background processes](/gateway/background-process#worker-environments)
 for process lifetime and capacity details.
-
-An agent can also use a temporary Crabbox attached to its existing conversation
-without moving the session's primary workspace. It passes the attachment's
-`environmentId` to the `portal` tool. When `screen` is exposed for the current
-turn, it uses `portal_show` with the returned `portalId` to request that exact
-preview in the chat side panel; `browser_show` opens the agent Browser panel,
-not the app preview. Without `screen`, use **Control UI → Portals** instead of
-claiming a side panel was opened. Commands for the app run through the Crabbox
-tool on that environment. Its managed background processes survive completed
-turns; stopping the attachment closes its apps and portals. The portal retains the same separate-origin network and
-access contract described below.
 
 Opening a route does not prove that the application is running or that a remote
 browser can reach it. The service includes machine-readable `exposure` facts in

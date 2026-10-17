@@ -13,7 +13,6 @@ import {
   type GatewayPortalService,
 } from "../portals/portal-service.js";
 import { resolveSessionEnvironmentCaller } from "./environments.session.js";
-import { broadcastPortalChange, sessionPortalHandlers } from "./portals.session.js";
 import type { GatewayRequestHandlerOptions, GatewayRequestHandlers, RespondFn } from "./types.js";
 import { defineValidatedGatewayMethod } from "./validation.js";
 
@@ -109,8 +108,19 @@ async function mutatePortal(
   }
 }
 
+function broadcastPortalChange(
+  context: Pick<GatewayRequestHandlerOptions["context"], "broadcast">,
+  service: GatewayPortalService,
+) {
+  // Bearer credentials belong only to authorized responses.
+  context.broadcast(
+    "portal.changed",
+    { portals: service.list().map(redactPortalSummary) },
+    { dropIfSlow: true },
+  );
+}
+
 export const portalHandlers: GatewayRequestHandlers = {
-  ...sessionPortalHandlers,
   "portal.list": defineValidatedGatewayMethod(
     "portal.list",
     validatePortalListParams,

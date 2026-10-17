@@ -27,6 +27,7 @@ import { createDeferredCore } from "../shared/deferred.js";
 import { createTestGatewayScheduler } from "../test-utils/gateway-scheduler-clock.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import { createGatewayWorkerPlacementRuntime } from "./server-worker-placement-startup.js";
+import { createStoppedTunnelManager } from "./worker-environments/environment-access.test-support.js";
 import {
   REQUEST,
   seedActivePlacement,
@@ -38,7 +39,10 @@ import type {
   WorkerWorkspaceReconcileRequest,
   WorkerWorkspaceTunnelHandle,
 } from "./worker-environments/tunnel-contract.js";
-import { createWorkerTunnelManager } from "./worker-environments/tunnel.js";
+import {
+  measureLaunchTurn,
+  readLaunchToolNames,
+} from "./worker-environments/worker-turn-launcher.test-support.js";
 import {
   WORKSPACE_CONFLICT_CLEARED_TRANSCRIPT_TYPE,
   WORKSPACE_CONFLICT_TRANSCRIPT_TYPE,
@@ -259,19 +263,15 @@ async function createRecoveryFixture(workspacePath: string, options: { archived?
     protocolFeatures,
   });
   const placements = createWorkerSessionPlacementStore({ database: support.testState.stateDb });
-  const tunnelManager = createWorkerTunnelManager();
+  const nodeTunnelManager = createStoppedTunnelManager();
   const destroy = vi.fn(async () => {});
   const environments = support.createService(support.createProvider({ destroy }), {
-    tunnelManager,
+    nodeTunnelManager,
     placementStore: createWorkerSessionPlacementGate(placements),
   });
   const environmentId = "worker-recovery-binding";
-  const bootstrapping = await support.seedBootstrapping(environmentId, "bundle");
-  await support.testState.store.transition({
-    environmentId,
-    from: bootstrapping.state,
-    to: "ready",
-    patch: support.readyPatch(environmentId, { ...support.BOOTSTRAP_RECEIPT, protocolFeatures }),
+  await support.seedReady(environmentId, {
+    receipt: { ...support.BOOTSTRAP_RECEIPT, installKind: "bundle", protocolFeatures },
   });
   const attached = await environments.attachSession({
     environmentId,
@@ -326,7 +326,14 @@ async function createRecoveryFixture(workspacePath: string, options: { archived?
     },
     stop: async () => {},
   };
-  vi.spyOn(tunnelManager, "start").mockResolvedValue(handle);
+  nodeTunnelManager.start.mockResolvedValue({
+    ...handle,
+    measureLaunchTurn,
+    readLaunchToolNames,
+    launchTurn: async () => {
+      throw new Error("Unexpected worker turn during workspace recovery");
+    },
+  });
   const runtime = createGatewayWorkerPlacementRuntime({
     initialPlacements: await placements.listAsync(),
     scheduler: createTestGatewayScheduler(),

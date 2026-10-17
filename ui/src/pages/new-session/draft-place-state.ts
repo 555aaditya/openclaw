@@ -12,7 +12,6 @@ import {
   projectDevicePlacements,
   resolveSelectedDevicePlacement,
 } from "./device-placement.ts";
-import { DraftCloudMachineState } from "./draft-cloud-machine-state.ts";
 import { DraftGatewayState } from "./draft-gateway-state.ts";
 import type { DraftPlaceBrowser } from "./draft-place-browser.ts";
 import type { DraftPlaceCallbacks, DraftPlaceSnapshot } from "./draft-place-contract.ts";
@@ -118,7 +117,6 @@ export class DraftPlaceState {
     this.deviceFolderValue = path;
     this.callbacks.changed();
   }
-  readonly cloudMachines = new DraftCloudMachineState();
   agentsHydrated = false;
   private agentSelectedByUser = false;
   private routeModelIntentActive = true;
@@ -300,12 +298,6 @@ export class DraftPlaceState {
       : this.hostedEnvironment
         ? ""
         : this.selection.cloudProfileId;
-  }
-
-  get cloudSelection() {
-    return this.requiredPlacement
-      ? { os: "", machineClass: "" }
-      : this.cloudMachines.selection(this.selection.cloudProfileId, this.gateway.cloudProfiles);
   }
 
   preferenceSelection(): NewSessionPreference {
@@ -494,7 +486,6 @@ export class DraftPlaceState {
     this.resetPlaceSelection();
     this.browser.resetProjectSearch();
     this.modelControl.reset();
-    this.cloudMachines.clear();
     this.callbacks.changed();
   }
 
@@ -511,7 +502,6 @@ export class DraftPlaceState {
       this.agentSelectedByUser = false;
       this.folderValue = "";
       this.resetPlaceSelection();
-      this.cloudMachines.clear();
     }
     this.callbacks.changed();
   }
@@ -521,7 +511,6 @@ export class DraftPlaceState {
     this.selection.deviceId = params.deviceId ?? "";
     this.selection.autoDevice = params.autoDevice === true;
     this.selection.cloudProfileId = params.profileId;
-    this.cloudMachines.applyPending(params.profileId, params.machineClass, params.os);
     this.folderValue = params.cwd ?? "";
     this.deviceFolderValue = params.deviceFolder?.path ?? null;
     this.selection.freshWorkspace = params.worktreeSource === "empty";

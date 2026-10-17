@@ -15,7 +15,6 @@ import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
 import { prepareSessionWorkerPlacementPatchValidation } from "../server-methods/sessions-shared.js";
 import {
   projectWorkerPlacementAgentRuntime,
-  resolveDefaultWorkerPlacementExecutionMode,
   resolveWorkerPlacementCapabilities,
   resolveWorkerPlacementExecutionMode,
   resolveWorkerPlacementSessionRuntime,
@@ -153,7 +152,6 @@ it("derives presence mode from the default session runtime", () => {
       "agent:main:dashboard:browser-created-codex",
     ).executionMode,
   ).toBe("remote-exec");
-  expect(resolveDefaultWorkerPlacementExecutionMode({ cfg, agentId: "main" })).toBe("remote-exec");
 });
 
 it.each([

@@ -81,7 +81,6 @@ export type WorkerDispatchPlacementStore = Pick<
   | "listForReconcileAsync"
   | "releaseTurn"
   | "retainInterruptedTurnWorkspace"
-  | "bindPreparedEnvironment"
   | "startDispatch"
   | "startDrain"
   | "startWorkspaceResultDrain"
@@ -93,11 +92,6 @@ export type WorkerDispatchPlacementStore = Pick<
 export type WorkerDispatchEnvironmentService = Pick<
   WorkerEnvironmentService,
   | "attachSession"
-  | "bindPreparedWorkspace"
-  | "prepareProjectIntent"
-  | "assertPreparedIntentCurrent"
-  | "getPreparedCandidates"
-  | "schedulePreparedRefill"
   | "createWithRequest"
   | "destroy"
   | "get"
@@ -107,8 +101,7 @@ export type WorkerDispatchEnvironmentService = Pick<
   | "startTunnel"
   | "stopTunnel"
   | "supportsProviderExecutionMode"
-> &
-  Partial<Pick<WorkerEnvironmentService, "runProjectLifecycleCommand">>;
+>;
 
 export type WorkerActivationBarrier = (params: {
   sessionId: string;

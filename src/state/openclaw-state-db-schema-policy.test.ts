@@ -14,7 +14,6 @@ import {
   captureSqliteWorkerStateContext,
   runWithSqliteWorkerStateContext,
 } from "../infra/sqlite-worker-state-context.js";
-import { NodeWorkerPreparedWorkspaceStore } from "../node-host/node-worker-prepared-workspace-store.js";
 import { requireNativeSqliteDatabase } from "../test-utils/native-sqlite.js";
 import { writeConfigMachineState } from "./config-machine-state-write.js";
 import { readConfigMachineState } from "./config-machine-state.js";
@@ -598,7 +597,7 @@ describe("existing shared-state schema admission", () => {
     },
   );
 
-  it("writes node state and initializes its lazy store without taking over release repair", async () => {
+  it("writes node configuration without taking over release repair", async () => {
     const { options, before } = createExistingState((db) => {
       db.exec(`
         PRAGMA user_version = ${OPENCLAW_STATE_SCHEMA_VERSION - 1};
@@ -620,19 +619,6 @@ describe("existing shared-state schema admission", () => {
           .prepare("SELECT name FROM sqlite_schema WHERE name = 'node_worker_prepared_workspaces'")
           .get(),
       ).toBeUndefined();
-      const store = new NodeWorkerPreparedWorkspaceStore(options);
-      const registered = await store.register({
-        action: "register",
-        gatewayNamespace: "test-gateway",
-        environmentId: "test-environment",
-        preparationKey: "a".repeat(64),
-        cacheKey: "b".repeat(64),
-        workspaceDir: "/workspace",
-        homeDir: "/home/node",
-        sourceManifestRef: `sha256:${"c".repeat(64)}`,
-        preparedManifestRef: `sha256:${"d".repeat(64)}`,
-      });
-      expect(await store.find("test-environment")).toEqual(registered);
       expect(readConfigMachineState("node.schema-policy-probe", options)).toEqual({
         nodeId: "paired-node",
       });
@@ -656,13 +642,6 @@ describe("existing shared-state schema admission", () => {
     expect(readConfigMachineState("node.schema-policy-probe", options)).toEqual({
       nodeId: "paired-node",
     });
-    expect(
-      await new NodeWorkerPreparedWorkspaceStore(options).find("test-environment"),
-    ).toMatchObject({
-      preparation_key: "a".repeat(64),
-      state: "available",
-    });
-
     await closeOpenClawStateDatabaseAsync();
     expect(repairOpenClawStateDatabaseSchema(options).warnings).toEqual([]);
     const repaired = openOpenClawStateDatabase(options);

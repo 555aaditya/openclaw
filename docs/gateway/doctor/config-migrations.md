@@ -27,31 +27,6 @@ The migration also leaves lists absent when the effective account, channel, or
 global-default `groupPolicy` disables groups. Explicit policy overrides still
 apply. Update-time Doctor repair follows the same rules.
 
-## Cloud setup secret migration
-
-The Crabbox plugin retires `cloudWorkers.profiles.<id>.settings.setupEnv`.
-Run `openclaw doctor --fix` to replace each legacy environment name with a
-same-name store SecretRef under `settings.setupSecrets`. The shared-store entry
-must already be protected (`kind: "secret"`) and have explicit destination
-bindings. Doctor compares a legacy host environment value when one is present;
-a conflicting value leaves the profile unchanged. It also preserves an existing
-conflicting `setupSecrets` mapping instead of granting a different secret.
-
-Doctor reports missing protected entries, missing bindings, conflicting values,
-and unavailable store inspection without exposing secret values. It never
-creates store entries, overwrites values, or infers allowed hosts. Repair the
-store through `openclaw secrets`, then rerun Doctor. A profile migrates only when
-every selected entry is ready; unrelated profiles may migrate independently.
-Audit and dry-run inspection leave authored config untouched.
-
-The plugin returns the repaired config to Doctor's existing backed-up,
-include-aware writer. Update-time Doctor uses the same plugin health repair when
-that phase is admitted. An update that defers it records the repair warning;
-run `openclaw doctor --fix` afterward. Unrepaired `setupEnv` profiles refuse new
-provisioning, with no plaintext fallback. Existing lease inspection and cleanup
-remain available. Protected setup secrets keep snapshots enabled; old plaintext
-setup image identities are not adopted as protected images.
-
 ## Runtime config migration
 
 Runtime config reads require per-model context budgets and current GitHub Copilot
@@ -1153,3 +1128,9 @@ against the current SQLite owners before the import can rename profiles.
 
   </Accordion>
 </AccordionGroup>
+
+<a id="cloud-setup-secret-migration" />
+
+## Retired plugin worker integration
+
+Plugin worker provisioning, its setup-secret grants, machine catalogs, and prepared images have been removed. These former section links are retained for older references. See [retired plugin provisioning](/gateway/cloud-workers#retired-plugin-provisioning) for the remaining paired-device and standalone sandbox options.

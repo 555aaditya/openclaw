@@ -12,6 +12,10 @@ import {
 import { prepareCoreToolPolicy } from "../../agents/prepared-tool-surface.js";
 import { createToolSurfacePresentationForTest } from "../../agents/tool-surface-plan.test-support.js";
 import type { AnyAgentTool } from "../../agents/tools/common.js";
+import {
+  SessionPortalToolSchema,
+  SESSION_PORTAL_TOOL_DESCRIPTION,
+} from "../../agents/tools/portal-tool-contract.js";
 import { createAvailablePortalTools } from "../../agents/tools/portal-tool.js";
 import { createSessionsSendTool } from "../../agents/tools/sessions-send-tool.js";
 import { createSessionsSpawnTool } from "../../agents/tools/sessions-spawn-tool.js";
@@ -403,14 +407,11 @@ async function createWorkerSessionToolTestFixture(
   const ownerExecute = createWorkerSessionToolExecutor(executorParams, {
     sessions_spawn: createSessionsSpawnTool(toolOptions),
     sessions_send: createSessionsSendTool(toolOptions),
-    portal: createAvailablePortalTools({
-      sessionPortalTarget: {
-        agentId: SOURCE.agentId,
-        sessionKey: SOURCE.sessionKey,
-        environmentId: SOURCE.environmentId,
-        assertCurrent: () => {},
-      },
-    })[0]!,
+    portal: {
+      ...createAvailablePortalTools()[0]!,
+      description: SESSION_PORTAL_TOOL_DESCRIPTION,
+      parameters: SessionPortalToolSchema,
+    },
   });
   const toolRuntimes: ReturnType<typeof createWorkerGatewayToolRuntime>[] = [];
   function createToolRuntime(

@@ -237,15 +237,6 @@ export async function serializeWorkspaceManifest(
   return await computeValue("workspace.manifest.serialize", { manifest }, signal);
 }
 
-export async function overlayWorkspaceManifest(
-  source: WorkerWorkspaceManifest,
-  prepared: WorkerWorkspaceManifest,
-  incoming: WorkerWorkspaceManifest,
-  signal?: AbortSignal,
-) {
-  return await computeValue("workspace.manifest.overlay", { source, prepared, incoming }, signal);
-}
-
 export async function parseWorkspaceManifestPair(
   input: { baseRaw: string; baseRef: string; currentRaw: string; currentRef: string },
   signal?: AbortSignal,

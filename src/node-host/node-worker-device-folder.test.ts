@@ -106,11 +106,6 @@ it("allows any existing directory by default, but rejects filesystem roots and p
   reject(home, "private worker storage");
 });
 
-it("does not reinterpret an unbound legacy worker cwd as a device folder", async () => {
-  const { sessionKey: _sessionKey, ...legacy } = request();
-  await expect(runtime.acquirePreparedWorkspace(legacy)).resolves.toBeUndefined();
-});
-
 it("disables device-folder validation with an explicit empty list", async () => {
   runtime = makeRuntime([]);
   expect(() => runtime.validateDeviceFolder(folder)).toThrow("sessions are disabled");
@@ -169,9 +164,9 @@ it("executes and inspects in place with private HOME, and leaves user files afte
 it("retains private homes by gateway and generation, including acquired and recovered owners", async () => {
   write();
 
-  const first = await runtime.acquirePreparedWorkspace(request());
-  const second = await runtime.acquirePreparedWorkspace({ ...request(), ownerEpoch: 2 });
-  const otherGateway = await runtime.acquirePreparedWorkspace({
+  const first = await runtime.acquireManagedWorkspaceAsync(request());
+  const second = await runtime.acquireManagedWorkspaceAsync({ ...request(), ownerEpoch: 2 });
+  const otherGateway = await runtime.acquireManagedWorkspaceAsync({
     ...request(),
     gatewayNamespace: "gateway-2",
   });

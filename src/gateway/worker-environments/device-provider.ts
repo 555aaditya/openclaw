@@ -144,7 +144,6 @@ export function createDeviceWorkerRuntime(options: DeviceWorkerRuntimeOptions) {
   const provider: WorkerProvider = {
     id: DEVICE_WORKER_PROVIDER_ID,
     supportedExecutionModes: ["worker-turn", "remote-exec"],
-    provisionBeforeInstallation: true,
     resolveAllocation: async (profile, operationId) => ({
       leaseId: deviceLeaseId(requireDeviceId(profile), operationId),
       sharedHost: true,

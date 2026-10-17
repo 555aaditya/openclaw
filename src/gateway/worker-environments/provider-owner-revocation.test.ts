@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
+import type { WorkerEnvironmentNodeTunnel } from "./environment-access.js";
 import { createWorkerSessionPlacementStore } from "./placement-store.js";
 import { createWorkerSessionPlacementGate } from "./placement-worker-gate.js";
 import * as support from "./service.test-support.js";
-import type { WorkerTunnelManager } from "./tunnel.js";
 
 const ENVIRONMENT_ID = "worker-stale-result-owner";
 const SESSION_ID = "session-stale-result-owner";
@@ -13,7 +13,7 @@ describe("worker environment owner revocation", () => {
   it.each(["live", "recovery-only"] as const)(
     "preserves a %s pending result during runtime refresh",
     async (owner) => {
-      const ready = await support.seedReadyNodeDesktop(ENVIRONMENT_ID);
+      const ready = await support.seedReady(ENVIRONMENT_ID);
       const attached = await support.testState.store.transition({
         environmentId: ENVIRONMENT_ID,
         from: ready.state,
@@ -89,12 +89,12 @@ describe("worker environment owner revocation", () => {
           ]);
         }),
         stopAll: vi.fn(async () => {}),
-      } as unknown as WorkerTunnelManager;
+      } as unknown as WorkerEnvironmentNodeTunnel;
 
       await support
         .createService(support.createProvider({ destroy: vi.fn(async () => {}) }), {
           placementStore,
-          tunnelManager,
+          nodeTunnelManager: tunnelManager,
           ensureNodeWorkerBundle: async () => support.BOOTSTRAP_RECEIPT,
         })
         .reconcileOnce();

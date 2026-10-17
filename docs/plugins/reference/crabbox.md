@@ -25,17 +25,8 @@ This plugin declares no channels, providers, commands, or contracts.
 
 ## Configure
 
-See [Cloud worker environments](/gateway/config-cloud-workers#crabbox-profile) for the profile schema and lifecycle notes.
+See [Crabbox sandboxing](/gateway/sandboxing/crabbox-backend) for the standalone sandbox backend.
 
-Forward Gateway environment variables to an operator-provided setup script by listing their names in the Crabbox profile settings:
-
-```json5 validate=false
-{
-  setup: 'install-worker "$OPENCLAW_WORKER_ARTIFACT_TOKEN"',
-  setupEnv: ["OPENCLAW_WORKER_ARTIFACT_TOKEN"],
-}
-```
-
-`setupEnv` explicitly forwards up to 16 unique environment variable names to the setup command only. Values are read from the Gateway process environment and are never stored in the profile configuration. Missing variables fail before a machine is allocated.
+Plugin-provided worker environments, setup scripts, prepared images, and machine catalogs have been retired. Existing external resources are not deleted by the SDK removal.
 
 <!-- openclaw-plugin-reference:manual-end -->

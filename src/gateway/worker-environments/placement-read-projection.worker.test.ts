@@ -18,7 +18,6 @@ import {
 } from "../../test-utils/gateway-scheduler-clock.js";
 import { observeMainThreadSql } from "../../test-utils/main-thread-sql-spies.test-support.js";
 import type { NodeWorkerSupervisorTransport } from "../node-registry-private.js";
-import { result as spawnResult } from "./bootstrap.test-support.js";
 import { createNodeWorkerBundleTestNode } from "./node-worker-bundle.test-support.js";
 import { createNodeWorkspaceRetainCoordinator } from "./node-workspace-retain-coordinator.js";
 import { createWorkerPlacementDiskSpaceMonitor } from "./placement-disk-space.js";
@@ -43,6 +42,7 @@ import { matchesWorkspaceResultClaim } from "./placement-workspace-result.js";
 import type { WorkerWorkspacePendingResult } from "./placement-workspace-result.types.js";
 import { prepareSessionWorkerPlacementMutationCheckAsync } from "./session-placement-lifecycle.js";
 import { createWorkerEnvironmentStore } from "./store.js";
+import { result as spawnResult } from "./worker-command.test-support.js";
 
 const roots = useAutoCleanupTempDirTracker((cleanup) =>
   afterEach(async () => {
@@ -138,7 +138,6 @@ it("publishes retention after its scheduler callback finishes", async () => {
         }
         return build;
       },
-      isEnvironmentOwnedNode: () => false,
     },
   });
   coordinator.bindTransport(retentionTransport(node, invoke));
@@ -207,8 +206,6 @@ it("publishes retention without host SQL and fences drained dispatch", async () 
   const nodeEnvironment = {
     ...environment,
     nodeDeviceId: node.nodeId,
-    desktopAvailable: false,
-    desktopApps: [],
     tunnelStatus: "connected" as const,
   };
   const entered = createDeferred<Parameters<NodeWorkerSupervisorTransport["invoke"]>[0]>();

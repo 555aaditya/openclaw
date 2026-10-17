@@ -26,7 +26,6 @@ import type { RemoteShellSandboxSession } from "./remote-shell-transport.js";
 
 type PendingExec = { session: RemoteShellSandboxSession; cleanup: () => Promise<void> };
 
-type PreprovisionedRemoteWorkdir = { runtimeId: string; remoteWorkspaceDir: string };
 type ResolvedRemoteRuntimePaths = {
   runtimeId: string;
   runtimeRootDir: string;
@@ -40,7 +39,6 @@ export type RemoteShellSandboxBackendOptions = {
   runtimeId?: string;
   configLabel?: string;
   configLabelKind?: string;
-  preprovisionedWorkdir?: PreprovisionedRemoteWorkdir;
 };
 
 export async function createRemoteShellSandboxBackend(
@@ -50,9 +48,10 @@ export async function createRemoteShellSandboxBackend(
   if ((params.cfg.docker.binds?.length ?? 0) > 0) {
     throw new Error("Remote shell sandbox backend does not support sandbox.docker.binds.");
   }
-  const runtimePaths = options.preprovisionedWorkdir
-    ? resolvePreprovisionedRuntimePaths(options.preprovisionedWorkdir)
-    : resolveRemoteShellRuntimePaths(params.cfg.ssh.workspaceRoot, params.scopeKey);
+  const runtimePaths = resolveRemoteShellRuntimePaths(
+    params.cfg.ssh.workspaceRoot,
+    params.scopeKey,
+  );
   return new RemoteShellSandboxBackendImpl({
     ...options,
     createParams: params,
@@ -88,9 +87,7 @@ class RemoteShellSandboxBackendImpl {
       discardPreparedWorkdir: (workdir) => this.discardPreparedWorkdir(workdir),
       workdirRoots: [
         this.params.runtimePaths.remoteWorkspaceDir,
-        ...(this.params.preprovisionedWorkdir
-          ? []
-          : [this.params.runtimePaths.remoteAgentWorkspaceDir]),
+        this.params.runtimePaths.remoteAgentWorkspaceDir,
       ],
       remoteWorkspaceDir: this.params.runtimePaths.remoteWorkspaceDir,
       remoteAgentWorkspaceDir: this.params.runtimePaths.remoteAgentWorkspaceDir,
@@ -187,11 +184,6 @@ class RemoteShellSandboxBackendImpl {
   }
 
   private async ensureRuntimeInner(): Promise<void> {
-    if (this.params.preprovisionedWorkdir) {
-      // The placement lifecycle owns this exact worktree. Backend mirroring here would overwrite
-      // managed files and bypass the placement's manifest/reconciliation boundary.
-      return;
-    }
     const session = await this.createSession();
     let stagingRoot: string | undefined;
     try {
@@ -334,7 +326,6 @@ class RemoteShellSandboxBackendImpl {
     signal?: AbortSignal,
   ): Promise<void> {
     if (
-      this.params.preprovisionedWorkdir ||
       this.params.createParams.cfg.workspaceAccess !== "rw" ||
       !this.params.createParams.skillsWorkspaceDir
     ) {
@@ -451,31 +442,6 @@ export function resolveRemoteShellRuntimePaths(
       ".openclaw",
       "sandbox-skills",
     ),
-  };
-}
-
-function resolvePreprovisionedRuntimePaths(
-  params: PreprovisionedRemoteWorkdir,
-): ResolvedRemoteRuntimePaths {
-  const remoteWorkspaceDir = params.remoteWorkspaceDir;
-  if (
-    !path.posix.isAbsolute(remoteWorkspaceDir) ||
-    remoteWorkspaceDir === "/" ||
-    path.posix.normalize(remoteWorkspaceDir) !== remoteWorkspaceDir ||
-    remoteWorkspaceDir.endsWith("/")
-  ) {
-    throw new Error("Preprovisioned remote workdir must be an absolute non-root path.");
-  }
-  const runtimeId = params.runtimeId.trim();
-  if (!runtimeId) {
-    throw new Error("Preprovisioned remote runtime id must be a non-empty string.");
-  }
-  return {
-    runtimeId,
-    runtimeRootDir: remoteWorkspaceDir,
-    remoteWorkspaceDir,
-    remoteAgentWorkspaceDir: remoteWorkspaceDir,
-    remoteSkillsWorkspaceDir: path.posix.join(remoteWorkspaceDir, ".openclaw", "sandbox-skills"),
   };
 }
 

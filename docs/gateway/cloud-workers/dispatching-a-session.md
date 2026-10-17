@@ -8,11 +8,11 @@ How an authorized session reaches a cloud destination, what the Control UI requi
 
 ## Dispatching a session
 
-Administrators can run an authorized session on a configured cloud profile, including a fresh workspace without a repository. Session ownership and participation checks are revalidated before placement lifecycle changes commit.
+Administrators can run an authorized session on a configured device profile, including a fresh workspace without a repository. Session ownership and participation checks are revalidated before placement lifecycle changes commit.
 
 If the session already has an active turn, `sessions.dispatch` returns a busy error without interrupting the turn or starting worker provisioning. Wait for the turn to finish and retry dispatch.
 
-In the Control UI, open **New Session** and choose a **Cloud** destination. A cloud destination is available when these eligibility gates pass:
+In the Control UI, open **New Session** and choose the paired device or its configured profile. A cloud destination is available when these eligibility gates pass:
 
 1. The connected operator has `operator.admin` scope.
 2. `environments.list` advertises at least one configured profile.
@@ -40,9 +40,7 @@ While that call is waiting, the parent remains an active turn under its existing
 
 ### Runtime support
 
-- **OpenClaw** uses `worker-turn` placement. The restricted `openclaw worker` process runs each turn on the leased node and proxies inference through the Gateway by default. An explicitly configured paired-device profile can select [worker-local inference](/gateway/cloud-workers/native-inference).
-- **Codex** uses `remote-exec` placement on the same bundled Crabbox cloud profile, an eligible paired device, or a provider that advertises an SSH-backed execution carrier. The Gateway keeps the Codex app-server and authentication local; an enrolled cloud node runs only the explicitly authorized Codex exec-server and does not start an OpenClaw worker child.
+- **OpenClaw** uses `worker-turn` placement. The restricted `openclaw worker` process runs each turn on the paired node and proxies inference through the Gateway by default. An explicitly configured paired-device profile can select [worker-local inference](/gateway/cloud-workers/native-inference).
+- **Codex** uses `remote-exec` placement on an eligible paired device or configured device profile. The Gateway keeps the app-server and authentication local; the paired node runs the explicitly authorized exec-server without starting an OpenClaw worker child.
 
-The Control UI checks each cloud destination's advertised execution modes in both New Session and Move Session. One Crabbox **Cloud · profile** row is selectable for OpenClaw and Codex, while a genuinely single-mode provider stays disabled for the other runtime. An incompatible move is rejected before the active source starts draining or changes its durable placement.
-
-Other runtimes remain unavailable unless their harness explicitly declares a cloud placement mode. Cloud targets are not offered for external CLI session catalogs. Remote-exec refuses execution if the selected provider or placement sandbox is unavailable; it never falls back to running the operation on the Gateway host.
+The Control UI checks each destination's advertised execution modes. An incompatible move is rejected before the source starts draining or changes its durable placement. Other runtimes remain unavailable unless their harness explicitly declares a placement mode. Remote execution never falls back to running the operation on the Gateway when the selected node is unavailable.

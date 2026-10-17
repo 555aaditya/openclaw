@@ -74,7 +74,6 @@ export const ENVIRONMENT_ID = "environment-worker-turn";
 export const OWNER_EPOCH = 3;
 const BUNDLE_HASH = "a".repeat(64);
 export const MANIFEST_REF = `sha256:${"b".repeat(64)}`;
-const HOST_KEY = [["ssh", "ed25519"].join("-"), "AAAA"].join(" ");
 
 export const readLaunchToolNames: WorkerTurnTunnelHandle["readLaunchToolNames"] = async () =>
   CORE_WORKER_LAUNCH_TOOL_NAMES;
@@ -398,8 +397,8 @@ export function attachedEnvironment(): WorkerTurnEnvironmentRecord {
     profileSnapshot: { settings: { region: "test" } },
     provisionOperationId: "provision-worker-turn",
     nodeSetupId: null,
-    nodeDeviceId: null,
-    sharedHost: false,
+    nodeDeviceId: "fixture-node",
+    sharedHost: true,
     bootstrapReceipt: {
       bundleHash: BUNDLE_HASH,
       openclawVersion: "2026.7.2",
@@ -424,35 +423,8 @@ export function attachedEnvironment(): WorkerTurnEnvironmentRecord {
     tunnelStatus: "connected",
     state: "attached",
     desktop: null,
-    desktopAvailable: false,
-    desktopApps: [],
+    sshEndpoint: null,
     leaseId: "lease-worker-turn",
-    sshEndpoint: {
-      host: "worker.example.test",
-      port: 22,
-      user: "worker",
-      hostKey: HOST_KEY,
-      keyRef: { source: "file", provider: "worker-keys", id: "/worker/key" },
-    },
-  };
-}
-
-export function browserEnvironment(): WorkerTurnEnvironmentRecord {
-  return {
-    ...attachedEnvironment(),
-    desktop: {
-      protocol: "rfb",
-      port: 5900,
-      apps: [
-        {
-          id: "browser",
-          executablePath: "/usr/local/bin/openclaw-worker-browser",
-          cdpPort: 9222,
-        },
-      ],
-    },
-    desktopAvailable: true,
-    desktopApps: ["browser"],
   };
 }
 
@@ -489,9 +461,6 @@ export function unusedEnvironments(): WorkerTurnEnvironmentService {
   return {
     get: vi.fn(() => undefined),
     createGatewayTools: prepareGatewayTools,
-    resolveSshIdentity: vi.fn(async () => {
-      throw unexpected();
-    }),
     acquireTurnCredential: vi.fn(async () => {
       throw unexpected();
     }),

@@ -10,7 +10,6 @@ import {
   NODE_WORKER_PRIVATE_COMMANDS,
   NODE_WORKER_SUPERVISOR_LAUNCH_COMMAND,
   NODE_WORKER_SUPERVISOR_STATUS_COMMAND,
-  NODE_WORKER_WORKSPACE_PREPARE_COMMAND,
   NODE_WORKER_WORKSPACE_EXEC_COMMAND,
 } from "../infra/node-commands.js";
 import {
@@ -481,7 +480,6 @@ export function registerNodeRegistryPrivateRuntime(
               environmentSession:
                 params.command === NODE_WORKER_SUPERVISOR_LAUNCH_COMMAND ||
                 params.command === NODE_WORKER_ENVIRONMENT_STOP_COMMAND,
-              preparedWorkspace: params.command === NODE_WORKER_WORKSPACE_PREPARE_COMMAND,
               capturedExecPolicy: params.command === NODE_WORKER_SUPERVISOR_LAUNCH_COMMAND,
               workspaceQuiescence:
                 params.command === NODE_WORKER_WORKSPACE_EXEC_COMMAND &&

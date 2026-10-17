@@ -53,8 +53,6 @@ type WorkerPlacementDestination =
   | {
       profileId: string;
       deviceId?: undefined;
-      machineClass?: string;
-      os?: string;
       inheritedProfile?: undefined;
     }
   | {
@@ -67,8 +65,6 @@ export function resolveWorkerPlacementDestination(params: {
   cfg: Pick<OpenClawConfig, "cloudWorkers">;
   profileId?: string;
   deviceId?: string;
-  machineClass?: string;
-  os?: string;
 }): Result<WorkerPlacementDestination | undefined, string> {
   try {
     assertRequiredWorkerSelection(params.cfg, params);
@@ -81,18 +77,7 @@ export function resolveWorkerPlacementDestination(params: {
     if (!Object.hasOwn(params.cfg.cloudWorkers?.profiles ?? {}, profileId)) {
       return err(`cloud worker profile is not configured: ${profileId}`);
     }
-    const machineClass = normalizeOptionalString(params.machineClass);
-    if (params.machineClass !== undefined && !machineClass) {
-      return err("cloud worker machine class must be non-empty");
-    }
-    const os = normalizeOptionalString(params.os);
-    if (params.os !== undefined && !os) {
-      return err("cloud worker operating system must be non-empty");
-    }
-    return ok({ profileId, ...(machineClass ? { machineClass } : {}), ...(os ? { os } : {}) });
-  }
-  if (params.os !== undefined || params.machineClass !== undefined) {
-    return err("cloud worker machine class and operating system require a profile id");
+    return ok({ profileId });
   }
   const deviceId = normalizeOptionalString(params.deviceId);
   if (!deviceId) {

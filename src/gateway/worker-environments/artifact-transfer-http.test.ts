@@ -8,11 +8,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../../test/helpers/temp-dir.js";
 import { createDeferredCore } from "../../shared/deferred.js";
 import { createTestGatewayScheduler } from "../../test-utils/gateway-scheduler-clock.js";
+import { NODE_WORKER_BUNDLE_TRANSFER_PATH } from "../../worker/node-bundle-install-protocol.js";
 import { createGatewayAuthRateLimiter, type AuthRateLimiter } from "../auth-rate-limit.js";
-import {
-  classifyWorkerBootstrapArtifactTransferPath,
-  WORKER_BOOTSTRAP_ARTIFACT_TRANSFER_PATH,
-} from "../gateway-http-route-contracts.js";
+import { classifyNodeWorkerBundleTransferPath } from "../gateway-http-route-contracts.js";
 import {
   createArtifactTransferHttpCallback,
   handleArtifactTransferHttpRequest,
@@ -23,7 +21,6 @@ import {
   type ArtifactTransferService,
 } from "./artifact-transfer-service.js";
 import { workerBootstrapOperationTimeoutMs } from "./bootstrap-timeouts.js";
-import { createWorkerBootstrapArtifactTransferService } from "./worker-bootstrap-artifact-transfer-service.js";
 
 type ResponseOptions = { writeError?: Error; afterWrite?: () => void };
 
@@ -65,7 +62,7 @@ function createResponse(options?: ResponseOptions) {
 describe("artifact transfer response settlement", () => {
   const tempDirs = useAutoCleanupTempDirTracker(afterEach);
   const contents = "source-runtime";
-  let service: ReturnType<typeof createWorkerBootstrapArtifactTransferService>;
+  let service: ReturnType<typeof createArtifactTransferService>;
   let artifact: { tarballPath: string; tarballSha256: string; tarballBytes: number };
   let token: string;
   let expiresAtMs: number;
@@ -79,7 +76,7 @@ describe("artifact transfer response settlement", () => {
     now = 1_000;
     authorized = true;
     owner = new AbortController();
-    service = createWorkerBootstrapArtifactTransferService({ now: () => now });
+    service = createArtifactTransferService({ now: () => now });
     await prepareArtifact(contents);
   });
 
@@ -92,6 +89,9 @@ describe("artifact transfer response settlement", () => {
     await fs.writeFile(artifact.tarballPath, bytes);
     ({ token, expiresAtMs } = service.prepare({
       artifact,
+      artifactKey: artifact.tarballSha256,
+      ttlMs: workerBootstrapOperationTimeoutMs(artifact),
+      maxServes: 256,
       isAuthorized: () => authorized,
       signal: owner.signal,
     }));
@@ -114,15 +114,15 @@ describe("artifact transfer response settlement", () => {
   ) {
     const { socket, req, res } = createResponse(options);
     req.method = "GET";
-    req.url = `/__openclaw__/worker-bootstrap/artifacts/${options.artifactKey ?? artifact.tarballSha256}`;
+    req.url = `${NODE_WORKER_BUNDLE_TRANSFER_PATH}/bundles/${options.artifactKey ?? artifact.tarballSha256}`;
     req.headers.authorization = `Bearer ${token}`;
     if (options.range !== undefined) {
       req.headers.range = options.range;
     }
     try {
       await handleArtifactTransferHttpRequest({
-        classifyPath: classifyWorkerBootstrapArtifactTransferPath,
-        routePrefix: `${WORKER_BOOTSTRAP_ARTIFACT_TRANSFER_PATH}/artifacts/`,
+        classifyPath: classifyNodeWorkerBundleTransferPath,
+        routePrefix: `${NODE_WORKER_BUNDLE_TRANSFER_PATH}/bundles/`,
         req,
         res,
         clientIp: "127.0.0.1",
@@ -278,7 +278,7 @@ describe("artifact transfer response settlement", () => {
   });
 
   it.each(["expiry", "owner", "signal"] as const)(
-    "streams past ten minutes until bootstrap %s closes its authority",
+    "streams past ten minutes until bundle transfer %s closes its authority",
     async (closure) => {
       const deadline = now + workerBootstrapOperationTimeoutMs(artifact);
       const afterTenMinutes = now + 10 * 60_000 + 1;

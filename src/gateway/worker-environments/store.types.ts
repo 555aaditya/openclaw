@@ -3,7 +3,6 @@ import type { WorkerEnvironments } from "../../state/openclaw-state-db.generated
 import type { WorkerCredentialRecord } from "./credential.js";
 import type {
   WorkerEnvironmentIntentInput,
-  WorkerEnvironmentPreparationIntent,
   WorkerEnvironmentRecord,
   WorkerEnvironmentTeardownTerminalState,
 } from "./environment-record.js";
@@ -53,7 +52,6 @@ export type WorkerEnvironmentPrunePage = {
 /** Native mutation signatures own the host callbacks and the worker's serializable contract. */
 export type WorkerEnvironmentMutationMethods = {
   createIntent(input: WorkerEnvironmentIntentInput): WorkerEnvironmentRecord;
-  ensureNodeEnrollment(environmentId: string): WorkerEnvironmentRecord;
   revokeEnvironmentCredential(input: CredentialRevocationInput): void;
   reconcileSharedHost(input: {
     environmentId: string;
@@ -96,20 +94,6 @@ export type WorkerEnvironmentMutationMethods = {
     error: string;
     assertCurrent?: () => void;
   }): WorkerEnvironmentRecord;
-  ensurePreparedIntent(input: {
-    intent: WorkerEnvironmentIntentInput & { preparation: WorkerEnvironmentPreparationIntent };
-    projectKey: string;
-    target: number;
-    maxTotal: number;
-    assertCurrent: () => void;
-  }): WorkerEnvironmentRecord | undefined;
-  requestPreparedDestroy(input: {
-    environmentId: string;
-    ownerEpoch: number;
-    preparationKey: string;
-    reason: "expired" | "invalidated";
-    assertCurrent: () => void;
-  }): WorkerEnvironmentRecord | undefined;
   createSessionAttachmentIntent(
     input: WorkerEnvironmentIntentInput & WorkerEnvironmentSessionIdentity,
     assertCurrent: () => void,
@@ -128,11 +112,6 @@ export type WorkerEnvironmentMutationMethods = {
 type WorkerEnvironmentMutationMethod = keyof WorkerEnvironmentMutationMethods;
 
 // Runtime closures stay with the host's transaction and commit admission owner.
-type WithoutAdmission<T> = T extends object
-  ? Omit<T, "assertCurrent" | "placementBinding"> &
-      (T extends { placementBinding?: infer Binding }
-        ? { placementBinding?: Omit<NonNullable<Binding>, "assertCurrent"> }
-        : unknown)
-  : T;
+type WithoutAdmission<T> = T extends object ? Omit<T, "assertCurrent"> : T;
 export type WorkerEnvironmentMutationInput<Method extends WorkerEnvironmentMutationMethod> =
   WithoutAdmission<Parameters<WorkerEnvironmentMutationMethods[Method]>[0]>;

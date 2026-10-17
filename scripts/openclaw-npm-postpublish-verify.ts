@@ -27,7 +27,6 @@ import { ALWAYS_ALLOWED_RUNTIME_DIR_NAMES } from "../src/plugin-sdk/facade-activ
 import { BUNDLED_RUNTIME_SIDECAR_PATHS } from "../src/plugins/runtime-sidecar-paths.ts";
 import {
   WORKER_BUNDLE_ENTRY_PATH,
-  WORKER_BUNDLE_RSYNC_RECEIVER_PATH,
   WORKER_BUNDLE_SQLITE_STORE_PATH,
 } from "../src/shared/worker-bundle-hash.js";
 import { readBoundedResponseText } from "./lib/bounded-response.mjs";
@@ -98,7 +97,6 @@ const ROOT_DIST_JAVASCRIPT_MODULE_FILE_RE = /\.(?:c|m)?js$/u;
 // need extra headroom, but synchronous read/parse stays bounded.
 const SELF_CONTAINED_WORKER_DEPLOY_DIST_PATHS = new Set([
   `worker/${WORKER_BUNDLE_ENTRY_PATH}`,
-  `worker/${WORKER_BUNDLE_RSYNC_RECEIVER_PATH}`,
   `worker/${WORKER_BUNDLE_SQLITE_STORE_PATH}`,
   packageActivationRuntimeEntrypoint.distWorkerPath,
 ]);

@@ -119,7 +119,7 @@ cloud execution, use `visible: true`, `worktree: true`, and a real configured
 profile. Invalid placement, mixed local/cloud selectors, and failed cloud
 placement do not fall back to local execution.
 
-Discover configured profiles with `sessions({ action: "cloud_profiles" })`. The list returns at most 32 summaries and supplies `nextOffset` when another page is available. Pass that value as `offset`. Request `sessions({ action: "cloud_profiles", profileId: "build" })` for that profile's operating systems, availability, defaults, and per-OS machine classes. Discovery reads the same provider-authored catalog as the Control UI, not profile settings or credentials.
+Discover configured profiles with `sessions({ action: "cloud_profiles" })`. The list returns at most 32 summaries and supplies `nextOffset` when another page is available. Pass that value as `offset`. Request `sessions({ action: "cloud_profiles", profileId: "build" })` for the configured device profile's availability. Discovery returns the same bounded profile catalog as the Control UI without credentials.
 
 Then start the child using the selected identifiers:
 
@@ -130,9 +130,7 @@ Then start the child using the selected identifiers:
   "worktree": true,
   "placement": {
     "kind": "profile",
-    "profileId": "build",
-    "os": "linux",
-    "machineClass": "tiny"
+    "profileId": "build"
   }
 }
 ```
@@ -241,7 +239,7 @@ In either mode, internal QA, research, coding, review, and test lanes use ordina
   Create a persistent dashboard session only when the user requests a separate session or needs to return to and steer the work independently. Omit this flag or use `false` for internal QA, research, coding, review, and test workers supporting the parent task. Visible spawns support only `runtime: "subagent"` and always keep the created session.
 </ParamField>
 <ParamField path="placement" type="object">
-  Omit to default to local execution, or use `{ kind: "local" }` explicitly without cloud selectors. For a visible worktree session on a configured cloud profile, use `{ kind: "profile", profileId, os?, machineClass? }` with `visible: true` and `worktree: true`; OS and machine IDs come from cloud profile discovery. Omitted cloud selectors use the profile defaults. The Gateway creates the cloud child without starting its task, dispatches it, then admits its first task on the worker. Invalid placement and failed or uncertain cloud starts never silently fall back to local execution; a failed cloud start retains the child for inspection.
+  Omit to default to local execution, or use `{ kind: "local" }` explicitly without cloud selectors. For a visible worktree session on a configured cloud profile, use `{ kind: "profile", profileId }` with `visible: true` and `worktree: true`; the profile selects a configured paired device. The Gateway creates the cloud child without starting its task, dispatches it, then admits its first task on the worker. Invalid placement and failed or uncertain cloud starts never silently fall back to local execution; a failed cloud start retains the child for inspection.
 </ParamField>
 <ParamField path="group" type="string">
   Optional custom sidebar group for a visible session; a new name creates the group. Omitted, empty, and whitespace-only values mean ungrouped and are also accepted for hidden or ACP runs. A nonempty group requires `visible: true`.

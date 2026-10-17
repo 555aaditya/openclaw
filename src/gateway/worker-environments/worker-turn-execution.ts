@@ -236,12 +236,11 @@ export async function executeWorkerTurn(
     )) === true;
   const launchToolNames = await tunnel.readLaunchToolNames();
   const desktop = await prepareWorkerDesktopLaunchPlan({
-    desktop: environment.desktop,
     protocolFeatures: bootstrapReceipt.protocolFeatures,
     prepareComputer: () => params.environments.prepareComputer?.(params.turnClaim),
     turn,
   });
-  const { browser, computer, preparedComputer } = desktop;
+  const { computer, preparedComputer } = desktop;
   const {
     authProfileStoreSource,
     capabilityProfile,
@@ -605,7 +604,6 @@ export async function executeWorkerTurn(
                 .filter((tool) => tool.execution === "placement")
                 .map((tool) => tool.definition.name),
             },
-            ...(browser && allowedToolNames.includes("browser") ? { browser } : {}),
             ...(computer && allowedToolNames.includes("computer") ? { computer } : {}),
           },
         }),

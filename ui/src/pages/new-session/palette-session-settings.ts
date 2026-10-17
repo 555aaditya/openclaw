@@ -44,12 +44,6 @@ export function resolvePaletteSessionSettings(options: SettingsOptions, search: 
   const where = resolveWhereChip(draftWhereChipParams(place, gateway));
   const machineLabel =
     where.kind === "local" ? gateway.gatewayName || t("newSession.local") : where.label;
-  const cloudSummary = [
-    where.operatingSystems.find((os) => os.id === where.selectedOsId)?.label,
-    where.cloudMachines.find((machine) => machine.id === where.selectedMachineId)?.label,
-  ]
-    .filter(Boolean)
-    .join(" · ");
   const projectState = resolveProjectChip({
     folder: place.folder,
     workspace: place.workspacePath(),
@@ -144,7 +138,6 @@ export function resolvePaletteSessionSettings(options: SettingsOptions, search: 
     placementLocked,
     locked,
     machineLabel,
-    cloudSummary,
     projectState,
     groups,
   };

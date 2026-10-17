@@ -19,12 +19,12 @@ export async function seedFaultAttachedEnvironment(
     environmentId: string;
     sessionId: string;
     credential: string;
-    sshEndpoint: NonNullable<WorkerEnvironmentRecord["sshEndpoint"]>;
+    nodeDeviceId: string;
     handshake: NonNullable<WorkerEnvironmentRecord["bootstrapReceipt"]>;
     rpcSetVersion: number;
   },
 ): Promise<void> {
-  const { environmentId, sessionId, credential, sshEndpoint, handshake, rpcSetVersion } = params;
+  const { environmentId, sessionId, credential, nodeDeviceId, handshake, rpcSetVersion } = params;
   const makeCredential = (value: string, boundSessionId: string | null) => ({
     credentialHash: hashWorkerCredential(value),
     sessionId: boundSessionId,
@@ -40,7 +40,7 @@ export async function seedFaultAttachedEnvironment(
   });
   const transitions = [
     { to: "provisioning", patch: {} },
-    { to: "bootstrapping", patch: { leaseId: "lease-fault", sshEndpoint } },
+    { to: "bootstrapping", patch: { leaseId: "lease-fault", nodeDeviceId, sharedHost: true } },
     {
       to: "ready",
       patch: {

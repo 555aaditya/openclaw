@@ -226,7 +226,6 @@ describe("node workspace retain coordinator", () => {
       placements,
       bundleRetention: {
         currentBuild: async () => ({ bundleHash, openclawVersion: "2026.8.10" }),
-        isEnvironmentOwnedNode: () => false,
       },
     });
     const { nodeRegistry, nodeWorkerSupervisorTransport } = createNodeRegistryRuntime(
@@ -487,7 +486,7 @@ describe("node workspace retain coordinator", () => {
         ...node,
         workerHost: { enabled: true, capacity: { total: 2, available: 2 } },
       },
-      bundleRetention: { currentBuild, isEnvironmentOwnedNode: () => false },
+      bundleRetention: { currentBuild },
     });
 
     try {
@@ -515,13 +514,11 @@ describe("node workspace retain coordinator", () => {
     }
   });
 
-  it("keeps cloud workspace retention running when current build preparation rejects", async () => {
+  it("keeps workspace retention running when current build preparation rejects", async () => {
     const currentBuild = vi.fn(async () => receipt("c".repeat(64)));
     const { coordinator, invoke, warn } = createHarness({
-      environments: [
-        environment({ nodeSetupId: "cloud-setup", bootstrapReceipt: receipt("b".repeat(64)) }),
-      ],
-      bundleRetention: { currentBuild, isEnvironmentOwnedNode: () => true },
+      environments: [environment({ bootstrapReceipt: receipt("b".repeat(64)) })],
+      bundleRetention: { currentBuild },
       results: [{ applied: true, deleted: 0, hasMore: false, bundleGeneration: 7 }],
     });
 
@@ -918,7 +915,6 @@ describe("node workspace retain coordinator", () => {
       placements: [placement()],
       bundleRetention: {
         currentBuild: async () => artifact,
-        isEnvironmentOwnedNode: () => false,
       },
       results: [
         { applied: true, deleted: 0, hasMore: false, bundleGeneration: 1 },
@@ -951,7 +947,7 @@ describe("node workspace retain coordinator", () => {
     await coordinator.stop();
   });
 
-  it("retains the current build until live cloud environments record it", async () => {
+  it("retains current and referenced builds as device environments advance", async () => {
     const previousHash = "b".repeat(64);
     const currentBuild = receipt("c".repeat(64));
     const environments = [environment({ state: "ready", bootstrapReceipt: receipt(previousHash) })];
@@ -960,13 +956,12 @@ describe("node workspace retain coordinator", () => {
       placements: [],
       bundleRetention: {
         currentBuild: async () => currentBuild,
-        isEnvironmentOwnedNode: () => true,
       },
     });
     await coordinator.start();
     expect(invoke.mock.calls[0]?.[0].params).toMatchObject({
       bundleHashes: [previousHash, currentBuild.bundleHash],
-      bundleStatusHash: previousHash,
+      bundleStatusHash: currentBuild.bundleHash,
     });
 
     environments[0] = environment({ state: "ready", bootstrapReceipt: currentBuild });
@@ -977,7 +972,9 @@ describe("node workspace retain coordinator", () => {
 
     environments[0] = environment({ state: "destroyed", bootstrapReceipt: currentBuild });
     await coordinator.schedule(node.nodeId);
-    expect(invoke.mock.calls[2]?.[0].params).toMatchObject({ bundleHashes: [] });
+    expect(invoke.mock.calls[2]?.[0].params).toMatchObject({
+      bundleHashes: [currentBuild.bundleHash],
+    });
     await coordinator.stop();
   });
 
@@ -1026,32 +1023,5 @@ describe("node workspace retain coordinator", () => {
       await first;
       await coordinator.stop();
     }
-  });
-
-  it("rechecks environment ownership after resolving the current build before retaining it", async () => {
-    const artifact = {
-      bundleHash: "c".repeat(64),
-      openclawVersion: "2026.8.10",
-      protocolFeatures: [],
-    };
-    const held = createDeferredCore<typeof artifact>();
-    let environmentOwned = false;
-    const bundleRetention = {
-      isEnvironmentOwnedNode: () => environmentOwned,
-      currentBuild: vi.fn(() => held.promise),
-    };
-    const { coordinator, invoke } = createHarness({
-      environments: [],
-      placements: [],
-      bundleRetention,
-    });
-    const startup = coordinator.start();
-    await vi.waitFor(() => expect(bundleRetention.currentBuild).toHaveBeenCalledOnce());
-    environmentOwned = true;
-    held.resolve(artifact);
-    await startup;
-    expect(invoke.mock.calls[0]?.[0].params).toMatchObject({ bundleHashes: [] });
-    expect(invoke.mock.calls[0]?.[0].params).not.toHaveProperty("bundleStatusHash");
-    await coordinator.stop();
   });
 });

@@ -2,7 +2,6 @@ import type {
   DesktopObserveResult,
   DesktopSource,
   EnvironmentSummary,
-  WorkerDesktopAppId,
 } from "@openclaw/gateway-protocol";
 import type { ControlUiFocusBuildTarget } from "@openclaw/session-url-contract";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
@@ -14,7 +13,6 @@ import type { DesktopFullscreen } from "../desktop-fullscreen.ts";
 import { createDockLayout } from "../dock-layout.ts";
 import type { DesktopPanelToggleDetail } from "../panel-toggle-contract.ts";
 import { SolidPanelOwner } from "../solid-panel-owner.ts";
-import type { DesktopAppLauncher } from "./desktop-app-launcher.ts";
 import type { DesktopAudio } from "./desktop-audio.ts";
 import * as desktopTransport from "./desktop-client.ts";
 import type { DesktopMobileKeyboard } from "./desktop-mobile-keyboard.ts";
@@ -60,7 +58,6 @@ export class DesktopPanelController extends SolidPanelOwner {
   fullscreenMode!: DesktopFullscreen;
   audio!: DesktopAudio;
   pictureInPicture!: DesktopPictureInPicture;
-  launcher!: DesktopAppLauncher;
 
   /** Browser tests replace the transport without opening a real RFB socket. */
   desktopClientFactory: () => Pick<desktopTransport.DesktopClient, "connect"> = () =>
@@ -75,7 +72,6 @@ export class DesktopPanelController extends SolidPanelOwner {
   private errorText: string | null = null;
   private noticeText: string | null = null;
   private disconnectedReason: string | null = null;
-  private desktopApps: WorkerDesktopAppId[] = [];
   private sizingMode: desktopTransport.DesktopSizingMode = "fit";
   private canResize = false;
 
@@ -138,20 +134,14 @@ export class DesktopPanelController extends SolidPanelOwner {
     isFullscreen: () => this.fullscreenMode?.ownsFullscreen() ?? false,
   });
 
+  get presentedConnection(): boolean {
+    return this.available && this.state === "connected" && (!this.embedded || this.presented);
+  }
+
   readonly audioTarget = () => ({
     connected: this.state === "connected",
     reconnect: () => void this.connectEnvironment(this.environmentId, this.controlling),
   });
-
-  get launchTarget() {
-    return {
-      client: this.client,
-      source: this.source,
-      presented: !this.embedded || this.presented,
-      state: this.state,
-      apps: this.desktopApps,
-    };
-  }
 
   override connectedCallback(): void {
     this.dockLayout.connect();
@@ -294,7 +284,6 @@ export class DesktopPanelController extends SolidPanelOwner {
     this.source = null;
     this.credentials = undefined;
     this.credentialAuth = undefined;
-    this.desktopApps = [];
     this.controlling = false;
     this.sizingMode = "fit";
     this.canResize = false;
@@ -316,9 +305,6 @@ export class DesktopPanelController extends SolidPanelOwner {
     if (!retainViewer) {
       this.sessionSource.invalidate();
       this.loading = false;
-      if (this.isConnected) {
-        this.launcher.clear();
-      }
     }
   }
 
@@ -434,10 +420,13 @@ export class DesktopPanelController extends SolidPanelOwner {
     }
     this.canResize = false;
     const environment = this.environments.find((candidate) => candidate.id === environmentId);
-    this.desktopApps = [...(environment?.worker?.desktopApps ?? [])];
     this.disconnectConnection(this.environmentId === environmentId);
     const operationId = this.operationId;
     const source = desktopSourceForEnvironment(environment ?? { id: environmentId });
+    if (!source) {
+      this.returnToPicker("picker");
+      return;
+    }
     this.environmentId = environmentId;
     this.source = source;
     this.sessionSource.setDesktopSource(source, environment?.desktopAvailability);
@@ -451,7 +440,7 @@ export class DesktopPanelController extends SolidPanelOwner {
     this.controlTakeoverRecoveryUsed = takeoverRecovery;
     this.invalidate();
     try {
-      const supplied = desktopAuth.forObserve(source, this.credentialAuth, this.credentials);
+      const supplied = desktopAuth.forObserve(this.credentialAuth, this.credentials);
       const observed = await client.request<DesktopObserveResult>("desktop.observe", {
         source,
         control,
@@ -646,7 +635,7 @@ export class DesktopPanelController extends SolidPanelOwner {
         loading: this.loading,
         automaticSource: this.usesAutomaticSource,
         hasTarget: this.sessionKey !== null || this.requestedSource !== null,
-        errorText: this.launcher.feedback().error ?? this.errorText,
+        errorText: this.errorText,
         noticeText: this.noticeText,
         availability: this.sessionSource.desktopAvailability,
         picker: {
@@ -685,9 +674,6 @@ export class DesktopPanelController extends SolidPanelOwner {
         },
       },
       controlling: this.controlling,
-      desktopApps: this.desktopApps,
-      launchingApp: this.launcher.feedback().app ?? null,
-      startup: this.sessionSource.startupEnvironment,
       sizing: {
         mode: this.sizingMode,
         canResize: this.canResize && this.controlling && this.state === "connected",
@@ -704,7 +690,6 @@ export class DesktopPanelController extends SolidPanelOwner {
       fullscreenMode: this.fullscreenMode,
       onControlToggle: () => void this.connectEnvironment(this.environmentId, !this.controlling),
       onTakeControl: () => void this.connectEnvironment(this.environmentId, true),
-      onLaunch: (app: WorkerDesktopAppId) => void this.launcher.launch(app),
       onClose: () => this.closePanel(),
       onDocumentClose: () => this.onDocumentClose?.(),
       focusTarget: () => ({

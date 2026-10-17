@@ -7,7 +7,6 @@ import { classifyRfbSecurity, connectRfbServer } from "../gateway/desktop/rfb-pr
 import { registerSecretValueForRedaction } from "../logging/secret-redaction-registry.js";
 import { NODE_DESKTOP_ATTACH_PATH } from "../shared/node-desktop-stream.js";
 import { isWorkerDesktopArdPassword } from "../shared/worker-desktop-descriptor.js";
-import { parseNodeWorkerDesktopStreamInput } from "../worker/node-desktop-protocol.js";
 import { runNodeStreamTransport } from "./node-stream-transport.js";
 
 const DEFAULT_DESKTOP_PORT = 5900;
@@ -194,29 +193,5 @@ export async function invokeNodeDesktopStream(params: {
     passwordFile: params.config.passwordFile,
     signal: params.signal,
     emitStatus: params.emitStatus,
-  });
-}
-
-/** Runs the private worker command against provider-attested loopback RFB facts. */
-export async function invokeNodeWorkerDesktopStream(params: {
-  paramsJSON?: string | null;
-  gatewayUrl?: string;
-  gatewayTlsFingerprint?: string;
-  gatewayCloudflareAccess?: CloudflareAccessCredentials;
-  signal?: AbortSignal;
-}): Promise<void> {
-  if (!params.gatewayUrl || !params.signal) {
-    throw new Error("node worker desktop gateway connection is unavailable");
-  }
-  const command = parseNodeWorkerDesktopStreamInput(params.paramsJSON);
-  await runNodeDesktopStreamCommand({
-    command,
-    gatewayUrl: params.gatewayUrl,
-    gatewayTlsFingerprint: params.gatewayTlsFingerprint,
-    gatewayCloudflareAccess: params.gatewayCloudflareAccess,
-    port: command.port,
-    passwordFile: command.passwordFilePath,
-    username: command.username,
-    signal: params.signal,
   });
 }

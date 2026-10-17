@@ -4,7 +4,6 @@ import { createServer as createHttpServer } from "node:http";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
-import { MAX_WORKSPACE_INVENTORY_TOTAL_BYTES } from "../gateway/worker-environments/workspace-inventory-limits.js";
 import { captureWorkspaceManifest } from "../gateway/worker-environments/workspace-manifest-worker.js";
 import { serializeWorkerWorkspaceManifest } from "../gateway/worker-environments/workspace-manifest.js";
 import { runCommandBuffered, runExec } from "../process/exec.js";
@@ -115,267 +114,219 @@ describe("node worker Git transfers", () => {
       changed: false,
       replaceSymlinkAncestor: true,
       lateWrite: false,
-      seedState: "unused",
     },
     {
       description: "preserves the prior workspace when a matched base file changes before capture",
       changed: true,
       replaceSymlinkAncestor: false,
       lateWrite: true,
-      seedState: "unused",
     },
   ];
   it.each([
     ...gitTransfers,
-    ...["absent", "missing-base", "symlink", "oversized"].map((seedState) => ({
-      description: "handles a prepared project cache " + seedState,
+    {
+      description: "downloads an ordinary Git base from the gateway",
       changed: false,
       replaceSymlinkAncestor: false,
       lateWrite: false,
-      seedState,
-    })),
-  ])(
-    "$description (prepared project: $seedState)",
-    async ({ changed, replaceSymlinkAncestor, lateWrite, seedState }) => {
-      transferDebug.mockClear();
-      const root = tempDirs.make("node-worker-transfer-git-");
-      const source = path.join(root, "source");
-      const workspaceDir = path.join(root, "workspace");
-      await fs.mkdir(source);
-      await git(source, ["init", "--quiet", "--object-format=sha1"]);
-      await fs.writeFile(path.join(source, "tracked.txt"), "tracked from gateway\n");
-      await fs.writeFile(path.join(source, "script.sh"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
-      await fs.writeFile(path.join(source, "deleted.txt"), "deleted after commit\n");
-      await fs.symlink("tracked.txt", path.join(source, "tracked-link"));
-      const outsideSentinel = path.join(root, "outside", "file.txt");
-      if (replaceSymlinkAncestor) {
-        await fs.mkdir(path.dirname(outsideSentinel));
-        await fs.writeFile(outsideSentinel, "outside must stay unchanged\n");
-        await fs.symlink("../outside", path.join(source, "nested"));
-      }
-      await git(source, ["add", "."]);
-      await git(source, ["commit", "--quiet", "-m", "base"]);
-      const commit = await git(source, ["rev-parse", "HEAD"]);
-      const seedsRoot = path.join(root, "git-seeds");
-      const gatewayNamespace = "gateway";
-      const seedKey = "a".repeat(64);
-      const seedDir = path.join(seedsRoot, gatewayNamespace, seedKey);
-      const invalidSeed = ["missing-base", "symlink", "oversized"].includes(seedState);
-      if (seedState !== "unused" && seedState !== "absent") {
-        await fs.cp(source, seedDir, { recursive: true, verbatimSymlinks: true });
-        await git(seedDir, ["remote", "add", "origin", "https://example.invalid/private.git"]);
-        await fs.writeFile(path.join(seedDir, "seed-only.txt"), "never copy the cached worktree\n");
-        const objects = path.join(seedDir, ".git", "objects");
-        await fs.writeFile(
-          path.join(objects, "info", "alternates"),
-          path.join(root, "unrelated-objects"),
-        );
-        if (seedState === "missing-base") {
-          await fs.unlink(path.join(objects, commit.slice(0, 2), commit.slice(2)));
-        } else if (seedState === "symlink") {
-          await fs.rm(objects, { recursive: true });
-          await fs.symlink(path.join(source, ".git", "objects"), objects, "dir");
-        } else if (seedState === "oversized") {
-          const oversized = await fs.open(path.join(objects, "oversized"), "w");
-          try {
-            await oversized.truncate(MAX_WORKSPACE_INVENTORY_TOTAL_BYTES + 1);
-          } finally {
-            await oversized.close();
-          }
-        }
-      }
-      if (invalidSeed || lateWrite) {
-        await fs.mkdir(workspaceDir);
-        await fs.writeFile(path.join(workspaceDir, "previous.txt"), "preserve prior workspace\n");
-      }
-      if (changed) {
-        await fs.writeFile(path.join(source, "tracked.txt"), "changed on gateway\n");
-        await fs.chmod(path.join(source, "tracked.txt"), 0o755);
-        await fs.unlink(path.join(source, "tracked-link"));
-        await fs.symlink("script.sh", path.join(source, "tracked-link"));
-        await fs.unlink(path.join(source, "deleted.txt"));
-        await fs.mkdir(path.join(source, "nested"));
-        await fs.writeFile(path.join(source, "nested", "file.txt"), "new nested content\n");
-      }
-      if (replaceSymlinkAncestor) {
-        await fs.unlink(path.join(source, "nested"));
-        await fs.mkdir(path.join(source, "nested"));
-        await fs.writeFile(path.join(source, "nested", "file.txt"), "safe nested content\n");
-      }
-      const snapshot = await captureWorkspaceManifest({ root: source, baseCommit: commit });
-      const rawManifest = serializeWorkerWorkspaceManifest(snapshot.manifest);
-      const packed = await runCommandBuffered(
-        ["git", "-C", source, "pack-objects", "--stdout", "--revs"],
-        { input: `${commit}\n`, maxOutputBytes: 4 * 1024 * 1024 },
-      );
-      expect(packed.termination, packed.stderr.toString("utf8")).toBe("exit");
-      expect(packed.code).toBe(0);
-      const tracked = snapshot.manifest.entries.find(
-        (entry) => entry.type === "file" && entry.path === "tracked.txt",
-      );
-      if (tracked?.type !== "file") {
-        throw new Error("test Git workspace has no tracked file");
-      }
-      const downloadablePaths = new Set([
-        ...(changed ? ["nested/file.txt", "tracked.txt"] : []),
-        ...(replaceSymlinkAncestor ? ["nested/file.txt"] : []),
-      ]);
-      const filesByHash = new Map(
-        snapshot.manifest.entries.flatMap((entry) =>
-          entry.type === "file" && downloadablePaths.has(entry.path)
-            ? [[entry.sha256, path.join(source, entry.path)] as const]
-            : [],
-        ),
-      );
-      const requestedBlobs: string[] = [];
-      let requestedPacks = 0;
-      const server = createHttpServer((req, res) => {
-        void (async () => {
-          if (req.url?.endsWith("/manifest")) {
-            res.writeHead(200, { "content-length": String(Buffer.byteLength(rawManifest)) });
-            res.end(rawManifest);
-            return;
-          }
-          if (req.url?.endsWith("/pack")) {
-            requestedPacks += 1;
-            res.writeHead(200, { "content-length": String(packed.stdout.byteLength) });
-            res.end(packed.stdout);
-            return;
-          }
-          const sha256 = req.url?.match(/\/blobs\/([a-f0-9]{64})$/u)?.[1];
-          if (sha256) {
-            requestedBlobs.push(sha256);
-            const file = filesByHash.get(sha256);
-            if (file) {
-              if (lateWrite && sha256 === tracked.sha256) {
-                const staging = (await fs.readdir(root)).find((name) =>
-                  name.startsWith(".workspace.workspace-transfer-"),
-                );
-                expect(staging).toBeDefined();
-                const script = path.join(root, staging!, "script.sh");
-                const original = await fs.stat(script);
-                await fs.writeFile(script, "#!/bin/sh\nexit 1\n");
-                await fs.utimes(script, original.atime, original.mtime);
-              }
-              const body = await fs.readFile(file);
-              res.writeHead(200, { "content-length": String(body.byteLength) });
-              res.end(body);
-              return;
-            }
-          }
-          res.writeHead(404).end();
-        })().catch((error: unknown) => {
-          res.destroy(error instanceof Error ? error : new Error(String(error)));
-        });
-      });
-      const gatewayUrl = await listen(server);
-      try {
-        const transfer = runNodeWorkerWorkspaceTransfer({
-          seedsRoot,
-          gatewayNamespace,
-          gatewayUrl,
-          environmentId: "environment-git",
-          workspaceDir,
-          manifestHome: root,
-          hashMemo: new Map(),
-          transfer: {
-            direction: "download",
-            token: "test-token",
-            manifestRef: snapshot.manifestRef,
-            ...(seedState === "unused" ? {} : { seedKey }),
-          },
-        });
-        if (invalidSeed) {
-          await expect(transfer).rejects.toThrow("prepared project seed is invalid");
-          expect(requestedPacks).toBe(0);
-          expect(await fs.readFile(path.join(workspaceDir, "previous.txt"), "utf8")).toBe(
-            "preserve prior workspace\n",
-          );
-          return;
-        }
-        if (lateWrite) {
-          await expect(transfer).rejects.toMatchObject({
-            cause: expect.objectContaining({
-              message: expect.stringContaining("materialized a different manifest"),
-            }),
-          });
-          expect(await fs.readFile(path.join(workspaceDir, "previous.txt"), "utf8")).toBe(
-            "preserve prior workspace\n",
-          );
-          return;
-        }
-        await expect(transfer).resolves.toBe(snapshot.manifestRef);
-        expect(requestedPacks).toBe(1);
-        await expect(fs.access(path.join(workspaceDir, "seed-only.txt"))).rejects.toMatchObject({
-          code: "ENOENT",
-        });
-        await expect(
-          fs.access(path.join(workspaceDir, ".git", "objects", "info", "alternates")),
-        ).rejects.toMatchObject({ code: "ENOENT" });
-        expect(await fs.readFile(path.join(workspaceDir, ".git", "config"), "utf8")).not.toContain(
-          "example.invalid/private.git",
-        );
-        await expect(fs.readFile(path.join(workspaceDir, "tracked.txt"), "utf8")).resolves.toBe(
-          "tracked from gateway\n",
-        );
-        if (process.platform !== "win32") {
-          // Git checkout applies the umask.
-          const checkoutUmask = process.umask();
-          expect((await fs.stat(path.join(workspaceDir, "tracked.txt"))).mode & 0o777).toBe(
-            0o666 & ~checkoutUmask,
-          );
-          expect((await fs.stat(path.join(workspaceDir, "script.sh"))).mode & 0o777).toBe(
-            0o777 & ~checkoutUmask,
-          );
-        }
-        await expect(fs.readlink(path.join(workspaceDir, "tracked-link"))).resolves.toBe(
-          "tracked.txt",
-        );
-        expect(requestedBlobs).toEqual([...filesByHash.keys()]);
-        expect(transferDebug).toHaveBeenCalledWith(
-          "node worker manifest capture completed",
-          expect.objectContaining({
-            contentHashCount: downloadablePaths.size,
-            memoHitCount:
-              snapshot.manifest.entries.filter((entry) => entry.type === "file").length -
-              downloadablePaths.size,
-          }),
-        );
-        await expect(git(workspaceDir, ["rev-parse", "HEAD"])).resolves.toBe(commit);
-        if (replaceSymlinkAncestor) {
-          expect((await fs.lstat(path.join(workspaceDir, "nested"))).isDirectory()).toBe(true);
-          await expect(
-            fs.readFile(path.join(workspaceDir, "nested", "file.txt"), "utf8"),
-          ).resolves.toBe("safe nested content\n");
-        }
-        if (!replaceSymlinkAncestor) {
-          await expect(git(workspaceDir, ["status", "--porcelain=v1"])).resolves.toBe("");
-        }
-        expect(transferDebug).toHaveBeenCalledWith(
-          "node worker workspace transfer completed",
-          expect.objectContaining({
-            environmentId: "environment-git",
-            direction: "download",
-            outcome: "succeeded",
-            durationMs: expect.any(Number),
-            baseSource: "gateway-pack",
-            packDownloadMs: expect.any(Number),
-            blobApplyMs: expect.any(Number),
-          }),
-        );
-      } finally {
-        server.closeAllConnections();
-        await new Promise<void>((resolve) => {
-          server.close(() => resolve());
-        });
-        if (replaceSymlinkAncestor) {
-          await expect(fs.readFile(outsideSentinel, "utf8")).resolves.toBe(
-            "outside must stay unchanged\n",
-          );
-        }
-      }
     },
-  );
+  ])("$description", async ({ changed, replaceSymlinkAncestor, lateWrite }) => {
+    transferDebug.mockClear();
+    const root = tempDirs.make("node-worker-transfer-git-");
+    const source = path.join(root, "source");
+    const workspaceDir = path.join(root, "workspace");
+    await fs.mkdir(source);
+    await git(source, ["init", "--quiet", "--object-format=sha1"]);
+    await fs.writeFile(path.join(source, "tracked.txt"), "tracked from gateway\n");
+    await fs.writeFile(path.join(source, "script.sh"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+    await fs.writeFile(path.join(source, "deleted.txt"), "deleted after commit\n");
+    await fs.symlink("tracked.txt", path.join(source, "tracked-link"));
+    const outsideSentinel = path.join(root, "outside", "file.txt");
+    if (replaceSymlinkAncestor) {
+      await fs.mkdir(path.dirname(outsideSentinel));
+      await fs.writeFile(outsideSentinel, "outside must stay unchanged\n");
+      await fs.symlink("../outside", path.join(source, "nested"));
+    }
+    await git(source, ["add", "."]);
+    await git(source, ["commit", "--quiet", "-m", "base"]);
+    const commit = await git(source, ["rev-parse", "HEAD"]);
+    if (lateWrite) {
+      await fs.mkdir(workspaceDir);
+      await fs.writeFile(path.join(workspaceDir, "previous.txt"), "preserve prior workspace\n");
+    }
+    if (changed) {
+      await fs.writeFile(path.join(source, "tracked.txt"), "changed on gateway\n");
+      await fs.chmod(path.join(source, "tracked.txt"), 0o755);
+      await fs.unlink(path.join(source, "tracked-link"));
+      await fs.symlink("script.sh", path.join(source, "tracked-link"));
+      await fs.unlink(path.join(source, "deleted.txt"));
+      await fs.mkdir(path.join(source, "nested"));
+      await fs.writeFile(path.join(source, "nested", "file.txt"), "new nested content\n");
+    }
+    if (replaceSymlinkAncestor) {
+      await fs.unlink(path.join(source, "nested"));
+      await fs.mkdir(path.join(source, "nested"));
+      await fs.writeFile(path.join(source, "nested", "file.txt"), "safe nested content\n");
+    }
+    const snapshot = await captureWorkspaceManifest({ root: source, baseCommit: commit });
+    const rawManifest = serializeWorkerWorkspaceManifest(snapshot.manifest);
+    const packed = await runCommandBuffered(
+      ["git", "-C", source, "pack-objects", "--stdout", "--revs"],
+      { input: `${commit}\n`, maxOutputBytes: 4 * 1024 * 1024 },
+    );
+    expect(packed.termination, packed.stderr.toString("utf8")).toBe("exit");
+    expect(packed.code).toBe(0);
+    const tracked = snapshot.manifest.entries.find(
+      (entry) => entry.type === "file" && entry.path === "tracked.txt",
+    );
+    if (tracked?.type !== "file") {
+      throw new Error("test Git workspace has no tracked file");
+    }
+    const downloadablePaths = new Set([
+      ...(changed ? ["nested/file.txt", "tracked.txt"] : []),
+      ...(replaceSymlinkAncestor ? ["nested/file.txt"] : []),
+    ]);
+    const filesByHash = new Map(
+      snapshot.manifest.entries.flatMap((entry) =>
+        entry.type === "file" && downloadablePaths.has(entry.path)
+          ? [[entry.sha256, path.join(source, entry.path)] as const]
+          : [],
+      ),
+    );
+    const requestedBlobs: string[] = [];
+    let requestedPacks = 0;
+    const server = createHttpServer((req, res) => {
+      void (async () => {
+        if (req.url?.endsWith("/manifest")) {
+          res.writeHead(200, { "content-length": String(Buffer.byteLength(rawManifest)) });
+          res.end(rawManifest);
+          return;
+        }
+        if (req.url?.endsWith("/pack")) {
+          requestedPacks += 1;
+          res.writeHead(200, { "content-length": String(packed.stdout.byteLength) });
+          res.end(packed.stdout);
+          return;
+        }
+        const sha256 = req.url?.match(/\/blobs\/([a-f0-9]{64})$/u)?.[1];
+        if (sha256) {
+          requestedBlobs.push(sha256);
+          const file = filesByHash.get(sha256);
+          if (file) {
+            if (lateWrite && sha256 === tracked.sha256) {
+              const staging = (await fs.readdir(root)).find((name) =>
+                name.startsWith(".workspace.workspace-transfer-"),
+              );
+              expect(staging).toBeDefined();
+              const script = path.join(root, staging!, "script.sh");
+              const original = await fs.stat(script);
+              await fs.writeFile(script, "#!/bin/sh\nexit 1\n");
+              await fs.utimes(script, original.atime, original.mtime);
+            }
+            const body = await fs.readFile(file);
+            res.writeHead(200, { "content-length": String(body.byteLength) });
+            res.end(body);
+            return;
+          }
+        }
+        res.writeHead(404).end();
+      })().catch((error: unknown) => {
+        res.destroy(error instanceof Error ? error : new Error(String(error)));
+      });
+    });
+    const gatewayUrl = await listen(server);
+    try {
+      const transfer = runNodeWorkerWorkspaceTransfer({
+        gatewayUrl,
+        environmentId: "environment-git",
+        workspaceDir,
+        manifestHome: root,
+        hashMemo: new Map(),
+        transfer: {
+          direction: "download",
+          token: "test-token",
+          manifestRef: snapshot.manifestRef,
+        },
+      });
+      if (lateWrite) {
+        await expect(transfer).rejects.toMatchObject({
+          cause: expect.objectContaining({
+            message: expect.stringContaining("materialized a different manifest"),
+          }),
+        });
+        expect(await fs.readFile(path.join(workspaceDir, "previous.txt"), "utf8")).toBe(
+          "preserve prior workspace\n",
+        );
+        return;
+      }
+      await expect(transfer).resolves.toBe(snapshot.manifestRef);
+      expect(requestedPacks).toBe(1);
+      await expect(
+        fs.access(path.join(workspaceDir, ".git", "objects", "info", "alternates")),
+      ).rejects.toMatchObject({ code: "ENOENT" });
+      expect(await fs.readFile(path.join(workspaceDir, ".git", "config"), "utf8")).not.toContain(
+        "example.invalid/private.git",
+      );
+      await expect(fs.readFile(path.join(workspaceDir, "tracked.txt"), "utf8")).resolves.toBe(
+        "tracked from gateway\n",
+      );
+      if (process.platform !== "win32") {
+        // Git checkout applies the umask.
+        const checkoutUmask = process.umask();
+        expect((await fs.stat(path.join(workspaceDir, "tracked.txt"))).mode & 0o777).toBe(
+          0o666 & ~checkoutUmask,
+        );
+        expect((await fs.stat(path.join(workspaceDir, "script.sh"))).mode & 0o777).toBe(
+          0o777 & ~checkoutUmask,
+        );
+      }
+      await expect(fs.readlink(path.join(workspaceDir, "tracked-link"))).resolves.toBe(
+        "tracked.txt",
+      );
+      expect(requestedBlobs).toEqual([...filesByHash.keys()]);
+      expect(transferDebug).toHaveBeenCalledWith(
+        "node worker manifest capture completed",
+        expect.objectContaining({
+          contentHashCount: downloadablePaths.size,
+          memoHitCount:
+            snapshot.manifest.entries.filter((entry) => entry.type === "file").length -
+            downloadablePaths.size,
+        }),
+      );
+      await expect(git(workspaceDir, ["rev-parse", "HEAD"])).resolves.toBe(commit);
+      if (replaceSymlinkAncestor) {
+        expect((await fs.lstat(path.join(workspaceDir, "nested"))).isDirectory()).toBe(true);
+        await expect(
+          fs.readFile(path.join(workspaceDir, "nested", "file.txt"), "utf8"),
+        ).resolves.toBe("safe nested content\n");
+      }
+      if (!replaceSymlinkAncestor) {
+        await expect(git(workspaceDir, ["status", "--porcelain=v1"])).resolves.toBe("");
+      }
+      expect(transferDebug).toHaveBeenCalledWith(
+        "node worker workspace transfer completed",
+        expect.objectContaining({
+          environmentId: "environment-git",
+          direction: "download",
+          outcome: "succeeded",
+          durationMs: expect.any(Number),
+          baseSource: "gateway-pack",
+          packDownloadMs: expect.any(Number),
+          blobApplyMs: expect.any(Number),
+        }),
+      );
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => {
+        server.close(() => resolve());
+      });
+      if (replaceSymlinkAncestor) {
+        await expect(fs.readFile(outsideSentinel, "utf8")).resolves.toBe(
+          "outside must stay unchanged\n",
+        );
+      }
+    }
+  });
 });
 
 describe("node worker transfer client hash memo", () => {

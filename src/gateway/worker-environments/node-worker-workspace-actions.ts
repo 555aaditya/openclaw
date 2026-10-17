@@ -26,7 +26,6 @@ import type {
   WorkerWorkspaceTunnelHandle,
 } from "./tunnel-contract.js";
 import { boundedWorkerError } from "./worker-error.js";
-import { workerProjectSeedKey } from "./workspace-git-base.js";
 import type { WorkspaceHashMemo } from "./workspace-hash-memo.js";
 import { prepareLocalWorkspaceReconciliation } from "./workspace-local-reconciliation.js";
 import {
@@ -442,29 +441,18 @@ export function createNodeWorkerWorkspaceActions(params: {
       gitToken: source.gitToken,
     };
     let baseline: WorkerWorkspaceSyncResult & { baseCommit: string };
-    if (source.prepared) {
-      if (!source.baseCommit || source.runSetupScript) {
-        throw new Error("Prepared repository requires its pinned commit and completed setup");
-      }
-      baseline = await repository.bindPreparedRepository(
-        { ...identity, commit: source.baseCommit },
-        source.prepared,
-        request.gitAuthor,
+    const prepared = await repository.prepareRepository(identity);
+    if (prepared.kind === "failed") {
+      throw new Error(
+        `Cloud repository preparation failed: ${prepared.reason}${prepared.detail ? `: ${prepared.detail}` : ""}`,
       );
-    } else {
-      const prepared = await repository.prepareRepository(identity);
-      if (prepared.kind === "failed") {
-        throw new Error(
-          `Cloud repository preparation failed: ${prepared.reason}${prepared.detail ? `: ${prepared.detail}` : ""}`,
-        );
-      }
-      baseline = prepared.result;
     }
+    baseline = prepared.result;
     const baseManifestRef =
       baseline.mode === "repository" ? baseline.baseManifestRef : baseline.manifestRef;
     const baseCommit = baseline.baseCommit;
     const remoteWorkspaceDir = baseline.remoteWorkspaceDir;
-    if (request.gitAuthor && !source.prepared) {
+    if (request.gitAuthor) {
       await repository.configureCheckout(remoteWorkspaceDir, request.gitAuthor);
     }
     await params.workspaceTransfer.prepareRepository({
@@ -640,7 +628,6 @@ if (stat?.isFile() && (stat.mode & 0o111)) {
           generation: request.generation,
           gitAuthor: request.gitAuthor,
           localPath: request.source.path,
-          projectKey: request.source.projectKey,
           authorize: request.authorize,
         };
         const prepared = await params.workspaceTransfer.prepareSync({
@@ -649,30 +636,20 @@ if (stat?.isFile() && (stat.mode & 0o111)) {
           authorize: request.authorize,
         });
         try {
-          if (!localRequest.projectKey) {
-            const originStartedAt = performance.now();
-            const origin = await workspace.trySyncWorkspace(
-              localRequest,
-              prepared.snapshot.manifestRef,
-            );
-            recordNodeSyncPath(params.environmentId, params.sessionId, origin, originStartedAt);
-            if (origin.kind === "synced") {
-              return await workspace.finalizeSync(localRequest, origin.result);
-            }
+          const originStartedAt = performance.now();
+          const origin = await workspace.trySyncWorkspace(
+            localRequest,
+            prepared.snapshot.manifestRef,
+          );
+          recordNodeSyncPath(params.environmentId, params.sessionId, origin, originStartedAt);
+          if (origin.kind === "synced") {
+            return await workspace.finalizeSync(localRequest, origin.result);
           }
           const transferred = await transfer(
             {
               direction: "download",
               token: prepared.token,
               manifestRef: prepared.snapshot.manifestRef,
-              ...(localRequest.projectKey && prepared.snapshot.manifest.baseCommit
-                ? {
-                    seedKey: workerProjectSeedKey({
-                      key: localRequest.projectKey,
-                      baseCommit: prepared.snapshot.manifest.baseCommit,
-                    }),
-                  }
-                : {}),
             },
             "Node workspace transfer failed",
             { assertCurrent: request.authorize },

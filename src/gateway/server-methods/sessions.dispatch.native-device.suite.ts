@@ -72,7 +72,6 @@ export function registerNativeDeviceDispatchTests({
         invoke: async () => ({ ok: false }),
       });
       const provision = vi.spyOn(runtime.provider, "provision");
-      const bootstrapWorker = vi.fn();
       const ensureNodeWorkerBundle = vi.fn(async () => BOOTSTRAP_RECEIPT);
       const service = createWorkerEnvironmentService({
         store,
@@ -80,7 +79,6 @@ export function registerNativeDeviceDispatchTests({
         getConfig: () => config,
         resolveProvider: (id) => (id === "device" ? runtime.provider : undefined),
         prepareInstallation: async () => BUNDLE_ARTIFACT,
-        bootstrapWorker,
         ensureNodeWorkerBundle,
       });
       const previousRegistry = getActivePluginRegistry();
@@ -109,27 +107,10 @@ export function registerNativeDeviceDispatchTests({
         const dispatch = vi.fn<WorkerPlacementDispatchService["dispatch"]>(
           async (request, _onTransition, authorize) => {
             authorize?.();
-            const intent = await service.prepareProjectIntent(request.profileId, {
-              executionMode: request.executionMode,
-              runSetupScript: request.runSetupScript,
-            });
-            expect(intent).toMatchObject({
-              providerId: "device",
-              profileSnapshot: {
-                executionMode: "worker-turn",
-                settings: { device: node.nodeId, inference: "worker" },
-              },
-            });
-            expect(intent.profileSnapshot.settings).not.toBe(
-              config.cloudWorkers.profiles["dedicated-native"].settings,
-            );
-            authorize?.();
             const environment = await service.createWithRequest({
               profileId: request.profileId,
               idempotencyKey: "scenario2-named-device",
               executionMode: request.executionMode,
-              runSetupScript: request.runSetupScript,
-              admittedIntent: intent,
             });
             expect(environment).toMatchObject({
               providerId: "device",
@@ -137,8 +118,14 @@ export function registerNativeDeviceDispatchTests({
               nodeDeviceId: node.nodeId,
               sharedHost: true,
               sshEndpoint: null,
-              profileSnapshot: { settings: { device: node.nodeId, inference: "worker" } },
+              profileSnapshot: {
+                executionMode: "worker-turn",
+                settings: { device: node.nodeId, inference: "worker" },
+              },
             });
+            expect(environment.profileSnapshot.settings).not.toBe(
+              config.cloudWorkers.profiles["dedicated-native"].settings,
+            );
             return {
               ...activeDevicePlacement(node.nodeId),
               environmentId: environment.environmentId,
@@ -209,7 +196,6 @@ export function registerNativeDeviceDispatchTests({
           expect.objectContaining({ assertCurrent: expect.any(Function) }),
         );
         expect(ensureNodeWorkerBundle).toHaveBeenCalledOnce();
-        expect(bootstrapWorker).not.toHaveBeenCalled();
         config.cloudWorkers.profiles["dedicated-native"].settings.inference = "gateway";
         expect(store.list()[0]?.profileSnapshot.settings).toEqual({
           device: node.nodeId,

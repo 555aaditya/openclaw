@@ -46,7 +46,7 @@ export const COMPUTER_USE: ComputerUseCapabilityDescriptor = {
 export const EXECUTION_ID = "00000000-0000-4000-8000-000000000001";
 export const NEXT_EXECUTION_ID = "00000000-0000-4000-8000-000000000002";
 
-export function createHarness(sharedHost = false, withPolicy = true) {
+export function createHarness(withPolicy = true) {
   const claim: WorkerSessionTurnClaim = {
     sessionId: "session-1",
     claimId: "claim-1",
@@ -86,14 +86,14 @@ export function createHarness(sharedHost = false, withPolicy = true) {
     preparation: null,
     lastActivatedAtMs: null,
     environmentId: "environment-1",
-    providerId: sharedHost ? "device" : "fixture-cloud",
+    providerId: "device",
     profileId: "desktop",
     profileSnapshot: { settings: {} },
     provisionOperationId: "provision-1",
     nodeSetupId: null,
     nodeDeviceId: "desktop-node",
-    sharedHost,
-    desktop: sharedHost ? null : { protocol: "rfb", port: 5900, passwordFilePath: "/vnc.password" },
+    sharedHost: true,
+    desktop: null,
     bootstrapReceipt: null,
     ownerEpoch: 7,
     teardownTerminalState: null,
@@ -115,8 +115,8 @@ export function createHarness(sharedHost = false, withPolicy = true) {
     pairingGeneration: "pairing-1",
     platform: "linux",
     deviceFamily: "Linux",
-    commands: sharedHost ? ["screen.snapshot", "computer.act"] : [],
-    computerUse: sharedHost ? COMPUTER_USE : undefined,
+    commands: ["screen.snapshot", "computer.act"],
+    computerUse: COMPUTER_USE,
   };
   const proof: NodeWorkerSupervisorNodeProof = {
     nodeId: node.nodeId,
@@ -133,7 +133,6 @@ export function createHarness(sharedHost = false, withPolicy = true) {
     placement: WorkerSessionPlacementRecord;
     environment: Extract<WorkerEnvironmentRecord, { leaseId: string }>;
     node: NodeSession;
-    privateCurrent: boolean;
     context?: GatewayRequestContext;
     nodeTransport?: NodeWorkerSupervisorTransport;
     config: OpenClawConfig;
@@ -144,7 +143,6 @@ export function createHarness(sharedHost = false, withPolicy = true) {
     placement,
     environment,
     node,
-    privateCurrent: true,
     config: {},
   };
   const { context } = createContext({
@@ -182,6 +180,7 @@ export function createHarness(sharedHost = false, withPolicy = true) {
       );
     }
     invocation.onDispatchReady?.("public-invoke");
+    await state.afterDispatch?.();
     return { ok: true, payload: { ok: true } };
   });
   context.nodeRegistry.invoke = publicInvoke;
@@ -195,28 +194,14 @@ export function createHarness(sharedHost = false, withPolicy = true) {
       : undefined,
   );
   state.context = context;
-  const privateInvoke = vi.fn<NodeWorkerSupervisorTransport["invoke"]>(async (invocation) => {
-    await state.beforeDispatch?.();
-    if (!invocation.isDispatchAuthorized()) {
-      return { ok: false, error: { message: "dispatch authority closed" } };
-    }
-    invocation.onDispatchReady?.("private-invoke");
-    const input = parseNodeWorkerComputerInput(JSON.stringify(invocation.params));
-    if (input.operation === "capabilities") {
-      return { ok: true, payload: COMPUTER_USE };
-    }
-    nativeExecutionIds.push(
-      input.operation === "close" ? input.executionId : input.params.executionId,
-    );
-    await state.afterDispatch?.();
-    return { ok: true, payload: { ok: true } };
-  });
   const nodeTransport = {
     getCurrentNode: vi.fn(async (nodeId: string) => (proof.nodeId === nodeId ? proof : undefined)),
     listCurrentNodes: vi.fn(async () => [proof]),
-    hasCurrentRunner: (id) => id === proof.nodeId && state.privateCurrent,
-    isCurrent: (candidate) => candidate === proof && state.privateCurrent,
-    invoke: privateInvoke,
+    hasCurrentRunner: (id) => id === proof.nodeId,
+    isCurrent: (candidate) => candidate === proof,
+    invoke: vi.fn(async () => {
+      throw new Error("Computer input must use the paired public node channel");
+    }),
   } satisfies NodeWorkerSupervisorTransport;
   state.nodeTransport = nodeTransport;
   const policyHandle = vi.fn(async (policy: OpenClawPluginNodeInvokePolicyContext) => {
@@ -286,7 +271,6 @@ export function createHarness(sharedHost = false, withPolicy = true) {
     run,
     authority,
     workerSource,
-    privateInvoke,
     publicInvoke,
     nodeTransport,
     policyHandle,

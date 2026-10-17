@@ -114,7 +114,9 @@ describe("Gateway operation policy reload", () => {
         auth: { order: { openai: ["primary"] } },
         diagnostics: { cacheTrace: { enabled: true } },
         desktop: { host: { enabled: true, managed: true, port: 5901, passwordFile: "vnc.txt" } },
-        cloudWorkers: { preparedPool: { maxTotal: 2 }, desktop: true },
+        cloudWorkers: {
+          profiles: { paired: { provider: "device", settings: { device: "paired-node" } } },
+        },
         worktreeAcceleration: false,
       },
       restartReasons: [],

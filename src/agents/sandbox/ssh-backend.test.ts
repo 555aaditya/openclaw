@@ -1,5 +1,7 @@
 // SSH sandbox backend tests cover runtime description/removal, remote seeding,
 // command execution, bind validation, and backend config plumbing.
+// SSH sandbox backend tests cover runtime description/removal, remote seeding,
+// command execution, bind validation, and backend config plumbing.
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -41,12 +43,8 @@ vi.mock("./ssh.js", async () => {
   };
 });
 
-const {
-  createPreprovisionedSshSandboxBackend,
-  createSshSandboxBackend,
-  resolveSshRuntimePaths,
-  sshSandboxBackendManager,
-} = await import("./ssh-backend.js");
+const { createSshSandboxBackend, resolveSshRuntimePaths, sshSandboxBackendManager } =
+  await import("./ssh-backend.js");
 const tempDirs = createTempDirTracker();
 
 function createConfig(): OpenClawConfig {
@@ -438,19 +436,13 @@ describe("ssh sandbox backend", () => {
   it("uploads SSH exec environment privately without exposing values in local argv", async () => {
     const sentinel = "synthetic-ssh-private-value";
     const multilineValue = `${sentinel}\r\nsecond 'quoted' line=ok `;
-    const backend = await createPreprovisionedSshSandboxBackend(
-      {
-        sessionKey: "agent:worker:task",
-        scopeKey: "agent:worker",
-        workspaceDir: "/tmp/workspace",
-        agentWorkspaceDir: "/tmp/workspace",
-        cfg: createBackendSandboxConfig({ target: "peter@example.com:2222" }),
-      },
-      {
-        runtimeId: "remote-exec:environment-1:7:11",
-        remoteWorkspaceDir: "/srv/openclaw/workspaces/session-1",
-      },
-    );
+    const backend = await createSshSandboxBackend({
+      sessionKey: "agent:worker:task",
+      scopeKey: "agent:worker",
+      workspaceDir: "/tmp/workspace",
+      agentWorkspaceDir: "/tmp/workspace",
+      cfg: createBackendSandboxConfig({ target: "peter@example.com:2222" }),
+    });
 
     const execSpec = await backend.buildExecSpec({
       command: "printf '%s' \"$SYNTHETIC_VALUE\"",
@@ -482,16 +474,15 @@ describe("ssh sandbox backend", () => {
     const cleanup = requirePreparedSshInvocation(1);
     expect(cleanup.argv.at(-1)).toContain("openclaw-sandbox-exec-cleanup");
     expect(cleanup.argv.join(" ")).not.toContain(sentinel);
-    expect(sshMocks.disposeSshSandboxSession).toHaveBeenCalledOnce();
+    expect(sshMocks.disposeSshSandboxSession).toHaveBeenCalledTimes(2);
   });
 
   it("finalizes only its own prepared exec once and ignores forged or foreign tokens", async () => {
     const params = createBackendParams(
       createBackendSandboxConfig({ target: "worker@example.com:22" }),
     );
-    const workdir = { runtimeId: "owned-finalization", remoteWorkspaceDir: "/remote/workspace" };
-    const owner = await createPreprovisionedSshSandboxBackend(params, workdir);
-    const foreign = await createPreprovisionedSshSandboxBackend(params, workdir);
+    const owner = await createSshSandboxBackend(params);
+    const foreign = await createSshSandboxBackend(params);
     const spec = await owner.buildExecSpec({ command: "true", env: {}, usePty: false });
     const forgedCleanup = vi.fn(async () => {});
     const outcome = { status: "completed" as const, exitCode: 0, timedOut: false };
@@ -503,7 +494,7 @@ describe("ssh sandbox backend", () => {
     });
     expect(forgedCleanup).not.toHaveBeenCalled();
     expect(sshMocks.spawnCommand).toHaveBeenCalledOnce();
-    expect(sshMocks.disposeSshSandboxSession).not.toHaveBeenCalled();
+    expect(sshMocks.disposeSshSandboxSession).toHaveBeenCalledOnce();
 
     await Promise.all([
       owner.finalizeExec?.({ ...outcome, token: spec.finalizeToken }),
@@ -511,23 +502,17 @@ describe("ssh sandbox backend", () => {
     ]);
     await owner.finalizeExec?.({ ...outcome, token: spec.finalizeToken });
     expect(sshMocks.spawnCommand).toHaveBeenCalledTimes(2);
-    expect(sshMocks.disposeSshSandboxSession).toHaveBeenCalledOnce();
+    expect(sshMocks.disposeSshSandboxSession).toHaveBeenCalledTimes(2);
   });
 
   it("disposes the SSH session when staged exec upload or final cleanup fails", async () => {
-    const backend = await createPreprovisionedSshSandboxBackend(
-      {
-        sessionKey: "agent:worker:task",
-        scopeKey: "agent:worker",
-        workspaceDir: "/tmp/workspace",
-        agentWorkspaceDir: "/tmp/workspace",
-        cfg: createBackendSandboxConfig({ target: "peter@example.com:2222" }),
-      },
-      {
-        runtimeId: "remote-exec:environment-1:7:11",
-        remoteWorkspaceDir: "/srv/openclaw/workspaces/session-1",
-      },
-    );
+    const backend = await createSshSandboxBackend({
+      sessionKey: "agent:worker:task",
+      scopeKey: "agent:worker",
+      workspaceDir: "/tmp/workspace",
+      agentWorkspaceDir: "/tmp/workspace",
+      cfg: createBackendSandboxConfig({ target: "peter@example.com:2222" }),
+    });
 
     sshMocks.spawnCommand.mockRejectedValueOnce(new Error("synthetic staging transport failure"));
     await expect(
@@ -538,7 +523,7 @@ describe("ssh sandbox backend", () => {
       }),
     ).rejects.toThrow("synthetic staging transport failure");
     expect(sshMocks.spawnCommand).toHaveBeenCalledTimes(2);
-    expect(sshMocks.disposeSshSandboxSession).toHaveBeenCalledOnce();
+    expect(sshMocks.disposeSshSandboxSession).toHaveBeenCalledTimes(2);
 
     const execSpec = await backend.buildExecSpec({
       command: "true",
@@ -554,7 +539,7 @@ describe("ssh sandbox backend", () => {
         token: execSpec.finalizeToken,
       }),
     ).rejects.toThrow("synthetic cleanup transport failure");
-    expect(sshMocks.disposeSshSandboxSession).toHaveBeenCalledTimes(2);
+    expect(sshMocks.disposeSshSandboxSession).toHaveBeenCalledTimes(3);
     expect(sshMocks.spawnCommand.mock.invocationCallOrder.at(-1)).toBeLessThan(
       sshMocks.disposeSshSandboxSession.mock.invocationCallOrder.at(-1) ?? Number.POSITIVE_INFINITY,
     );
@@ -697,50 +682,6 @@ describe("ssh sandbox backend", () => {
       expect(sshMocks.disposeSshSandboxSession).toHaveBeenCalledTimes(2);
     },
   );
-
-  it("adopts a preprovisioned workdir without clearing or uploading placement files", async () => {
-    const remoteWorkspaceDir = "/srv/openclaw/workspaces/session-1";
-    const backend = await createPreprovisionedSshSandboxBackend(
-      {
-        sessionKey: "agent:worker:task",
-        scopeKey: "agent:worker",
-        workspaceDir: "/tmp/workspace",
-        agentWorkspaceDir: "/tmp/agent",
-        skillsWorkspaceDir: "/tmp/skills",
-        cfg: createBackendSandboxConfig({ target: "peter@example.com:2222" }),
-      },
-      {
-        runtimeId: "remote-exec:environment-1:7:11",
-        remoteWorkspaceDir,
-      },
-    );
-
-    expect(backend.runtimeId).toBe("remote-exec:environment-1:7:11");
-    expect(backend.workdir).toBe(remoteWorkspaceDir);
-    expect(backend.workdirRoots).toEqual([remoteWorkspaceDir]);
-
-    const execSpec = await backend.buildExecSpec({
-      command: "pwd",
-      env: {},
-      usePty: false,
-    });
-
-    expect(requirePreparedSshInvocation().stdin).toContain(remoteWorkspaceDir);
-    expect(sshMocks.uploadDirectoryToSshTarget).not.toHaveBeenCalled();
-    expect(sshMocks.runSshSandboxCommand).not.toHaveBeenCalled();
-    await backend.runShellCommand({ script: "pwd" });
-    expect(sshMocks.uploadDirectoryToSshTarget).not.toHaveBeenCalled();
-    expect(String(requireSshRunCommandParams().remoteCommand)).not.toContain(
-      "openclaw-sandbox-clear",
-    );
-
-    await backend.finalizeExec?.({
-      status: "completed",
-      exitCode: 0,
-      timedOut: false,
-      token: execSpec.finalizeToken,
-    });
-  });
 
   it("validates remote workdirs before exec accepts backend-owned cwd", async () => {
     sshMocks.runSshSandboxCommand

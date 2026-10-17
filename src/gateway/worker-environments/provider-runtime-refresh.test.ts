@@ -7,12 +7,11 @@ import {
 import { createDeferred } from "../../../test/helpers/promise.js";
 import { sessionChanges } from "../../sessions/session-row-changes.js";
 import { REQUEST, seedActivePlacement } from "./placement-dispatch-test-fixtures.js";
-import { createHarness, createRecoveryService } from "./placement-dispatch-test-harness.js";
+import { createHarness } from "./placement-dispatch-test-harness.js";
 import { projectWorkerSessionTurnClaim } from "./placement-record.js";
 import { createWorkerSessionPlacementStore } from "./placement-store.js";
 import { createWorkerSessionPlacementGate } from "./placement-worker-gate.js";
 import * as support from "./service.test-support.js";
-import { createWorkerTunnelManager } from "./tunnel.js";
 
 describe("worker environment runtime upgrades", () => {
   support.setupWorkerEnvironmentServiceSuite();
@@ -28,17 +27,18 @@ describe("worker environment runtime upgrades", () => {
   };
 
   async function setupUpgrade(
-    transport: "node" | "ssh",
+    transport: "node",
     state: "ready" | "idle" | "attached" = "attached",
     bootstrapReceipt: WorkerAdmissionHandshake = support.BOOTSTRAP_RECEIPT,
     targetReceipt: WorkerAdmissionHandshake = currentReceipt,
+    executionMode: "worker-turn" | "remote-exec" = "worker-turn",
   ) {
     const environmentId = "worker-runtime-upgrade";
     await support.testState.store.createIntent({
       environmentId,
       providerId: "fake",
       profileId: "development",
-      profileSnapshot: { settings: { region: "test", desktop: true } },
+      profileSnapshot: { settings: { region: "test", desktop: true }, executionMode },
       provisionOperationId: `provision:${environmentId}`,
     });
     await support.testState.store.transition({
@@ -46,21 +46,13 @@ describe("worker environment runtime upgrades", () => {
       from: "requested",
       to: "provisioning",
     });
-    if (transport === "ssh") {
-      await support.testState.store.transition({
-        environmentId,
-        from: "provisioning",
-        to: "bootstrapping",
-        patch: { leaseId: `lease:${environmentId}`, sshEndpoint: support.SSH_ENDPOINT },
-      });
-    }
     const ready = await support.testState.store.transition({
       environmentId,
-      from: transport === "node" ? "provisioning" : "bootstrapping",
+      from: "provisioning",
       to: "ready",
       patch: {
         ...support.readyPatch(environmentId, { ...bootstrapReceipt, installKind: "bundle" }),
-        desktop: support.DESKTOP,
+        sharedHost: true,
         ...(transport === "node"
           ? { leaseId: `lease:${environmentId}`, nodeDeviceId: `node:${environmentId}` }
           : {}),
@@ -86,13 +78,12 @@ describe("worker environment runtime upgrades", () => {
         ? await seedActivePlacement(placements, {
             environmentId,
             ownerEpoch: environment.ownerEpoch,
-            executionMode: transport === "node" ? "worker-turn" : "remote-exec",
+            executionMode,
           })
         : undefined;
     const oldCredential = support.testState.store.getCredential(environmentId)!;
     const events: string[] = [];
-    const tunnelManager = createWorkerTunnelManager();
-    const stop = vi.spyOn(tunnelManager, "stop").mockImplementation(async () => {
+    const stop = vi.fn(async () => {
       expect(support.testState.store.getCredential(environmentId)).toBeUndefined();
       events.push("stopped");
     });
@@ -106,11 +97,6 @@ describe("worker environment runtime upgrades", () => {
       ...support.BUNDLE_ARTIFACT,
       ...targetReceipt,
     }));
-    support.testState.bootstrapWorker = vi.fn(async ({ installation, sshEndpoint }) => {
-      expect(installation.bundleHash).toBe(targetReceipt.bundleHash);
-      expect(sshEndpoint).toEqual(environment.sshEndpoint);
-      return install();
-    });
     const provision = vi.fn(support.createProvider().provision);
     const destroy = vi.fn(async () => {});
     const ensureNodeWorkerBundle = vi.fn(
@@ -135,7 +121,7 @@ describe("worker environment runtime upgrades", () => {
       start: vi.fn(async () => {
         throw new Error("Node workspace transport was not configured");
       }),
-      stop: vi.fn(async () => {}),
+      stop,
       stopAll: vi.fn(async () => {}),
     };
     const bindService = async (store: typeof placements, restarting = false) => {
@@ -149,7 +135,6 @@ describe("worker environment runtime upgrades", () => {
           destroy,
         }),
         {
-          tunnelManager,
           nodeTunnelManager,
           placementStore: gate,
           ensureNodeWorkerBundle,
@@ -170,7 +155,6 @@ describe("worker environment runtime upgrades", () => {
       destroy,
       ensureNodeWorkerBundle,
       service,
-      tunnelManager,
       nodeTunnelManager,
       restart: async () => {
         await support.reopenWorkerEnvironmentStore();
@@ -191,7 +175,11 @@ describe("worker environment runtime upgrades", () => {
       const h = await setupUpgrade(transport, state);
       await h.service.reconcileOnce();
       expect(h.events).toEqual(["stopped", "installed"]);
-      expect(h.stop).toHaveBeenCalledWith(h.environment.environmentId, h.environment.ownerEpoch);
+      expect(h.stop).toHaveBeenCalledExactlyOnceWith(
+        h.environment.environmentId,
+        h.environment.ownerEpoch,
+        undefined,
+      );
       expect(h.provision).not.toHaveBeenCalled();
       expect(h.destroy).not.toHaveBeenCalled();
       expect(support.testState.store.get(h.environment.environmentId)).toMatchObject({
@@ -257,49 +245,6 @@ describe("worker environment runtime upgrades", () => {
     expect(h.placements.get(REQUEST.sessionId)?.workerBundleHash).toBe(currentReceipt.bundleHash);
   });
 
-  it("keeps an idle SSH machine through startup recovery when its runtime upgrade must retry", async () => {
-    const h = await setupUpgrade("ssh", "attached", {
-      ...support.BOOTSTRAP_RECEIPT,
-      protocolFeatures: [
-        WORKER_EXECUTION_AUTHORITY_PROTOCOL_FEATURE,
-        WORKER_EXECUTION_CONTEXT_PROTOCOL_FEATURE,
-      ],
-    });
-    const recovery = await createRecoveryService(h.placements, h.service);
-    h.install.mockRejectedValueOnce(new Error("runtime download interrupted"));
-
-    await recovery.reconcile("startup");
-
-    expect(h.install).toHaveBeenCalledOnce();
-    expect(h.destroy).not.toHaveBeenCalled();
-    expect(h.placements.get(REQUEST.sessionId)).toEqual(h.placement);
-    expect(support.testState.store.get(h.environment.environmentId)).toMatchObject({
-      state: "attached",
-      leaseId: h.environment.leaseId,
-      ownerEpoch: h.environment.ownerEpoch,
-      bootstrapReceipt: h.environment.bootstrapReceipt,
-      destroyRequestedAtMs: null,
-      lastError: "runtime download interrupted",
-    });
-
-    await recovery.reconcileActive(h.environment.environmentId);
-
-    expect(h.install).toHaveBeenCalledTimes(2);
-    expect(h.provision).not.toHaveBeenCalled();
-    expect(h.destroy).not.toHaveBeenCalled();
-    expect(h.placements.get(REQUEST.sessionId)).toEqual({
-      ...h.placement,
-      workerBundleHash: currentReceipt.bundleHash,
-    });
-    expect(support.testState.store.get(h.environment.environmentId)).toMatchObject({
-      state: "attached",
-      leaseId: h.environment.leaseId,
-      ownerEpoch: h.environment.ownerEpoch,
-      bootstrapReceipt: { ...currentReceipt, installKind: "bundle" },
-      lastError: null,
-    });
-  });
-
   it.each(["unchanged build", "same-version build"] as const)(
     "recovers published Gateway Stop state after restart with %s",
     async (change) => {
@@ -315,10 +260,11 @@ describe("worker environment runtime upgrades", () => {
         ? releasedReceipt
         : { ...currentReceipt, openclawVersion: releasedReceipt.openclawVersion };
       const h = await setupUpgrade(
-        unchanged ? "node" : "ssh",
+        "node",
         "attached",
         releasedReceipt,
         targetReceipt,
+        unchanged ? "worker-turn" : "remote-exec",
       );
       await h.placements.startDrain({
         sessionId: REQUEST.sessionId,
@@ -361,12 +307,50 @@ describe("worker environment runtime upgrades", () => {
       });
       const openWorkspace = async () => {
         expect(h.events).toEqual(unchanged ? [] : ["stopped", "installed"]);
+        if (unchanged) {
+          const placement = restarted.placements.get(REQUEST.sessionId);
+          const claim = placement && projectWorkerSessionTurnClaim(placement);
+          if (!claim) {
+            throw new Error("Workspace recovery did not publish its worker claim before IO");
+          }
+          const environmentId = h.environment.environmentId;
+          expect(restarted.placements.validateWorkspaceResultClaim(claim)).toBe(true);
+          expect(restarted.gate.validateWorkerTurn(claim)).toBe(false);
+          const before = support.testState.store.getCredential(environmentId);
+          await expect(restarted.service.acquireTurnCredential(claim)).rejects.toThrow(
+            "not authoritative",
+          );
+          expect(support.testState.store.getCredential(environmentId)).toEqual(before);
+          if (!before) {
+            throw new Error("Released-state fixture lost its retained credential");
+          }
+          const identity = {
+            ...before,
+            credentialExpiresAtMs: before.expiresAtMs,
+            protocolFeatures: releasedReceipt.protocolFeatures,
+            runId: claim.runId,
+            turnClaim: claim,
+          };
+          expect(restarted.service.validateWorkerConnection(identity)).toBe("placement-mismatch");
+          await expect(
+            restarted.service.commitTranscript(
+              identity,
+              support.transcriptRequest(identity, "recovery cannot execute"),
+            ),
+          ).resolves.toEqual({ ok: false, closeReason: "placement-mismatch" });
+          await expect(
+            restarted.service.pushLiveEvent(
+              identity,
+              support.assistantEvent(identity, "recovery cannot execute"),
+            ),
+          ).resolves.toEqual({ ok: false, closeReason: "placement-mismatch" });
+          fixture.log.push("worker-authority:denied-before-io");
+        }
         return {
           ...fixture.tunnelHandle(h.environment.ownerEpoch),
           environmentId: h.environment.environmentId,
         };
       };
-      vi.spyOn(h.tunnelManager, "start").mockImplementation(openWorkspace);
       vi.mocked(h.nodeTunnelManager.start).mockImplementation(openWorkspace);
       h.destroy.mockImplementation(async () => {
         expect(fixture.log).toContain("workspace:verify-local");
@@ -383,47 +367,6 @@ describe("worker environment runtime upgrades", () => {
           publicationAuthority.push(restarted.gate.validateWorkerTurn(claim));
         }
       });
-      const reconcileEnvironment = restarted.service.reconcileEnvironment;
-      vi.spyOn(restarted.service, "reconcileEnvironment").mockImplementation(
-        async (environmentId) => {
-          if (unchanged) {
-            const placement = restarted.placements.get(REQUEST.sessionId)!;
-            const claim = projectWorkerSessionTurnClaim(placement)!;
-            expect(restarted.placements.validateWorkspaceResultClaim(claim)).toBe(true);
-            expect(restarted.gate.validateWorkerTurn(claim)).toBe(false);
-            const before = support.testState.store.getCredential(environmentId);
-            await expect(restarted.service.acquireTurnCredential(claim)).rejects.toThrow(
-              "not authoritative",
-            );
-            expect(support.testState.store.getCredential(environmentId)).toEqual(before);
-            if (!before) {
-              throw new Error("Released-state fixture lost its retained credential");
-            }
-            const identity = {
-              ...before,
-              credentialExpiresAtMs: before.expiresAtMs,
-              protocolFeatures: releasedReceipt.protocolFeatures,
-              runId: claim.runId,
-              turnClaim: claim,
-            };
-            expect(restarted.service.validateWorkerConnection(identity)).toBe("placement-mismatch");
-            await expect(
-              restarted.service.commitTranscript(
-                identity,
-                support.transcriptRequest(identity, "recovery cannot execute"),
-              ),
-            ).resolves.toEqual({ ok: false, closeReason: "placement-mismatch" });
-            await expect(
-              restarted.service.pushLiveEvent(
-                identity,
-                support.assistantEvent(identity, "recovery cannot execute"),
-              ),
-            ).resolves.toEqual({ ok: false, closeReason: "placement-mismatch" });
-            fixture.log.push("worker-authority:denied-before-io");
-          }
-          await reconcileEnvironment(environmentId);
-        },
-      );
       const recovery = await createHarness(support.testState.stateDb, restarted.placements, {
         workspacePath: support.testState.root,
         environmentService: restarted.service,
@@ -431,6 +374,7 @@ describe("worker environment runtime upgrades", () => {
       try {
         await recovery.service.reconcile("startup");
         if (unchanged) {
+          expect(fixture.log).toContain("worker-authority:denied-before-io");
           expect(publicationAuthority).toContain(false);
           expect(publicationAuthority).not.toContain(true);
         }

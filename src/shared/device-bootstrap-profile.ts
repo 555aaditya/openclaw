@@ -5,6 +5,7 @@ export type DeviceBootstrapPurpose =
   | "control-ui-owner"
   | "mobile-full"
   | "voice-node"
+  // Retained only to identify and reject credentials issued before managed workers retired.
   | "cloud-worker";
 
 /** Normalized roles/scopes carried by a bootstrap token during device handoff. */
@@ -87,13 +88,6 @@ export const NODE_PAIRING_SETUP_BOOTSTRAP_PROFILE: DeviceBootstrapProfile = {
   scopes: [],
 };
 
-/** Environment-owned node profile removed when its cloud lease is released. */
-export const CLOUD_WORKER_PAIRING_SETUP_BOOTSTRAP_PROFILE: DeviceBootstrapProfile = {
-  roles: ["node"],
-  scopes: [],
-  purpose: "cloud-worker",
-};
-
 /** Room/embedded voice profile: node capabilities plus least-privilege Talk RPCs. */
 export const VOICE_NODE_PAIRING_SETUP_BOOTSTRAP_PROFILE: DeviceBootstrapProfile = {
   roles: ["node", "operator"],
@@ -129,10 +123,7 @@ export function isMobilePairingSetupBootstrapProfile(
 export function isNodePairingSetupBootstrapProfile(
   input: DeviceBootstrapProfileInput | undefined,
 ): boolean {
-  return (
-    deviceBootstrapProfilesEqual(input, NODE_PAIRING_SETUP_BOOTSTRAP_PROFILE) ||
-    deviceBootstrapProfilesEqual(input, CLOUD_WORKER_PAIRING_SETUP_BOOTSTRAP_PROFILE)
-  );
+  return deviceBootstrapProfilesEqual(input, NODE_PAIRING_SETUP_BOOTSTRAP_PROFILE);
 }
 
 export function resolvePairingSetupAccess(
