@@ -27,7 +27,8 @@ const {
 } = await import("../../scripts/check-cli-bootstrap-imports.mts");
 
 const tempRoots = useAutoCleanupTempDirTracker(afterEach);
-const workerDeployArtifactNames = `code-mode-node.worker.mjs file-tool-planning.worker.mjs
+const workerDeployArtifactNames = `client-credential.worker.mjs fs-safe-darwin-arm64.node fs-safe-darwin-x64.node
+code-mode-node.worker.mjs file-tool-planning.worker.mjs
 file-tool-read.worker.mjs gateway-state-owner-heartbeat.worker.mjs github-exec-launcher.mjs
 image-processor.worker.mjs openclaw-state-read.worker.mjs service-child-group-anchor.mjs
 service-child-relay.mjs sqlite-source-revision.worker.mjs sqlite-store.worker.mjs
