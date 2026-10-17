@@ -3,6 +3,7 @@ import { providerDisplayLabel } from "../../components/provider-icon.ts";
 import { ProviderBrandIcon } from "../../components/solid/provider-icon.tsx";
 import {
   SettingsGroup,
+  SettingsLoadingSkeleton,
   SettingsSection,
   SettingsSegmented,
 } from "../../components/solid/settings-ui.tsx";
@@ -130,9 +131,9 @@ export function UsageOverview(props: {
           when={overview()}
           fallback={
             <SettingsGroup carapace>
-              <p class="usage-overview__empty">
-                {props.loading ? t("common.loading") : t("modelProviders.usage.empty")}
-              </p>
+              <Show when={!props.loading} fallback={<SettingsLoadingSkeleton carapace rows={2} />}>
+                <p class="usage-overview__empty">{t("modelProviders.usage.empty")}</p>
+              </Show>
             </SettingsGroup>
           }
         >

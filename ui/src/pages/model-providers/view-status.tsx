@@ -43,9 +43,13 @@ export function hasProviderCredentials(card: ModelProviderCard): boolean {
  * Usable through OpenClaw: credentials it stores, or a catalog that reports the
  * provider ready (for example a CLI backend or plugin that owns its own login).
  */
+/** Usage the provider reported, even an error, proves a credential it accepted. */
 export function isProviderUsable(card: ModelProviderCard): boolean {
   return (
-    hasProviderCredentials(card) || card.availableModelCount > 0 || card.catalogStatus === "ready"
+    hasProviderCredentials(card) ||
+    card.availableModelCount > 0 ||
+    card.catalogStatus === "ready" ||
+    card.usage !== undefined
   );
 }
 
