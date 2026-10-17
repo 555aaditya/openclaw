@@ -1,12 +1,10 @@
-import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
-import { createMemo, For, Show } from "solid-js";
+import { createMemo, createSignal, For, Show } from "solid-js";
 import { createEmptyCostUsageTotals } from "../../../../src/infra/session-cost-usage-totals.js";
 import { providerDisplayLabel } from "../../components/provider-icon.ts";
 import { SettingsSegmented } from "../../components/solid/settings-ui.tsx";
 import { t } from "../../lib/reactive/i18n.ts";
 import "../../components/tooltip.ts";
 import {
-  formatUsageCost,
   formatAnalysisCost,
   formatUsageTokens,
   formatDayLabel,
@@ -54,6 +52,32 @@ function calendarDaily(daily: CostDailyEntry[], range: UsageChartRange): CostDai
   });
 }
 
+type ChartSeries = { id: string; label: string; color: string; values: number[] };
+
+/** Token types keep the colors the per-turn chart and breakdown use. */
+const TOKEN_TYPE_COLORS = {
+  output: "var(--accent)",
+  input: "var(--ok)",
+  cacheWrite: "var(--warn)",
+  cacheRead: "var(--info)",
+} as const;
+
+const wholeDollars = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 0,
+});
+
+/** Rounds an axis maximum up to 1, 2 or 5 times a power of ten. */
+function niceCeiling(value: number): number {
+  if (value <= 0) {
+    return 0;
+  }
+  const step = 10 ** Math.floor(Math.log10(value));
+  return ([1, 2, 5, 10].find((factor) => factor * step >= value) ?? 10) * step;
+}
+
+/** Daily totals as columns stacked by total, token type or provider; a click filters days. */
 export function DailyChartCompact(props: {
   dailyEntries: CostDailyEntry[];
   selectedDays: string[];
@@ -64,257 +88,196 @@ export function DailyChartCompact(props: {
   onSelectDay: UsageProps["callbacks"]["filters"]["onSelectDay"];
   range: UsageChartRange;
 }) {
-  const state = createMemo(() => {
-    const dailyEntries = props.dailyEntries;
-    const selectedDays = props.selectedDays;
-    const chartMode = props.chartMode;
-    const dailyChartMode = props.dailyChartMode;
-    const onDailyChartModeChange = props.onDailyChartModeChange;
-    const onSelectDay = props.onSelectDay;
-    const range = props.range;
-    const daily = calendarDaily(dailyEntries, range);
-    const orderedDays = daily.map((entry) => entry.date);
-    const isTokenMode = chartMode === "tokens";
-    const stacked = dailyChartMode !== "total";
-    const values = daily.map((d) => (isTokenMode ? d.totalTokens : d.totalCost));
-    const scaleMaximum = Math.max(...values, 0);
-    const maxValue = scaleMaximum > 0 ? scaleMaximum : isTokenMode ? 1 : 0.0001;
-
-    // Adaptive scaling: when the spread between largest and smallest non-zero
-    // values is extreme (>50×), use square-root compression so small bars stay
-    // visible instead of collapsing to a single pixel.
-    const nonZero = values.filter((v) => v > 0);
-    const minNonZero = nonZero.length > 0 ? Math.min(...nonZero) : maxValue;
-    const spread = maxValue / minNonZero;
-    const usesCompressedScale = spread > 50;
-    const chartAreaPx = 200;
-    const minBarPx = 6;
-    const barMaxWidth =
-      daily.length > 30 ? 12 : daily.length > 20 ? 18 : daily.length > 14 ? 24 : 32;
-    const showTotals = daily.length <= 14;
-    const selectedDaySet = new Set(selectedDays);
-
-    const bars = daily.map((d, idx) => {
-      const total = isTokenMode ? d.totalTokens : d.totalCost;
-      const ratio = usesCompressedScale ? Math.sqrt(total / maxValue) : total / maxValue;
-      const heightPx = total <= 0 ? 0 : Math.max(minBarPx, ratio * chartAreaPx);
-      const isSelected = selectedDaySet.has(d.date);
-      const showDateLabel =
-        daily.length <= 14 || idx % Math.ceil(daily.length / 6) === 0 || idx === daily.length - 1;
-      const segments =
-        dailyChartMode === "by-type"
-          ? USAGE_TOKEN_CATEGORIES.map(({ key, className, labelKey }) => ({
-              value: isTokenMode ? d[key] : (d[`${key}Cost`] ?? 0),
-              className,
-              color: undefined,
-              label: t(labelKey),
-            }))
-          : dailyChartMode === "by-provider"
-            ? props.providerSeries.flatMap((series) => {
-                const day = series.byDate.get(d.date);
-                const value = isTokenMode ? (day?.tokens ?? 0) : (day?.cost ?? 0);
-                return value > 0
-                  ? [
-                      {
-                        value,
-                        className: "",
-                        color: series.color,
-                        label: providerDisplayLabel(series.id),
-                      },
-                    ]
-                  : [];
-              })
-            : [];
-      const breakdownLines = segments.map(
-        ({ value, label }) =>
-          `${label} ${isTokenMode ? formatUsageTokens(value) : formatAnalysisCost(value)}`,
-      );
-      const totalLabel = isTokenMode
-        ? formatUsageTokens(d.totalTokens)
-        : formatAnalysisCost(d.totalCost);
-      const dateLabel = formatFullDate(d.date);
-      const tokensLabel = `${formatUsageTokens(d.totalTokens)} ${normalizeLowercaseStringOrEmpty(
-        t("usage.metrics.tokens"),
-      )}`.trim();
-      const costLabel = formatAnalysisCost(d.totalCost);
-      const segmentTotal = segments.reduce((sum, segment) => sum + segment.value, 0) || 1;
-      return {
-        date: d.date,
-        tooltip: [dateLabel, tokensLabel, costLabel, ...breakdownLines].join("\n"),
-        isSelected,
-        ariaLabel: `${dateLabel}: ${tokensLabel}, ${costLabel}`,
-        heightPx,
-        segments,
-        segmentTotal,
-        totalLabel,
-        labelClass: ["daily-bar-label", { "daily-bar-label--hidden": !showDateLabel }],
-      };
-    });
-
-    return {
-      daily,
-      dailyChartMode,
-      onDailyChartModeChange,
-      isTokenMode,
-      range,
-      usesCompressedScale,
-      scaleMaximum,
-      barMaxWidth,
-      bars,
-      onSelectDay,
-      orderedDays,
-      stacked,
-      showTotals,
-    };
+  const days = createMemo(() => calendarDaily(props.dailyEntries, props.range));
+  const dates = createMemo(() => days().map((day) => day.date));
+  const isTokens = () => props.chartMode === "tokens";
+  const measure = (value: number) =>
+    isTokens() ? formatUsageTokens(value) : formatAnalysisCost(value);
+  // Axis ticks are round numbers: whole dollars read faster than cents.
+  const axisLabel = (value: number) =>
+    !isTokens() && scale() >= 10 ? wholeDollars.format(value) : measure(value);
+  const series = createMemo((): ChartSeries[] => {
+    const daily = days();
+    const tokens = isTokens();
+    if (props.dailyChartMode === "by-type") {
+      return USAGE_TOKEN_CATEGORIES.map(({ key, labelKey }) => ({
+        id: key,
+        label: t(labelKey),
+        color: TOKEN_TYPE_COLORS[key],
+        values: daily.map((day) => (tokens ? day[key] : (day[`${key}Cost`] ?? 0))),
+      }));
+    }
+    if (props.dailyChartMode === "by-provider") {
+      return props.providerSeries
+        .map((provider) => ({
+          id: provider.id,
+          label: providerDisplayLabel(provider.id),
+          color: provider.color,
+          values: daily.map((day) => {
+            const value = provider.byDate.get(day.date);
+            return (tokens ? value?.tokens : value?.cost) ?? 0;
+          }),
+        }))
+        .filter((entry) => entry.values.some((value) => value > 0));
+    }
+    return [
+      {
+        id: "total",
+        label: t(tokens ? "usage.metrics.tokens" : "usage.metrics.cost"),
+        color: "var(--accent)",
+        values: daily.map((day) => (tokens ? day.totalTokens : day.totalCost)),
+      },
+    ];
   });
+  const totals = createMemo(() =>
+    dates().map((_, index) => series().reduce((sum, entry) => sum + (entry.values[index] ?? 0), 0)),
+  );
+  const scale = createMemo(() => niceCeiling(Math.max(...totals(), 0)));
+  const shares = createMemo(() => {
+    const sum = totals().reduce((total, value) => total + value, 0);
+    return series().map((entry) => ({
+      ...entry,
+      share: sum > 0 ? entry.values.reduce((total, value) => total + value, 0) / sum : 0,
+    }));
+  });
+  const selected = createMemo(() => new Set(props.selectedDays));
+  // An object, not the index alone: index 0 must still read as hovering.
+  const [hover, setHover] = createSignal<{ index: number } | null>(null);
+  const labelEvery = createMemo(() => Math.max(1, Math.ceil(dates().length / 7)));
+  const dimmed = (index: number) => {
+    const active = hover();
+    return active
+      ? active.index !== index
+      : selected().size > 0 && !selected().has(dates()[index] ?? "");
+  };
+  const tipPosition = (index: number) => {
+    const share = (index + 0.5) / Math.max(1, dates().length);
+    // Keep the readout inside the plot near either edge.
+    return {
+      left: `${share * 100}%`,
+      transform: `translateX(${share < 0.15 ? "-10%" : share > 0.85 ? "-90%" : "-50%"})`,
+    };
+  };
   return (
-    <Show
-      when={state().daily.length > 0}
-      fallback={
-        <div class="daily-chart-compact">
-          <div class="card-title usage-section-title">{t("usage.daily.title")}</div>
-          <div class="usage-empty-block">{t("usage.empty.noData")}</div>
-        </div>
-      }
-    >
-      <div class="daily-chart-compact">
-        <div class="daily-chart-header">
-          <SettingsSegmented
-            mode="buttons"
-            variant="accent"
-            class="small sessions-toggle"
-            value={state().dailyChartMode}
-            onChange={state().onDailyChartModeChange}
-            onReselect={state().onDailyChartModeChange}
-            options={[
-              { value: "total", label: t("usage.daily.total") },
-              { value: "by-type", label: t("usage.daily.byType") },
-              { value: "by-provider", label: t("usage.daily.byProvider") },
-            ]}
-          />
-          <div class="card-title">
-            {state().isTokenMode ? t("usage.daily.tokensTitle") : t("usage.daily.costTitle")}
-            <div class="card-sub daily-chart-range">
-              {formatFullDate(state().range.startDate)} – {formatFullDate(state().range.endDate)}
-            </div>
-            {state().usesCompressedScale ? (
-              <>
-                {" "}
-                <span
-                  class="daily-chart-scale-badge"
-                  title={t("usage.daily.compressedScaleHint")}
-                  aria-label={t("usage.daily.compressedScaleHint")}
-                >
-                  √
-                </span>{" "}
-              </>
-            ) : undefined}
+    <div class="daily-chart-compact">
+      <div class="daily-chart-header">
+        <div class="card-title">
+          {isTokens() ? t("usage.daily.tokensTitle") : t("usage.daily.costTitle")}
+          <div class="card-sub daily-chart-range">
+            {formatFullDate(props.range.startDate)} – {formatFullDate(props.range.endDate)}
           </div>
         </div>
+        <SettingsSegmented
+          mode="buttons"
+          variant="accent"
+          class="small sessions-toggle"
+          value={props.dailyChartMode}
+          onChange={(mode) => props.onDailyChartModeChange(mode)}
+          onReselect={(mode) => props.onDailyChartModeChange(mode)}
+          options={[
+            { value: "total", label: t("usage.daily.total") },
+            { value: "by-type", label: t("usage.daily.byType") },
+            { value: "by-provider", label: t("usage.daily.byProvider") },
+          ]}
+        />
+      </div>
+      <Show
+        when={dates().length > 0}
+        fallback={<div class="usage-empty-block">{t("usage.empty.noData")}</div>}
+      >
         <div class="daily-chart">
-          <div class="daily-chart-plot">
-            <div class="daily-chart-scale" aria-hidden="true">
-              <For
-                each={
-                  state().scaleMaximum > 0
-                    ? [
-                        state().scaleMaximum,
-                        state().scaleMaximum / (state().usesCompressedScale ? 4 : 2),
-                        0,
-                      ]
-                    : [0]
-                }
-              >
-                {(value) => (
-                  <>
-                    {" "}
-                    <span>
-                      {state().isTokenMode
-                        ? formatUsageTokens(value)
-                        : value === 0
-                          ? formatUsageCost(0)
-                          : formatAnalysisCost(value)}
-                    </span>{" "}
-                  </>
-                )}
-              </For>
-            </div>
-            <div class="daily-chart-bars" style={{ "--bar-max-width": `${state().barMaxWidth}px` }}>
-              <For each={state().bars} keyed={(bar) => bar.date}>
-                {(bar) => (
-                  <openclaw-tooltip prop:content={bar().tooltip}>
-                    <div
-                      class={["daily-bar-wrapper", { selected: bar().isSelected }]}
-                      role="button"
-                      tabindex="0"
-                      aria-pressed={bar().isSelected ? "true" : "false"}
-                      aria-label={bar().ariaLabel}
-                      onKeyDown={(event: KeyboardEvent) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          state().onSelectDay(bar().date, event.shiftKey, state().orderedDays);
-                        }
+          <div class="daily-chart-scale" aria-hidden="true">
+            <span>{axisLabel(scale())}</span>
+            <span>{axisLabel(scale() / 2)}</span>
+            <span>{axisLabel(0)}</span>
+          </div>
+          <div class="daily-chart-plot" onPointerLeave={() => setHover(null)}>
+            <div class="daily-chart-bars" style={{ "--daily-columns": String(dates().length) }}>
+              <For each={dates()} keyed={false}>
+                {(date, index) => (
+                  <button
+                    type="button"
+                    class={[
+                      "daily-bar-wrapper",
+                      { selected: selected().has(date()), "daily-bar-wrapper--dim": dimmed(index) },
+                    ]}
+                    aria-pressed={selected().has(date()) ? "true" : "false"}
+                    aria-label={`${formatFullDate(date())}: ${measure(totals()[index] ?? 0)}`}
+                    onPointerEnter={() => setHover({ index })}
+                    onFocus={() => setHover({ index })}
+                    onBlur={() => setHover(null)}
+                    onClick={(event: MouseEvent) =>
+                      props.onSelectDay(date(), event.shiftKey, dates())
+                    }
+                  >
+                    <span
+                      class={["daily-bar", { "daily-bar--empty": !totals()[index] }]}
+                      style={{
+                        height: `${scale() > 0 ? ((totals()[index] ?? 0) / scale()) * 100 : 0}%`,
                       }}
-                      onClick={(event: MouseEvent) =>
-                        state().onSelectDay(bar().date, event.shiftKey, state().orderedDays)
-                      }
                     >
-                      <Show when={state().dailyChartMode} keyed>
-                        {(_mode) => (
-                          <div
-                            class={[
-                              "daily-bar",
-                              {
-                                "daily-bar--stacked": state().stacked,
-                                "daily-bar--empty": bar().heightPx === 0,
-                              },
-                            ]}
-                            style={{ height: `${bar().heightPx.toFixed(0)}px` }}
-                          >
-                            <For each={bar().segments}>
-                              {({ className, color, value }) => (
-                                <div
-                                  class={["cost-segment", className]}
-                                  style={{
-                                    height: `${(value / bar().segmentTotal) * 100}%`,
-                                    ...(color ? { background: color } : {}),
-                                  }}
-                                />
-                              )}
-                            </For>
-                          </div>
+                      <For each={series().filter((entry) => (entry.values[index] ?? 0) > 0)}>
+                        {(entry) => (
+                          <span
+                            class="cost-segment"
+                            style={{
+                              background: entry.color,
+                              "flex-grow": String(entry.values[index] ?? 0),
+                            }}
+                          />
                         )}
-                      </Show>
-                      {state().showTotals ? (
-                        <div class="daily-bar-total">{bar().totalLabel}</div>
-                      ) : (
-                        <div
-                          class="daily-bar-total daily-bar-total--placeholder"
-                          aria-hidden="true"
-                        />
-                      )}
-                      <div class={bar().labelClass}>{formatDayLabel(bar().date)}</div>
-                    </div>
-                  </openclaw-tooltip>
+                      </For>
+                    </span>
+                    <span
+                      class={[
+                        "daily-bar-label",
+                        { "daily-bar-label--hidden": index % labelEvery() !== 0 },
+                      ]}
+                    >
+                      {formatDayLabel(date())}
+                    </span>
+                  </button>
                 )}
               </For>
             </div>
+            <Show when={hover()}>
+              {(active) => (
+                <div class="daily-chart-tip" role="status" style={tipPosition(active().index)}>
+                  <strong>
+                    {formatFullDate(dates()[active().index] ?? "")} ·{" "}
+                    {measure(totals()[active().index] ?? 0)}
+                  </strong>
+                  <Show when={series().length > 1}>
+                    <For each={series().filter((entry) => (entry.values[active().index] ?? 0) > 0)}>
+                      {(entry) => (
+                        <span>
+                          <i style={{ background: entry.color }} />
+                          {entry.label}
+                          <b>{measure(entry.values[active().index] ?? 0)}</b>
+                        </span>
+                      )}
+                    </For>
+                  </Show>
+                </div>
+              )}
+            </Show>
           </div>
         </div>
-        <Show when={state().dailyChartMode === "by-provider"}>
+        <Show when={shares().length > 1}>
           <ul class="daily-chart-legend">
-            <For each={props.providerSeries}>
-              {(series) => (
+            <For each={shares().toSorted((a, b) => b.share - a.share)}>
+              {(entry) => (
                 <li>
-                  <span class="daily-chart-legend__key" style={{ background: series.color }} />
-                  {providerDisplayLabel(series.id)}
+                  <span class="daily-chart-legend__key" style={{ background: entry.color }} />
+                  {entry.label}
+                  <b>{`${(entry.share * 100).toFixed(entry.share < 0.1 ? 1 : 0)}%`}</b>
                 </li>
               )}
             </For>
           </ul>
         </Show>
-      </div>
-    </Show>
+      </Show>
+    </div>
   );
 }
 

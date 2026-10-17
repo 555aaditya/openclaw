@@ -38,7 +38,11 @@ function formatUsageTokens(n: number, report?: UsageTotals["usageReport"]): stri
 // Usage charts choose fixed precision from the surrounding scale; the shared
 // adaptive cost formatter would change labels as values cross its thresholds.
 function formatUsageCost(n: number, decimals = 2, report?: UsageTotals["usageReport"]): string {
-  return atLeast(`$${n.toFixed(decimals)}`, report);
+  const amount = n.toLocaleString("en-US", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+  return atLeast(`$${amount}`, report);
 }
 
 export function formatAnalysisCost(value: number, report?: UsageTotals["usageReport"]): string {

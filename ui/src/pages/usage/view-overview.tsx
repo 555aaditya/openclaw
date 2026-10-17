@@ -1,10 +1,16 @@
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
 import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import { For, Show, createMemo } from "solid-js";
+import {
+  addCostUsageTotals,
+  createEmptyCostUsageTotals,
+} from "../../../../src/infra/session-cost-usage-totals.js";
 import { AgentRowChip } from "../../components/agent-row-chip.tsx";
+import { providerDisplayLabel } from "../../components/provider-icon.ts";
 import { Icon } from "../../components/solid/icon.tsx";
 import { SettingsSection } from "../../components/solid/settings-ui.tsx";
 import { formatDurationCompact } from "../../lib/format-duration.ts";
+import { canonicalModelAuthProviderId } from "../../lib/model-auth.ts";
 import { t } from "../../lib/reactive/i18n.ts";
 import "../../components/tooltip.ts";
 import { formatIsoDate } from "./helpers.ts";
@@ -194,16 +200,11 @@ function renderInsightList(
                 </div>
               ) : (
                 <div class="usage-list-item">
-                  <span>{item.agentId ? <AgentRowChip agentId={item.agentId} /> : item.label}</span>
-                  <span class="usage-list-value">
-                    <span>{item.value}</span>
-                    {item.sub ? (
-                      <>
-                        {" "}
-                        <span class="usage-list-sub">{item.sub}</span>{" "}
-                      </>
-                    ) : undefined}
+                  <span class="usage-list-label" title={item.label}>
+                    {item.agentId ? <AgentRowChip agentId={item.agentId} /> : item.label}
                   </span>
+                  <span class="usage-list-value">{item.value}</span>
+                  {item.sub ? <span class="usage-list-sub">{item.sub}</span> : undefined}
                 </div>
               )
             }
@@ -271,7 +272,11 @@ export function UsageInsights(props: {
     ) => ({
       label,
       ...(agent ? { agentId: label } : {}),
-      value: formatAnalysisCost(entryTotals.totalCost, entryTotals.usageReport),
+      // Usage with no known price is unpriced, never free.
+      value:
+        entryTotals.totalCost === 0 && entryTotals.missingCostEntries > 0
+          ? t("usage.overview.unpriced")
+          : formatAnalysisCost(entryTotals.totalCost, entryTotals.usageReport),
       sub: [
         showCostShares && entryTotals.usageReport?.state !== "unavailable" && totals.totalCost > 0
           ? t("usage.overview.costShare", {
@@ -279,7 +284,9 @@ export function UsageInsights(props: {
             })
           : null,
         formatUsageTokens(entryTotals.totalTokens, entryTotals.usageReport),
-        count === undefined ? null : `${count} ${t("usage.overview.messagesAbbrev")}`,
+        count === undefined
+          ? null
+          : `${count.toLocaleString()} ${t("usage.overview.messagesAbbrev")}`,
       ]
         .filter((part): part is string => part !== null)
         .join(" · "),
@@ -288,13 +295,37 @@ export function UsageInsights(props: {
     const topModels = aggregates.byModel
       .slice(0, 5)
       .map((entry) => costAttribution(entry.model ?? t("usage.common.unknown"), entry));
-    const topProviders = aggregates.byProvider
+    // Aliases such as claude-cli fold into the provider they bill through.
+    const providerTotals = Map.groupBy(
+      aggregates.byProvider,
+      (entry) => canonicalModelAuthProviderId(entry.provider ?? "") || entry.provider || "",
+    );
+    const topProviders = [...providerTotals]
+      .map(([id, entries]) => {
+        const totals = createEmptyCostUsageTotals();
+        for (const entry of entries) {
+          addCostUsageTotals(totals, entry.totals);
+        }
+        return {
+          id,
+          totals,
+          count: entries.reduce((sum, entry) => sum + entry.count, 0),
+        };
+      })
+      .toSorted(
+        (a, b) =>
+          b.totals.totalCost - a.totals.totalCost || b.totals.totalTokens - a.totals.totalTokens,
+      )
       .slice(0, 5)
-      .map((entry) => costAttribution(entry.provider ?? t("usage.common.unknown"), entry));
+      .map((entry) =>
+        costAttribution(
+          entry.id ? providerDisplayLabel(entry.id) : t("usage.common.unknown"),
+          entry,
+        ),
+      );
     const topTools = aggregates.tools.tools.slice(0, 6).map((tool) => ({
       label: tool.name,
-      value: `${tool.count}`,
-      sub: t("usage.overview.calls"),
+      value: `${tool.count.toLocaleString()} ${t("usage.overview.calls")}`,
     }));
     const topAgents = aggregates.byAgent
       .slice(0, 5)
@@ -338,14 +369,12 @@ export function UsageInsights(props: {
                   metric="messages"
                   value={insights().aggregates.messages.total}
                   sub={`${insights().aggregates.messages.user} ${normalizeLowercaseStringOrEmpty(t("usage.overview.user"))} · ${insights().aggregates.messages.assistant} ${normalizeLowercaseStringOrEmpty(t("usage.overview.assistant"))}`}
-                  class="usage-summary-card--hero"
                 />
                 <SummaryStat
                   hintId="throughput"
                   metric="throughput"
                   value={insights().throughputLabel}
                   sub={insights().throughputCostLabel}
-                  class="usage-summary-card--hero usage-summary-card--throughput"
                   compactValue
                 />
                 <SummaryStat
@@ -353,7 +382,6 @@ export function UsageInsights(props: {
                   metric="toolCalls"
                   value={insights().aggregates.tools.totalCalls}
                   sub={`${insights().aggregates.tools.uniqueTools} ${t("usage.overview.toolsUsed")}`}
-                  class="usage-summary-card--half"
                 />
                 <SummaryStat
                   hintId="average-tokens"
@@ -362,7 +390,6 @@ export function UsageInsights(props: {
                   sub={t("usage.overview.acrossMessages", {
                     count: String(insights().aggregates.messages.total || 0),
                   })}
-                  class="usage-summary-card--half"
                 />
                 <SummaryStat
                   hintId="cache-hit-rate"
@@ -377,7 +404,6 @@ export function UsageInsights(props: {
                         ? "warn"
                         : "bad"
                   }
-                  class="usage-summary-card--medium"
                 />
                 <SummaryStat
                   hintId="error-rate"
@@ -392,7 +418,6 @@ export function UsageInsights(props: {
                         ? "warn"
                         : "good"
                   }
-                  class="usage-summary-card--medium"
                 />
                 <SummaryStat
                   hintId="average-cost"
@@ -404,7 +429,6 @@ export function UsageInsights(props: {
                   )}
                   value={formatAnalysisCost(insights().avgCost)}
                   sub={`${formatAnalysisCost(insights().totals.totalCost)} ${normalizeLowercaseStringOrEmpty(t("usage.breakdown.total"))}`}
-                  class="usage-summary-card--compact"
                 />
                 <SummaryStat
                   hintId="sessions"
@@ -413,14 +437,12 @@ export function UsageInsights(props: {
                   sub={t("usage.overview.sessionsInRange", {
                     count: String(props.totalSessions),
                   })}
-                  class="usage-summary-card--compact"
                 />
                 <SummaryStat
                   hintId="errors"
                   metric="errors"
                   value={insights().aggregates.messages.errors}
                   sub={`${insights().aggregates.messages.toolResults} ${t("usage.overview.toolResults")}`}
-                  class="usage-summary-card--compact"
                 />
               </div>
               <div class="usage-insights-grid">
@@ -439,11 +461,7 @@ export function UsageInsights(props: {
                   t("usage.overview.peakErrorHours"),
                   props.errorHours,
                   t("usage.overview.noErrorData"),
-                  {
-                    error: true,
-                    className: "usage-insight-card--wide",
-                    listClassName: "usage-error-list--hours",
-                  },
+                  { error: true, listClassName: "usage-error-list--hours" },
                 )}
               </div>
             </div>

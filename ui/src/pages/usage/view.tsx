@@ -95,6 +95,9 @@ function renderProviderUsage(
 
 export function renderUsage(props: UsageProps) {
   const overview = createMemo(() => resolveUsageOverviewState(props.data));
+  const lowerBound = () =>
+    displayTotals()?.usageReport?.state === "unavailable" ||
+    props.data.overview?.usageReport?.state === "unavailable";
   const providerSeries = createMemo(() =>
     buildProviderSeries(props.data.aggregates?.modelDaily ?? []),
   );
@@ -234,7 +237,6 @@ export function renderUsage(props: UsageProps) {
           >
             <div class="usage-header-row">
               <div class="usage-controls">
-                {renderFilterChips(props.data.overview?.selectedRows ?? props.data.sessions, props)}
                 <div class="usage-presets">
                   <For each={datePresets}>
                     {(preset) => (
@@ -330,6 +332,7 @@ export function renderUsage(props: UsageProps) {
               </div>
             </div>
 
+            {renderFilterChips(props.data.overview?.selectedRows ?? props.data.sessions, props)}
             <div class="usage-header-row">
               <div class="usage-header-metrics">
                 <Show when={displayTotals()}>
@@ -361,6 +364,9 @@ export function renderUsage(props: UsageProps) {
                       )}
                     </For>
                   )}
+                </Show>
+                <Show when={lowerBound()}>
+                  <span class="usage-lower-bound">{t("usage.lowerBound")}</span>
                 </Show>
                 <button
                   class={["btn btn--sm usage-pin-btn", { active: props.display.headerPinned }]}
@@ -468,16 +474,6 @@ export function renderUsage(props: UsageProps) {
           renderUsageEmptyState(() => void props.callbacks.filters.onRefresh())
         ) : (
           <>
-            <Show
-              when={
-                displayTotals()?.usageReport?.state === "unavailable" ||
-                props.data.overview?.usageReport?.state === "unavailable"
-              }
-            >
-              <p class="callout usage-callout" role="note">
-                {t("usage.lowerBound")}
-              </p>
-            </Show>
             <div class="settings-group usage-panel usage-left-card usage-trend-section">
               {
                 <DailyChartCompact

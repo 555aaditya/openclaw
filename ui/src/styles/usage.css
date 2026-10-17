@@ -458,14 +458,51 @@
   border-radius: var(--radius-full);
 }
 
+/* Active day, hour and session filters read as removable chips above the totals. */
+.active-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 28px;
+  padding: 0 2px 0 var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--text);
+  font-size: var(--control-ui-text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
 .filter-chip-remove {
   display: inline-flex;
   width: 24px;
-  min-height: 28px;
+  height: 24px;
   align-items: center;
   justify-content: center;
   padding: 0;
-  vertical-align: middle;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--muted);
+}
+
+.filter-chip-remove:hover {
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+  color: var(--text);
+}
+
+.usage-lower-bound {
+  order: 10;
+  flex-basis: 100%;
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
 }
 
 .filter-chip-remove svg,
@@ -570,8 +607,8 @@
 
 .usage-summary-card,
 .session-summary-card {
-  min-height: 108px;
-  gap: 6px;
+  min-height: 92px;
+  gap: 4px;
 }
 
 .usage-summary-card.stat,
@@ -587,10 +624,6 @@
   border-radius: var(--radius-lg);
   background: var(--card);
   box-shadow: none;
-}
-
-.usage-summary-card--throughput {
-  background: color-mix(in srgb, var(--accent) 4%, var(--card));
 }
 
 .usage-summary-title,
@@ -614,10 +647,6 @@
   color: var(--text-strong);
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
-}
-
-.usage-summary-card--hero .usage-summary-value {
-  font-size: clamp(1.4rem, 2vw, 1.85rem);
 }
 
 .usage-summary-value--compact {
@@ -683,6 +712,7 @@
 
 .usage-insights-grid {
   grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+  align-items: start;
 }
 
 .usage-insights-grid--tight {
@@ -701,15 +731,6 @@
   transition:
     border-color 0.18s var(--ease-out),
     box-shadow 0.18s var(--ease-out);
-}
-
-.usage-insight-card:hover {
-  border-color: var(--border-strong);
-  box-shadow: var(--shadow-sm);
-}
-
-.usage-insight-card--wide {
-  grid-column: 1 / -1;
 }
 
 .usage-creator-filter {
@@ -733,7 +754,13 @@
   padding: 10px 8px;
   text-align: right;
   vertical-align: middle;
+  white-space: nowrap;
+}
+
+/* Identities may be long keys; numbers never break mid-value. */
+.usage-creators-table td:first-child {
   overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .usage-creators-table th:first-child {
@@ -888,8 +915,6 @@
   gap: 0;
 }
 
-.usage-list-item,
-.usage-error-row,
 .context-breakdown-item {
   display: flex;
   justify-content: space-between;
@@ -898,6 +923,34 @@
   padding: 8px 0;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
   font-size: 13px;
+}
+
+/* Insight rows: one-line name and value, detail underneath; names never wrap mid-word. */
+.usage-list-item,
+.usage-error-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 2px var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+  font-size: 13px;
+}
+
+.usage-list-label,
+.usage-error-date {
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.usage-list-sub,
+.usage-error-sub {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .context-breakdown-item .mono {
@@ -920,21 +973,16 @@
   padding-top: 0;
 }
 
-.usage-list-value {
-  display: inline-flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 6px;
+.usage-list-value,
+.usage-error-rate {
   color: var(--text-strong);
-  font-weight: 600;
+  font-family: var(--mono);
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
 
 .usage-error-rate {
-  font-size: 15px;
-  font-weight: 700;
   color: var(--danger);
-  font-variant-numeric: tabular-nums;
 }
 
 .usage-mosaic {
@@ -991,7 +1039,7 @@
 
 .usage-daypart-cell,
 .usage-hour-cell {
-  border-radius: var(--radius-md);
+  border-radius: 3px;
   border: 1px solid color-mix(in srgb, var(--accent) 14%, var(--border));
   background: color-mix(in srgb, var(--accent) 6%, transparent);
 }
@@ -1034,7 +1082,6 @@
 }
 
 .usage-hour-cell:hover {
-  transform: translateY(-1px);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
@@ -1070,7 +1117,7 @@
 }
 
 .usage-grid:has(.usage-grid-column:nth-child(2)) {
-  grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+  grid-template-columns: minmax(0, 0.9fr) minmax(360px, 1.1fr);
 }
 
 .usage-grid-column {
@@ -1176,6 +1223,7 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* One shrinkable column: a wide child must not widen its card past the grid track. */
 .daily-chart-compact,
 .cost-breakdown,
 .sessions-card,
@@ -1183,160 +1231,172 @@
 .context-details-panel,
 .session-logs-compact {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
 }
 
-.daily-chart-bars {
-  --bar-max-width: 32px;
+/* Daily columns: one button per day, stacked by series; the plot owns hover and dimming. */
+.daily-chart {
   display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(18px, 1fr);
-  align-items: end;
-  gap: 6px;
-  min-height: 244px;
-  padding: 6px 14px 0;
-  overflow-x: auto;
-  background-image: repeating-linear-gradient(
-    to top,
-    color-mix(in srgb, var(--border) 64%, transparent) 0,
-    color-mix(in srgb, var(--border) 64%, transparent) 1px,
-    transparent 1px,
-    transparent 50px
-  );
-  background-position: 0 6px;
-  background-size: 100% 200px;
-  background-repeat: no-repeat;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+/* Tick labels center on the top, middle and base gridlines. */
+.daily-chart-scale {
+  position: relative;
+  height: 11rem;
+  min-width: 3.5rem;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.daily-chart-scale span {
+  position: absolute;
+  right: 0;
+  translate: 0 -50%;
+}
+
+.daily-chart-scale span:nth-child(1) {
+  top: 0;
+}
+
+.daily-chart-scale span:nth-child(2) {
+  top: 50%;
+}
+
+.daily-chart-scale span:nth-child(3) {
+  top: 100%;
 }
 
 .daily-chart-plot {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
-  gap: 10px;
+  position: relative;
   min-width: 0;
+  padding-bottom: 1.75rem;
 }
 
-.daily-chart-scale {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  height: 200px;
-  padding-top: 6px;
-  color: var(--muted);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-
-.daily-chart-scale > span:only-child {
-  margin-top: auto;
-}
-
-.daily-chart-scale-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 18px;
-  height: 18px;
-  margin-left: 6px;
-  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--border));
-  border-radius: var(--radius-full);
-  color: var(--accent);
-  font-size: 11px;
-  line-height: 1;
-  cursor: help;
+.daily-chart-bars {
+  display: grid;
+  grid-template-columns: repeat(var(--daily-columns), minmax(0, 1fr));
+  gap: clamp(1px, 0.35vw, 4px);
+  height: 11rem;
+  border-bottom: 1px solid var(--border);
+  background:
+    linear-gradient(var(--border) 1px, transparent 1px) top / 100% 50% repeat-y;
 }
 
 .daily-bar-wrapper {
   position: relative;
-  display: grid;
-  grid-template-rows: 200px 14px 14px;
-  gap: 6px;
-  align-items: end;
-  justify-items: center;
-  min-width: 18px;
+  display: flex;
+  align-items: flex-end;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: default;
 }
 
-.daily-bar-wrapper.selected .daily-bar {
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
-}
-
-.daily-bar {
-  align-self: end;
-  width: min(100%, var(--bar-max-width));
-  min-height: 6px;
-  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border));
-  border-radius: var(--radius-md) var(--radius-md) var(--radius-sm) var(--radius-sm);
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--accent) 82%, white 6%),
-    color-mix(in srgb, var(--accent) 52%, var(--bg-muted))
-  );
-  transition:
-    transform 0.18s var(--ease-out),
-    box-shadow 0.18s var(--ease-out);
-}
-
-.daily-bar-wrapper:hover .daily-bar {
-  transform: translateY(-1px);
+/* Only the column dims; its date label stays readable. */
+.daily-bar-wrapper--dim .daily-bar {
+  opacity: 0.35;
 }
 
 .daily-bar-wrapper:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--accent) 40%, transparent);
-  outline-offset: 3px;
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
 }
 
-.daily-bar--stacked {
+.daily-bar {
   display: flex;
-  flex-direction: column;
+  flex-direction: column-reverse;
+  gap: 1px;
+  width: 100%;
+  min-height: 0;
   overflow: hidden;
-  background: none;
+  border-radius: 2px 2px 0 0;
+  transition: opacity 120ms var(--ease-out);
+}
+
+.daily-bar .cost-segment {
+  flex-basis: 0;
+  min-height: 1px;
 }
 
 .daily-bar--empty {
-  min-height: 0;
-  border: 0;
-  background: none;
+  visibility: hidden;
+}
+
+.daily-bar-label {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  left: 50%;
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  white-space: nowrap;
+  translate: -50% 0;
 }
 
 .daily-bar-label--hidden {
-  visibility: hidden;
+  display: none;
 }
 
 .daily-chart-range {
-  margin-top: 4px;
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
   font-weight: 400;
 }
 
-.daily-bar-total,
-.daily-bar-label {
-  font-size: 12px;
-  line-height: 14px;
+/* The readout stays inside the plot so it never covers the header controls. */
+.daily-chart-tip {
+  position: absolute;
+  top: var(--space-1);
+  z-index: 2;
+  display: grid;
+  gap: 2px;
+  min-width: 10rem;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.25);
+  color: var(--text);
+  font-size: var(--control-ui-text-xs);
+  pointer-events: none;
+}
+
+.daily-chart-tip span {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--space-2);
   color: var(--muted);
-  white-space: nowrap;
 }
 
-.daily-bar-total--placeholder {
-  visibility: hidden;
+.daily-chart-tip i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
 }
 
+.daily-chart-tip b {
+  color: var(--text);
+  font-family: var(--mono);
+  font-weight: 500;
+}
+
+/* Composition bars are a fixed thin band; content never stretches them. */
 .cost-breakdown-bar,
 .context-stacked-bar {
   display: flex;
-  overflow: hidden;
-  border-radius: var(--radius-full);
-  background: color-mix(in srgb, var(--bg-muted) 82%, transparent);
-  border: 1px solid var(--border);
-}
-
-.cost-breakdown-bar {
   width: 100%;
-  min-height: 16px;
-}
-
-.cost-breakdown-bar--compact,
-.context-stacked-bar {
-  min-height: 18px;
+  height: 10px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--bg-muted) 82%, transparent);
 }
 
 .cost-breakdown-legend,
@@ -1441,11 +1501,10 @@
   color: var(--text);
 }
 
+/* Sessions read as a divided list; the page scrolls, the list does not. */
 .session-bars {
   display: grid;
-  gap: 8px;
-  max-height: 520px;
-  overflow-y: auto;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .session-bars--recent {
@@ -1465,25 +1524,23 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: color-mix(in srgb, var(--card) 86%, var(--bg-muted));
-  transition:
-    transform 0.18s var(--ease-out),
-    border-color 0.18s var(--ease-out),
-    box-shadow 0.18s var(--ease-out);
+  padding: 10px var(--space-2);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  border-radius: 0;
+  transition: background 0.12s var(--ease-out);
+}
+
+.session-bar-row:last-child {
+  border-bottom: 0;
 }
 
 .session-bar-row:hover {
-  transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--accent) 22%, var(--border));
-  box-shadow: var(--shadow-md);
+  background: color-mix(in srgb, var(--text) 4%, transparent);
 }
 
 .session-bar-row.selected {
-  border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 14%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 
 .session-bar-label,
@@ -1535,6 +1592,9 @@
 
 .session-bar-meta {
   display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .session-bar-actions {
@@ -1545,9 +1605,13 @@
 }
 
 .session-bar-value {
-  font-size: 13px;
-  font-weight: 700;
+  min-width: 5rem;
+  white-space: nowrap;
   color: var(--text-strong);
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: end;
 }
 
 .sessions-selected-group {
@@ -1584,8 +1648,9 @@
   font-size: 13px;
 }
 
+/* The detail panel is a side column: its sections stack. */
 .session-detail-bottom {
-  grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .usage-badges {
@@ -1593,7 +1658,7 @@
 }
 
 .session-summary-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .session-timeseries-compact,
@@ -1894,12 +1959,12 @@
   }
 }
 
-/* "By provider" stacks take each provider's series color; the legend names them. */
+/* Legend: every stacked series with its share of the range. */
 .daily-chart-legend {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2) var(--space-4);
-  margin: var(--space-3) 0 0;
+  margin: 0;
   padding: 0;
   list-style: none;
   color: var(--muted);
@@ -1910,6 +1975,12 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
+}
+
+.daily-chart-legend b {
+  color: var(--text);
+  font-family: var(--mono);
+  font-weight: 500;
 }
 
 .daily-chart-legend__key {
