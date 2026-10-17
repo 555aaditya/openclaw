@@ -26,15 +26,7 @@ describe.runIf("__vitest_browser__" in globalThis)("sidebar agent menu layout", 
     root.style.width = "320px";
     document.body.append(root);
     let unmount: (() => void) | undefined;
-    for (const [count, pinCount] of [
-      [0, 0],
-      [1, 0],
-      [2, 0],
-      [3, 0],
-      [4, 4],
-      [5, 5],
-      [8, 8],
-    ] as const) {
+    for (const count of [0, 1, 2, 3, 4, 5, 8]) {
       unmount?.();
       unmount = mountSolid(
         () =>
@@ -51,7 +43,6 @@ describe.runIf("__vitest_browser__" in globalThis)("sidebar agent menu layout", 
               identities: new Map(),
               pinnedAgentIds: ["agent-0"],
               recentlyCreatedAgentId: count === 5 ? "agent-4" : undefined,
-              onTogglePinnedAgent: async () => {},
               resolveAvatarUrl: (url) => url,
               avatarErrorHandler: () => () => {},
               agentUnreadCount: () => 0,
@@ -64,7 +55,7 @@ describe.runIf("__vitest_browser__" in globalThis)("sidebar agent menu layout", 
       await new Promise<void>((resolve) => {
         requestAnimationFrame(() => resolve());
       });
-      expect(root.querySelectorAll(".sidebar-agent-menu__pin")).toHaveLength(pinCount);
+      expect(root.querySelectorAll(".sidebar-agent-menu__pin")).toHaveLength(0);
       if (count === 5) {
         const rows = [...root.querySelectorAll('[data-value^="agent:"]')];
         expect(rows.slice(0, 2).map((row) => row.getAttribute("data-value"))).toEqual([
@@ -144,11 +135,6 @@ describe.runIf("__vitest_browser__" in globalThis)("sidebar agent menu layout", 
         ],
       },
     );
-    onTestFinished(
-      context.navigation.subscribe((snapshot) => {
-        sidebar.pinnedAgentIds = snapshot.pinnedAgentIds;
-      }),
-    );
     const navigate = vi.fn();
     sidebar.onNavigate = navigate;
     sidebar.connected = true;
@@ -184,19 +170,13 @@ describe.runIf("__vitest_browser__" in globalThis)("sidebar agent menu layout", 
     await userEvent.keyboard("{ArrowDown}");
     expect(document.activeElement).toBe(tiles[2]);
     await userEvent.tab();
-    const pin = tiles[2]!.querySelector<HTMLButtonElement>(".sidebar-agent-menu__pin")!;
-    const currentPin = () =>
-      sidebar.querySelector<HTMLButtonElement>(
-        '[data-value="agent:release"] .sidebar-agent-menu__pin',
-      )!;
-    expect(document.activeElement).toBe(pin);
-    await userEvent.keyboard(" ");
-    await expect.poll(() => currentPin().getAttribute("aria-pressed")).toBe("true");
-    expect(document.activeElement).toBe(currentPin());
+    const settings = tiles[2]!.querySelector<HTMLButtonElement>(".sidebar-agent-menu__settings")!;
+    expect(document.activeElement).toBe(settings);
+    expect(settings.hasAttribute("title")).toBe(false);
+    expect(getComputedStyle(settings).opacity).toBe("1");
     await userEvent.keyboard("{ArrowDown}");
-    expect(document.activeElement).toBe(sidebar.querySelector('[data-value="agent:main"]'));
-    currentPin().click();
-    await expect.poll(() => currentPin().getAttribute("aria-pressed")).toBe("false");
+    expect(document.activeElement).toBe(tiles[3]);
+    expect(getComputedStyle(settings).opacity).toBe("0");
     await expect
       .poll(() =>
         tiles.map((tile) => tile.classList.contains("sidebar-agent-menu__agent-switch--active")),
@@ -230,7 +210,6 @@ describe.runIf("__vitest_browser__" in globalThis)("sidebar agent menu layout", 
     await userEvent.keyboard("{ArrowDown}");
     expect(document.activeElement).toBe(sidebar.querySelector('[data-value="agent:main"]'));
     await userEvent.keyboard("{ArrowDown}");
-    await userEvent.tab();
     await userEvent.tab();
     expect(document.activeElement).toBe(
       sidebar.querySelector('[data-value="agent:release"] .sidebar-agent-menu__settings'),

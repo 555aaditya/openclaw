@@ -2772,7 +2772,6 @@ openclaw-session-menu[popover] {
 
 .session-menu__icon-choice--custom svg,
 .session-menu__icon-choice--glyph svg,
-.sidebar-agent-menu__pin svg,
 .connection-action-block__icon svg {
   width: 16px;
   height: 16px;
@@ -3807,50 +3806,6 @@ button.gateway-status:focus-visible {
   gap: 6px;
 }
 
-.sidebar-agent-menu__pin {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  padding: 6px;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--muted);
-  opacity: 0;
-  pointer-events: none;
-}
-
-.sidebar-agent-menu__pin[aria-pressed="true"] {
-  opacity: 0.75;
-  pointer-events: auto;
-}
-
-.sidebar-agent-menu__agent-switch:hover .sidebar-agent-menu__pin,
-.sidebar-agent-menu__agent-switch:focus-visible .sidebar-agent-menu__pin,
-.sidebar-agent-menu__pin:focus-visible {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.sidebar-agent-menu__pin:hover,
-.sidebar-agent-menu__pin:focus-visible {
-  background: var(--bg-hover);
-  color: var(--text-strong);
-}
-
-.sidebar-agent-menu__pin:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-@media (hover: none) {
-  .sidebar-agent-menu__pin {
-    opacity: 1;
-    pointer-events: auto;
-  }
-}
-
 /* Only the switcher list shrinks and scrolls; the action rows stay visible. */
 .sidebar-agent-menu {
   --agent-avatar-size: 28px;
@@ -4698,6 +4653,21 @@ html.openclaw-native-web-chrome
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--muted);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.sidebar-agent-menu__agent-switch:hover .sidebar-agent-menu__settings,
+.sidebar-agent-menu__agent-switch:focus-within .sidebar-agent-menu__settings {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (hover: none) {
+  .sidebar-agent-menu__settings {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 
 .sidebar-agent-menu__settings:hover,

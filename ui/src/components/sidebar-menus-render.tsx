@@ -1,6 +1,5 @@
 import type { JSX } from "@solidjs/web";
 import { createMemo, Show } from "solid-js";
-import { togglePinnedAgent } from "../app/bootstrap-navigation-preferences.ts";
 import { createApplicationAgent } from "../app/create-agent.ts";
 import { gatewayPresentationScope } from "../app/gateway-presentation-scope.ts";
 import { isMobileNavLayout } from "../app/mobile-nav-layout.ts";
@@ -126,12 +125,6 @@ export function renderSidebarAgentMenuForController(
         agents: agents(),
         identities: identities(),
         pinnedAgentIds: host.pinnedAgentIds,
-        onTogglePinnedAgent: async (agentId) => {
-          if (host.sessionDataContext) {
-            togglePinnedAgent(host.sessionDataContext.navigation, agentId);
-            await host.updateComplete;
-          }
-        },
         query: controller.agentMenuQuery,
         onQueryChange: (query) => controller.setAgentMenuQuery(query),
         rosterMode: host.sidebarAgentsMode === "roster",

@@ -19,7 +19,6 @@ export type SidebarAgentMenuSwitcherParams = {
   recentlyCreatedAgentId?: string;
   identities: ReadonlyMap<string, AgentIdentityResult>;
   pinnedAgentIds: readonly string[];
-  onTogglePinnedAgent: (agentId: string) => Promise<void>;
   resolveAvatarUrl: (url: string) => string | null;
   avatarErrorHandler: (url: string) => () => void;
   agentUnreadCount: (agentId: string) => number;
@@ -98,10 +97,6 @@ function renderAgentRow(
   const identity = createMemo(() => params.identities.get(agentId()) ?? null);
   const label = createMemo(() => normalizeAgentLabel(readAgent(), identity()));
   const active = createMemo(() => agentId() === params.activeId && !params.allAgentsScope);
-  const pinned = createMemo(() => params.pinnedAgentIds.includes(agentId()));
-  const pinLabel = createMemo(() =>
-    t(pinned() ? "agents.unpinFromSwitcher" : "agents.pinToSwitcher"),
-  );
   const unread = createMemo(() =>
     agentId() === params.activeId ? 0 : params.agentUnreadCount(agentId()),
   );
@@ -138,38 +133,6 @@ function renderAgentRow(
           </span>
         </span>
         <span class="sidebar-agent-menu__agent-status">
-          {params.agents.length > 3 && !pending() ? (
-            <button
-              type="button"
-              class="sidebar-agent-menu__pin"
-              aria-label={`${pinLabel()}: ${label()}`}
-              title={pinLabel()}
-              aria-pressed={pinned() ? "true" : "false"}
-              tabindex="-1"
-              data-form-control
-              onClick={(event) => {
-                // Pinning does not select the enclosing agent.
-                event.preventDefault();
-                event.stopPropagation();
-                const button = event.currentTarget;
-                // Moving a keyed row into pinned-first order can drop native focus.
-                const focused = button === document.activeElement;
-                const menu = button.closest('[role="menu"]');
-                const value = `${AGENT_VALUE_PREFIX}${encodeURIComponent(agentId())}`;
-                void params.onTogglePinnedAgent(agentId()).then(() => {
-                  if (focused) {
-                    menu
-                      ?.querySelector<HTMLElement>(
-                        `[data-value="${CSS.escape(value)}"] .sidebar-agent-menu__pin`,
-                      )
-                      ?.focus({ preventScroll: true });
-                  }
-                });
-              }}
-            >
-              <Icon name="pin" />
-            </button>
-          ) : undefined}
           {unread() > 0 ? (
             <span class="session-unread-dot" role="img" aria-label={t("sessionsView.unread")} />
           ) : undefined}
@@ -182,7 +145,6 @@ function renderAgentRow(
               type="button"
               class="sidebar-agent-menu__settings"
               aria-label={t("agentChip.namedSettings", { name: label() })}
-              title={t("agentChip.namedSettings", { name: label() })}
               tabindex="-1"
               data-form-control
               onClick={(event) => {
