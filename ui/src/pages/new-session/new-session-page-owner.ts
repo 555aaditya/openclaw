@@ -193,8 +193,8 @@ export class NewSessionPageOwner {
       onMessage: (message) => this.setMessageFromUser(message),
       onError: (message) => this.submission.setError(message),
       onSubmit: () => void this.submission.submit(),
-      onChange: this.changed,
     });
+    this.dictation.subscribe(this.changed);
   }
 
   focusComposer(): void {
@@ -364,6 +364,7 @@ export class NewSessionPageOwner {
       agent: place.selectedAgent(),
       agentId: place.agentId,
       attachmentDraft: submission.attachmentDraft,
+      draftSource: submission.composerDraft,
       canSubmit: !submission.submitting && !dictationLocked && submission.canSubmit(),
       submitDisabledReason: submission.submitDisabledReason(),
       blockedSubmitNotice: submission.blockedSubmitNotice(),

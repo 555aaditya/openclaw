@@ -15,7 +15,7 @@ Native Yes/No, Choice, Scale, Sort, and Tags decisions with explicit abstention.
 ## Distribution
 
 - Package: `@openclaw/levanto`
-- Install route: npm or ClawHub: `clawhub:@openclaw/levanto`
+- Install route: npm or ClawHub: `@openclaw/levanto`
 
 ## Surface
 
