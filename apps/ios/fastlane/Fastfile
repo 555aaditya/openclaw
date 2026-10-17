@@ -2359,6 +2359,8 @@ platform :ios do
         Gem::Version.new(device.fetch("runtime").delete_prefix("com.apple.CoreSimulator.SimRuntime.iOS-").tr("-", "."))
       end || UI.user_error!("Screenshot simulator '#{name}' is unavailable.")
     end
+    # Check every requested family before spending a build and eight captures on iOS.
+    resolve_simulator_device(watch_snapshot_device) unless ENV["OPENCLAW_SNAPSHOT_SKIP_WATCH"] == "1"
     require_idle_screenshot_simulators!
     screenshot_phase(diagnostics, "build") do
       run_screenshot_xcodebuild!(

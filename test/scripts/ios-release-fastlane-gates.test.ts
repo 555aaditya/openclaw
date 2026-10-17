@@ -940,7 +940,7 @@ def available_simulator_devices
     { "name" => "iPad Pro 13-inch", "udid" => "older-ipad", "deviceTypeIdentifier" => "ipad-type", "runtime" => "com.apple.CoreSimulator.SimRuntime.iOS-26-0", "state" => "Shutdown" },
     { "name" => "iPad Pro 13-inch", "udid" => "ipad-template", "deviceTypeIdentifier" => "ipad-type", "runtime" => "com.apple.CoreSimulator.SimRuntime.iOS-27-0", "state" => "Shutdown" },
     { "name" => "Apple Watch Ultra 3 (49mm)", "udid" => "watch-template", "deviceTypeIdentifier" => "watch-type", "runtime" => "com.apple.CoreSimulator.SimRuntime.watchOS-27-0", "state" => "Shutdown" }
-  ] + @owned.values + (@scenario == "busy" ? [{ "name" => "Unrelated", "udid" => "unrelated", "state" => "Booted" }] : [])
+  ].reject { |device| %w[no-watch iphone].include?(@scenario) && device.fetch("name").include?("Apple Watch") } + @owned.values + (@scenario == "busy" ? [{ "name" => "Unrelated", "udid" => "unrelated", "state" => "Booted" }] : [])
 end
 def write_watch_screenshot_mode_defaults(*); end
 def set_watch_status_bar_override(*)
@@ -1019,7 +1019,7 @@ def sh(command, *arguments, **_options)
   end
 end
 
-results = %w[combined diagnostics iphone standalone standalone-build-failure missing invalid-plist invalid-install build-failure busy boot-failure boot-ended capture-failure capture-cleanup-failure cleanup-failure].map do |scenario|
+results = %w[combined diagnostics no-watch iphone standalone standalone-build-failure missing invalid-plist invalid-install build-failure busy boot-failure boot-ended capture-failure capture-cleanup-failure cleanup-failure].map do |scenario|
   Dir.mktmpdir("openclaw-watch-build-") do |root|
     @root, @scenario, @builds, @commands, @installed = root, scenario, [], [], nil
     @owned, @created = {}, 0
@@ -1089,6 +1089,14 @@ puts JSON.generate(results)
     }[];
     const row = (scenario: string) => rows.find((entry) => entry.scenario === scenario)!;
     const versionArgs = ["--version", "2026.9.1", "--revision", "2", "--build-number", "123"];
+    expect(row("no-watch")).toMatchObject({
+      builds: [],
+      error: "No available Apple Watch simulators found.",
+      pngs: 0,
+      xcresults: 0,
+      owned: [],
+      lifecycle: [],
+    });
     expect(row("combined")).toMatchObject({
       builds: ["snapshot"],
       error: null,
