@@ -41,7 +41,7 @@ import { refreshChatMetadata } from "./chat-state-refresh.ts";
 import { resolveChatAgentId, selectedChatSessionRow } from "./chat-state-route.ts";
 import { publishChatWorkContext } from "./chat-work-context.ts";
 import { getChatComposerState } from "./components/chat-composer-state.ts";
-import { dismissConfirmedActionPopovers } from "./components/chat-message-confirmation.ts";
+import { dismissConfirmedActionPopovers } from "./components/chat-message-confirmation-view.tsx";
 import { clearSessionWorkspacePreviews } from "./components/chat-session-workspace-state.ts";
 import {
   dismissThreadPortals,
@@ -56,7 +56,7 @@ const COMPOSER_PREFILL_ATTENTION_CLASS = "agent-chat__input--prefill-attention";
 
 /** Owns foreground resources and composer state that follow one retained presentation. */
 export abstract class ChatPaneRetainedPresentation extends ChatPaneBoard {
-  protected readonly activeSessionResources = new ChatPaneActiveResources();
+  readonly activeSessionResources = new ChatPaneActiveResources();
 
   readProgressCardScope() {
     const gateway = this.context.gateway;
@@ -199,7 +199,7 @@ export abstract class ChatPaneRetainedPresentation extends ChatPaneBoard {
     if (archived && this.currentSessionArchived === false) {
       dismissThreadPortals(this.presentationId, this.element);
       if (this.archiveFocusOwned) {
-        this.querySelector<HTMLElement>(".chat-thread")?.focus({ preventScroll: true });
+        this.transcript.scrollElement?.focus({ preventScroll: true });
       }
     }
     this.currentSessionArchived = archived;
@@ -215,7 +215,7 @@ export abstract class ChatPaneRetainedPresentation extends ChatPaneBoard {
     const retained = this.hasQueuedMessageEdit;
     if (retained !== this.retainedQueuedEdit) {
       this.retainedQueuedEdit = retained;
-      this.dispatchEvent(new Event(QUEUED_EDIT_RETENTION_CHANGE_EVENT, { bubbles: true }));
+      this.element.dispatchEvent(new Event(QUEUED_EDIT_RETENTION_CHANGE_EVENT, { bubbles: true }));
     }
   }
 
@@ -368,7 +368,7 @@ export abstract class ChatPaneRetainedPresentation extends ChatPaneBoard {
       lifetime: presented.lifetime,
       revision: card.revision,
     });
-    this.requestUpdate();
+    this.invalidate();
   }
 
   protected override initialProgressCardTarget() {
@@ -463,6 +463,7 @@ export abstract class ChatPaneRetainedPresentation extends ChatPaneBoard {
     }
     const { promise, resolve } = createDeferredCore<boolean>();
     this.resetConfirmation = { scopeKey, promise, resolve };
+    this.invalidate();
     return promise;
   }
 
@@ -479,6 +480,7 @@ export abstract class ChatPaneRetainedPresentation extends ChatPaneBoard {
       return;
     }
     this.resetConfirmation = undefined;
+    this.invalidate();
     pending.resolve(confirmed);
   }
 
@@ -501,10 +503,10 @@ export abstract class ChatPaneRetainedPresentation extends ChatPaneBoard {
       void refreshCurrentChatSessionList(this.state).catch(() => undefined);
       void resumeStoredChatOutboxes(this.state);
     }
-    this.querySelector(".chat-transcript-announcement")?.setAttribute(
-      "aria-live",
-      active ? "polite" : "off",
-    );
+    // Parked transcript snapshots do not rerender; update their component-owned live region now.
+    this.element
+      .querySelector(".chat-transcript-announcement")
+      ?.setAttribute("aria-live", active ? "polite" : "off");
   }
 
   protected override presentedChanged(presented: boolean): void {
@@ -562,8 +564,8 @@ export abstract class ChatPaneRetainedPresentation extends ChatPaneBoard {
       // must not inherit a receipt for work its watch no longer owns.
       retirePullRequestRefreshes(this.state);
     }
-    this.swarmHydrator?.dispose();
-    this.swarmHydrator = null;
+    this.swarm.hydrator?.dispose();
+    this.swarm.hydrator = null;
     this.clearHistoryObserver();
     sessionPullRequestsForGateway(this.context.gateway).unwatch(this);
     this.syncActiveBindings();
@@ -580,7 +582,8 @@ export abstract class ChatPaneRetainedPresentation extends ChatPaneBoard {
       clearSessionWorkspacePreviews(state);
       state.requestUpdate?.();
     }
-    this.querySelector(".chat-transcript-announcement")?.setAttribute("aria-live", "off");
+    // Hidden snapshots stay parked, so the retained live region must be silenced synchronously.
+    this.element.querySelector(".chat-transcript-announcement")?.setAttribute("aria-live", "off");
   }
 
   public prepareForEviction(): void {
@@ -684,7 +687,7 @@ export abstract class ChatPaneRetainedPresentation extends ChatPaneBoard {
           })
           .catch((error: unknown) => {
             if (isCurrent()) {
-              setChatError(state, formatUiError(error), true);
+              setChatError(state, formatUiError(error));
             }
           });
       });
