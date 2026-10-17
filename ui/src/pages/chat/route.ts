@@ -9,6 +9,7 @@ import {
   buildAgentMainSessionKey,
   resolveUiConfiguredMainKey,
 } from "../../lib/sessions/session-key.ts";
+import { preloadSessionMessageSubscriptions } from "../../lib/sessions/session-scoped-operations.ts";
 import { sessionRouteHints } from "./route-draft.ts";
 
 function sessionLoaderDeps(
@@ -38,6 +39,8 @@ function sessionPage(face: BoardFace) {
     loaderDeps: (context: ApplicationContext, location: RouteLocation) =>
       sessionLoaderDeps(face, context, location),
     loader: (context: ApplicationContext, options) => {
+      // Subscription acquisition owns errors and retries after this speculative load.
+      void preloadSessionMessageSubscriptions().catch(() => undefined);
       const creation = context.chatSubmissions.creation;
       if (creation && !creation.admitted) {
         const mainKey = resolveUiConfiguredMainKey({
