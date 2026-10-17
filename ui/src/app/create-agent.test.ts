@@ -145,7 +145,7 @@ describe("application agent creation", () => {
     await vi.waitFor(() => {
       expect(context.agents.state.agentCreationPhase).toBe("checking");
       expect(sidebar.querySelector('[data-value="command:new-agent"]')?.textContent).toContain(
-        "Checking AI connection",
+        "Creating new agent",
       );
     });
     expect(roster.agents).toHaveLength(1);
@@ -157,13 +157,13 @@ describe("application agent creation", () => {
       const pendingRow = sidebar.querySelector<HTMLButtonElement>(
         '[data-value="command:new-agent"]',
       );
-      expect(pendingRow?.textContent).toContain("Creating agent");
+      expect(pendingRow?.textContent).toContain("Creating new agent");
       expect(pendingRow?.getAttribute("aria-disabled")).toBe("true");
       const firstAgent = sidebar.querySelector('[data-value^="agent:"]');
       expect(firstAgent?.textContent).toContain("New agent");
       expect(firstAgent?.getAttribute("aria-disabled")).toBe("true");
       expect(firstAgent?.querySelector('[role="status"]')?.getAttribute("aria-label")).toBe(
-        "Creating agent…",
+        "Creating new agent…",
       );
     });
     expect(navigate).not.toHaveBeenCalled();

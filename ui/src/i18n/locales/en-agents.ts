@@ -7,8 +7,7 @@ export const agentChip = {
   showAll: "Show all",
   createAgent: "Create new agent",
   newAgent: "New agent",
-  checkingInference: "Checking AI connection…",
-  creatingAgent: "Creating agent…",
+  creatingAgent: "Creating new agent…",
   rosterUnavailable: "Could not load your agents. Reconnect and try again.",
   inferenceUnavailable: "No working AI connection is available.",
   creationFailed:

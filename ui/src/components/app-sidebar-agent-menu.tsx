@@ -139,13 +139,7 @@ export function renderSidebarAgentMenu(params: SidebarAgentMenuParams): JSX.Elem
               class="agent-select__option-label"
               role={params.creationPhase ? "status" : undefined}
             >
-              {t(
-                params.creationPhase === "checking"
-                  ? "agentChip.checkingInference"
-                  : params.creationPhase === "creating"
-                    ? "agentChip.creatingAgent"
-                    : "agentChip.createAgent",
-              )}
+              {t(params.creationPhase ? "agentChip.creatingAgent" : "agentChip.createAgent")}
             </span>
           </span>
         </span>
