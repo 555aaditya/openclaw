@@ -40,7 +40,9 @@ import {
   type OpenClawTestState,
 } from "../test-utils/openclaw-test-state.js";
 import { VERSION } from "../version.js";
+import { resolveAgentDir, resolveDefaultAgentId } from "./agent-scope.js";
 import { executePreparedDecision } from "./decision-inference.js";
+import { acquireAgentRunPreparedModelRuntime } from "./prepared-model-runtime.js";
 import { resetPreparedModelRuntimeSnapshotsForTest } from "./prepared-model-runtime.test-support.js";
 
 const roots = useAutoCleanupTempDirTracker(afterEach);
@@ -690,6 +692,34 @@ it("runs both SDK versions through the source TypeSafe plugin, prepared auth, an
               paths: cfg.plugins?.load?.paths,
             }),
           ).toContain("typesafe");
+          const agentId = resolveDefaultAgentId(cfg);
+          // Retain the prepared caller across SDK assertions: releasing a warm-up
+          // lease retires the owner and charges each call for cold catalog setup.
+          await using prepared = await acquireAgentRunPreparedModelRuntime(
+            {
+              config: cfg,
+              agentId,
+              agentDir: resolveAgentDir(cfg, agentId),
+              workspaceDir: path.join(root, "workspace"),
+              loadRuntimePlugins: true,
+              runtimePluginSelections: [{ provider: "typesafe", modelId: "kev-latest", agentId }],
+            },
+            { catalogMode: "static" },
+          );
+          expect(prepared.snapshot.pluginRegistry?.providers).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({
+                pluginId: "typesafe",
+                source: registry.providers.find((entry) => entry.provider.id === "typesafe")!
+                  .source,
+              }),
+            ]),
+          );
+          expect(prepared.snapshot.modelCatalog.entries).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({ provider: "typesafe", id: "kev-latest" }),
+            ]),
+          );
           const evaluate = trace.evaluate,
             legacy = trace.evaluateV1;
           if (!evaluate || !legacy) {
@@ -741,7 +771,7 @@ it("runs both SDK versions through the source TypeSafe plugin, prepared auth, an
               questions: { q: { type: "noul" } },
             });
           }
-          await resetPreparedModelRuntimeSnapshotsForTest();
+          // The retained lease disposes here, before afterEach resets runtime owners.
         },
       );
     },
