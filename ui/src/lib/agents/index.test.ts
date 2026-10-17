@@ -686,7 +686,7 @@ describe("agent creation", () => {
       onboarding: true,
     });
     expect(agents.state.agentsList).toEqual(roster);
-    expect(agents.state.agentCreationPhase).toBeUndefined();
+    expect(agents.state.pendingAgent).toBeUndefined();
     agents.dispose();
   });
 
@@ -707,7 +707,6 @@ describe("agent creation", () => {
     );
     await agents.ensureList();
     const creating = agents.create("New agent");
-    expect(agents.state.agentCreationPhase).toBe("creating");
     expect(agents.state.pendingAgent).toMatchObject({
       id: expect.stringMatching(/^bot-/),
       name: "New agent",
@@ -732,7 +731,6 @@ describe("agent creation", () => {
     });
     expect(agents.state.agentsList?.agents).toEqual([pending, ...roster.agents]);
     expect(agents.state.recentlyCreatedAgentId).toBe(receipt.agentId);
-    expect(agents.state.agentCreationPhase).toBeUndefined();
     expect(agents.state.pendingAgent).toBeUndefined();
     agents.dispose();
   });
@@ -799,7 +797,6 @@ describe("agent creation", () => {
     await agents.ensureList();
     await expect(agents.create("New agent")).rejects.toThrow("Workspace could not be created");
     expect(agents.state.pendingAgent).toBeUndefined();
-    expect(agents.state.agentCreationPhase).toBeUndefined();
     expect(agents.state.agentsList).toEqual(roster);
     agents.dispose();
   });
@@ -829,7 +826,7 @@ describe("agent creation", () => {
       onboarding: { status: "completed", sessionKey: `agent:${pending.id}:main` },
     });
     await expect(creating).resolves.toBeNull();
-    expect(agents.state.agentCreationPhase).toBeUndefined();
+    expect(agents.state.pendingAgent).toBeUndefined();
     expect(agents.state.agentsList).toBeNull();
     harness.publish(true);
     await expect(agents.create("New agent")).resolves.toMatchObject({ agentId: pending.id });

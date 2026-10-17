@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { buildBaseHints } from "../../src/config/schema.hints.js";
 import { configHintTranslationKey } from "../../ui/src/i18n/lib/config-hint-translation.ts";
 import { registerActivityEnglish } from "../../ui/src/i18n/locales/en-activity.ts";
+import { registerAgentCreationEnglish } from "../../ui/src/i18n/locales/en-agent-creation.ts";
 import { registerAgentsHomeEnglish } from "../../ui/src/i18n/locales/en-agents-home.ts";
 import { registerAppsEnglish } from "../../ui/src/i18n/locales/en-apps.ts";
 import { registerBoardWebsiteEnglish } from "../../ui/src/i18n/locales/en-board-website.ts";
@@ -68,6 +69,7 @@ const localesDir = path.resolve(
 const sourceFiles = [
   "en.ts",
   "en-agents.ts",
+  "en-agent-creation.ts",
   "en-activity.ts",
   "en-agents-home.ts",
   "en-apps.ts",
@@ -120,6 +122,13 @@ const sourceFiles = [
 ];
 
 export function loadControlUiSourceCatalog(): TranslationMap {
+  const agentChip: TranslationMap = {};
+  for (const [key, value] of Object.entries(en.agentChip)) {
+    agentChip[key] = value;
+    if (key === "creationUnavailable") {
+      Object.assign(agentChip, registerAgentCreationEnglish.catalog.agentChip);
+    }
+  }
   const newSession: TranslationMap = {};
   for (const [key, value] of Object.entries(registerNewSessionSetupEnglish.catalog.newSession)) {
     newSession[key] = value;
@@ -160,6 +169,7 @@ export function loadControlUiSourceCatalog(): TranslationMap {
     // Preserve partial-fragment key order while keeping shared labels eager.
     {
       ...en,
+      agentChip,
       custodian: { ...registerPluginManagementEnglish.catalog.custodian, ...en.custodian },
       chat: {
         ...en.chat,

@@ -55,7 +55,6 @@ type SidebarAgentMenuParams = Omit<
   onPointerLeave: () => void;
   onAfterShow: () => void;
   onSwitchAgent: (agentId: string) => void;
-  creationPhase?: "creating";
   onCreateAgent: () => Promise<void>;
   onClose: (restoreFocus?: boolean) => void;
   onNavigate: (routeId: NavigationRouteId, options?: ApplicationNavigationOptions) => void;
@@ -106,6 +105,15 @@ export function selectSidebarHelpLink(value: string): boolean {
   return true;
 }
 
+/** Promote a hover-open menu without letting the first Create row steal selection focus. */
+export function focusSidebarAgentMenu(element: HTMLElement): void {
+  const dropdown = element.querySelector<HTMLElement>(".sidebar-agent-menu");
+  const target =
+    dropdown?.querySelector<HTMLElement>(".sidebar-agent-menu__agent-switch--active") ??
+    dropdown?.querySelector<HTMLElement>('[role^="menuitem"]:not([disabled])');
+  target?.focus();
+}
+
 export function renderSidebarAgentMenu(params: SidebarAgentMenuParams): JSX.Element {
   const position = params.position;
   const creationReasonId = createUniqueId();
@@ -130,7 +138,7 @@ export function renderSidebarAgentMenu(params: SidebarAgentMenuParams): JSX.Elem
         "sidebar-customize-menu__item sidebar-agent-menu__create",
         { "session-menu__item--described": Boolean(params.creationDisabledReason) },
       ],
-      disabled: Boolean(params.creationDisabledReason || params.creationPhase),
+      disabled: Boolean(params.creationDisabledReason || params.pendingAgent),
       attributes: {
         "aria-describedby": params.creationDisabledReason ? creationReasonId : undefined,
       },
@@ -143,9 +151,9 @@ export function renderSidebarAgentMenu(params: SidebarAgentMenuParams): JSX.Elem
           <span class="agent-select__option-copy">
             <span
               class="agent-select__option-label"
-              role={params.creationPhase ? "status" : undefined}
+              role={params.pendingAgent ? "status" : undefined}
             >
-              {t(params.creationPhase ? "agentChip.creatingAgent" : "agentChip.createAgent")}
+              {t(params.pendingAgent ? "agentChip.creatingAgent" : "agentChip.createAgent")}
             </span>
             <Show when={params.creationDisabledReason}>
               {(reason) => (

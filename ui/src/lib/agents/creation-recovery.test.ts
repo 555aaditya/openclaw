@@ -83,11 +83,11 @@ describe("agent creation outcome recovery", () => {
       onboarding: { status: "completed", sessionKey: `agent:${agentId}:main` },
     });
     await expect(original).resolves.toBeNull();
-    expect(agents.state.agentCreationPhase).toBe("creating");
+    expect(agents.state.pendingAgent).toBeDefined();
     expect(agents.state.pendingAgent?.id).toBe(agentId);
     recoveryRead.resolve(savedAgent(agentId));
     await expect(recovery).resolves.toMatchObject({ agentId });
-    expect(agents.state.agentCreationPhase).toBeUndefined();
+    expect(agents.state.pendingAgent).toBeUndefined();
     expect(request.mock.calls.filter(([method]) => method === "agents.create")).toHaveLength(1);
   });
 

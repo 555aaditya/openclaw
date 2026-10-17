@@ -8,11 +8,6 @@ export const agentChip = {
   creatingAgent: "Creating new agent…",
   creationUnavailable:
     "Creating an agent requires agents.create with operator.admin access. Pair this browser with operator.admin scope, then reconnect.",
-  rosterUnavailable: "Could not load your agents. Reconnect and try again.",
-  creationUncertain:
-    "The Gateway hasn't confirmed whether your agent was saved. Reconnect, then choose Create new agent to check the same attempt before creating another agent.",
-  creationRecovered:
-    "The saved agent was recovered, but its opening message was not confirmed. If its chat is unavailable, apply the saved configuration or restart the Gateway.",
   creationFailed:
     "Couldn't create an agent: {error} Check your AI connection in Models and try again.",
   chatStartFailed:

@@ -9,7 +9,6 @@ import type {
   GatewayAgentRow,
   ToolsCatalogResult,
 } from "../../api/types.ts";
-import { t } from "../../i18n/index.ts";
 import { formatUiError } from "../format-error.ts";
 import type { GatewayConnectionSnapshot } from "../gateway-connection-lifecycle.ts";
 import {
@@ -67,7 +66,6 @@ type AgentCapabilityState = {
   agentsLoading: boolean;
   agentsError: string | null;
   agentsList: AgentsListResult | null;
-  agentCreationPhase?: "creating";
   pendingAgent?: GatewayAgentRow;
   recentlyCreatedAgentId?: string;
 };
@@ -193,7 +191,6 @@ export function createAgentCapability(gateway: AgentGateway) {
   const listeners = new Set<(state: AgentCapabilityState) => void>();
   let disposed = false;
   let agentsRequest: Promise<AgentsListResult | null> | null = null;
-  let creationFlight: object | null = null;
   const creations = createAgentCreationRecovery();
 
   const retireAgentsRequest = () => {
@@ -333,8 +330,6 @@ export function createAgentCapability(gateway: AgentGateway) {
     state.client = snapshot.client;
     state.connected = connected;
     if (connectionChanged && (clientChanged || !connected)) {
-      creationFlight = null;
-      state.agentCreationPhase = undefined;
       state.pendingAgent = undefined;
       state.recentlyCreatedAgentId = undefined;
       retireAgentsRequest();
@@ -362,53 +357,27 @@ export function createAgentCapability(gateway: AgentGateway) {
       onStarted?: (agentId: string) => void,
     ): Promise<AgentCreationResult | null> {
       const client = state.client;
-      if (!client || !state.connected || disposed || state.agentCreationPhase) {
+      if (!client || !state.connected || disposed || state.pendingAgent) {
         return null;
       }
       const attempt = creations.prepare(client, name);
       const { agentId } = attempt;
-      const flight = {};
-      creationFlight = flight;
+      const pendingAgent = { id: agentId, name: attempt.name };
       const isCurrent = () =>
-        !disposed && state.client === client && state.connected && creationFlight === flight;
-      state.agentCreationPhase = "creating";
-      state.pendingAgent = { id: agentId, name: attempt.name };
+        !disposed &&
+        state.client === client &&
+        state.connected &&
+        state.pendingAgent === pendingAgent;
+      state.pendingAgent = pendingAgent;
       publish();
       try {
         // The UI can open a display-only chat immediately. Persistence still waits
         // for the new agent's own inference route to pass verification.
         onStarted?.(agentId);
-        const previous = state.agentsList ?? (await loadList(false));
-        if (!isCurrent()) {
-          return null;
-        }
-        if (!previous) {
-          throw new Error(state.agentsError || t("agentChip.rosterUnavailable"));
-        }
-        // The creation owner verifies inference with the opening message before
-        // persistence, then returns the saved conversation in the same receipt.
-        const created = await attempt.execute(isCurrent);
-        if (!created || !isCurrent()) {
-          return null;
-        }
-        // Publish the authoritative create receipt immediately. Config events own
-        // the full roster refresh; opening this chat must not wait for another read.
-        const current = state.agentsList ?? previous;
-        const row = current.agents.find((agent) => agent.id === created.agentId) ?? {
-          id: created.agentId,
-          name: created.name,
-        };
-        state.agentsList = {
-          ...current,
-          agents: [row, ...current.agents.filter((agent) => agent.id !== created.agentId)],
-        };
-        state.recentlyCreatedAgentId = created.agentId;
-        state.agentsError = null;
-        return created;
+        const { createAgentInRoster } = await import("./creation-recovery.runtime.ts");
+        return await createAgentInRoster(state, () => loadList(false), attempt, isCurrent);
       } finally {
-        if (creationFlight === flight) {
-          creationFlight = null;
-          state.agentCreationPhase = undefined;
+        if (state.pendingAgent === pendingAgent) {
           state.pendingAgent = undefined;
           publish();
         }

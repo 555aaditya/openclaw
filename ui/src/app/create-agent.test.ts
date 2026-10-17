@@ -269,7 +269,7 @@ describe("application agent creation", () => {
     sidebar.querySelector<HTMLButtonElement>(".sidebar-agent-card__main")?.click();
     await sidebar.updateComplete;
     await vi.waitFor(() => {
-      expect(context.agents.state.agentCreationPhase).toBe("creating");
+      expect(context.agents.state.pendingAgent).toBeDefined();
       expect(sidebar.querySelector('[data-value="command:new-agent"]')?.textContent).toContain(
         "Creating new agent",
       );
@@ -279,7 +279,7 @@ describe("application agent creation", () => {
 
     verification.resolve({ ok: true });
     await vi.waitFor(() => {
-      expect(context.agents.state.agentCreationPhase).toBe("creating");
+      expect(context.agents.state.pendingAgent).toBeDefined();
       const pendingRow = sidebar.querySelector<HTMLButtonElement>(
         '[data-value="command:new-agent"]',
       );

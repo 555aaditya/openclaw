@@ -43,6 +43,8 @@ import { isReleaseUpdateAvailable } from "./sidebar-attention-update.ts";
 import type { SidebarMenusOwner } from "./sidebar-menus-types.ts";
 import type { SidebarMenus } from "./sidebar-menus.tsx";
 
+export { focusSidebarAgentMenu } from "./app-sidebar-agent-menu.tsx";
+
 export {
   renderSidebarCatalogViewMenuForMenus,
   renderSidebarSessionGroupMenuForMenus,
@@ -165,7 +167,6 @@ export function renderSidebarAgentMenuForMenus(
           }
           host.switchChipAgent(agentId);
         },
-        creationPhase: agentState()?.read().agentCreationPhase,
         pendingAgent: agentState()?.read().pendingAgent,
         recentlyCreatedAgentId:
           agentState()?.read().recentlyCreatedAgentId ??

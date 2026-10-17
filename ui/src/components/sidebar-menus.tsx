@@ -523,13 +523,7 @@ export function createSidebarMenus(deps: {
           ) {
             return;
           }
-          const dropdown = element.querySelector<HTMLElement>(".sidebar-agent-menu");
-          if (dropdown) {
-            const target =
-              dropdown.querySelector<HTMLElement>(".sidebar-agent-menu__agent-switch--active") ??
-              dropdown.querySelector<HTMLElement>('[role^="menuitem"]:not([disabled])');
-            target?.focus();
-          }
+          state.menuRenderer?.focusSidebarAgentMenu(element);
         });
         return;
       }
