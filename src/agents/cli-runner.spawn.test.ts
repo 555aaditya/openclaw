@@ -52,13 +52,14 @@ import type { PreparedCliRunContext } from "./cli-runner/types.js";
 
 const executePreparedCliRun = wrapPreparedCliRunWithTestAdmission(executePreparedCliRunImpl);
 
-// Approval behavior is injected below; loading its gateway/tool graph here is incidental.
+// Approval behavior is mocked below; loading its gateway/tool graph here is incidental.
 vi.mock("./bash-tools.exec-approval-request.js", () => ({
   registerExecApprovalRequestForHostOrThrow: vi.fn(),
   resolveRegisteredExecApprovalDecision: vi.fn(),
 }));
 
 beforeEach(() => {
+  vi.clearAllMocks();
   setDiagnosticsEnabledForProcess(true);
   resetAgentEventsForTest();
   resetDiagnosticRunActivityForTest();
@@ -69,7 +70,6 @@ beforeEach(() => {
   vi.spyOn(execApprovals, "resolveRegisteredExecApprovalDecision").mockRejectedValue(
     new Error("unexpected exec approval resolution"),
   );
-  supervisorSpawnMock.mockClear();
 });
 
 afterEach(() => {

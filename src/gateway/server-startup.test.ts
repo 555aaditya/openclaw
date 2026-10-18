@@ -11,7 +11,8 @@ const collectConfiguredRefs = vi.fn((_config: OpenClawConfig, agentId: string) =
 ]);
 const ensureAuthProfileStoreAsync = vi.fn(async () => ({}));
 
-vi.mock("../agents/agent-scope.js", () => ({
+vi.mock("../agents/agent-scope.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../agents/agent-scope.js")>()),
   resolveDefaultAgentDir: () => "/tmp/agent",
   resolveAgentWorkspaceDir: () => "/tmp/workspace",
   resolveDefaultAgentId: () => "default",
@@ -19,10 +20,14 @@ vi.mock("../agents/agent-scope.js", () => ({
   resolveAgentDir: (_config: OpenClawConfig, agentId: string) => `/tmp/${agentId}`,
 }));
 
-vi.mock("../agents/prepared-model-runtime.configured.js", () => ({
+vi.mock("../agents/prepared-model-runtime.configured.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../agents/prepared-model-runtime.configured.js")>()),
   collectPreparedModelRuntimeConfiguredRefs: collectConfiguredRefs,
 }));
-vi.mock("../agents/auth-profiles/store-runtime.js", () => ({ ensureAuthProfileStoreAsync }));
+vi.mock("../agents/auth-profiles/store-runtime.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../agents/auth-profiles/store-runtime.js")>()),
+  ensureAuthProfileStoreAsync,
+}));
 
 vi.mock("../agents/prepared-model-runtime.js", () => ({
   publishPreparedModelRuntimeSnapshot: (params: unknown) => prepareModelRuntimeSnapshotMock(params),
