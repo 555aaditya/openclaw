@@ -1,9 +1,12 @@
+import type { SessionEntry } from "../../config/sessions/types.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import type { SessionWorkerPlacementContext } from "../../gateway/worker-environments/session-placement-lifecycle.js";
+import type { ReplyOperation } from "../../sessions/session-controller.js";
 import type { SourceReplyDeliveryMode } from "../get-reply-options.types.js";
 import type { FinalizedMsgContext } from "../templating.js";
 import type { formatAbortReplyText, tryFastAbortFromMessage } from "./abort.js";
 import type { CommandSessionMetadataChange } from "./command-session-metadata.js";
+import type { InboundMessageAuditTerminalRecorder } from "./dispatch-from-config.audit.js";
 import type { InternalGetReplyFromConfig, InternalGetReplyOptions } from "./get-reply.types.js";
 import type {
   ReplyDispatchKind,
@@ -43,6 +46,25 @@ export type DispatchFromConfigParams = {
   sessionWorkerPlacementContext?: SessionWorkerPlacementContext;
   /** @deprecated Omit this option; published model runtime is always enabled in the Gateway. */
   usePublishedModelRuntime?: boolean;
+};
+
+export type DispatchReplyOperationCoordinatorParams = {
+  allowActiveQueueResolution?: boolean;
+  agentId: string;
+  cfg: OpenClawConfig;
+  ctx: FinalizedMsgContext;
+  dispatcher: ReplyDispatcher;
+  dispatchOperationSessionKey?: string;
+  initialDispatchReplyOperation?: ReplyOperation;
+  messageAuditTerminal?: InboundMessageAuditTerminalRecorder;
+  operationSessionStoreEntry: {
+    entry?: SessionEntry;
+    storePath?: string;
+  };
+  replyOptions?: DispatchFromConfigParams["replyOptions"];
+  sessionWorkerPlacementContext?: SessionWorkerPlacementContext;
+  resolveOperationExpectedSessionId: () => string | undefined;
+  routeThreadId?: string | number;
 };
 
 export type DispatchReplyFromConfig = (

@@ -25,6 +25,7 @@ import {
 import type { InternalGetReplyOptions } from "../../auto-reply/reply/get-reply.types.js";
 import { buildSourceConversationContext } from "../../auto-reply/reply/groups.js";
 import { createReplyDispatcher } from "../../auto-reply/reply/reply-dispatcher.js";
+import { prepareReplyToolAuthority } from "../../auto-reply/reply/reply-tool-authority.js";
 import {
   bindSourceReplyDeliveryRuntime,
   createSourceReplyDeliveryRuntime,
@@ -99,11 +100,14 @@ describe("prepared harness source delivery", () => {
     const loaded = await loadRunOverflowCompactionHarness();
     const { createOpenClawTestState } = await import("../../test-utils/openclaw-test-state.js");
     state = await createOpenClawTestState({ label: "prepared-source-delivery" });
+    const { openOpenClawAgentDatabase } = await import("../../state/openclaw-agent-db.js");
+    // Gateway boot admits the database before retained session lookup captures its identity.
+    openOpenClawAgentDatabase({ agentId: "main" });
     const { setRuntimeConfigSnapshot } = await import("../../config/runtime-snapshot.js");
     setRuntimeConfigSnapshot({});
-    // The real runner must not borrow the dispatch mock’s shared /tmp database.
+    // Dispatch and the real runner share the database admitted above.
     sessionStoreMocks.resolveSessionStorePathCore.mockReturnValue(
-      path.join(state.stateDir, "mock-sessions.json"),
+      path.join(state.sessionsDir(), "sessions.json"),
     );
     return loaded;
   }
@@ -210,6 +214,9 @@ describe("prepared harness source delivery", () => {
       modelOverride: "gpt-5.4",
     });
     const followupRun = createFollowupRun();
+    followupRun.run.config = {
+      session: { store: path.join(state.sessionsDir(), "sessions.json") },
+    };
     const emittedStreamingCallbacks: string[] = [];
     const emitStreaming = async (params: {
       onPartialReply?: (payload: ReplyPayload) => unknown;
@@ -414,7 +421,7 @@ describe("prepared harness source delivery", () => {
         { provider: "anthropic", id: "cli-primary", api: "messages", input: ["text"] },
         { provider: "anthropic", id: "cli-fallback", api: "messages", input: ["text"] },
       ];
-      followupRun.run.sessionKey = undefined;
+      followupRun.run.sessionKey = runtimeOpts.replyOperation?.key;
       followupRun.run.sessionFile = followupRun.run.sessionId;
       followupRun.run.sourceReplyDeliveryMode = runtimeOpts.sourceReplyDeliveryMode;
       const extraSystemPromptBySourceReplyDeliveryMode = {
@@ -449,6 +456,9 @@ describe("prepared harness source delivery", () => {
         onModeResolved: runtimeOpts.onSourceReplyDeliveryModeResolved,
       });
       bindSourceReplyDeliveryRuntime(followupRun.run, sourceReplyDeliveryRuntime);
+      await runtimeOpts.replyOperation?.bindToolAuthoritySnapshotAsync(
+        prepareReplyToolAuthority(followupRun),
+      );
       // Dispatch already captured its session snapshot; the embedded fixture uses
       // a SQLite compatibility key and has no durable row for writer admission.
       sessionStoreMocks.currentEntry = undefined;
@@ -457,6 +467,8 @@ describe("prepared harness source delivery", () => {
         sessionCtx: buildTestCtx({ Provider: "discord", MessageSid: "msg" }),
         opts: runtimeOpts,
         blockStreamingEnabled: true,
+        sessionKey: runtimeOpts.replyOperation?.key ?? "main",
+        replyOperation: runtimeOpts.replyOperation,
       });
       if (execution.kind !== "success") {
         const embeddedErrorText =
@@ -704,6 +716,7 @@ describe("prepared harness source delivery", () => {
       };
       const release = vi.fn(async () => {});
       const acquisitionStarted = createDeferred();
+      const acquisitionAborted = createDeferred();
       const resumeAcquisition = createDeferred();
       const queueTimeout = createDeferred<never>();
       const queuedTasks: Promise<unknown>[] = [];
@@ -713,6 +726,7 @@ describe("prepared harness source delivery", () => {
         async (_input, options?: PreparedModelRuntimeLeaseOptions) => {
           const signal = options?.abortSignal;
           acquisitionSignal = signal;
+          signal?.addEventListener("abort", () => acquisitionAborted.resolve(), { once: true });
           acquisitionStarted.resolve();
           await resumeAcquisition.promise;
           signal?.throwIfAborted();
@@ -749,13 +763,11 @@ describe("prepared harness source delivery", () => {
         workspaceDir,
         enqueue:
           outcome === "queue timeout"
-            ? async (task, options) => {
+            ? async (task) => {
                 const pending = task();
                 queuedTasks.push(pending);
                 // Reject the global queue while its acquisition callback still owns work.
-                return options?.taskTimeoutAbortSignal
-                  ? await Promise.race([pending, queueTimeout.promise])
-                  : await pending;
+                return await Promise.race([pending, queueTimeout.promise]);
               }
             : undefined,
       };
@@ -785,7 +797,7 @@ describe("prepared harness source delivery", () => {
           } else {
             reason.name = "CommandLaneTaskTimeoutError";
             queueTimeout.reject(reason);
-            await observed;
+            await acquisitionAborted.promise;
           }
           expect(acquisitionSignal?.aborted).toBe(true);
           expect(acquisitionSignal?.reason).toBe(reason);

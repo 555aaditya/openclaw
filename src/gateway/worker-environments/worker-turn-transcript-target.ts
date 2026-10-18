@@ -101,7 +101,8 @@ async function prepareWorkerTranscript(
         });
         let active = true;
         prepared = {
-          target: { ...target, storePath: source.path },
+          // The source owns physical routing; turn admission keeps its logical store identity.
+          target,
           source,
           env,
           readCurrent: (requested) =>
