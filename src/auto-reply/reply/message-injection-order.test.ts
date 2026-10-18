@@ -296,6 +296,7 @@ it("classifies a refused raw projection as an authority mismatch before backend 
       embeddedRunToolAuthorityBinding: () => ({
         source: "attempt",
         acceptsRequesterOrigin: (incoming) => hasSameRequesterOrigin(requesterOrigin, incoming),
+        assertRegistrationActive: () => {},
         assertActive: () => {},
         project: () => undefined,
         projectAsync: async () => {

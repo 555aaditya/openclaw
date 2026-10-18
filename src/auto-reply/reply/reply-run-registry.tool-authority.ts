@@ -48,6 +48,7 @@ export function createReplyTurnParticipants(
         senderId,
         name,
         operatorAuthority: authority,
+        requesterOrigin: input.requesterOrigin,
         gatewayUiCommandTarget: input.gatewayUiCommandTarget
           ? Object.freeze({ ...input.gatewayUiCommandTarget })
           : undefined,

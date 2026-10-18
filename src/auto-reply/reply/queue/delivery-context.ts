@@ -458,7 +458,7 @@ export function resolveOverflowSummaryInboundEventKind(
     : undefined;
 }
 
-export function getFollowupOriginRouting(source: FollowupRun) {
+function getFollowupOriginRouting(source: FollowupRun) {
   return {
     originatingChannel: source.originatingChannel,
     originatingTo: source.originatingTo,

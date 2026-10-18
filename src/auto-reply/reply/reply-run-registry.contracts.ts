@@ -134,7 +134,7 @@ export type ReplyToolAuthorityRequester = Readonly<{
 type ReplyTurnParticipantInput = Pick<
   ReplyToolAuthorityOverlay,
   "operatorAuthority" | "senderId" | "senderName" | "gatewayUiCommandTarget"
->;
+> & { requesterOrigin?: RequesterOrigin };
 
 export type ReplyToolAuthoritySnapshot = Readonly<{
   close?(): void;
@@ -165,6 +165,7 @@ export type ReplyTurnParticipant = Readonly<{
   name: string;
   /** Host-issued source; independent children acquire their own custody before turn close. */
   operatorAuthority: AdmittedRunOperatorAuthority;
+  requesterOrigin?: RequesterOrigin;
   gatewayUiCommandTarget?: GatewayUiCommandTarget;
   assertCurrent: () => void;
 }>;

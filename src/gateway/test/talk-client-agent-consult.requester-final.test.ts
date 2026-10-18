@@ -141,6 +141,7 @@ describe("Talk requester-final consult ownership", () => {
             source: "attempt",
             project,
             projectAsync: async (overlay) => project(overlay),
+            assertRegistrationActive: () => {},
             assertActive: () => {},
           }),
         },

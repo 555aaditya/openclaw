@@ -307,6 +307,7 @@ export async function runActiveReplySteer(
         : {}),
       personalToolParticipant: {
         operatorAuthority: followupRun.operatorAuthority,
+        requesterOrigin: followupRun.run.requesterOrigin,
         senderId: followupRun.run.senderId,
         senderName: followupRun.run.senderName,
         gatewayUiCommandTarget: followupRun.run.gatewayUiCommandTarget,

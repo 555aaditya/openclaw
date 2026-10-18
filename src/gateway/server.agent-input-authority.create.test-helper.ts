@@ -255,10 +255,7 @@ export async function runIndependentCreationInputCase(
       throw settled.error;
     }
     const { result } = settled;
-    const accepted =
-      boundary !== "before acceptance" &&
-      boundary !== "participant after creation" &&
-      boundary !== "slow kickoff failure";
+    const accepted = boundary !== "before acceptance" && boundary !== "slow kickoff failure";
     expect(result.details).toMatchObject({
       sessionKey: expect.any(String),
       sessionId: expect.any(String),
@@ -342,6 +339,7 @@ export async function runIndependentCreationInputCase(
       boundary === "slow acceptance" ||
       boundary === "after acceptance" ||
       boundary === "guest after acceptance" ||
+      boundary === "participant after creation" ||
       boundary === "participant after acceptance"
     ) {
       const persisted = await persist();

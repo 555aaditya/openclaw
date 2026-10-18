@@ -1378,7 +1378,7 @@ export function setActiveEmbeddedRun(
     clearEmbeddedRunAbortability(previousHandle, { retainFinalizing: true });
     EMBEDDED_RUN_FORCED_TERMINAL_SETTLEMENTS.delete(previousHandle);
   }
-  revokeClaimOnFailure(() => toolAuthority?.assertActive());
+  revokeClaimOnFailure(() => toolAuthority?.assertRegistrationActive());
   clearEmbeddedRunAbandonment(sessionIdentity);
   ACTIVE_EMBEDDED_RUNS.set(sessionId, handle);
   // The dispatch scope carries the admitted instance across both core and

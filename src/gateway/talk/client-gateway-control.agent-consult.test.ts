@@ -86,6 +86,7 @@ function publishBackend(
         source,
         project,
         projectAsync: async (overlay) => project(overlay),
+        assertRegistrationActive: assertActive,
         assertActive,
       }),
     },
