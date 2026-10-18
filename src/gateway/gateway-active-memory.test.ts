@@ -3,19 +3,18 @@ import fs from "node:fs/promises";
 import type { ServerResponse } from "node:http";
 import path from "node:path";
 import { expect, it, onTestFailed } from "vitest";
-import type { GatewayClient } from "../../packages/gateway-client/src/index.js";
+import { GatewayClient } from "../../packages/gateway-client/src/index.js";
 import type { ChatEvent } from "../../packages/gateway-protocol/src/schema/logs-chat.js";
 import {
   BUILD_STAMP_FILE,
   resolveGitHead,
   RUNTIME_POSTBUILD_STAMP_FILE,
 } from "../../scripts/lib/local-build-metadata.mts";
-import { acquireGatewayTestClient } from "../../test/helpers/gateway-client.js";
 import {
   createOpenClawTestInstance,
   type OpenClawTestInstance,
 } from "../../test/helpers/openclaw-test-instance.js";
-import { createDeferred, withinTest } from "../../test/helpers/promise.js";
+import { createDeferred, withinTest, withTestTimeout } from "../../test/helpers/promise.js";
 import { runQaGatewayTestFixture } from "../../test/helpers/qa-gateway-test-lifetime.js";
 import { loadSessionEntryReadOnly } from "../config/sessions/session-accessor.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
@@ -223,48 +222,53 @@ it(
         signal.throwIfAborted();
         const sessionKey = "agent:main:main";
         const runId = randomUUID();
+        const connected = createDeferred();
+        void connected.promise.catch(() => undefined);
         const terminal = createDeferred<ChatEvent>();
         void terminal.promise.catch(() => undefined);
-        client = await acquireGatewayTestClient(
-          {
-            url: instance.url,
-            token: instance.gatewayToken,
-            clientName: GATEWAY_CLIENT_NAMES.TEST,
-            clientVersion: "dev",
-            mode: GATEWAY_CLIENT_MODES.TEST,
-            role: "operator",
-            scopes: ["operator.admin", "operator.read", "operator.write"],
-            deviceIdentity: generateStoredDeviceIdentity(),
-            hostDeps: {
-              signDevicePayload: signEd25519Payload,
-              publicKeyRawBase64UrlFromPem: publicKeyRawBase64UrlFromEd25519Pem,
-            },
-            onClose: (code, reason) => {
-              const error = new Error(`Gateway closed during proof (${code}): ${reason}`);
-              terminal.reject(error);
-            },
-            onEvent: (event) => {
-              if (event.event !== "chat") {
-                return;
-              }
-              const payload = event.payload as ChatEvent | undefined;
-              if (
-                payload?.runId === runId &&
-                payload.sessionKey === sessionKey &&
-                ["final", "error", "aborted"].includes(payload.state)
-              ) {
-                terminal.resolve(payload);
-              }
-            },
+        client = new GatewayClient({
+          url: instance.url,
+          token: instance.gatewayToken,
+          clientName: GATEWAY_CLIENT_NAMES.TEST,
+          clientVersion: "dev",
+          mode: GATEWAY_CLIENT_MODES.TEST,
+          role: "operator",
+          scopes: ["operator.admin", "operator.read", "operator.write"],
+          deviceIdentity: generateStoredDeviceIdentity(),
+          hostDeps: {
+            signDevicePayload: signEd25519Payload,
+            publicKeyRawBase64UrlFromPem: publicKeyRawBase64UrlFromEd25519Pem,
           },
-          {
-            timeoutMs: 10_000,
-            timeoutMessage: "Gateway connect timeout",
-            closeMessage: "Gateway closed during proof",
-            signal,
-            verifyCleanup,
+          onHelloOk: () => connected.resolve(),
+          onConnectError: connected.reject,
+          onClose: (code, reason) => {
+            const error = new Error(`Gateway closed during proof (${code}): ${reason}`);
+            connected.reject(error);
+            terminal.reject(error);
           },
-        );
+          onEvent: (event) => {
+            if (event.event !== "chat") {
+              return;
+            }
+            const payload = event.payload as ChatEvent | undefined;
+            if (
+              payload?.runId === runId &&
+              payload.sessionKey === sessionKey &&
+              ["final", "error", "aborted"].includes(payload.state)
+            ) {
+              terminal.resolve(payload);
+            }
+          },
+        });
+        const abortConnect = () => connected.reject(signal.reason);
+        signal.addEventListener("abort", abortConnect, { once: true });
+        try {
+          signal.throwIfAborted();
+          client.start();
+          await withTestTimeout(connected.promise, 10_000, "Gateway connect timeout");
+        } finally {
+          signal.removeEventListener("abort", abortConnect);
+        }
         signal.throwIfAborted();
         // Interactive chat supplies the finalized turn tool authority that recall requires.
         const accepted = await client.request<{ runId: string; status: string }>(
