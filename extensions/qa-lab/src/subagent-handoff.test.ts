@@ -123,10 +123,12 @@ async function runHandoff(fault?: string, childReply = "qa-sidecar", deliveredRe
           fault === "unrelated public reply"
             ? { ...reply, __openclaw: { id: "another-report" } }
             : reply;
-        const result = await select({ messages: [visible] });
-        if (!result) throw new Error("no matching delivered reply");
-        expect(result).toBe(reply.content);
-        return result;
+        const selected = await select({ messages: [visible] });
+        if (!selected) {
+          throw new Error("no matching delivered reply");
+        }
+        expect(selected).toBe(reply.content);
+        return selected;
       },
     },
   });

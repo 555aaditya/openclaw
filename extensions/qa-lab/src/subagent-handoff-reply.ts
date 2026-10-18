@@ -24,7 +24,7 @@ export async function findSubagentHandoffReply(
     if (!isRecord(message) || message.role !== "assistant" || message.phase === "commentary") {
       continue;
     }
-    const meta = message.__openclaw;
+    const meta = message["__openclaw"];
     if (!isRecord(meta) || typeof meta.id !== "string" || !meta.id) {
       continue;
     }
