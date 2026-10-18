@@ -1,7 +1,10 @@
 /** Mailbox identity, source reservations and native producer admission. */
 import { randomUUID } from "node:crypto";
 import type { FollowupRun, QueueSettings } from "../auto-reply/reply/queue/types.js";
-import { resolveSessionStorePathCore } from "../config/sessions/paths.js";
+import {
+  resolveExplicitSessionStorePathForScope,
+  resolveSessionStorePathCore,
+} from "../config/sessions/paths.js";
 import { notifyGatewayWorkMetricsChanged } from "../infra/gateway-work-metrics-events.js";
 import {
   bindGatewayContextResolver,
@@ -410,9 +413,11 @@ export function adoptSessionControllerSource(
 
 function resolveSourceTarget(key: string, source: FollowupRun): SessionTarget {
   return captureSessionTarget({
-    storeScope: resolveSessionStorePathCore(source.run.config.session?.store, {
-      agentId: source.run.agentId,
-    }),
+    storeScope:
+      resolveExplicitSessionStorePathForScope({ agentId: source.run.agentId, sessionKey: key }) ??
+      resolveSessionStorePathCore(source.run.config.session?.store, {
+        agentId: source.run.agentId,
+      }),
     sessionKey: key,
     agentId: source.run.agentId,
     incarnation: source.run.sessionId,

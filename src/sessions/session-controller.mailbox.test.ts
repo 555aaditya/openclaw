@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAgentRunRestartAbortError } from "../agents/run-termination.js";
 import { createQueueTestRun } from "../auto-reply/reply/queue.test-helpers.js";
+import { scheduleFollowupDrain } from "../auto-reply/reply/queue/drain.js";
 import { reserveSteerCandidate, enqueueFollowupRun } from "../auto-reply/reply/queue/enqueue.js";
 import { admitFollowupRunLifecycle } from "../auto-reply/reply/queue/lifecycle.js";
 import { clearFollowupQueue } from "../auto-reply/reply/queue/state.js";
 import { createDeferredCore } from "../shared/deferred.js";
+import { resolveIncognitoOpenClawAgentSqlitePath } from "../state/openclaw-agent-db.paths.js";
 import { deferSessionControllerClaimBeforeExecution } from "./session-controller.mailbox-claim.js";
 import { reserveSessionControllerClaimPredecessor } from "./session-controller.mailbox-predecessor.js";
 import {
@@ -23,7 +25,11 @@ import {
   tryClaimSessionControllerTask,
 } from "./session-controller.mailbox.js";
 import { createReplyOperation } from "./session-controller.operation.js";
-import { findSessionControllerEntry } from "./session-controller.state.js";
+import {
+  findSessionControllerEntry,
+  getSessionControllerEntryForOperation,
+} from "./session-controller.state.js";
+import { captureSessionTarget } from "./session-controller.target.js";
 const key = "agent:mailbox:test";
 afterEach(() => {
   findSessionControllerEntry(key)?.active?.complete();
@@ -37,6 +43,57 @@ function source(prompt: string) {
 }
 
 describe("controller mailbox scheduling", () => {
+  it("drains a re-enqueued incognito followup from its original owner", async () => {
+    vi.useFakeTimers();
+    const sessionKey = "agent:main:dashboard:incognito-recovery-mailbox";
+    const sessionId = "incognito-recovery-session";
+    const active = createReplyOperation({
+      sessionKey,
+      sessionId,
+      resetTriggered: false,
+      target: captureSessionTarget({
+        storeScope: resolveIncognitoOpenClawAgentSqlitePath({ agentId: "main" }),
+        sessionKey,
+        agentId: "main",
+        incarnation: sessionId,
+      }),
+    });
+    const owner = getSessionControllerEntryForOperation(active);
+    const retry = createQueueTestRun({ prompt: "Deliver the missing source reply." });
+    retry.run = { ...retry.run, agentId: "main", sessionKey, sessionId };
+    const delivered: string[] = [];
+    const dispatch = vi.fn(async (run: typeof retry) => {
+      delivered.push(run.prompt);
+    });
+    try {
+      expect(
+        enqueueFollowupRun(
+          sessionKey,
+          retry,
+          { mode: "followup", debounceMs: 0 },
+          "none",
+          dispatch,
+          false,
+          { position: "front" },
+        ),
+      ).toBe(true);
+      scheduleFollowupDrain(sessionKey, dispatch, owner);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(delivered).toEqual([]);
+      active.complete();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(delivered).toEqual(["Deliver the missing source reply."]);
+      expect(dispatch).toHaveBeenCalledOnce();
+    } finally {
+      active.complete();
+      if (retry.controllerInput) {
+        retireSessionControllerInput(retry.controllerInput);
+        await retry.controllerInput.settlement.promise;
+        await retry.controllerInput.claim?.settlement.promise;
+      }
+    }
+  });
+
   it("restores the selected pre-execution claim after its exact predecessor settles", async () => {
     const selected = reserveSessionControllerSource(key, { policy: { mode: "followup" } });
     const selectedClaim = tryClaimSessionControllerTask(selected);
@@ -131,15 +188,15 @@ describe("controller mailbox scheduling", () => {
 
     cancelled.abort(new Error("cancel selected source"));
     await expect(predecessor.restored).resolves.toBe(false);
+    // Aborted admission returns its claim before independent recovery can run.
+    releaseSessionControllerClaim(selectedClaim);
+    await selectedClaim.settlement.promise;
     const predecessorClaim = await claimSessionControllerTask(predecessor.input, () => {});
     releaseSessionControllerClaim(predecessorClaim);
     await predecessorClaim.settlement.promise;
 
     expect(selected.mailbox.claim).not.toBe(selectedClaim);
     expect(selected.retirementRequested).toBe(true);
-
-    releaseSessionControllerClaim(selectedClaim);
-    await selectedClaim.settlement.promise;
   });
 
   it("preserves a later interrupt before restoring the selected claim", async () => {
