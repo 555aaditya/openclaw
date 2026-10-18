@@ -812,7 +812,7 @@ describe("deliverFollowupDecision", () => {
     const owner = getSessionControllerEntryForOperation(operation);
     const turn = createTurn({
       operation,
-      config: { messages: { queue: { mode: "followup", debounceMs: 0 } } },
+      config: { messages: { queue: { mode: "followup" } } },
       session: {
         kind: "session",
         key: sessionKey,
