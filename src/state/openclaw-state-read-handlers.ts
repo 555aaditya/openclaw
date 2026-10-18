@@ -88,7 +88,6 @@ import {
 } from "./config-machine-state.js";
 import { readGitHubPublicationSessionLifecycle } from "./github-publication-session-lifecycles.worker.js";
 import { readOnboardingRecommendationsInDatabase } from "./onboarding-recommendations.kernel.js";
-import { readRegisteredAgentDatabaseRows } from "./openclaw-agent-db-registry.read.js";
 import { tableExists } from "./openclaw-state-db-schema-helpers.js";
 import { assertOpenClawStateWriteAllowed } from "./openclaw-state-ownership.js";
 import {
@@ -114,7 +113,6 @@ import { selectResolvedUserProfileMetadataById } from "./user-profiles-internal.
 export {
   prepareAcpSessionMetadataRead,
   loadSubagentSessionListRunsFromSqlite,
-  readRegisteredAgentDatabaseRows,
   readStateStream,
   stateReadRegistry,
 };
