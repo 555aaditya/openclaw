@@ -9,7 +9,9 @@ import { settingsViews } from "./index.tsx";
 
 const cleanups: Array<() => void> = [];
 afterEach(() => {
-  for (const cleanup of cleanups.splice(0)) cleanup();
+  for (const cleanup of cleanups.splice(0)) {
+    cleanup();
+  }
   document.body.replaceChildren();
 });
 function fixture(patch: Partial<ControlUiChannelSettingsSnapshot> = {}) {
@@ -70,9 +72,11 @@ function fixture(patch: Partial<ControlUiChannelSettingsSnapshot> = {}) {
   flush();
   const button = (label: string) => {
     const node = [...container.querySelectorAll("button")].find(
-      (node) => node.textContent?.trim() === label,
+      (candidate) => candidate.textContent?.trim() === label,
     );
-    if (!node) throw new Error(`Missing ${label}`);
+    if (!node) {
+      throw new Error(`Missing ${label}`);
+    }
     return node;
   };
   const fact = (label: string) =>
@@ -89,8 +93,8 @@ function fixture(patch: Partial<ControlUiChannelSettingsSnapshot> = {}) {
     mountConfig,
     configDispose,
     formatPhoneNumber,
-    update(patch: Partial<ControlUiChannelSettingsSnapshot>) {
-      snapshot = { ...snapshot, ...patch };
+    update(nextPatch: Partial<ControlUiChannelSettingsSnapshot>) {
+      snapshot = { ...snapshot, ...nextPatch };
       mounted.update(snapshot);
       flush();
     },
@@ -131,8 +135,9 @@ it("keeps QR/relink actions and busy state tied to the shared login snapshot", (
       connected: null,
     },
   });
-  for (const label of ["Relink", "Wait for scan", "Logout"])
+  for (const label of ["Relink", "Wait for scan", "Logout"]) {
     expect(f.button(label).disabled).toBe(true);
+  }
 });
 
 it("uses the declared default account for configured fallback and keeps absent status booleans false", () => {
@@ -144,7 +149,9 @@ it("uses the declared default account for configured fallback and keeps absent s
     defaultAccountId: "selected",
   });
   expect(f.fact("Configured")).toBe("Yes");
-  for (const label of ["Linked", "Running", "Connected"]) expect(f.fact(label)).toBe("No");
+  for (const label of ["Linked", "Running", "Connected"]) {
+    expect(f.fact(label)).toBe("No");
+  }
   expect(f.container.querySelector(".settings-count")?.textContent).toBe("2");
   f.update({ status: { configured: false } });
   expect(f.fact("Configured")).toBe("No");

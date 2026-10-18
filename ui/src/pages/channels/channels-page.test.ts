@@ -1116,7 +1116,7 @@ it("keeps a caller deadline across credential retry and response-body consumptio
 it("binds plugin login actions to the existing owner and omits the default start/wait account", async () => {
   const f = await mountPackagedChannel("whatsapp");
   const client = f.gateway.snapshot.client!;
-  const request = vi.mocked(client.request);
+  const request = vi.spyOn(client, "request");
   request.mockClear();
   await f.context.login!.start(false);
   await f.context.login!.wait();
@@ -1137,7 +1137,7 @@ it("binds plugin login actions to the existing owner and omits the default start
 
 it("denies login and confirmation capabilities to an initially read-only operator", async () => {
   const f = await mountPackagedChannel("whatsapp", ["operator.read"]);
-  const request = vi.mocked(f.gateway.snapshot.client!.request);
+  const request = vi.spyOn(f.gateway.snapshot.client!, "request");
   request.mockClear();
   await expect(f.context.login!.start(false)).rejects.toThrow();
   await expect(f.context.login!.wait()).rejects.toThrow();
@@ -1169,7 +1169,7 @@ it.each(["account", "linked"] as const)(
     } else {
       status.channelAccounts.whatsapp[0]!.linked = false;
     }
-    const request = vi.mocked(f.gateway.snapshot.client!.request);
+    const request = vi.spyOn(f.gateway.snapshot.client!, "request");
     request.mockClear();
     await account.logout();
     expect(request).not.toHaveBeenCalled();
@@ -1182,7 +1182,7 @@ it.each(["disconnect", "client", "admin", "unmount"] as const)(
   "cancels confirmation and denies retained login actions synchronously after %s",
   async (retirement) => {
     const f = await mountPackagedChannel("whatsapp");
-    const request = vi.mocked(f.gateway.snapshot.client!.request);
+    const request = vi.spyOn(f.gateway.snapshot.client!, "request");
     const account = f.context.login!.captureLogout()!;
     const confirmation = f.context.confirm!({
       title: "Log out",

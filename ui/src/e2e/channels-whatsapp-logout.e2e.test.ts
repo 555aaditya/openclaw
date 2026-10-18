@@ -352,8 +352,10 @@ suite.define(() => {
       async (page, gateway) => {
         const detail = await openChannel(page);
         await detail.getByRole("button", { name: "Logout" }).click();
-        const confirm = await waitForConfirmModal(page);
-        await expect(confirm.textContent()).resolves.toContain("work");
+        const confirm = (await waitForConfirmModal(page)).filter({
+          has: page.getByText("Log out of WhatsApp account work?", { exact: true }),
+        });
+        await expect.poll(() => confirm.count()).toBe(1);
         const socketCount = await gateway.getSocketCount();
         await gateway.closeLatest(1012, "Reconnect during logout confirmation");
         await expect.poll(() => gateway.getSocketCount()).toBeGreaterThan(socketCount);
