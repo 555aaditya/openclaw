@@ -53,6 +53,7 @@ export function captureRealtimeVoiceRunOwner(sessionId: string, sessionKey: stri
     }
   };
   return {
+    operation,
     isCurrent,
     // Released external V2 sinks retain synchronous policy checks at their final effect.
     matchesCaller: (overlay: ReplyToolAuthorityOverlay) => {

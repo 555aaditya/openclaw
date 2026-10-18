@@ -169,13 +169,17 @@ export async function controlRealtimeVoiceAgentRun(
       ? await import("../sessions/session-controller.queries.js")
       : undefined);
   const resolveCurrentRun = () => {
-    const candidate =
-      target && !target.signal.aborted && target.isCurrent()
-        ? providedDeps
-          ? (providedDeps.resolveActiveEmbeddedRunOwnerByRunId?.(target.runId) ??
-            providedDeps.resolveActiveReplyRunOwnerForSignal?.(target.signal))
-          : commands?.resolveSourceRunOwner(target.runId, target.signal)
+    const liveTarget = target && !target.signal.aborted && target.isCurrent() ? target : undefined;
+    const builtInOwner =
+      !providedDeps && liveTarget
+        ? commands?.resolveSourceRunOwner(liveTarget.runId, liveTarget.signal)
         : undefined;
+    const candidate = liveTarget
+      ? providedDeps
+        ? (providedDeps.resolveActiveEmbeddedRunOwnerByRunId?.(liveTarget.runId) ??
+          providedDeps.resolveActiveReplyRunOwnerForSignal?.(liveTarget.signal))
+        : builtInOwner
+      : undefined;
     const exactOwner =
       candidate?.sessionKey === sessionKey && target?.isCurrent(candidate.sessionId)
         ? candidate
@@ -186,7 +190,7 @@ export async function controlRealtimeVoiceAgentRun(
           ? providedDeps.resolveActiveEmbeddedRunSessionId(sessionKey)
           : projections?.resolveActiveSessionRunId(sessionKey)
         : exactOwner?.sessionId;
-    return { sessionId, exactOwner };
+    return { sessionId, exactOwner, operation: exactOwner ? builtInOwner?.operation : undefined };
   };
   let current = resolveCurrentRun();
   // Custom dependency adapters own their state; the built-in selector pins its registry owner.
@@ -377,7 +381,11 @@ export async function controlRealtimeVoiceAgentRun(
     };
     let steer: SessionControllerSteerResult;
     try {
-      steer = await commands!.steerActiveRun(sessionId, steerText, injectionOptions);
+      steer = await commands!.steerActiveRun(
+        preparedOwner.operation ?? legacyOwner?.operation,
+        steerText,
+        injectionOptions,
+      );
     } catch (error) {
       // A final refusal proves no enqueue; an accepted or missing receipt stays uncertain.
       const errorMessage = formatErrorMessage(error);

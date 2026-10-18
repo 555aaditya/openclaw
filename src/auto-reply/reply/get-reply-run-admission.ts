@@ -8,20 +8,19 @@ import { formatSqliteSessionFileMarker } from "../../config/sessions/legacy-sqli
 import {
   resolveSessionFilePathCore,
   resolveSessionFilePathOptions,
+  resolveSessionStorePathCore,
 } from "../../config/sessions/paths.js";
 import { composeSessionSourceAssertion } from "../../config/sessions/session-source-authority.js";
 import type { SessionEntry } from "../../config/sessions/types.js";
 import { racePromiseWithAbortSignal } from "../../infra/abort-signal.js";
 import { isFastTestRuntimeEnv } from "../../infra/env.js";
+import { notifyGatewayWorkMetricsChanged } from "../../infra/gateway-work-metrics-events.js";
+import { diagnosticLogger as diag } from "../../logging/diagnostic-runtime.js";
 import { replyRunInterruptTargetOperation } from "../../sessions/session-controller.contracts.js";
 import {
   REPLY_RUN_IDLE_SETTLE_TIMEOUT_MS,
   getSessionControllerOperation,
   interruptReplyRunTarget,
-  isSessionRunActive,
-  resolveActiveSessionRunThreadId,
-  resolveActiveSessionRunId,
-  waitForReplyRunEndBySessionId,
   waitForReplyOperationOwnerSettlement,
 } from "../../sessions/session-controller.js";
 import { interruptSessionControllerEffects } from "../../sessions/session-controller.lifecycle.js";
@@ -30,11 +29,12 @@ import {
   bindSessionControllerSource,
   retireSessionControllerInput,
 } from "../../sessions/session-controller.mailbox.js";
+import { waitForCapturedSessionNativeAttemptEnd } from "../../sessions/session-controller.native-runtime.js";
 import {
-  waitForCapturedSessionNativeAttemptEnd,
-  waitForSessionRunEnd,
-} from "../../sessions/session-controller.native-runtime.js";
-import { getReplyOperationSessionReader } from "../../sessions/session-controller.state.js";
+  getReplyOperationSessionReader,
+  getSessionControllerEntryForOperation,
+} from "../../sessions/session-controller.state.js";
+import { captureSessionTarget } from "../../sessions/session-controller.target.js";
 import { readSessionInputProfileId } from "../../sessions/session-participant-input.js";
 import {
   formatThinkingLevels,
@@ -114,6 +114,21 @@ export async function prepareReplyRunAdmission(context: PreparedReplyRunContext)
   let { sessionEntry, prefixedBodyBase } = context;
   const isRoomEvent = inboundEventKind === "room_event";
   const sourceInput = readReplySourceInput(opts);
+  const target =
+    !sourceInput && sessionKey
+      ? captureSessionTarget({
+          storeScope: storePath ?? resolveSessionStorePathCore(cfg.session?.store, { agentId }),
+          sessionKey,
+          agentId,
+        })
+      : undefined;
+  const resolveControllerOwner = () => {
+    if (sourceInput) {
+      return sourceInput.mailbox.owner;
+    }
+    const operation = sessionKey ? getSessionControllerOperation(sessionKey, target) : undefined;
+    return operation ? getSessionControllerEntryForOperation(operation) : undefined;
+  };
   const resolvedQueue =
     sourceInput?.policy ??
     (useFastReplyRuntime
@@ -138,14 +153,18 @@ export async function prepareReplyRunAdmission(context: PreparedReplyRunContext)
       mode: context.isHeartbeat || isRoomEvent ? "followup" : activeRunQueueMode,
     });
   }
-  const capturedInterruptOperation = sourceInput?.mailbox.owner.active;
-  const capturedNativeAttachment = sourceInput?.mailbox.owner.attachment;
+  // Keep the physical owner through preparation; IDs can overlap across stores.
+  const capturedOwner = resolveControllerOwner();
+  const capturedInterruptOperation = capturedOwner?.active;
+  const capturedNativeAttachment = capturedOwner?.attachment;
   const capturedNativeAttempt =
     capturedNativeAttachment && "handle" in capturedNativeAttachment
       ? capturedNativeAttachment
       : undefined;
   const activeRunInterruptTarget =
-    prioritySource &&
+    activeRunQueueMode === "interrupt" &&
+    !context.isHeartbeat &&
+    !isRoomEvent &&
     capturedInterruptOperation &&
     capturedInterruptOperation !== opts?.replyOperation
       ? { [replyRunInterruptTargetOperation]: capturedInterruptOperation }
@@ -327,10 +346,6 @@ export async function prepareReplyRunAdmission(context: PreparedReplyRunContext)
       providedReplyOperation.updateSessionId(nextSessionId);
     }
   };
-  const isOwnPreDispatchOperationSession = (candidateSessionId: string | undefined): boolean =>
-    providedReplyOperation !== undefined &&
-    isProvidedOperationQueued() &&
-    candidateSessionId === providedReplyOperation.sessionId;
   const sessionIdFinal = sessionId ?? providedReplyOperation?.sessionId ?? crypto.randomUUID();
   const sessionFilePathOptions = resolveSessionFilePathOptions({ agentId, storePath });
   const resolvePreparedSessionState = (): {
@@ -363,48 +378,64 @@ export async function prepareReplyRunAdmission(context: PreparedReplyRunContext)
   const embeddedAgentRuntime = useFastReplyRuntime
     ? null
     : await traceRunPhase("reply.load_embedded_agent_runtime", () => loadEmbeddedAgentRuntime());
-  const resolveActiveEmbeddedSessionId = (sessionFile = preparedSessionState.sessionFile) => {
-    if (sourceInput) {
-      const attachment = sourceInput.mailbox.owner.attachment;
-      return attachment && "handle" in attachment ? attachment.operation.sessionId : undefined;
-    }
-    return (
-      (embeddedAgentRuntime && sessionKey ? resolveActiveSessionRunId(sessionKey) : undefined) ??
-      embeddedAgentRuntime?.resolveActiveEmbeddedRunSessionIdBySessionFile?.(sessionFile)
-    );
-  };
-
-  const rawActiveSessionIdForInterrupt = resolveActiveEmbeddedSessionId();
+  const resolveSessionlessNativeAttachment = () =>
+    !sourceInput && !sessionKey
+      ? embeddedAgentRuntime?.resolveActiveEmbeddedRunBySessionFile(
+          preparedSessionState.sessionFile,
+        )
+      : undefined;
+  const rawActiveSessionIdForInterrupt =
+    capturedNativeAttempt?.operation.sessionId ?? resolveSessionlessNativeAttachment()?.sessionId;
   const shouldPreemptHeartbeat =
     !isRoomEvent && !context.isHeartbeat && rawActiveSessionIdForInterrupt !== undefined;
   assertPreparationActive();
-  const heartbeatPreemption = sourceInput
-    ? await (async () => {
-        if (
-          !shouldPreemptHeartbeat ||
-          !capturedNativeAttempt?.handle.preemptByVisibleTurn ||
-          sourceInput.mailbox.owner.attachment !== capturedNativeAttachment ||
-          sourceInput.mailbox.owner.active !== capturedNativeAttempt.operation
-        ) {
-          return "not-heartbeat";
-        }
-        assertPreparationActive();
-        if (!capturedNativeAttempt.handle.preemptByVisibleTurn()) {
-          return "not-heartbeat";
-        }
-        return (await waitForReplyOperationOwnerSettlement(
-          capturedNativeAttempt.operation,
-          REPLY_RUN_IDLE_SETTLE_TIMEOUT_MS,
-        ))
-          ? "drained"
-          : "timed-out";
-      })()
-    : shouldPreemptHeartbeat && embeddedAgentRuntime
-      ? await embeddedAgentRuntime.preemptAndDrainEmbeddedHeartbeatRun(
-          rawActiveSessionIdForInterrupt,
-          REPLY_RUN_IDLE_SETTLE_TIMEOUT_MS,
-        )
-      : "not-heartbeat";
+  const heartbeatPreemption =
+    sourceInput || sessionKey
+      ? await (async () => {
+          if (
+            !shouldPreemptHeartbeat ||
+            !capturedNativeAttempt?.handle.preemptByVisibleTurn ||
+            resolveControllerOwner()?.attachment !== capturedNativeAttachment ||
+            capturedOwner?.active !== capturedNativeAttempt.operation
+          ) {
+            return "not-heartbeat";
+          }
+          assertPreparationActive();
+          try {
+            if (!capturedNativeAttempt.handle.preemptByVisibleTurn()) {
+              return "not-heartbeat";
+            }
+          } catch (error) {
+            if (sourceInput) {
+              throw error;
+            }
+            diag.warn(
+              `heartbeat preemption failed: sessionId=${capturedNativeAttempt.operation.sessionId} err=${String(error)}`,
+            );
+          } finally {
+            if (!sourceInput) {
+              notifyGatewayWorkMetricsChanged();
+            }
+          }
+          const [nativeSettled, ownerSettled] = await Promise.all([
+            waitForCapturedSessionNativeAttemptEnd(
+              capturedNativeAttempt.sessionId,
+              REPLY_RUN_IDLE_SETTLE_TIMEOUT_MS,
+              capturedNativeAttempt,
+            ),
+            waitForReplyOperationOwnerSettlement(
+              capturedNativeAttempt.operation,
+              REPLY_RUN_IDLE_SETTLE_TIMEOUT_MS,
+            ),
+          ]);
+          return nativeSettled && ownerSettled ? "drained" : "timed-out";
+        })()
+      : shouldPreemptHeartbeat && embeddedAgentRuntime
+        ? await embeddedAgentRuntime.preemptAndDrainEmbeddedHeartbeatRun(
+            rawActiveSessionIdForInterrupt,
+            REPLY_RUN_IDLE_SETTLE_TIMEOUT_MS,
+          )
+        : "not-heartbeat";
   if (heartbeatPreemption === "timed-out") {
     if (prioritySource) {
       retireSessionControllerInput(prioritySource);
@@ -480,45 +511,31 @@ export async function prepareReplyRunAdmission(context: PreparedReplyRunContext)
   preparedSessionState = resolvePreparedSessionState();
   const currentRouteThreadId = resolveRoutedDeliveryThreadId({ ctx, sessionKey });
   const applySlackRouteThreadSteeringGuard = isSlackDirectRoutedThreadTurn(ctx);
-  const resolveSessionlessNativeAttachment = () =>
-    !sourceInput && !sessionKey
-      ? embeddedAgentRuntime?.resolveActiveEmbeddedRunBySessionFile(
-          preparedSessionState.sessionFile,
-        )
-      : undefined;
-  const resolveActiveReplyOperationSessionId = () =>
-    sourceInput
-      ? sourceInput.mailbox.owner.active?.sessionId
-      : sessionKey
-        ? resolveActiveSessionRunId(sessionKey)
-        : undefined;
-  const resolveActiveQueueSessionId = () =>
-    resolveActiveEmbeddedSessionId() ??
-    resolveActiveReplyOperationSessionId() ??
-    preparedSessionState.sessionId;
   const resolveQueueBusyState = () => {
-    const nativeAttachment = resolveSessionlessNativeAttachment();
-    const activeSessionId = nativeAttachment?.sessionId ?? resolveActiveReplyOperationSessionId();
-    if (!activeSessionId) {
-      return { activeSessionId: undefined, isActive: false, nativeAttachment };
-    }
-    if (isOwnPreDispatchOperationSession(activeSessionId)) {
-      return { activeSessionId, isActive: false, nativeAttachment };
-    }
-    const replyOperationActive = sourceInput
-      ? sourceInput.mailbox.owner.active !== undefined
-      : nativeAttachment !== undefined || isSessionRunActive(activeSessionId);
-    const activeOperation = sourceInput
-      ? sourceInput.mailbox.owner.active
-      : getSessionControllerOperation(queueKey);
+    const owner = resolveControllerOwner();
+    const activeOperation = owner?.active;
+    const attachment = owner?.attachment;
+    const nativeAttachment =
+      activeOperation &&
+      attachment &&
+      "handle" in attachment &&
+      attachment.operation === activeOperation
+        ? attachment
+        : resolveSessionlessNativeAttachment();
+    const activeSessionId = activeOperation?.sessionId ?? nativeAttachment?.sessionId;
+    const isOwnPreDispatchOperation =
+      activeOperation !== undefined &&
+      activeOperation === providedReplyOperation &&
+      isProvidedOperationQueued();
     return {
       activeSessionId,
-      isActive: replyOperationActive,
+      activeOperation,
+      isActive: !isOwnPreDispatchOperation && Boolean(activeOperation || nativeAttachment),
       nativeAttachment,
       terminalProducerBlocked: activeOperation?.terminalProducerBlocked,
     };
   };
-  const { activeSessionId, isActive, nativeAttachment } = resolveQueueBusyState();
+  const { activeSessionId, activeOperation, isActive, nativeAttachment } = resolveQueueBusyState();
   const hasQueuedFollowups =
     sourceInput?.claim?.operation === providedReplyOperation && providedReplyOperation
       ? false
@@ -526,17 +543,12 @@ export async function prepareReplyRunAdmission(context: PreparedReplyRunContext)
         ? sourceInput.mailbox.entries.some(
             (entry) => entry !== sourceInput && entry.phase !== "consumed",
           ) || sourceInput.mailbox.droppedCount > 0
-        : hasPendingFollowupQueueWork([queueKey]);
+        : hasPendingFollowupQueueWork([queueKey], target);
   const activeRunAcceptsCurrentThread =
     !isActive ||
     !sessionKey ||
     !applySlackRouteThreadSteeringGuard ||
-    routeThreadIdsMatch(
-      sourceInput
-        ? sourceInput.mailbox.owner.active?.routeThreadId
-        : resolveActiveSessionRunThreadId(sessionKey),
-      currentRouteThreadId,
-    );
+    routeThreadIdsMatch(activeOperation?.routeThreadId, currentRouteThreadId);
 
   const shouldSteer =
     !isRoomEvent &&
@@ -562,7 +574,7 @@ export async function prepareReplyRunAdmission(context: PreparedReplyRunContext)
   });
   if (isActive && activeRunQueueAction === "run-now") {
     const queueReply = await waitForPreparedReplyQueue({
-      activeSessionId: activeSessionId ?? resolveActiveQueueSessionId(),
+      activeSessionId: activeSessionId ?? preparedSessionState.sessionId,
       queueMode: activeRunQueueMode,
       interruptActiveRun: async () => {
         assertPreparationActive();
@@ -583,7 +595,7 @@ export async function prepareReplyRunAdmission(context: PreparedReplyRunContext)
         // A source captured with no operation cannot cancel an owner installed
         // while preparation awaited. The legacy sessionless adapter alone uses
         // its physical effect scope.
-        if (sourceInput || !storePath) {
+        if (sourceInput || sessionKey || !storePath) {
           return false;
         }
         const interrupted = await interruptSessionControllerEffects({
@@ -601,17 +613,15 @@ export async function prepareReplyRunAdmission(context: PreparedReplyRunContext)
         );
       },
       waitForActiveRunEnd: (activeRunSessionId) =>
-        nativeAttachment
-          ? waitForCapturedSessionNativeAttemptEnd(
-              activeRunSessionId,
-              REPLY_RUN_IDLE_SETTLE_TIMEOUT_MS,
-              nativeAttachment,
-            )
-          : embeddedAgentRuntime
-            ? waitForSessionRunEnd(activeRunSessionId, REPLY_RUN_IDLE_SETTLE_TIMEOUT_MS)
-            : isSessionRunActive(activeRunSessionId)
-              ? waitForReplyRunEndBySessionId(activeRunSessionId, REPLY_RUN_IDLE_SETTLE_TIMEOUT_MS)
-              : Promise.resolve(undefined),
+        Promise.all([
+          waitForCapturedSessionNativeAttemptEnd(
+            activeRunSessionId,
+            REPLY_RUN_IDLE_SETTLE_TIMEOUT_MS,
+            nativeAttachment,
+          ),
+          activeOperation &&
+            waitForReplyOperationOwnerSettlement(activeOperation, REPLY_RUN_IDLE_SETTLE_TIMEOUT_MS),
+        ]),
       refreshPreparedState: async () => {
         preparedSessionState = resolvePreparedSessionState();
         ({ authProfileId, authProfileIdSource } = await resolveRuntimeAuthProfile());
@@ -649,10 +659,10 @@ export async function prepareReplyRunAdmission(context: PreparedReplyRunContext)
     resolvedQueue,
     isRunActive: async () => {
       preparedSessionState = resolvePreparedSessionState();
-      const native = resolveSessionlessNativeAttachment();
-      const currentSessionId =
-        native?.sessionId ?? resolveActiveEmbeddedSessionId() ?? preparedSessionState.sessionId;
-      return Boolean(embeddedAgentRuntime && (native || isSessionRunActive(currentSessionId)));
+      return Boolean(
+        embeddedAgentRuntime &&
+        (resolveControllerOwner()?.active || resolveSessionlessNativeAttachment()),
+      );
     },
     runReplyAgent: sourceInput
       ? (input: Parameters<typeof runReplyAgent>[0]) => {

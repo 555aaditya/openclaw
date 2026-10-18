@@ -72,6 +72,7 @@ const {
   getGlobalHookRunnerMock,
   runCronChangedMock,
   abortAndDrainEmbeddedAgentRunMock,
+  captureSessionMcpRuntimeRetirementMock,
   retireSessionMcpRuntimeMock,
   requestSafeGatewayRestartMock,
   getProcessSupervisorMock,
@@ -121,7 +122,11 @@ const {
     drained: true,
     forceCleared: false,
   })),
-  retireSessionMcpRuntimeMock: vi.fn(async () => true),
+  captureSessionMcpRuntimeRetirementMock:
+    vi.fn<
+      typeof import("../agents/agent-bundle-mcp-manager-api.js").captureSessionMcpRuntimeRetirement
+    >(),
+  retireSessionMcpRuntimeMock: vi.fn(async (assertCurrent: () => void) => assertCurrent()),
   requestSafeGatewayRestartMock: vi.fn(() => ({
     ok: true,
     status: "scheduled",
@@ -253,8 +258,8 @@ vi.mock("../agents/embedded-agent.js", () => ({
   abortAndDrainEmbeddedAgentRun: abortAndDrainEmbeddedAgentRunMock,
 }));
 
-vi.mock("../agents/agent-bundle-mcp-tools.js", () => ({
-  retireSessionMcpRuntime: retireSessionMcpRuntimeMock,
+vi.mock("../agents/agent-bundle-mcp-manager-api.js", () => ({
+  captureSessionMcpRuntimeRetirement: captureSessionMcpRuntimeRetirementMock,
 }));
 
 vi.mock("../process/supervisor/index.js", () => ({
@@ -531,6 +536,10 @@ describe("buildGatewayCronService", () => {
     runCronChangedMock.mockClear();
     getGlobalHookRunnerMock.mockClear();
     abortAndDrainEmbeddedAgentRunMock.mockClear();
+    captureSessionMcpRuntimeRetirementMock.mockReset();
+    captureSessionMcpRuntimeRetirementMock.mockImplementation(({ sessionId }) =>
+      sessionId ? { sessionId, retire: retireSessionMcpRuntimeMock } : undefined,
+    );
     retireSessionMcpRuntimeMock.mockClear();
     requestSafeGatewayRestartMock.mockClear();
     getProcessSupervisorMock.mockReset();
@@ -1169,10 +1178,10 @@ describe("buildGatewayCronService", () => {
       });
     }
 
-    async function registerRun(runId: string) {
+    async function registerRun(runId: string, storePath?: string) {
       const registered = createDeferred<ReturnType<typeof createEmbeddedRunHandle>>();
       const release = createDeferred();
-      const turn = withSessionTurn({ sessionKey, sessionId }, async (operation) => {
+      const turn = withSessionTurn({ sessionKey, sessionId, storePath }, async (operation) => {
         const handle = createEmbeddedRunHandle({
           runId,
           abort: vi.fn(() => {
@@ -1223,13 +1232,38 @@ describe("buildGatewayCronService", () => {
 
           expect(original.handle.abort).toHaveBeenCalledOnce();
           expect(isEmbeddedAgentRunHandleActive(sessionId)).toBe(false);
-          expect(retireSessionMcpRuntimeMock).toHaveBeenCalledExactlyOnceWith(
-            expect.objectContaining({ sessionId, reason: "cron-timeout-cleanup" }),
-          );
+          expect(retireSessionMcpRuntimeMock).toHaveBeenCalledOnce();
         } finally {
           await original.release();
         }
       });
+    });
+
+    it("aborts only the timed-out cron run when physical stores share a session ID", async () => {
+      await withCronService(
+        createCronConfig("server-cron-timeout-physical-owner"),
+        async (state) => {
+          const original = await registerRun(
+            "cron-run",
+            path.join(os.tmpdir(), "server-cron-timeout-original", "sessions.json"),
+          );
+          const other = await registerRun(
+            "other-run",
+            path.join(os.tmpdir(), "server-cron-timeout-other", "sessions.json"),
+          );
+          try {
+            await cleanupTimedOutCronRun(state);
+
+            expect(original.handle.abort).toHaveBeenCalledOnce();
+            expect(other.handle.abort).not.toHaveBeenCalled();
+            expect(isEmbeddedAgentRunHandleActive(sessionId)).toBe(true);
+          } finally {
+            detachActiveEmbeddedRun(sessionId, original.handle, sessionKey);
+            detachActiveEmbeddedRun(sessionId, other.handle, sessionKey);
+            await Promise.all([original.release(), other.release()]);
+          }
+        },
+      );
     });
   });
 

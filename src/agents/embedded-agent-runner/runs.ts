@@ -524,14 +524,6 @@ export function isEmbeddedAgentRunHandleActive(sessionId: string): boolean {
   return Boolean(getActiveNativeAttempt(sessionId));
 }
 
-/** True when work other than the externally admitted run currently owns the session. */
-export function isEmbeddedAgentSessionHeldByOtherRun(sessionId: string, runId: string): boolean {
-  const handle = getActiveNativeAttempt(sessionId);
-  return handle
-    ? handle.runId !== runId
-    : Boolean(resolveActiveReplyOperationForSessionId(sessionId));
-}
-
 export function resolveActiveEmbeddedRunHandleSessionId(sessionKey: string): string | undefined {
   const normalizedSessionKey = sessionKey.trim();
   if (!normalizedSessionKey) {
@@ -577,7 +569,9 @@ function projectActiveEmbeddedRunOwner(
   }
   const stop = (): "aborted" | "finalizing" | "unchanged" => {
     if (
-      getActiveNativeAttempt(registration.sessionId) !== handle ||
+      (registration.operation
+        ? getControllerEmbeddedAttachment(registration.operation) !== registration
+        : getActiveNativeAttempt(registration.sessionId) !== handle) ||
       getEmbeddedRunAttachment(handle) !== registration ||
       ACTIVE_EMBEDDED_RUNS_BY_RUN_ID.get(runId)?.handle !== handle
     ) {
@@ -643,9 +637,10 @@ export function resolveActiveEmbeddedRunOwnerByRunId(
     return undefined;
   }
   const registration = getEmbeddedRunAttachment(handle);
-  return registration && getActiveNativeAttempt(registration.sessionId) === handle
-    ? projectActiveEmbeddedRunOwner(registration, handle)
-    : undefined;
+  const current = registration?.operation
+    ? getControllerEmbeddedAttachment(registration.operation) === registration
+    : registration && getActiveNativeAttempt(registration.sessionId) === handle;
+  return registration && current ? projectActiveEmbeddedRunOwner(registration, handle) : undefined;
 }
 
 export type EmbeddedRunDrainTarget = NonNullable<ReturnType<typeof captureEmbeddedRunDrainTarget>>;
@@ -757,20 +752,43 @@ export type AbortAndDrainEmbeddedAgentRunResult = {
   recoveringModelAttempt?: true;
 };
 
-export async function abortAndDrainEmbeddedAgentRun(params: {
+type AbortAndDrainEmbeddedAgentRunParams = {
   sessionId: string;
   sessionKey?: string;
   settleMs?: number;
   forceClear?: boolean;
   reason?: string;
-}): Promise<AbortAndDrainEmbeddedAgentRunResult> {
-  const settleMs = params.settleMs ?? 15_000;
-  const settleDeadline = Date.now() + resolveTimerTimeoutMs(settleMs, 100, 100);
+};
+
+export async function abortAndDrainEmbeddedAgentRun(
+  params: AbortAndDrainEmbeddedAgentRunParams,
+): Promise<AbortAndDrainEmbeddedAgentRunResult> {
   // Capture both owners before cancellation can reenter and install a successor.
   const operation = resolveActiveReplyOperationForSessionId(params.sessionId);
   const registration = operation
     ? getControllerEmbeddedAttachment(operation)
     : getDetachedNativeAttachment(params.sessionId);
+  return await abortAndDrainCapturedEmbeddedAgentRun(params, operation, registration);
+}
+
+/** A known invocation selects its registered owner even when session IDs overlap. */
+export async function abortAndDrainEmbeddedAgentRunByRunId(
+  params: AbortAndDrainEmbeddedAgentRunParams & { runId: string },
+): Promise<AbortAndDrainEmbeddedAgentRunResult | undefined> {
+  const registration = ACTIVE_EMBEDDED_RUNS_BY_RUN_ID.get(params.runId);
+  if (!registration || registration.sessionId !== params.sessionId) {
+    return undefined;
+  }
+  return await abortAndDrainCapturedEmbeddedAgentRun(params, registration.operation, registration);
+}
+
+async function abortAndDrainCapturedEmbeddedAgentRun(
+  params: AbortAndDrainEmbeddedAgentRunParams,
+  operation: ReplyOperation | undefined,
+  registration: ActiveEmbeddedRunAttachment | undefined,
+): Promise<AbortAndDrainEmbeddedAgentRunResult> {
+  const settleMs = params.settleMs ?? 15_000;
+  const settleDeadline = Date.now() + resolveTimerTimeoutMs(settleMs, 100, 100);
   const handle = registration?.handle;
   let aborted = false;
   if (params.reason === "stuck_recovery" && operation) {

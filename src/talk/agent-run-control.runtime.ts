@@ -8,7 +8,10 @@ import { getRuntimeConfig } from "../config/config.js";
 import { abortControlledSubagents } from "../gateway/server-methods/chat-abort-descendants.js";
 import { getDiagnosticSessionActivitySnapshot } from "../logging/diagnostic-run-activity.js";
 import { resolveActiveReplyRunOwnerForSignal } from "../sessions/session-controller.barriers.js";
-import type { ReplyMessageInjectionOptions } from "../sessions/session-controller.contracts.js";
+import type {
+  ReplyMessageInjectionOptions,
+  ReplyOperation,
+} from "../sessions/session-controller.contracts.js";
 import {
   resolveActiveReplyOperationForSessionId,
   resolveActiveSessionRunId,
@@ -34,7 +37,10 @@ function resolveSourceRunOwner(runId: string, signal: AbortSignal) {
       : input.claim?.operation
     : operationsByUpstreamAbortSignal.get(signal);
   if (!input && !operation) {
-    return resolveActiveEmbeddedRunOwnerByRunId(runId);
+    const native = resolveActiveEmbeddedRunOwnerByRunId(runId);
+    return native
+      ? { ...native, operation: ACTIVE_EMBEDDED_RUNS_BY_RUN_ID.get(runId.trim())?.operation }
+      : undefined;
   }
   if (!operation || operation.result || !isCurrentSessionControllerOperation(operation)) {
     return undefined;
@@ -44,12 +50,12 @@ function resolveSourceRunOwner(runId: string, signal: AbortSignal) {
     return undefined;
   }
   const native = resolveActiveEmbeddedRunOwnerByRunId(runId);
-  return (
+  const owner =
     native ??
     (getControllerEmbeddedAttachment(operation)
       ? undefined
-      : resolveActiveReplyRunOwnerForSignal(operation.abortSignal))
-  );
+      : resolveActiveReplyRunOwnerForSignal(operation.abortSignal));
+  return owner ? { ...owner, operation } : undefined;
 }
 
 /**
@@ -98,9 +104,13 @@ async function stopRealtimeVoiceSessionRun(params: {
 
 export const realtimeVoiceControlRuntime = {
   stopRealtimeVoiceSessionRun,
-  steerActiveRun: (sessionId: string, text: string, options: ReplyMessageInjectionOptions) =>
+  steerActiveRun: (
+    operation: ReplyOperation | undefined,
+    text: string,
+    options: ReplyMessageInjectionOptions,
+  ) =>
     steerSessionControllerOperation({
-      operation: resolveActiveReplyOperationForSessionId(sessionId),
+      operation,
       text,
       options,
       // A spoken steer reports an unconfirmed receipt instead of cancelling the turn.

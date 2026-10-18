@@ -7,17 +7,17 @@ import { readChannelSourceTurnId } from "../../auto-reply/reply/source-turn-id.j
 import { resolveSessionStorePathCore } from "../../config/sessions/paths.js";
 import { withSessionTranscriptQuestionAnswers } from "../../config/sessions/session-transcript-read-fence.js";
 import { withSessionTurn } from "../../sessions/session-controller.admission.js";
-import { resolveActiveReplyOperationForSessionId } from "../../sessions/session-controller.js";
 import {
   assertSessionControllerOperation,
-  resolveControllerNativeAttempt,
   readSessionControllerOperationState,
+  recordOperationBackendRunId,
 } from "../../sessions/session-controller.state.js";
 import { createReplyTurnParticipants } from "../../sessions/session-controller.tool-authority.js";
 import {
   readAdmittedRunOperatorAuthority,
   resolveAdmittedRunActiveAssertion,
 } from "../admitted-run-context.js";
+import { getControllerEmbeddedAttachment } from "../embedded-agent-runner/run-state.js";
 import type { EmbeddedRunAttemptInternalParams } from "../embedded-agent-runner/run/internal-params.js";
 import {
   getGatewayToolCallerIdentity,
@@ -160,6 +160,10 @@ async function withPreparedEmbeddedRunToolAuthorityOwned<T, Attempt extends Tool
       ? await operation.bindToolAuthorityRouteAsync(route)
       : await direct?.fingerprintAsync();
     assertActive();
+    if (turn) {
+      // Correlate the admitted attempt before tool construction; attachment and authority stay separate.
+      recordOperationBackendRunId(turn, runId);
+    }
   } catch (error) {
     releaseAttemptSnapshot?.();
     direct?.close();
@@ -199,8 +203,7 @@ async function withPreparedEmbeddedRunToolAuthorityOwned<T, Attempt extends Tool
     input.operatorAuthority?.assertCurrent();
     if (
       operation &&
-      (resolveActiveReplyOperationForSessionId(sessionId) !== operation ||
-        operation.toolAuthorityRoute?.provider !== route.provider ||
+      (operation.toolAuthorityRoute?.provider !== route.provider ||
         operation.toolAuthorityRoute.model !== route.model ||
         operation.toolAuthorityFingerprint !== fingerprint)
     ) {
@@ -290,8 +293,7 @@ async function withPreparedEmbeddedRunToolAuthorityOwned<T, Attempt extends Tool
           };
           const ownsOperation = () =>
             !operation ||
-            (resolveActiveReplyOperationForSessionId(sessionId) === operation &&
-              resolveControllerNativeAttempt(sessionId) === handle &&
+            (getControllerEmbeddedAttachment(operation)?.handle === handle &&
               operation.toolAuthorityRoute?.provider === route.provider &&
               operation.toolAuthorityRoute.model === route.model);
           assertRegistered();

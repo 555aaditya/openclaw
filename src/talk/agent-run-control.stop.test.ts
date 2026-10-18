@@ -1,6 +1,6 @@
 // Talk cancellation uses session Stop or the captured exact run owner.
 import { afterEach, expect, it, vi } from "vitest";
-import { createDeferred } from "../../test/helpers/promise.js";
+import { awaitGateBeforeSettlement, createDeferred } from "../../test/helpers/promise.js";
 import {
   detachActiveEmbeddedRun,
   attachActiveEmbeddedRun,
@@ -9,6 +9,7 @@ import { createEmbeddedRunHandle } from "../agents/embedded-agent-runner/runs.te
 import { registerChatAbortController } from "../gateway/chat-abort.js";
 import { registerInternalHook, unregisterInternalHook } from "../hooks/internal-hooks.js";
 import { withSessionTurn } from "../sessions/session-controller.admission.js";
+import type { ReplyOperation } from "../sessions/session-controller.contracts.js";
 import { captureSessionTarget } from "../sessions/session-controller.lifecycle.js";
 import { testing as replyTesting } from "../sessions/session-controller.test-support.js";
 import { controlRealtimeVoiceAgentRun } from "./agent-run-control.js";
@@ -203,3 +204,118 @@ it("aborts the active turn, keeps waiting inputs, and fires command:stop once", 
     unregisterInternalHook("command:stop", hook);
   }
 });
+
+it.each(["controller signal", "native run"] as const)(
+  "steers and cancels the exact %s when physical stores share a session ID",
+  async (selection) => {
+    const finish = createDeferred();
+    const firstMessages: string[] = [];
+    const secondMessages: string[] = [];
+    const start = (storePath: string, runId: string, messages: string[]) => {
+      const ready = createDeferred<ReplyOperation>();
+      const running = withSessionTurn({ ...turn, storePath }, async (operation) => {
+        if (!operation) {
+          throw new Error("expected an admitted voice turn");
+        }
+        await operation.bindToolAuthoritySnapshotAsync({
+          fingerprint: () => "voice-policy",
+          fingerprintAsync: async () => "voice-policy",
+          project: () => "voice-policy",
+          projectAsync: async () => "voice-policy",
+        });
+        await operation.bindToolAuthorityRouteAsync({ provider: "synthetic", model: "test" });
+        const handle = {
+          ...createEmbeddedRunHandle({
+            runId,
+            guarded: true,
+            queueMessage: async (text) => {
+              messages.push(text);
+            },
+          }),
+          kind: "embedded" as const,
+          cancel: () => {},
+        };
+        const attachment =
+          selection === "native run"
+            ? attachActiveEmbeddedRun(
+                turn.sessionId,
+                handle,
+                sessionKey,
+                undefined,
+                turn.agentId,
+                operation,
+              )
+            : undefined;
+        if (selection === "controller signal") {
+          operation.attachBackend(handle);
+        }
+        operation.setPhase("running");
+        ready.resolve(operation);
+        try {
+          await finish.promise;
+        } finally {
+          if (attachment) {
+            detachActiveEmbeddedRun(
+              turn.sessionId,
+              handle,
+              undefined,
+              undefined,
+              undefined,
+              attachment,
+            );
+          }
+        }
+      });
+      return {
+        ready: awaitGateBeforeSettlement(
+          ready.promise,
+          running,
+          "Voice turn ended before admission",
+        ),
+        running,
+      };
+    };
+    const first = start("/synthetic/talk-first", "first-voice-run", firstMessages);
+    const second = start("/synthetic/talk-second", "second-voice-run", secondMessages);
+    try {
+      const [firstOperation, secondOperation] = await Promise.all([first.ready, second.ready]);
+      const runTarget = {
+        runId: "first-voice-run",
+        signal:
+          selection === "native run" ? new AbortController().signal : firstOperation.abortSignal,
+        isCurrent: () => !firstOperation.abortSignal.aborted,
+      };
+      const steered = await controlRealtimeVoiceAgentRun({
+        sessionKey,
+        runTarget,
+        mode: "steer",
+        text: "Use the requested owner only",
+        getToolAuthorityOverlay: () => ({
+          senderIsOwner: true,
+          disableTools: false,
+          traceAuthorized: false,
+        }),
+      });
+      expect(steered, JSON.stringify(steered)).toMatchObject({
+        ok: true,
+        queued: true,
+        sessionId: turn.sessionId,
+      });
+      expect(firstMessages).toEqual(["Use the requested owner only"]);
+      expect(secondMessages).toEqual([]);
+      await expect(
+        controlRealtimeVoiceAgentRun({
+          sessionKey,
+          runTarget,
+          mode: "cancel",
+          text: "stop",
+        }),
+      ).resolves.toMatchObject({ ok: true, aborted: true });
+      expect(firstOperation.abortSignal.aborted).toBe(true);
+      expect(secondOperation.abortSignal.aborted).toBe(false);
+    } finally {
+      finish.resolve();
+      await Promise.all([first.running, second.running]);
+    }
+  },
+);

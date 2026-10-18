@@ -240,6 +240,174 @@ describe("prepared reply transcript identity", () => {
     },
   );
 
+  it("waits for captured heartbeat cleanup after its controller admission retires", async ({
+    signal,
+  }) => {
+    const { context, sessionKey, sessionId, storePath } = await createAdmissionFixture();
+    vi.useFakeTimers();
+    const operation = createReplyOperation({
+      sessionKey,
+      sessionId,
+      target: captureSessionTarget({ storeScope: storePath, sessionKey, agentId: "main" }),
+      turnKind: "heartbeat",
+      resetTriggered: false,
+    });
+    const preempted = createDeferred();
+    const cleanup = createDeferred();
+    const native = {
+      queueMessage: vi.fn(async () => {}),
+      isStreaming: () => true,
+      isCompacting: () => false,
+      preemptByVisibleTurn: vi.fn(() => {
+        preempted.resolve();
+        return true;
+      }),
+      abort: vi.fn(),
+    };
+    const registration = attachActiveEmbeddedRun(
+      sessionId,
+      native,
+      sessionKey,
+      undefined,
+      "main",
+      operation,
+    );
+    if (!registration) {
+      throw new Error("Expected native heartbeat registration");
+    }
+    registration.runCleanupSettlement = cleanup.promise;
+    let admitted = false;
+    const pending = prepareReplyRunAdmission(context).then((prepared) => {
+      admitted = true;
+      return prepared;
+    });
+    try {
+      await withinTest(
+        awaitGateBeforeSettlement(preempted.promise, pending, "Heartbeat was not preempted"),
+        signal,
+      );
+      detachActiveEmbeddedRun(sessionId, native, sessionKey);
+      operation.complete();
+      await withinTest(operation.ownerSettlement, signal);
+      expect(isSessionRunActive(sessionId)).toBe(false);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(admitted).toBe(false);
+      cleanup.resolve();
+      expect(await withinTest(pending, signal)).toMatchObject({ kind: "ready", isActive: false });
+      expect(native.preemptByVisibleTurn).toHaveBeenCalledOnce();
+    } finally {
+      cleanup.resolve();
+      detachActiveEmbeddedRun(sessionId, native, sessionKey);
+      operation.complete();
+      await pending.catch(() => {});
+      vi.useRealTimers();
+    }
+  });
+
+  it.for(["steer", "interrupt"] as const)(
+    "keeps source-less %s admission on its physical store when session identities collide",
+    async (mode, { signal }) => {
+      const { context, sessionKey, sessionId, storePath } = await createAdmissionFixture();
+      const interrupted = createDeferred();
+      const startTurn = (scope: string) => {
+        const target = captureSessionTarget({
+          storeScope: scope,
+          sessionKey,
+          incarnation: sessionId,
+          agentId: "main",
+        });
+        const operation = createReplyOperation({
+          sessionKey,
+          sessionId,
+          target,
+          routeThreadId: scope === storePath ? "selected-thread" : "foreign-thread",
+          resetTriggered: false,
+        });
+        const native = {
+          queueMessage: vi.fn(async () => {}),
+          isStreaming: () => true,
+          isCompacting: () => false,
+          preemptByVisibleTurn: vi.fn(() => false),
+          abort: vi.fn(() => interrupted.resolve()),
+        };
+        attachActiveEmbeddedRun(sessionId, native, sessionKey, undefined, "main", operation);
+        return { operation, native, target };
+      };
+      const foreign = startTurn("/tmp/foreign/sessions/sessions.json");
+      const selected = startTurn(storePath);
+      const turns = [foreign, selected];
+      const older = createQueueTestRun({ prompt: "Foreign queued request" });
+      older.run = {
+        ...older.run,
+        agentId: "main",
+        sessionId,
+        sessionKey,
+        config: { session: { store: foreign.target.storeScope } },
+      };
+      enqueueFollowupRun(sessionKey, older, { mode: "followup" }, "none", undefined, false);
+      const preparedContext = {
+        ...context,
+        effectiveQueueMode: mode,
+        params: {
+          ...context.params,
+          ctx: {
+            ...context.params.ctx,
+            ChatType: "direct",
+            MessageThreadId: "selected-thread",
+          },
+        },
+      };
+      const pending = prepareReplyRunAdmission(preparedContext);
+      try {
+        if (mode === "interrupt") {
+          await withinTest(
+            awaitGateBeforeSettlement(
+              interrupted.promise,
+              pending,
+              "Admission skipped the selected store's active producer",
+            ),
+            signal,
+          );
+          expect(selected.native.abort).toHaveBeenCalledOnce();
+          expect(foreign.native.abort).not.toHaveBeenCalled();
+          detachActiveEmbeddedRun(sessionId, selected.native, sessionKey);
+          selected.operation.complete();
+        }
+        const prepared = await withinTest(pending, signal);
+        expect(prepared).toMatchObject({
+          kind: "ready",
+          isActive: true,
+          shouldSteer: mode === "steer",
+          hasQueuedFollowups: false,
+        });
+        expect(selected.native.preemptByVisibleTurn).toHaveBeenCalledOnce();
+        expect(foreign.native.preemptByVisibleTurn).not.toHaveBeenCalled();
+        if (prepared.kind !== "ready") {
+          throw new Error("Expected a prepared reply");
+        }
+        expect(await prepared.isRunActive()).toBe(mode === "steer");
+        detachActiveEmbeddedRun(sessionId, selected.native, sessionKey);
+        selected.operation.complete();
+        expect(await prepared.isRunActive()).toBe(false);
+        expect(foreign.operation.result).toBeNull();
+        expect(foreign.operation.abortSignal.aborted).toBe(false);
+        expect(getExistingFollowupQueue(sessionKey, foreign.target)?.items).toEqual([older]);
+        expect(await prepareReplyRunAdmission(preparedContext)).toMatchObject({
+          kind: "ready",
+          isActive: false,
+          hasQueuedFollowups: false,
+        });
+      } finally {
+        clearFollowupQueue(sessionKey, older.controllerInput?.mailbox);
+        for (const { native, operation } of turns) {
+          detachActiveEmbeddedRun(sessionId, native, sessionKey);
+          operation.complete();
+        }
+        await pending.catch(() => {});
+      }
+    },
+  );
+
   it("carries an inherited thinking request through admission to candidate selection", async () => {
     const { context, entry } = await createAdmissionFixture();
     entry.thinkingLevel = "high";
@@ -327,8 +495,13 @@ describe("prepared reply transcript identity", () => {
   it.each(["steer", "followup"] as const)(
     "preserves %s admission and transcript authority despite an older queued followup",
     async (mode) => {
-      const { context, sessionKey, sessionId } = await createAdmissionFixture();
+      const { context, sessionKey, sessionId, storePath } = await createAdmissionFixture();
       const older = createQueueTestRun({ prompt: "Earlier followup", messageId: `older-${mode}` });
+      older.run = {
+        ...older.run,
+        agentId: "main",
+        config: { session: { store: storePath } },
+      };
       const operation = createReplyOperation({ sessionKey, sessionId, resetTriggered: false });
       operation.setPhase("running");
       enqueueFollowupRun(sessionKey, older, { mode: "followup" }, "message-id", undefined, false);

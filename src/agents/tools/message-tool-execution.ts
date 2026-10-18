@@ -26,7 +26,6 @@ import { isDeliveredCurrentSourceReplyAsync } from "../../infra/outbound/source-
 import { readBooleanParam } from "../../plugin-sdk/boolean-param.js";
 import { stringifyRouteThreadId } from "../../plugin-sdk/channel-route.js";
 import { getPreparedMessageToolCatalog } from "../../plugins/prepared-message-tool-catalog.js";
-import { resolveActiveReplyOperationForSessionId } from "../../sessions/session-controller.js";
 import { withChannelReadAuthority } from "../../shared/channel-read-authority.js";
 import { resolveSessionAgentId } from "../agent-scope.js";
 import { runWithAgentToolSourceExecutionScope } from "../agent-tool-source-execution-guard.js";
@@ -232,6 +231,7 @@ function* createMessageToolSteps(
       const {
         authorization: trustedTurnContext,
         currentPromptReaction,
+        sourceReplyOperation,
         config: rawConfig,
         scheduledRead,
         assertDashboardReadCurrent,
@@ -370,8 +370,8 @@ function* createMessageToolSteps(
         assertActionCurrent();
         const sourceReplyDelivered =
           requestedSourceReplyFinal === true && result.changed && !remove && !dryRun;
-        if (sourceReplyDelivered && options?.sessionId) {
-          resolveActiveReplyOperationForSessionId(options.sessionId)?.markSourceReplyDelivered();
+        if (sourceReplyDelivered) {
+          sourceReplyOperation?.markSourceReplyDelivered();
         }
         return embeddedMessageDelivery.attachEmbeddedMessageDeliveryFact(
           jsonResult({ ok: true, channel: "webchat", ...result, remove, dryRun }),
@@ -703,11 +703,7 @@ function* createMessageToolSteps(
           ) {
             messageDelivery.sourceReplyDelivered = true;
             // A later stall cannot erase this answer; recovery and its notice read it.
-            if (options?.sessionId) {
-              resolveActiveReplyOperationForSessionId(
-                options.sessionId,
-              )?.markSourceReplyDelivered();
-            }
+            sourceReplyOperation?.markSourceReplyDelivered();
           }
           if (action === "poll-vote" && pollVoteEchoRoute && pollEchoSessionKey) {
             const details = toolResult?.details as { pollVotedOption?: unknown } | undefined;
