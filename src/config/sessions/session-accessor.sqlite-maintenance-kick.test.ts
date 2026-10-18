@@ -46,9 +46,13 @@ import { registerSessionMaintenancePreserveKeysProvider } from "./store-maintena
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
 const sessionKey = "agent:main:age-kick";
 const maintenanceScopes: ReturnType<typeof createOpenClawDatabaseMaintenanceScope>[] = [];
+const preserveDisposers: (() => void)[] = [];
 
 afterEach(async () => {
   await agentDatabase.closeOpenClawAgentDatabasesAsync();
+  for (const dispose of preserveDisposers.splice(0)) {
+    dispose();
+  }
   for (const maintenance of maintenanceScopes.splice(0)) {
     await maintenance.close();
   }
@@ -113,27 +117,30 @@ function workerStore(maxEntries?: number) {
   return store;
 }
 
-function capacityStore(maxEntries = 1) {
+function capacityStore(victimId: string, maxEntries = 1, victimKey = `agent:main:${victimId}`) {
   const store = createStore(86_400_000);
   store.request.maintenanceConfig.maxEntries = maxEntries;
-  return store;
+  store.write({
+    [sessionKey]: lockedEntry("age-kick", store.updatedAt),
+    [victimKey]: entry(victimId, store.updatedAt),
+  });
+  return { ...store, victimKey };
 }
 
 function preserveKeys(initialKeys: string[]) {
-  let keys = initialKeys;
-  const unregister = registerSessionMaintenancePreserveKeysProvider(async () => ({
-    capture: () => keys,
-    dispose() {},
-  }));
-  return {
+  const preservation = {
+    keys: initialKeys,
     set(next: string[]) {
-      keys = next;
-    },
-    async close() {
-      await agentDatabase.closeOpenClawAgentDatabasesAsync();
-      unregister();
+      preservation.keys = next;
     },
   };
+  preserveDisposers.push(
+    registerSessionMaintenancePreserveKeysProvider(async () => ({
+      capture: () => preservation.keys,
+      dispose() {},
+    })),
+  );
+  return preservation;
 }
 
 async function kickAndYield(request: Parameters<typeof kickSessionEntryMaintenanceAfterWrite>[0]) {
@@ -187,73 +194,57 @@ it("joins automatic worker maintenance while Doctor drainage waits on other work
   }
 });
 
-it("revisits write-protected capacity victims after their captured keys are released", async ({
-  signal,
-}) => {
-  const { request, write, storePath, archived, planned, updatedAt } = workerStore(1);
-  const protectedKey = "agent:main:locked-capacity-owner";
-  const partialKey = "agent:main:partial-capacity-victim";
-  vi.useRealTimers();
-  write({
-    [protectedKey]: lockedEntry("locked-capacity-owner", updatedAt),
-    [partialKey]: entry("partial-capacity-victim", updatedAt),
-  });
-  const remainingArchived = observeSessionMaintenanceChanges(storePath, sessionKey);
-  kickSessionEntryMaintenanceAfterWrite(request);
-  await withinTest(planned, signal);
-  await withinTest(archived, signal);
-  expect(readEntry(storePath, partialKey)?.archiveReason).toBe("active-session-cap");
-  expect(readEntry(storePath)?.archivedAt).toBeUndefined();
-  await withinTest(remainingArchived, signal);
-  expect(readEntry(storePath)?.archiveReason).toBe("active-session-cap");
-  expect(readEntry(storePath, protectedKey)?.archivedAt).toBeUndefined();
-});
-
-it("resumes idle capacity maintenance when acquired work releases without another write", async ({
-  signal,
-}) => {
-  const { request, write, storePath, archived, planned, updatedAt } = workerStore(1);
-  const protectedKey = "agent:main:admission-locked-capacity-owner";
-  const partialKey = "agent:main:admission-partial-capacity-victim";
-  vi.useRealTimers();
-  write({
-    [protectedKey]: lockedEntry("admission-locked-capacity-owner", updatedAt),
-    [partialKey]: entry("admission-partial-capacity-victim", updatedAt),
-  });
-  const admission = await beginSessionWorkAdmission({
-    scope: storePath,
-    identities: [sessionKey, "age-kick"],
-  });
-  const partialAdmission = await beginSessionWorkAdmission({
-    scope: storePath,
-    identities: [partialKey, "admission-partial-capacity-victim"],
-  });
-  try {
-    const settled = observeNextPeriodicMaintenance(
-      (delay) => delay >= ageFacts.SESSION_ENTRY_MAINTENANCE_INTERVAL_MS / 2,
-    );
-    const remainingArchived = observeSessionMaintenanceChanges(storePath, sessionKey);
-    kickSessionEntryMaintenanceAfterWrite(request);
-    await withinTest(planned, signal);
-    await settled(signal);
-    expect(readEntry(storePath, partialKey)?.archivedAt).toBeUndefined();
-    const partialSettled = observeNextPeriodicMaintenance(
-      (delay) => delay >= ageFacts.SESSION_ENTRY_MAINTENANCE_INTERVAL_MS / 2,
-    );
-    partialAdmission.release();
-    await withinTest(archived, signal);
-    await partialSettled(signal);
-    expect(readEntry(storePath, partialKey)?.archiveReason).toBe("active-session-cap");
-    expect(readEntry(storePath)?.archivedAt).toBeUndefined();
-    admission.release();
-    await withinTest(remainingArchived, signal);
-    expect(readEntry(storePath)?.archiveReason).toBe("active-session-cap");
-    expect(readEntry(storePath, protectedKey)?.archivedAt).toBeUndefined();
-  } finally {
-    partialAdmission.release();
-    admission.release();
-  }
-});
+it.for(["captured keys", "work admission"] as const)(
+  "revisits capacity victims after releasing %s",
+  async (protection, { signal }) => {
+    const { request, write, storePath, archived, planned, updatedAt } = workerStore(1);
+    const admitted = protection === "work admission";
+    const prefix = admitted ? "admission-" : "";
+    const protectedId = `${prefix}locked-capacity-owner`;
+    const partialId = `${prefix}partial-capacity-victim`;
+    const protectedKey = `agent:main:${protectedId}`;
+    const partialKey = `agent:main:${partialId}`;
+    vi.useRealTimers();
+    write({
+      [protectedKey]: lockedEntry(protectedId, updatedAt),
+      [partialKey]: entry(partialId, updatedAt),
+    });
+    const admit = (key: string, id: string) =>
+      beginSessionWorkAdmission({ scope: storePath, identities: [key, id] });
+    const admission = admitted ? await admit(sessionKey, "age-kick") : undefined;
+    const partialAdmission = admitted ? await admit(partialKey, partialId) : undefined;
+    const periodic = () =>
+      observeNextPeriodicMaintenance(
+        (delay) => delay >= ageFacts.SESSION_ENTRY_MAINTENANCE_INTERVAL_MS / 2,
+      );
+    try {
+      const settled = admitted ? periodic() : undefined;
+      const remainingArchived = observeSessionMaintenanceChanges(storePath, sessionKey);
+      kickSessionEntryMaintenanceAfterWrite(request);
+      await withinTest(planned, signal);
+      let partialSettled: ReturnType<typeof periodic> | undefined;
+      if (settled) {
+        await settled(signal);
+        expect(readEntry(storePath, partialKey)?.archivedAt).toBeUndefined();
+        partialSettled = periodic();
+        partialAdmission?.release();
+      }
+      await withinTest(archived, signal);
+      if (partialSettled) {
+        await partialSettled(signal);
+      }
+      expect(readEntry(storePath, partialKey)?.archiveReason).toBe("active-session-cap");
+      expect(readEntry(storePath)?.archivedAt).toBeUndefined();
+      admission?.release();
+      await withinTest(remainingArchived, signal);
+      expect(readEntry(storePath)?.archiveReason).toBe("active-session-cap");
+      expect(readEntry(storePath, protectedKey)?.archivedAt).toBeUndefined();
+    } finally {
+      partialAdmission?.release();
+      admission?.release();
+    }
+  },
+);
 
 it.for(["young", "capacity", "expired"] as const)(
   "uses delivery settlement facts to schedule a %s store",
@@ -444,12 +435,10 @@ it.for(["activity", "insert", "unlock", "remove", "policy"] as const)(
 it("caps eligible entries when protected inserts overflow a previously below-cap store", async ({
   signal,
 }) => {
-  const { request, scope, write, storePath, updatedAt } = capacityStore(2);
-  const victimKey = "agent:main:eligible-before-overflow";
-  write({
-    [sessionKey]: lockedEntry("age-kick", updatedAt),
-    [victimKey]: entry("eligible-before-overflow", updatedAt),
-  });
+  const { request, scope, storePath, updatedAt, victimKey } = capacityStore(
+    "eligible-before-overflow",
+    2,
+  );
   const settled = observeNextPeriodicMaintenance();
   kickSessionEntryMaintenanceAfterWrite(request);
   await settled(signal);
@@ -463,39 +452,29 @@ it("caps eligible entries when protected inserts overflow a previously below-cap
 it("resumes an over-cap pass on ordinary activity after runtime protection releases", async ({
   signal,
 }) => {
-  const { request, write, storePath, updatedAt, planned, activity } = capacityStore();
-  const victimKey = "agent:main:runtime-protected-cap";
-  write({
-    [sessionKey]: lockedEntry("age-kick", updatedAt),
-    [victimKey]: entry("runtime-victim", updatedAt),
-  });
+  const { request, storePath, updatedAt, planned, activity, victimKey } = capacityStore(
+    "runtime-victim",
+    1,
+    "agent:main:runtime-protected-cap",
+  );
   const preservation = preserveKeys([victimKey]);
-  try {
-    const settled = observeNextPeriodicMaintenance();
-    kickSessionEntryMaintenanceAfterWrite(request);
-    await withinTest(planned, signal);
-    await advance();
-    await settled(signal);
-    expect(readEntry(storePath, victimKey)?.archivedAt).toBeUndefined();
-    preservation.set([]);
-    activity("ordinary activity", updatedAt);
-    await advance();
-    expect(readEntry(storePath, victimKey)?.archiveReason).toBe("active-session-cap");
-    expect(readEntry(storePath)?.archivedAt).toBeUndefined();
-  } finally {
-    await preservation.close();
-  }
+  const settled = observeNextPeriodicMaintenance();
+  kickSessionEntryMaintenanceAfterWrite(request);
+  await withinTest(planned, signal);
+  await advance();
+  await settled(signal);
+  expect(readEntry(storePath, victimKey)?.archivedAt).toBeUndefined();
+  preservation.set([]);
+  activity("ordinary activity", updatedAt);
+  await advance();
+  expect(readEntry(storePath, victimKey)?.archiveReason).toBe("active-session-cap");
+  expect(readEntry(storePath)?.archivedAt).toBeUndefined();
 });
 
 it("keeps a pending maintenance retry bounded while ordinary writes continue", async ({
   signal,
 }) => {
-  const { request, write, storePath, updatedAt, activity } = capacityStore();
-  const victimKey = "agent:main:quiet-retry-victim";
-  write({
-    [sessionKey]: lockedEntry("age-kick", updatedAt),
-    [victimKey]: entry("quiet-retry-victim", updatedAt),
-  });
+  const { request, storePath, activity, victimKey } = capacityStore("quiet-retry-victim");
   const preservation = preserveKeys([victimKey]);
   const firstPass = createDeferred();
   let released = false;
@@ -509,19 +488,15 @@ it("keeps a pending maintenance retry bounded while ordinary writes continue", a
       firstPass.resolve();
     }
   });
-  try {
-    kickSessionEntryMaintenanceAfterWrite(request);
-    await withinTest(firstPass.promise, signal);
+  kickSessionEntryMaintenanceAfterWrite(request);
+  await withinTest(firstPass.promise, signal);
+  await yieldToEventLoop();
+  for (let tick = 0; tick < 11; tick++) {
+    await vi.advanceTimersByTimeAsync(100);
+    activity(`continued activity ${tick}`);
     await yieldToEventLoop();
-    for (let tick = 0; tick < 11; tick++) {
-      await vi.advanceTimersByTimeAsync(100);
-      activity(`continued activity ${tick}`);
-      await yieldToEventLoop();
-    }
-    expect(readEntry(storePath, victimKey)?.archiveReason).toBe("active-session-cap");
-  } finally {
-    await preservation.close();
   }
+  expect(readEntry(storePath, victimKey)?.archiveReason).toBe("active-session-cap");
 });
 
 it("stops automatic maintenance when Gateway drain starts before immediate", async () => {
@@ -734,22 +709,18 @@ it.for(["removed", "unrelated", "victim"] as const)(
         throw error;
       }
     });
-    try {
-      kickSessionEntryMaintenanceAfterWrite(request);
-      if (change === "victim") {
-        await withinTest(rejected.promise, signal);
-        await yieldToEventLoop();
-        expect(readEntry(storePath, victimKey)?.archivedAt).toBeUndefined();
-        await vi.advanceTimersByTimeAsync(999);
-      } else {
-        await withinTest(archived, signal);
-        expect(readEntry(storePath, victimKey)?.archiveReason).toBe("age-retention");
-      }
-      expect(commits).toBe(1);
-      expect(countPlanningPasses()).toBe(1);
-    } finally {
-      await preservation.close();
+    kickSessionEntryMaintenanceAfterWrite(request);
+    if (change === "victim") {
+      await withinTest(rejected.promise, signal);
+      await yieldToEventLoop();
+      expect(readEntry(storePath, victimKey)?.archivedAt).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(999);
+    } else {
+      await withinTest(archived, signal);
+      expect(readEntry(storePath, victimKey)?.archiveReason).toBe("age-retention");
     }
+    expect(commits).toBe(1);
+    expect(countPlanningPasses()).toBe(1);
   },
 );
 
