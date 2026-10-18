@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createDeferredCore } from "../../../shared/deferred.js";
+import { createSubagentRunRecord } from "../../subagent-test-fixtures.test-helpers.js";
 import type { SubagentLifecycleWakeContext } from "./subagent-registry-lifecycle-context.js";
 import {
   commitRequesterWake,
@@ -18,19 +19,14 @@ let warn: ReturnType<typeof vi.fn>;
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(10_000);
-  entry = {
+  entry = createSubagentRunRecord({
     runId: "run-a",
-    childSessionKey: "agent:main:subagent:run-a",
-    requesterSessionKey: "agent:main:main",
-    requesterDisplayKey: "main",
-    task: "investigate",
-    cleanup: "keep",
     createdAt: 1_000,
-    execution: { status: "terminal", startedAt: 2_000, endedAt: 3_000 },
+    startedAt: 2_000,
+    endedAt: 3_000,
     expectsCompletionMessage: true,
-    delivery: { status: "pending" },
     requesterSettleWake: { status: "dispatching", attemptCount: 3 },
-  };
+  });
   warn = vi.fn();
   context = createRequesterWakeContextFixture(new Map([[entry.runId, entry]]), warn);
 });

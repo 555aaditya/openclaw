@@ -91,10 +91,7 @@ it.each(["selected", "immutable"] as const)(
             },
             assertCurrent: () => {},
           });
-      const wakeResult = wake.then(
-        (value) => ({ value }),
-        (error: unknown) => ({ error }),
-      );
+      const wakeResult = wake.catch((error: unknown) => ({ error }));
       const planned = vi.fn();
       let publication: Promise<void> | undefined;
       try {
@@ -119,7 +116,7 @@ it.each(["selected", "immutable"] as const)(
         if (!immutable) {
           expect(planned).not.toHaveBeenCalled();
           releaseWake.resolve();
-          expect(await wakeResult).toEqual({ value: { applied: true, publication: "published" } });
+          expect(await wakeResult).toEqual({ applied: true, publication: "published" });
         }
         await awaitGateBeforeSettlement(
           ackReached.promise,

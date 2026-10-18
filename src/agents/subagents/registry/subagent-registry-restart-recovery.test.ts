@@ -58,6 +58,21 @@ function hiddenRecovery(entry: Run) {
   entry.execution.transcriptTarget = { sessionKey: "agent:main:internal:recovered" };
 }
 
+function recoveredOrphan(recovered: boolean, withReceipt = recovered) {
+  const entry = run();
+  if (recovered) {
+    hiddenRecovery(entry);
+  }
+  const lifecycleRunId = recovered ? "steered-source" : entry.runId;
+  orphan(entry, {
+    lifecycleRunId,
+    subagentRecovery: withReceipt
+      ? { lastRunId: entry.runId, sessionLifecycleRunId: lifecycleRunId }
+      : undefined,
+  });
+  return entry;
+}
+
 function claim(entry: Run, owner: "yield" | "steer" | "kill" | "queued" | "terminal") {
   if (owner === "yield") {
     entry.pauseReason = "sessions_yield";
@@ -76,397 +91,362 @@ function claim(entry: Run, owner: "yield" | "steer" | "kill" | "queued" | "termi
   }
 }
 
-describe("subagent registry restart recovery", () => {
-  beforeEach(() => restartRecoveryTestHarness.reset());
+beforeEach(() => restartRecoveryTestHarness.reset());
 
-  it.each([false, true])("never replays cleaned effects (wake=%s)", async (pendingWake) => {
-    const entry = run({
-      terminalOwner: "interrupted-recovery",
-      endedAt: 200,
-      endedReason: "subagent-error",
-      outcome: { status: "error", error: "interrupted" },
-      cleanupCompletedAt: 300,
-      cleanupHandled: true,
-      delivery: { status: "delivered", deliveredAt: 250 },
-      ...(pendingWake
-        ? { requesterSettleWake: { status: "pending" as const, attemptCount: 0 } }
-        : {}),
-    });
-    const before = structuredClone(entry);
-    const { sweeper, runs, finalizeInterruptedSubagentRun, resumeRequesterSettleWake } =
-      sweep(entry);
-
-    await sweeper.recoverInterruptedRuns();
-    await sweeper.sweepOnce();
-
-    expectNoCalls(mocks.loadSessionEntry, finalizeInterruptedSubagentRun, dispatchAgent);
-    expect(resumeRequesterSettleWake).toHaveBeenCalledTimes(pendingWake ? 1 : 0);
-    expect(runs.get(entry.runId)).toEqual(before);
+it.each([false, true])("never replays cleaned effects (wake=%s)", async (pendingWake) => {
+  const entry = run({
+    terminalOwner: "interrupted-recovery",
+    endedAt: 200,
+    endedReason: "subagent-error",
+    outcome: { status: "error", error: "interrupted" },
+    cleanupCompletedAt: 300,
+    cleanupHandled: true,
+    delivery: { status: "delivered", deliveredAt: 250 },
+    ...(pendingWake
+      ? { requesterSettleWake: { status: "pending" as const, attemptCount: 0 } }
+      : {}),
   });
+  const before = structuredClone(entry);
+  const { sweeper, runs, finalizeInterruptedSubagentRun, resumeRequesterSettleWake } = sweep(entry);
 
-  it("warns once for an unresolved owner", async () => {
-    const entry = run({ childSessionKey: "global", childAgentId: undefined });
-    const before = structuredClone(entry);
-    const { sweeper, runs, warn, finalizeInterruptedSubagentRun } = sweep(entry);
+  await sweeper.recoverInterruptedRuns();
+  await sweeper.sweepOnce();
 
-    await sweeper.recoverInterruptedRuns();
-    await sweeper.recoverInterruptedRuns();
-    await sweeper.sweepOnce();
-
-    expect(warn).toHaveBeenCalledExactlyOnceWith(
-      "retained subagent record cannot be recovered",
-      expect.objectContaining({
-        runId: entry.runId,
-        childSessionKey: entry.childSessionKey,
-        error: expect.objectContaining({
-          message: expect.stringContaining(
-            "its owning agent is unresolved. No child work was changed. Inspect the retained record",
-          ),
-        }),
-      }),
-    );
-    expect(runs.get(entry.runId)).toEqual(before);
-    expectNoCalls(mocks.loadSessionEntry, finalizeInterruptedSubagentRun);
-    expectNoSessionEffects();
-  });
-
-  it.each(["missing identity", "missing revision", "newer execution", "legacy successor"])(
-    "settles %s without changing its session",
-    async (scenario) => {
-      const entry = run(
-        scenario === "missing identity" || scenario === "legacy successor"
-          ? { childSessionIdentity: undefined }
-          : scenario === "missing revision"
-            ? { childSessionIdentity: { sessionId: "session-id" } }
-            : {},
-      );
-      if (scenario === "missing revision") {
-        session().lifecycleRevision = "replacement-revision";
-      }
-      if (scenario === "newer execution") {
-        session().lifecycleRunId = "newer-visible-run";
-      }
-      if (scenario === "legacy successor") {
-        Object.assign(session(), {
-          status: "done",
-          lifecycleRunId: "successor-run",
-          abortedLastRun: false,
-        });
-      }
-      const beforeSession = structuredClone(session());
-
-      expect(await recover(entry)).toMatchObject({
-        status: "terminal",
-        suppressSessionEffects: true,
-      });
-
-      expect(session()).toEqual(beforeSession);
-      expectNoSessionEffects();
-    },
-  );
-
-  it("waits for the crash-loop breaker", async () => {
-    vi.useFakeTimers();
-    const pausedUntilMs = Date.now() + 2_000;
-    const runtime = {
-      ...gatewayRuntime,
-      prepareRestartRecovery: () =>
-        Date.now() < pausedUntilMs ? Promise.resolve(pausedUntilMs) : undefined,
-    };
-    const { sweeper, finalizeInterruptedSubagentRun } = sweep(run(), runtime);
-    finalizeInterruptedSubagentRun.mockResolvedValue(1);
-    try {
-      await sweeper.recoverInterruptedRuns();
-      await sweeper.sweepOnce();
-      expectNoCalls(mocks.loadSessionEntry, finalizeInterruptedSubagentRun);
-      await vi.advanceTimersByTimeAsync(1_999);
-      expect(finalizeInterruptedSubagentRun).not.toHaveBeenCalled();
-      await vi.advanceTimersByTimeAsync(1);
-      expect(finalizeInterruptedSubagentRun).toHaveBeenCalledOnce();
-      expect(dispatchAgent).not.toHaveBeenCalled();
-    } finally {
-      await sweeper.reset();
-      vi.useRealTimers();
-    }
-  });
-
-  it("abandons a superseded breaker check", async () => {
-    const preparation = createDeferred<number | undefined>();
-    const entered = createDeferred();
-    const runtime = {
-      current: {
-        ...gatewayRuntime,
-        prepareRestartRecovery: () => {
-          entered.resolve();
-          return preparation.promise;
-        },
-      },
-    };
-    const { sweeper, finalizeInterruptedSubagentRun } = createSubagentSweeperHarness(
-      runtime,
-      run(),
-    );
-    const pending = sweeper.recoverInterruptedRuns();
-    try {
-      await entered.promise;
-      rotateAgentEventLifecycleGeneration();
-    } finally {
-      preparation.resolve(undefined);
-      await pending;
-      await sweeper.reset();
-    }
-    expectNoCalls(mocks.loadSessionEntry, finalizeInterruptedSubagentRun);
-  });
-
-  it.each(["run", "admission", "run after admission"] as const)(
-    "recovers when %s releases ownership",
-    async (owner) => {
-      vi.useFakeTimers();
-      const entry = run();
-      entry.execution.status = "interrupted";
-      const { sweeper, finalizeInterruptedSubagentRun } = sweep(entry);
-      const lease = owner !== "run" ? await admit() : undefined;
-      if (owner !== "admission") {
-        registerOwner("retained-owner");
-      }
-      try {
-        await sweeper.sweepOnce();
-        mocks.loadSessionEntry.mockClear();
-        await sweeper.sweepOnce();
-        expectNoCalls(mocks.loadSessionEntry, finalizeInterruptedSubagentRun);
-        lease?.release();
-        if (owner === "run after admission") {
-          await vi.advanceTimersByTimeAsync(1_000);
-          expect(finalizeInterruptedSubagentRun).not.toHaveBeenCalled();
-        }
-        clearAgentRunContext("retained-owner");
-        await vi.advanceTimersByTimeAsync(1_000);
-        expect(mocks.loadSessionEntry).toHaveBeenCalled();
-        expect(finalizeInterruptedSubagentRun).toHaveBeenCalledOnce();
-      } finally {
-        await sweeper.reset();
-        lease?.release();
-        clearAgentRunContext("retained-owner");
-        vi.useRealTimers();
-      }
-    },
-  );
-
-  it.each(
-    (["yield", "steer", "kill", "queued"] as const).flatMap((owner) =>
-      (["initial", "currency"] as const).map((read) => ({ owner, read })),
-    ),
-  )("defers to $owner during the $read read", async ({ owner, read }) => {
-    const entry = run();
-    const readEntry = read === "initial" ? mocks.loadSessionEntry : mocks.readSessionCurrent;
-    readEntry.mockImplementationOnce(() => {
-      claim(entry, owner);
-      return session();
-    });
-    expect(await recover(entry)).toEqual({ status: "deferred" });
-    expectNoSessionEffects();
-  });
-
-  it.each([undefined, "replacement-revision"])(
-    "settles a changed revision (%s)",
-    async (lifecycleRevision) => {
-      const entry = run({
-        childSessionIdentity: { sessionId: "session-id", lifecycleRevision: "original-revision" },
-      });
-      orphan(entry, { lifecycleRevision });
-      const beforeRun = structuredClone(entry);
-      const beforeSession = structuredClone(session());
-      const result = await recover(entry);
-      expect(result).toMatchObject({
-        status: "terminal",
-        suppressSessionEffects: true,
-        error: expect.stringContaining("original session incarnation changed"),
-      });
-      if (result.status === "terminal") {
-        expect(await result.recoveryCurrent?.prepare()).toBe(true);
-        expect(result.sessionEffects).toBeUndefined();
-      }
-
-      expect(entry).toEqual(beforeRun);
-      expect(session()).toEqual(beforeSession);
-      expectNoSessionEffects();
-      expect(restartRecoveryTestHarness.warn).not.toHaveBeenCalled();
-    },
-  );
-
-  it.each([60_000, 3 * 24 * 60 * 60_000])(
-    "reconciles a hard-kill orphan aged %i ms",
-    async (ageMs) => {
-      const entry = run();
-      const updatedAt = Date.now() - ageMs;
-      orphan(entry, { updatedAt });
-
-      expect(await recover(entry)).toMatchObject({
-        status: "terminal",
-        error: expect.stringContaining("Gateway restart"),
-      });
-      expect(session().updatedAt).toBe(updatedAt);
-      expectNoCalls(dispatchAgent, gatewayRuntime.sendRecoveryNotice);
-    },
-  );
-
-  it.each([
-    "current lifecycle",
-    "different run",
-    "completed session",
-    "completed session with stale abort marker",
-    "legacy completed session",
-    "legacy completed session with stale abort marker",
-  ])("does not invent an interruption for %s", async (scenario) => {
-    const entry = run(scenario.startsWith("legacy") ? { childSessionIdentity: undefined } : {});
-    entry.execution.lifecycleGeneration = getAgentEventLifecycleGeneration();
-    if (scenario !== "current lifecycle") {
-      rotateAgentEventLifecycleGeneration();
-    }
-    Object.assign(session(), {
-      status: scenario.includes("completed session") ? "done" : undefined,
-      lifecycleRunId: scenario === "different run" ? "newer-run" : entry.runId,
-      abortedLastRun: scenario.endsWith("stale abort marker"),
-    });
-    expect(await recover(entry)).toEqual({ status: "ignored" });
-    expectNoSessionEffects();
-  });
-
-  it.each(["attempted", "consumed", "accepted", "abandoned"] as const)(
-    "settles a persisted %s launch receipt without dispatch",
-    async (phase) => {
-      const entry = run();
-      entry.execution.restartRecovery = {
-        phase,
-        sessionId: "session-id",
-        sessionMarker: "session-id:1",
-        idempotencyKey: "old-recovery-run",
-        lifecycleGeneration: getAgentEventLifecycleGeneration(),
-      };
-      rotateAgentEventLifecycleGeneration();
-      expect(await recover(entry)).toMatchObject({
-        status: "terminal",
-        suppressSessionEffects: true,
-      });
-      expect(dispatchAgent).not.toHaveBeenCalled();
-      expect(mocks.entries[childSessionKey]?.abortedLastRun).toBe(true);
-    },
-  );
-
-  it.each([
-    ["run", false],
-    ["admission", false],
-    ["run", true],
-    ["admission", true],
-  ] as const)("defers orphan marking to %s (recovered=%s)", async (owner, recovered) => {
-    const entry = run();
-    if (recovered) {
-      hiddenRecovery(entry);
-    }
-    orphan(entry, {
-      lifecycleRunId: recovered ? "steered-source" : entry.runId,
-      subagentRecovery: recovered
-        ? { lastRunId: entry.runId, sessionLifecycleRunId: "steered-source" }
-        : undefined,
-    });
-    const lease = owner === "admission" ? await admit() : undefined;
-    if (owner === "run") {
-      registerOwner("fresh-owner");
-    }
-    try {
-      expect(await recover(entry)).toMatchObject({ status: "handled" });
-      expect(session().abortedLastRun).toBe(false);
-      expect(dispatchAgent).not.toHaveBeenCalled();
-    } finally {
-      lease?.release();
-      clearAgentRunContext("fresh-owner");
-    }
-  });
-
-  it.each([
-    "current lifecycle",
-    "different task",
-    "different recovery",
-    "newer visible run",
-    "missing transcript",
-  ])("does not adopt a hidden recovery with %s", async (scenario) => {
-    const entry = run();
-    hiddenRecovery(entry);
-    entry.execution.lifecycleGeneration = getAgentEventLifecycleGeneration();
-    if (scenario !== "current lifecycle") {
-      rotateAgentEventLifecycleGeneration();
-    }
-    Object.assign(session(), {
-      status: undefined,
-      lifecycleRunId: scenario === "newer visible run" ? "visible-run" : "original-task-run",
-      abortedLastRun: false,
-      subagentRecovery: {
-        lastRunId: scenario === "different recovery" ? "older-recovery" : entry.runId,
-        ...(scenario !== "different task" ? { sessionLifecycleRunId: "original-task-run" } : {}),
-      },
-    });
-    if (scenario === "different task") {
-      entry.taskRunId = "different-task-run";
-    }
-    if (scenario === "missing transcript") {
-      entry.execution.transcriptTarget = undefined;
-    }
-    expect(await recover(entry)).toEqual({ status: "ignored" });
-    expectNoSessionEffects();
-  });
-
-  it.each(["session", "visible turn"])(
-    "keeps a replacement %s while marking waits",
-    async (replacementKind) => {
-      const entry = run();
-      if (replacementKind === "visible turn") {
-        hiddenRecovery(entry);
-      }
-      orphan(entry, {
-        lifecycleRunId: replacementKind === "visible turn" ? "steered-source" : entry.runId,
-        subagentRecovery: {
-          lastRunId: entry.runId,
-          sessionLifecycleRunId:
-            replacementKind === "visible turn" ? "steered-source" : entry.runId,
-        },
-      });
-      const replacementSessionId =
-        replacementKind === "session" ? "replacement-session" : "session-id";
-      mocks.applySessionEntryExactReplacements.mockImplementationOnce(async ({ update }) => {
-        const replacement = {
-          ...session(),
-          sessionId: replacementSessionId,
-          lifecycleRunId: "replacement-run",
-        };
-        mocks.entries[childSessionKey] = replacement;
-        return (await update([{ sessionKey: childSessionKey, entry: replacement }])).result;
-      });
-      expect(await recover(entry)).toEqual({ status: "deferred" });
-      expect(dispatchAgent).not.toHaveBeenCalled();
-      expect(session()).toMatchObject({
-        sessionId: replacementSessionId,
-        lifecycleRunId: "replacement-run",
-        abortedLastRun: false,
-      });
-    },
-  );
-  it.each(["yield", "steer", "terminal", "queued", "non-aborted"] as const)(
-    "leaves %s ownership unchanged",
-    async (owner) => {
-      const entry = run();
-      if (owner === "non-aborted") {
-        session().abortedLastRun = false;
-      } else {
-        claim(entry, owner);
-      }
-      expect(await recover(entry)).toEqual({ status: "ignored" });
-      expect(dispatchAgent).not.toHaveBeenCalled();
-    },
-  );
+  expectNoCalls(mocks.loadSessionEntry, finalizeInterruptedSubagentRun, dispatchAgent);
+  expect(resumeRequesterSettleWake).toHaveBeenCalledTimes(pendingWake ? 1 : 0);
+  expect(runs.get(entry.runId)).toEqual(before);
 });
 
+it("warns once for an unresolved owner", async () => {
+  const entry = run({ childSessionKey: "global", childAgentId: undefined });
+  const before = structuredClone(entry);
+  const { sweeper, runs, warn, finalizeInterruptedSubagentRun } = sweep(entry);
+
+  await sweeper.recoverInterruptedRuns();
+  await sweeper.recoverInterruptedRuns();
+  await sweeper.sweepOnce();
+
+  expect(warn).toHaveBeenCalledExactlyOnceWith(
+    "retained subagent record cannot be recovered",
+    expect.objectContaining({
+      runId: entry.runId,
+      childSessionKey: entry.childSessionKey,
+      error: expect.objectContaining({
+        message: expect.stringContaining(
+          "its owning agent is unresolved. No child work was changed. Inspect the retained record",
+        ),
+      }),
+    }),
+  );
+  expect(runs.get(entry.runId)).toEqual(before);
+  expectNoCalls(mocks.loadSessionEntry, finalizeInterruptedSubagentRun);
+  expectNoSessionEffects();
+});
+
+it.each<{
+  name: string;
+  entry?: Parameters<typeof run>[0];
+  session?: Partial<ReturnType<typeof session>>;
+}>([
+  { name: "missing identity", entry: { childSessionIdentity: undefined } },
+  {
+    name: "missing revision",
+    entry: { childSessionIdentity: { sessionId: "session-id" } },
+    session: { lifecycleRevision: "replacement-revision" },
+  },
+  { name: "newer execution", session: { lifecycleRunId: "newer-visible-run" } },
+  {
+    name: "legacy successor",
+    entry: { childSessionIdentity: undefined },
+    session: { status: "done", lifecycleRunId: "successor-run", abortedLastRun: false },
+  },
+])("settles $name without changing its session", async (scenario) => {
+  const entry = run(scenario.entry);
+  Object.assign(session(), scenario.session);
+  const beforeSession = structuredClone(session());
+
+  expect(await recover(entry)).toMatchObject({
+    status: "terminal",
+    suppressSessionEffects: true,
+  });
+
+  expect(session()).toEqual(beforeSession);
+  expectNoSessionEffects();
+});
+
+it("waits for the crash-loop breaker", async () => {
+  vi.useFakeTimers();
+  const pausedUntilMs = Date.now() + 2_000;
+  const runtime = {
+    ...gatewayRuntime,
+    prepareRestartRecovery: () =>
+      Date.now() < pausedUntilMs ? Promise.resolve(pausedUntilMs) : undefined,
+  };
+  const { sweeper, finalizeInterruptedSubagentRun } = sweep(run(), runtime);
+  finalizeInterruptedSubagentRun.mockResolvedValue(1);
+  try {
+    await sweeper.recoverInterruptedRuns();
+    await sweeper.sweepOnce();
+    expectNoCalls(mocks.loadSessionEntry, finalizeInterruptedSubagentRun);
+    await vi.advanceTimersByTimeAsync(1_999);
+    expect(finalizeInterruptedSubagentRun).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(finalizeInterruptedSubagentRun).toHaveBeenCalledOnce();
+    expect(dispatchAgent).not.toHaveBeenCalled();
+  } finally {
+    await sweeper.reset();
+    vi.useRealTimers();
+  }
+});
+
+it("abandons a superseded breaker check", async () => {
+  const preparation = createDeferred<number | undefined>();
+  const entered = createDeferred();
+  const { sweeper, finalizeInterruptedSubagentRun } = sweep(run(), {
+    ...gatewayRuntime,
+    prepareRestartRecovery: () => {
+      entered.resolve();
+      return preparation.promise;
+    },
+  });
+  const pending = sweeper.recoverInterruptedRuns();
+  try {
+    await entered.promise;
+    rotateAgentEventLifecycleGeneration();
+  } finally {
+    preparation.resolve(undefined);
+    await pending;
+    await sweeper.reset();
+  }
+  expectNoCalls(mocks.loadSessionEntry, finalizeInterruptedSubagentRun);
+});
+
+it.each(["run", "admission", "run after admission"] as const)(
+  "recovers when %s releases ownership",
+  async (owner) => {
+    vi.useFakeTimers();
+    const entry = run();
+    entry.execution.status = "interrupted";
+    const { sweeper, finalizeInterruptedSubagentRun } = sweep(entry);
+    const lease = owner !== "run" ? await admit() : undefined;
+    if (owner !== "admission") {
+      registerOwner("retained-owner");
+    }
+    try {
+      await sweeper.sweepOnce();
+      mocks.loadSessionEntry.mockClear();
+      await sweeper.sweepOnce();
+      expectNoCalls(mocks.loadSessionEntry, finalizeInterruptedSubagentRun);
+      lease?.release();
+      if (owner === "run after admission") {
+        await vi.advanceTimersByTimeAsync(1_000);
+        expect(finalizeInterruptedSubagentRun).not.toHaveBeenCalled();
+      }
+      clearAgentRunContext("retained-owner");
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(mocks.loadSessionEntry).toHaveBeenCalled();
+      expect(finalizeInterruptedSubagentRun).toHaveBeenCalledOnce();
+    } finally {
+      await sweeper.reset();
+      lease?.release();
+      clearAgentRunContext("retained-owner");
+      vi.useRealTimers();
+    }
+  },
+);
+
+it.each(
+  (["yield", "steer", "kill", "queued"] as const).flatMap((owner) =>
+    (["initial", "currency"] as const).map((read) => ({ owner, read })),
+  ),
+)("defers to $owner during the $read read", async ({ owner, read }) => {
+  const entry = run();
+  const readEntry = read === "initial" ? mocks.loadSessionEntry : mocks.readSessionCurrent;
+  readEntry.mockImplementationOnce(() => {
+    claim(entry, owner);
+    return session();
+  });
+  expect(await recover(entry)).toEqual({ status: "deferred" });
+  expectNoSessionEffects();
+});
+
+it.each([undefined, "replacement-revision"])(
+  "settles a changed revision (%s)",
+  async (lifecycleRevision) => {
+    const entry = run({
+      childSessionIdentity: { sessionId: "session-id", lifecycleRevision: "original-revision" },
+    });
+    orphan(entry, { lifecycleRevision });
+    const beforeRun = structuredClone(entry);
+    const beforeSession = structuredClone(session());
+    const result = await recover(entry);
+    expect(result).toMatchObject({
+      status: "terminal",
+      suppressSessionEffects: true,
+      error: expect.stringContaining("original session incarnation changed"),
+    });
+    if (result.status === "terminal") {
+      expect(await result.recoveryCurrent?.prepare()).toBe(true);
+      expect(result.sessionEffects).toBeUndefined();
+    }
+
+    expect(entry).toEqual(beforeRun);
+    expect(session()).toEqual(beforeSession);
+    expectNoSessionEffects();
+    expect(restartRecoveryTestHarness.warn).not.toHaveBeenCalled();
+  },
+);
+
+it.each([60_000, 3 * 24 * 60 * 60_000])(
+  "reconciles a hard-kill orphan aged %i ms",
+  async (ageMs) => {
+    const entry = run();
+    const updatedAt = Date.now() - ageMs;
+    orphan(entry, { updatedAt });
+
+    expect(await recover(entry)).toMatchObject({
+      status: "terminal",
+      error: expect.stringContaining("Gateway restart"),
+    });
+    expect(session().updatedAt).toBe(updatedAt);
+    expectNoCalls(dispatchAgent, gatewayRuntime.sendRecoveryNotice);
+  },
+);
+
+it.each([
+  "current lifecycle",
+  "different run",
+  "completed session",
+  "completed session with stale abort marker",
+  "legacy completed session",
+  "legacy completed session with stale abort marker",
+])("does not invent an interruption for %s", async (scenario) => {
+  const entry = run(scenario.startsWith("legacy") ? { childSessionIdentity: undefined } : {});
+  entry.execution.lifecycleGeneration = getAgentEventLifecycleGeneration();
+  if (scenario !== "current lifecycle") {
+    rotateAgentEventLifecycleGeneration();
+  }
+  Object.assign(session(), {
+    status: scenario.includes("completed session") ? "done" : undefined,
+    lifecycleRunId: scenario === "different run" ? "newer-run" : entry.runId,
+    abortedLastRun: scenario.endsWith("stale abort marker"),
+  });
+  expect(await recover(entry)).toEqual({ status: "ignored" });
+  expectNoSessionEffects();
+});
+
+it.each([
+  "current lifecycle",
+  "different task",
+  "different recovery",
+  "newer visible run",
+  "missing transcript",
+])("does not adopt a hidden recovery with %s", async (scenario) => {
+  const entry = run();
+  hiddenRecovery(entry);
+  entry.execution.lifecycleGeneration = getAgentEventLifecycleGeneration();
+  if (scenario !== "current lifecycle") {
+    rotateAgentEventLifecycleGeneration();
+  }
+  Object.assign(session(), {
+    status: undefined,
+    lifecycleRunId: scenario === "newer visible run" ? "visible-run" : "original-task-run",
+    abortedLastRun: false,
+    subagentRecovery: {
+      lastRunId: scenario === "different recovery" ? "older-recovery" : entry.runId,
+      ...(scenario !== "different task" ? { sessionLifecycleRunId: "original-task-run" } : {}),
+    },
+  });
+  if (scenario === "different task") {
+    entry.taskRunId = "different-task-run";
+  }
+  if (scenario === "missing transcript") {
+    entry.execution.transcriptTarget = undefined;
+  }
+  expect(await recover(entry)).toEqual({ status: "ignored" });
+  expectNoSessionEffects();
+});
+
+it.each(["attempted", "consumed", "accepted", "abandoned"] as const)(
+  "settles a persisted %s launch receipt without dispatch",
+  async (phase) => {
+    const entry = run();
+    entry.execution.restartRecovery = {
+      phase,
+      sessionId: "session-id",
+      sessionMarker: "session-id:1",
+      idempotencyKey: "old-recovery-run",
+      lifecycleGeneration: getAgentEventLifecycleGeneration(),
+    };
+    rotateAgentEventLifecycleGeneration();
+    expect(await recover(entry)).toMatchObject({
+      status: "terminal",
+      suppressSessionEffects: true,
+    });
+    expect(dispatchAgent).not.toHaveBeenCalled();
+    expect(mocks.entries[childSessionKey]?.abortedLastRun).toBe(true);
+  },
+);
+
+it.each([
+  ["run", false],
+  ["admission", false],
+  ["run", true],
+  ["admission", true],
+] as const)("defers orphan marking to %s (recovered=%s)", async (owner, recovered) => {
+  const entry = recoveredOrphan(recovered);
+  const lease = owner === "admission" ? await admit() : undefined;
+  if (owner === "run") {
+    registerOwner("fresh-owner");
+  }
+  try {
+    expect(await recover(entry)).toMatchObject({ status: "handled" });
+    expect(session().abortedLastRun).toBe(false);
+    expect(dispatchAgent).not.toHaveBeenCalled();
+  } finally {
+    lease?.release();
+    clearAgentRunContext("fresh-owner");
+  }
+});
+
+it.each(["session", "visible turn"])(
+  "keeps a replacement %s while marking waits",
+  async (replacementKind) => {
+    const entry = recoveredOrphan(replacementKind === "visible turn", true);
+    const replacementSessionId =
+      replacementKind === "session" ? "replacement-session" : "session-id";
+    mocks.applySessionEntryExactReplacements.mockImplementationOnce(async ({ update }) => {
+      const replacement = {
+        ...session(),
+        sessionId: replacementSessionId,
+        lifecycleRunId: "replacement-run",
+      };
+      mocks.entries[childSessionKey] = replacement;
+      return (await update([{ sessionKey: childSessionKey, entry: replacement }])).result;
+    });
+    expect(await recover(entry)).toEqual({ status: "deferred" });
+    expect(dispatchAgent).not.toHaveBeenCalled();
+    expect(session()).toMatchObject({
+      sessionId: replacementSessionId,
+      lifecycleRunId: "replacement-run",
+      abortedLastRun: false,
+    });
+  },
+);
+it.each(["yield", "steer", "terminal", "queued", "non-aborted"] as const)(
+  "leaves %s ownership unchanged",
+  async (owner) => {
+    const entry = run();
+    if (owner === "non-aborted") {
+      session().abortedLastRun = false;
+    } else {
+      claim(entry, owner);
+    }
+    expect(await recover(entry)).toEqual({ status: "ignored" });
+    expect(dispatchAgent).not.toHaveBeenCalled();
+  },
+);
 describe("interrupted requester-settle continuation ownership", () => {
-  beforeEach(() => restartRecoveryTestHarness.reset());
   afterEach(() => subagentRuns.clear());
 
   function cohort(quiet = false) {
@@ -527,32 +507,23 @@ describe("interrupted requester-settle continuation ownership", () => {
     { privateCompletion: true, physicalLocator: true, quiet: true },
     { backoff: 120_000, privateCompletion: true, quiet: true },
     { legacy: true },
-  ])(
-    "keeps saved wake ownership (%j)",
-    async ({
-      backoff = 0,
-      privateCompletion = false,
-      physicalLocator = false,
-      quiet = false,
-      legacy = false,
-    }) => {
-      const { child, worker } = cohort(quiet);
-      if (legacy) {
-        worker.childSessionIdentity = undefined;
-      }
-      if (physicalLocator) {
-        mocks.storePath = child.requesterStorePath!;
-      }
-      child.requesterSettleWake!.nextAttemptAt = Date.now() + backoff;
-      if (privateCompletion) {
-        child.completionTarget = "parent";
-        child.requesterSettleWake!.attemptCount = 2;
-      }
-      expect(await recover(worker)).toEqual({ status: "handled" });
-      expect(worker.execution.outcome).toBeUndefined();
-      expectNoSessionEffects();
-    },
-  );
+  ])("keeps saved wake ownership (%j)", async (options) => {
+    const { child, worker } = cohort(options.quiet);
+    if (options.legacy) {
+      worker.childSessionIdentity = undefined;
+    }
+    if (options.physicalLocator) {
+      mocks.storePath = child.requesterStorePath!;
+    }
+    child.requesterSettleWake!.nextAttemptAt = Date.now() + (options.backoff ?? 0);
+    if (options.privateCompletion) {
+      child.completionTarget = "parent";
+      child.requesterSettleWake!.attemptCount = 2;
+    }
+    expect(await recover(worker)).toEqual({ status: "handled" });
+    expect(worker.execution.outcome).toBeUndefined();
+    expectNoSessionEffects();
+  });
 
   const cancelCustody = ({ child }: ReturnType<typeof cohort>) => {
     child.killReconciliation = { killedAt: Date.now(), suppressTaskDelivery: true };
