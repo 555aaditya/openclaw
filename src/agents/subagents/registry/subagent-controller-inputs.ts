@@ -78,3 +78,13 @@ export function retireSubagentControllerInputs(entry: SubagentRunRecord): void {
     }
   }
 }
+
+/** A terminal individual delivery releases its reservation, not the requester's owed cohort. */
+export function retireSubagentCompletionControllerInput(entry: SubagentRunRecord): void {
+  const completionId = subagentCompletionSourceId(entry);
+  for (const input of subagentControllerInputs(entry)) {
+    if (input.sourceTurnId === completionId && !input.claim) {
+      abortSessionControllerInput(input, new Error("Subagent completion delivery settled"));
+    }
+  }
+}

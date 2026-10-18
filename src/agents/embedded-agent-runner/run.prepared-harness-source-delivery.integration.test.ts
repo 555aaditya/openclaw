@@ -92,7 +92,7 @@ beforeAll(globalBeforeAll0);
 describe("prepared harness source delivery", () => {
   let state: OpenClawTestState;
   let restoreSynthesis: (() => void) | undefined;
-  async function loadSourceDeliveryHarness() {
+  async function loadSourceDeliveryHarness(agentId = "main") {
     // This integration constructs the real tool surface; dispatch mocks only readiness.
     vi.doUnmock("../tools/ask-user-tool.js");
     // The runner resets modules; keep its private payload metadata shared with dispatch.
@@ -102,12 +102,12 @@ describe("prepared harness source delivery", () => {
     state = await createOpenClawTestState({ label: "prepared-source-delivery" });
     const { openOpenClawAgentDatabase } = await import("../../state/openclaw-agent-db.js");
     // Gateway boot admits the database before retained session lookup captures its identity.
-    openOpenClawAgentDatabase({ agentId: "main" });
+    openOpenClawAgentDatabase({ agentId });
     const { setRuntimeConfigSnapshot } = await import("../../config/runtime-snapshot.js");
     setRuntimeConfigSnapshot({});
     // Dispatch and the real runner share the database admitted above.
     sessionStoreMocks.resolveSessionStorePathCore.mockReturnValue(
-      path.join(state.sessionsDir(), "sessions.json"),
+      path.join(state.sessionsDir(agentId), "sessions.json"),
     );
     return loaded;
   }
@@ -571,7 +571,8 @@ describe("prepared harness source delivery", () => {
   });
 
   it("prepares a Codex primary without pinning a plugin-owned fallback", async () => {
-    const { runEmbeddedAgent, registerPreparedAgentHarness } = await loadSourceDeliveryHarness();
+    const { runEmbeddedAgent, registerPreparedAgentHarness } =
+      await loadSourceDeliveryHarness("worker");
     registerPreparedAgentHarness({
       id: "fallback-owner",
       label: "Fallback owner",
@@ -706,7 +707,7 @@ describe("prepared harness source delivery", () => {
   it.each(["complete", "parent abort", "queue timeout"] as const)(
     "starts an isolated probe outside its caller's admitted generation (%s)",
     async (outcome) => {
-      const { runEmbeddedAgent } = await loadSourceDeliveryHarness();
+      const { runEmbeddedAgent } = await loadSourceDeliveryHarness("openclaw");
       const { config, workspaceDir, baseLease, admittedGeneration } =
         await createAdmittedGeneration("openclaw");
       const isolatedMetadataSnapshot = {
@@ -818,7 +819,7 @@ describe("prepared harness source delivery", () => {
   );
 
   it("keeps the runtime override authoritative across fallback preparation", async () => {
-    const { runEmbeddedAgent } = await loadSourceDeliveryHarness();
+    const { runEmbeddedAgent } = await loadSourceDeliveryHarness("worker");
     mockedGlobalHookRunner.hasHooks.mockReturnValue(false);
     mockedBuildEmbeddedRunPayloads.mockReturnValue([{ text: "primary" }]);
     mockedRunEmbeddedAttempt.mockResolvedValueOnce(

@@ -24,6 +24,7 @@ import { closeOpenClawAgentDatabasesAsync } from "../../../state/openclaw-agent-
 import { prepareEmbeddedAttemptTimeout } from "../../embedded-agent-runner/run/attempt-timeout-prepare.js";
 import { resolveAgentTimeoutMs } from "../../timeout.js";
 import { consumeSubagentPauseNotice } from "../registry/subagent-delivery-state.js";
+import { subagentRuns } from "../registry/subagent-registry-memory.js";
 import type { SubagentRunRecord } from "../registry/subagent-registry.types.js";
 import {
   registerRequesterFinalAttachment,
@@ -101,6 +102,10 @@ describe("requester settle dispatch deadline", () => {
         child.requesterSettleWake = undefined;
         child.delivery = { status: "pending", attemptCount: 1, nextAttemptAt: due };
       }
+      subagentRuns.set(child.runId, child);
+      onTestFinished(() => {
+        subagentRuns.delete(child.runId);
+      });
       expect(await reserveRestoredSubagentControllerSources([child])).toEqual([]);
       expect(
         getExistingSessionControllerMailbox(REQUESTER_KEY, REQUESTER_TARGET)?.entries ?? [],

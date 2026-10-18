@@ -19,6 +19,7 @@ import {
 } from "../channels/message/ingress-drain.js";
 import { createTestIngressQueue } from "../channels/message/ingress-drain.test-helpers.js";
 import { SESSION_CONTROLLER_DRAIN_TIMEOUT_MS } from "../sessions/session-controller.lifecycle.js";
+import { executeExistingOpenClawStateRead } from "../state/openclaw-state-db-readonly.js";
 import { setUserProfileRole } from "../state/user-profile-writes.worker.js";
 import { ensureProfileForEmail } from "../state/user-profiles.js";
 import { createOpenClawTestState } from "../test-utils/openclaw-test-state.js";
@@ -28,12 +29,14 @@ import {
   postSubagentKill,
   subagentStopProxyHeaders,
   type KillResponse,
+  type SpawnReceipt,
 } from "./server.subagent-stop-settlement.product.test-support.js";
 import { disconnectGatewayClient, startGatewayWithClient } from "./test-helpers.e2e.js";
 
 const proxyUser = "subagent-stop-administrator@example.test";
 const parentPrompt = "Spawn the child that will yield.";
 const childTask = "Pause this unfinished task until an incoming continuation arrives.";
+const queuedInput = "Queued durable child input";
 let responseSequence = 0;
 
 function toolCallEvents(name: string, args: Record<string, unknown>) {
@@ -83,23 +86,19 @@ function toolCallEvents(name: string, args: Record<string, unknown>) {
   ];
 }
 
-function findChildSessionKey(value: unknown): string | undefined {
+function findSpawnReceipt(value: unknown): SpawnReceipt | undefined {
   // The external model transport sees the sessions_spawn result as nested request
   // input. Walk that public payload instead of inspecting the in-process registry.
   if (typeof value === "string") {
-    const matched = value.match(/agent:[^"\\\s]+:subagent:[^"\\\s]+/)?.[0];
-    if (matched) {
-      return matched;
-    }
     try {
-      return findChildSessionKey(JSON.parse(value) as unknown);
+      return findSpawnReceipt(JSON.parse(value) as unknown);
     } catch {
       return undefined;
     }
   }
   if (Array.isArray(value)) {
     for (const item of value) {
-      const matched = findChildSessionKey(item);
+      const matched = findSpawnReceipt(item);
       if (matched) {
         return matched;
       }
@@ -107,8 +106,18 @@ function findChildSessionKey(value: unknown): string | undefined {
     return undefined;
   }
   if (value && typeof value === "object") {
+    if (
+      "status" in value &&
+      value.status === "accepted" &&
+      "childSessionKey" in value &&
+      typeof value.childSessionKey === "string" &&
+      "runId" in value &&
+      typeof value.runId === "string"
+    ) {
+      return { childSessionKey: value.childSessionKey, runId: value.runId };
+    }
     for (const item of Object.values(value)) {
-      const matched = findChildSessionKey(item);
+      const matched = findSpawnReceipt(item);
       if (matched) {
         return matched;
       }
@@ -128,9 +137,10 @@ async function readRequestBody(request: IncomingMessage): Promise<string> {
 async function startYieldModelServer(allowYield: Promise<void>) {
   // Parent requests spawn the child. The child's first request stays open until
   // ingress has queued a follow-up, then returns a real sessions_yield tool call.
-  const childAccepted = createDeferred<string>();
+  const childAccepted = createDeferred<SpawnReceipt>();
   const childModelStarted = createDeferred();
   let yieldSent = false;
+  let queuedInputRequests = 0;
   const server = createServer((request, response) => {
     void handleRequest(request, response).catch((error: unknown) => {
       if (!response.headersSent) {
@@ -152,6 +162,9 @@ async function startYieldModelServer(allowYield: Promise<void>) {
     }
     const body = await readRequestBody(request);
     const parsed = JSON.parse(body) as unknown;
+    if (body.includes(queuedInput)) {
+      queuedInputRequests += 1;
+    }
     // A fresh child attempt is the only request carrying the child task without a
     // prior tool result. Holding it keeps the admitted run available to ingress.
     if (body.includes(childTask) && !body.includes("function_call_output")) {
@@ -170,9 +183,9 @@ async function startYieldModelServer(allowYield: Promise<void>) {
       );
       return;
     }
-    const childSessionKey = findChildSessionKey(parsed);
-    if (childSessionKey) {
-      childAccepted.resolve(childSessionKey);
+    const receipt = findSpawnReceipt(parsed);
+    if (receipt) {
+      childAccepted.resolve(receipt);
     }
     writeOpenAiResponsesText(response, {
       text: body.includes(childTask) ? "NO_REPLY" : "Child accepted.",
@@ -189,6 +202,7 @@ async function startYieldModelServer(allowYield: Promise<void>) {
     childAccepted: childAccepted.promise,
     childModelStarted: childModelStarted.promise,
     hasSentYield: () => yieldSent,
+    queuedInputRequests: () => queuedInputRequests,
     url: `http://127.0.0.1:${address.port}/v1`,
     close: async () => {
       server.closeAllConnections();
@@ -249,6 +263,7 @@ it("bounds public child Stop while yielded queued-input cleanup remains pending"
   const releaseCleanup = createDeferred();
   const releaseStarted = createDeferred();
   const releaseFinished = createDeferred();
+  let releaseCommitted = false;
   let stopResponse: Promise<KillResponse> | undefined;
   let drain: ReturnType<typeof createChannelIngressDrain> | undefined;
   await runQaGatewayFixture(
@@ -265,7 +280,8 @@ it("bounds public child Stop while yielded queued-input cleanup remains pending"
           deliver: false,
         }),
       ).resolves.toMatchObject({ runId: parentRunId, status: "started" });
-      childSessionKey = await model.childAccepted;
+      const child = await model.childAccepted;
+      childSessionKey = child.childSessionKey;
       await model.childModelStarted;
 
       // Real channel ingress claims durable custody, then the reply runner defers the
@@ -276,7 +292,8 @@ it("bounds public child Stop while yielded queued-input cleanup remains pending"
         releaseStarted.resolve();
         await releaseCleanup.promise;
         try {
-          return await release(...args);
+          releaseCommitted = await release(...args);
+          return releaseCommitted;
         } finally {
           releaseFinished.resolve();
         }
@@ -295,9 +312,9 @@ it("bounds public child Stop while yielded queued-input cleanup remains pending"
               To: "channel:queued-cleanup",
               SessionKey: event.payload.text,
               MessageSid: event.id,
-              Body: "Queued durable child input",
-              CommandBody: "Queued durable child input",
-              BodyForAgent: "Queued durable child input",
+              Body: queuedInput,
+              CommandBody: queuedInput,
+              BodyForAgent: queuedInput,
             }),
             cfg,
             dispatcherOptions: { deliver: async () => undefined },
@@ -335,16 +352,37 @@ it("bounds public child Stop while yielded queued-input cleanup remains pending"
       });
       releaseCleanup.resolve();
       await releaseFinished.promise;
-      // A new Stop must see the retained cancellation owner rather than treating the
-      // paused task as fresh work; durable reconciliation owns its later completion.
+      // Once cleanup releases custody, repeated Stop observes the same durable
+      // cancellation without killing the run again or dispatching its held queued input.
       const retry = await postSubagentKill(gateway.port, childSessionKey);
-      expect(retry, JSON.stringify(retry)).toMatchObject({
-        status: 503,
-        body: {
-          ok: false,
-          error: { message: expect.stringMatching(/ownership changed during cancellation/i) },
-        },
+      expect(retry, JSON.stringify(retry)).toEqual({
+        status: 200,
+        body: { ok: true, killed: false },
       });
+      const persisted = await executeExistingOpenClawStateRead(
+        { env: state.env },
+        { type: "subagents.runs", scope: { kind: "ids", runIds: [child.runId] } },
+      );
+      if (!persisted || persisted.projection === "maintenance") {
+        throw new Error("Expected the complete persisted subagent run");
+      }
+      const stopped = persisted.runs.get(child.runId);
+      expect(stopped).toMatchObject({
+        runId: child.runId,
+        childSessionKey: child.childSessionKey,
+        endedReason: "subagent-killed",
+        execution: { status: "terminal" },
+      });
+      expect(stopped?.pauseReason).toBeUndefined();
+      expect(releaseCommitted).toBe(true);
+      await expect(queue.listClaims()).resolves.toEqual([]);
+      // Unadopted ingress remains durable for a later, freshly admitted attempt.
+      await expect(queue.listPending()).resolves.toEqual([
+        expect.objectContaining({
+          id: "queued-child-input",
+          payload: { text: child.childSessionKey },
+        }),
+      ]);
     },
     () => releaseCleanup.resolve(),
     async () => {
@@ -360,4 +398,5 @@ it("bounds public child Stop while yielded queued-input cleanup remains pending"
     () => model.close(),
     () => state.cleanup(),
   );
+  expect(model.queuedInputRequests()).toBe(0);
 });

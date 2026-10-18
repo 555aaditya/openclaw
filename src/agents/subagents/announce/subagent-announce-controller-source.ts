@@ -16,6 +16,7 @@ import {
 } from "../../../sessions/session-controller.mailbox.js";
 import { readInterruptedRunId } from "../../main-session-recovery/main-session-restart-recovery-shared.js";
 import { subagentCompletionSourceId } from "../registry/subagent-controller-inputs.js";
+import { getCurrentSubagentRunOwner, subagentRuns } from "../registry/subagent-registry-memory.js";
 import type { SubagentRunRecord } from "../registry/subagent-registry.types.js";
 import {
   buildRequesterSettleWakeIdentity,
@@ -129,14 +130,30 @@ export async function reserveRestoredSubagentControllerSources(
     ) {
       reservations.push([
         entry.delivery.createdAt ?? entry.execution.endedAt ?? entry.createdAt,
-        () =>
-          reserveSubagentControllerSource(
-            entry,
-            subagentCompletionSourceId(entry),
+        async () => {
+          const requester = await loadRequesterSessionEntry(
+            entry.requesterSessionKey,
+            entry.requesterAgentId,
+          );
+          // A live finalizer can settle this obligation while restore reads its requester.
+          const current = getCurrentSubagentRunOwner(subagentRuns, entry);
+          if (
+            !current ||
+            hasRequesterCompletionCohort(current) ||
+            (current.delivery?.status !== "pending" &&
+              current.delivery?.status !== "in_progress") ||
+            (current.delivery.nextAttemptAt ?? 0) > Date.now()
+          ) {
+            return undefined;
+          }
+          return reserveSubagentControllerSource(
+            current,
+            subagentCompletionSourceId(current),
             undefined,
             undefined,
-            { replaceInactiveTarget: true },
-          ),
+            { replaceInactiveTarget: true, requester },
+          );
+        },
       ]);
     }
     const wake = entry.requesterSettleWake;
