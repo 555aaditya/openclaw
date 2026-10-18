@@ -12,6 +12,7 @@ type FreshnessCheck = { name: string; args: string[]; fix: string };
 const DOCS_MARKDOWN_PATH_RE = /^(?:docs\/.+\.mdx?|README\.md)$/u;
 const NATIVE_I18N_INPUT_PATH_RE =
   /^(?:apps\/|scripts\/(?:native-app-i18n|native-i18n-(?:inventory|locales)|android-app-i18n|apple-app-i18n)\.ts$)/u;
+const AGENTS_MD_PATH_RE = /(?:^|\/)AGENTS\.md$/u;
 const LINE_CAP_INPUT_PATH_RE = /\.(?:ts|tsx|mts|mjs)$|^\.oxlintrc\.json$/u;
 
 /** Selects freshness checks for staged paths; an empty list means the hook adds no work. */
@@ -24,6 +25,13 @@ export function selectStagedFreshnessChecks(paths: string[]): FreshnessCheck[] {
       name: "docs markdown lint",
       args: ["lint:docs", "--no-globs", ...docs],
       fix: "pnpm lint:docs:fix",
+    });
+  }
+  if (some(AGENTS_MD_PATH_RE)) {
+    checks.push({
+      name: "AGENTS.md bootstrap size",
+      args: ["check:agents-md-size"],
+      fix: "cut rules or move them to the owning scoped AGENTS.md",
     });
   }
   if (hasProtocolGenerationInput(paths)) {
