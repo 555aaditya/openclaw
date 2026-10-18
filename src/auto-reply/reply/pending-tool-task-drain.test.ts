@@ -14,7 +14,9 @@ describe("drainPendingToolTasks", () => {
   });
 
   it("settles immediately when there are no pending tasks", async () => {
-    await expect(drainPendingToolTasks({ tasks: new Set() })).resolves.toBeUndefined();
+    await expect(drainPendingToolTasks({ tasks: new Set() })).resolves.toEqual({
+      kind: "settled",
+    });
   });
 
   it("resets the idle timeout after each completed task", async () => {
@@ -24,16 +26,16 @@ describe("drainPendingToolTasks", () => {
     const onTimeout = vi.fn();
     const tasks = new Set([first.promise, second.promise]);
 
-    const drain = drainPendingToolTasks({ tasks, onTimeout });
+    const drain = drainPendingToolTasks({ tasks, idleTimeoutMs: 100, onTimeout });
 
-    await vi.advanceTimersByTimeAsync(24_000);
+    await vi.advanceTimersByTimeAsync(80);
     first.resolve();
     await Promise.resolve();
-    await vi.advanceTimersByTimeAsync(24_000);
+    await vi.advanceTimersByTimeAsync(80);
     expect(onTimeout).not.toHaveBeenCalled();
 
     second.resolve();
-    await expect(drain).resolves.toBeUndefined();
+    await expect(drain).resolves.toEqual({ kind: "settled" });
     expect(onTimeout).not.toHaveBeenCalled();
   });
 
@@ -42,28 +44,28 @@ describe("drainPendingToolTasks", () => {
     const second = createDeferred();
     const tasks = new Set([first.promise]);
 
-    const drain = drainPendingToolTasks({ tasks });
+    const drain = drainPendingToolTasks({ tasks, idleTimeoutMs: 1_000 });
     tasks.add(second.promise);
     first.resolve();
     await flushPromises();
     expect(tasks).toEqual(new Set([second.promise]));
 
     second.resolve();
-    await expect(drain).resolves.toBeUndefined();
+    await expect(drain).resolves.toEqual({ kind: "settled" });
   });
 
-  it("continues when no pending task settles before the idle window", async () => {
+  it("returns timeout when no pending task settles before the idle window", async () => {
     vi.useFakeTimers();
     const stuck = createDeferred();
     const onTimeout = vi.fn();
     const tasks = new Set([stuck.promise]);
 
-    const drain = drainPendingToolTasks({ tasks, onTimeout });
-    await vi.advanceTimersByTimeAsync(30_000);
+    const drain = drainPendingToolTasks({ tasks, idleTimeoutMs: 100, onTimeout });
+    await vi.advanceTimersByTimeAsync(100);
 
-    await expect(drain).resolves.toBeUndefined();
+    await expect(drain).resolves.toEqual({ kind: "timeout", remaining: 1 });
     expect(onTimeout).toHaveBeenCalledWith(
-      "pending tool tasks made no progress within 30000ms; proceeding with 1 task(s) still pending to avoid session deadlock",
+      "pending tool tasks made no progress within 100ms; proceeding with 1 task(s) still pending to avoid session deadlock",
     );
     expect(tasks.size).toBe(1);
   });
@@ -73,12 +75,12 @@ describe("drainPendingToolTasks", () => {
     const later = createDeferred();
     const tasks = new Set([failed.promise, later.promise]);
 
-    const drain = drainPendingToolTasks({ tasks });
+    const drain = drainPendingToolTasks({ tasks, idleTimeoutMs: 1_000 });
     failed.reject(new Error("send failed"));
     await flushPromises();
     expect(tasks.size).toBe(1);
     later.resolve();
 
-    await expect(drain).resolves.toBeUndefined();
+    await expect(drain).resolves.toEqual({ kind: "settled" });
   });
 });

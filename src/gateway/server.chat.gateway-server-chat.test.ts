@@ -19,7 +19,6 @@ import {
   registerAgentRunContext,
   releaseAgentRunContext,
 } from "../infra/agent-run-registry.js";
-import * as gatewayActiveWork from "../infra/gateway-active-work.js";
 import { createSafeGatewayRestartPreflight } from "../infra/restart-coordinator.js";
 import {
   getActiveGatewayRootWorkCount,
@@ -1094,7 +1093,6 @@ describe("gateway server chat", () => {
           return terminalizeAdmission(params);
         });
       const messagePromises: Promise<unknown>[] = [];
-      let restoreSnapshot = () => {};
       const sessionChanged = await (async () => {
         try {
           dispatchInboundMessageMock.mockImplementationOnce(async () => {
@@ -1136,14 +1134,7 @@ describe("gateway server chat", () => {
             getAcpRuns: () => 0,
             getMediaRuns: () => 0,
           };
-          const createSnapshot = gatewayActiveWork.createGatewayActiveWorkSnapshot;
-          const snapshotSpy = vi
-            .spyOn(gatewayActiveWork, "createGatewayActiveWorkSnapshot")
-            .mockImplementation((defaults, options) =>
-              createSnapshot({ ...defaults, ...restartInspectors }, options),
-            );
-          restoreSnapshot = () => snapshotSpy.mockRestore();
-          expect(createSafeGatewayRestartPreflight()).toMatchObject({
+          expect(createSafeGatewayRestartPreflight(restartInspectors)).toMatchObject({
             safe: false,
             counts: { rootRequests: 1 },
           });
@@ -1151,13 +1142,12 @@ describe("gateway server chat", () => {
           await errorPromise;
           const changed = await sessionChangedPromise;
           await withinTest(requestExecution.waitForCompletion("idem-dispatch-error-1"), signal);
-          expect(createSafeGatewayRestartPreflight().safe).toBe(true);
+          expect(createSafeGatewayRestartPreflight(restartInspectors).safe).toBe(true);
           return changed;
         } finally {
           rejectDispatch.resolve();
           releasePersistence.resolve();
           await Promise.allSettled(messagePromises);
-          restoreSnapshot();
           persistSpy.mockRestore();
           resetGatewayWorkAdmission();
         }

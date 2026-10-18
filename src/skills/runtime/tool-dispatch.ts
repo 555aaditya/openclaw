@@ -2,6 +2,7 @@ import { applyToolAvailabilityDescriptions } from "../../agents/agent-tools.defe
 import { resolveEffectiveToolPolicy } from "../../agents/agent-tools.policy.js";
 import type { AnyAgentTool } from "../../agents/agent-tools.types.js";
 import { resolveConversationQuestionInputMode } from "../../agents/conversation-capability-profile.js";
+import type { createOpenClawToolsAsync } from "../../agents/openclaw-tools.js";
 import { filterRequesterYieldTools } from "../../agents/openclaw-tools.requester-yield.js";
 import { resolveRequesterToolPolicies } from "../../agents/requester-tool-policy.js";
 import { resolveSandboxRuntimeStatus } from "../../agents/sandbox/runtime-status.js";
@@ -47,31 +48,37 @@ type SkillDispatchMessageContext = {
   memberRoleIds?: string[];
 };
 
+export type SkillToolDispatchDependencies = {
+  createOpenClawToolsAsync: typeof createOpenClawToolsAsync;
+};
+
 /**
  * Policy-enforcement seam for skill `command-dispatch: tool` invocations.
  * Keep this aligned with normal tool surfaces across sender, group, sandbox,
  * and subagent policy layers.
  */
-export async function resolveSkillDispatchTools(params: {
-  message: SkillDispatchMessageContext;
-  cfg: OpenClawConfig;
-  agentId: string;
-  agentDir?: string;
-  authProfileStoreSource?: boolean;
-  sessionEntry?: SessionEntry;
-  sessionKey: string;
-  workspaceDir: string;
-  provider: string;
-  model: string;
-  senderIsOwner: boolean;
-  senderId?: string;
-  currentChannelId?: string;
-  skillCommand?: Pick<SkillCommandSpec, "name" | "skillFile" | "skillName" | "skillSource"> & {
-    toolName?: string;
-  };
-  groupId?: string;
-}): Promise<AnyAgentTool[]> {
-  const { createOpenClawToolsAsync } = await import("../../agents/openclaw-tools.js");
+export async function resolveSkillDispatchTools(
+  params: {
+    message: SkillDispatchMessageContext;
+    cfg: OpenClawConfig;
+    agentId: string;
+    agentDir?: string;
+    authProfileStoreSource?: boolean;
+    sessionEntry?: SessionEntry;
+    sessionKey: string;
+    workspaceDir: string;
+    provider: string;
+    model: string;
+    senderIsOwner: boolean;
+    senderId?: string;
+    currentChannelId?: string;
+    skillCommand?: Pick<SkillCommandSpec, "name" | "skillFile" | "skillName" | "skillSource"> & {
+      toolName?: string;
+    };
+    groupId?: string;
+  },
+  dependencies: SkillToolDispatchDependencies,
+): Promise<AnyAgentTool[]> {
   const channel =
     resolveGatewayMessageChannel(params.message.surface) ??
     resolveGatewayMessageChannel(params.message.provider);
@@ -163,7 +170,7 @@ export async function resolveSkillDispatchTools(params: {
         },
       }
     : undefined;
-  const tools = await createOpenClawToolsAsync({
+  const tools = await dependencies.createOpenClawToolsAsync({
     gatewayConfigReadAllowed,
     agentSessionKey: params.sessionKey,
     agentChannel: channel,

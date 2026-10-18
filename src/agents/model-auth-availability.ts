@@ -207,6 +207,7 @@ export function createModelAuthAvailabilityResolver(
   );
   const external = externalCliProviderIds.length
     ? resolveExternalCliAuthProfiles(params.authStore, {
+        allowKeychainPrompt: false,
         providerIds: externalCliProviderIds,
       })
     : [];

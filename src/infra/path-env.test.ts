@@ -1,6 +1,5 @@
 // Covers OpenClaw CLI PATH construction.
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ensureOpenClawCliOnPath } from "./path-env.js";
@@ -82,17 +81,11 @@ describe("ensureOpenClawCliOnPath", () => {
 
   function bootstrapPath(params: {
     execPath: string;
-    cwd?: string;
+    cwd: string;
     homeDir: string;
     platform: NodeJS.Platform;
   }) {
-    vi.spyOn(process, "execPath", "get").mockReturnValue(params.execPath);
-    if (params.cwd !== undefined) {
-      vi.spyOn(process, "cwd").mockReturnValue(params.cwd);
-    }
-    vi.spyOn(os, "homedir").mockReturnValue(params.homeDir);
-    vi.spyOn(process, "platform", "get").mockReturnValue(params.platform);
-    ensureOpenClawCliOnPath();
+    ensureOpenClawCliOnPath(params);
     return (process.env.PATH ?? "").split(path.delimiter);
   }
 
@@ -157,7 +150,12 @@ describe("ensureOpenClawCliOnPath", () => {
   it("is idempotent", () => {
     process.env.PATH = "/bin";
     process.env.OPENCLAW_PATH_BOOTSTRAPPED = "1";
-    ensureOpenClawCliOnPath();
+    ensureOpenClawCliOnPath({
+      execPath: "/tmp/does-not-matter",
+      cwd: "/tmp",
+      homeDir: "/tmp",
+      platform: "darwin",
+    });
     expect(process.env.PATH).toBe("/bin");
   });
 
@@ -267,7 +265,7 @@ describe("ensureOpenClawCliOnPath", () => {
     });
 
     try {
-      bootstrapPath({ execPath: appCli, homeDir: tmp, platform: "darwin" });
+      ensureOpenClawCliOnPath({ execPath: appCli, homeDir: tmp, platform: "darwin" });
     } finally {
       cwdSpy.mockRestore();
     }

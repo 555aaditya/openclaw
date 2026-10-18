@@ -1,9 +1,10 @@
 /** Paired-node attachment guard behavior through the real CLI execution entry point. */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import * as nodeCli from "../../gateway/node-agent-cli-runtime.js";
+import type { invokeNodeClaudeCliRun } from "../../gateway/node-agent-cli-runtime.js";
 import { buildPreparedCliRunContext } from "../cli-runner.test-helpers.js";
 import { executePreparedCliRun as executePreparedCliRunImpl } from "./execute.js";
 import {
+  setCliRunnerExecuteTestDeps,
   supervisorSpawnMock,
   wrapPreparedCliRunWithTestAdmission,
 } from "./execute.test-support.js";
@@ -26,15 +27,14 @@ afterEach(() => {
 
 describe("paired-node media guard", () => {
   it("allows a described image with a document through node placement", async () => {
-    const invokeNode = vi
-      .spyOn(nodeCli, "invokeNodeClaudeCliRun")
-      .mockImplementation(async (params) => {
-        params.onProgress(CLAUDE_OK_JSONL);
-        return {
-          ok: true,
-          payloadJSON: JSON.stringify({ exitCode: 0, stderrTail: "", truncated: false }),
-        };
-      });
+    const invokeNode = vi.fn(async (params: Parameters<typeof invokeNodeClaudeCliRun>[0]) => {
+      params.onProgress(CLAUDE_OK_JSONL);
+      return {
+        ok: true,
+        payloadJSON: JSON.stringify({ exitCode: 0, stderrTail: "", truncated: false }),
+      };
+    });
+    setCliRunnerExecuteTestDeps({ invokeNodeClaudeCliRun: invokeNode });
     const context = buildPreparedCliRunContext({
       sessionEntry: {
         sessionId: "openclaw-session",

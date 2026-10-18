@@ -15,7 +15,7 @@ import {
 import { runQaGatewayFixture } from "../../test/helpers/qa-gateway-cleanup.js";
 import { testing } from "../agents/cli-backends.test-support.js";
 import * as cliLiveSessions from "../agents/cli-runner/cli-live-session-registry.js";
-import { defaultCliWatchdogClock } from "../agents/cli-runner/execute-plugin-watchdog.js";
+import { executeDeps } from "../agents/cli-runner/execute-deps.js";
 import { cliBackendLog } from "../agents/cli-runner/log.js";
 import type {
   CliBackendExecute,
@@ -85,7 +85,7 @@ async function runWatchdogCase(
   const readJson = async <T>(file: string): Promise<T> =>
     JSON.parse(await fs.readFile(file, "utf8"));
   const freezeReceipt = path.join(proof, "freeze-receipt.json");
-  let restoreClock: (() => void) | undefined;
+  const realClock = executeDeps.watchdogClock;
   let orderedOutputAt: number | undefined;
   let abortedAt: number | undefined;
   let thawedAt: number | undefined;
@@ -171,14 +171,7 @@ async function runWatchdogCase(
   }
   return await runQaGatewayFixture(
     async () => {
-      const now = vi.spyOn(defaultCliWatchdogClock, "now").mockImplementation(clock.now);
-      const timeout = vi
-        .spyOn(defaultCliWatchdogClock, "setTimeout")
-        .mockImplementation(clock.setTimeout);
-      restoreClock = () => {
-        now.mockRestore();
-        timeout.mockRestore();
-      };
+      executeDeps.watchdogClock = clock;
       await Promise.all(
         [proof, nativeRoot].map((directory) => fs.mkdir(directory, { recursive: true })),
       );
@@ -427,7 +420,7 @@ async function runWatchdogCase(
     },
     () => receipts?.claim.release(),
     async () => {
-      restoreClock?.();
+      executeDeps.watchdogClock = realClock;
       testing.resetDepsForTest();
       for (const spy of [capability, log, waitForAgentJob]) {
         spy?.mockRestore();

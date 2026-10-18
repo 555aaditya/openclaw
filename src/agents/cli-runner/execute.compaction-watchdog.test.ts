@@ -22,6 +22,7 @@ import { waitUntilAborted } from "./execute-plugin.test-support.js";
 import { executePreparedCliRun } from "./execute.js";
 import {
   createManagedRun,
+  setCliRunnerExecuteTestDeps,
   supervisorSpawnMock,
   wrapPreparedCliRunWithTestAdmission,
 } from "./execute.test-support.js";
@@ -144,7 +145,7 @@ afterEach(async () => {
     closeDiagnosticEmbeddedRunOwner(owner);
   }
   supervisorSpawnMock.mockReset();
-  vi.restoreAllMocks();
+  setCliRunnerExecuteTestDeps({ watchdogClock: defaultCliWatchdogClock });
   resetDiagnosticStateForTest();
   vi.useRealTimers();
 });
@@ -183,7 +184,9 @@ it("requests diagnostics recovery when compaction never ends", async () => {
   const context = contextFor("compaction-stuck");
   const recover = diagnostics(context);
   // Silence only the competing watchdog so recovery is observed at its own heartbeat.
-  vi.spyOn(defaultCliWatchdogClock, "setTimeout").mockReturnValue(() => {});
+  setCliRunnerExecuteTestDeps({
+    watchdogClock: { now: () => Date.now(), setTimeout: () => () => {} },
+  });
   const { run, started, finish } = startCompaction(context);
   await started.promise;
   await vi.advanceTimersByTimeAsync(WORK_GRACE_MS - HEARTBEAT_MS);

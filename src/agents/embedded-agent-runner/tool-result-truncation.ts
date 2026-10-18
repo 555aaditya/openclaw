@@ -673,6 +673,7 @@ export function truncateOversizedToolResultsInMessages(
   truncatedCount: number;
   aggregateTruncatedCount: number;
   aggregatePressureEngaged: boolean;
+  aggregateBudgetChars: number;
 } {
   const { maxChars, aggregateBudgetChars } = resolveToolResultBudgets({
     contextWindowTokens,
@@ -715,6 +716,7 @@ export function truncateOversizedToolResultsInMessages(
     truncatedCount: new Set(plan.replacements.map((replacement) => replacement.entryId)).size,
     aggregateTruncatedCount: plan.aggregateReplacementCount,
     aggregatePressureEngaged: plan.aggregatePressureExceeded,
+    aggregateBudgetChars,
   };
 }
 
@@ -1135,11 +1137,17 @@ function buildToolResultReplacementPlan(params: {
   const protectedEntryIds = params.protectTrailingToolResults
     ? getTrailingToolResultEntryIds(params.branch)
     : undefined;
+  let toolResultCount = 0;
+  let totalToolResultChars = 0;
   // Measurements belong to this synchronous plan, never to mutable messages or
   // session projection state. Replacement producers supply the next measurement.
   const measuredBranch = params.branch.map((entry): MeasuredToolResultBranchEntry => {
     const textLength =
       entry.type === "message" && entry.message ? getToolResultTextBudget(entry.message) : 0;
+    if (textLength > 0) {
+      toolResultCount += 1;
+      totalToolResultChars += textLength;
+    }
     return { entry, textLength };
   });
   let currentBranch = measuredBranch;
@@ -1214,6 +1222,8 @@ function buildToolResultReplacementPlan(params: {
     aggregatePressureExceeded: aggregatePlan.pressureExceeded,
     oversizedReducibleChars,
     aggregateReducibleChars,
+    toolResultCount,
+    totalToolResultChars,
   };
 }
 
@@ -1279,7 +1289,12 @@ export function estimateToolResultReductionPotential(params: {
   const maxReducibleChars = plan.oversizedReducibleChars + plan.aggregateReducibleChars;
 
   return {
+    maxChars,
+    aggregateBudgetChars,
+    toolResultCount: plan.toolResultCount,
+    totalToolResultChars: plan.totalToolResultChars,
     oversizedCount: plan.oversizedReplacementCount,
+    oversizedReducibleChars: plan.oversizedReducibleChars,
     aggregateReducibleChars: plan.aggregateReducibleChars,
     maxReducibleChars,
   };

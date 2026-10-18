@@ -21,7 +21,7 @@ import {
 } from "../config/sessions/session-accessor.sqlite-scope.js";
 import { setCanonicalSqliteSessionMainKey } from "../config/sessions/session-canonical-key.js";
 import { sessionTranscriptIndexNeedsReconcile } from "../config/sessions/session-transcript-index.js";
-import * as transcriptReconcile from "../config/sessions/session-transcript-reconcile.js";
+import { waitForSessionTranscriptIndexReconcile } from "../config/sessions/session-transcript-reconcile.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import * as gatewayLock from "../infra/gateway-lock.js";
 import * as gatewayOwner from "../infra/gateway-owner-lease.js";
@@ -54,7 +54,6 @@ import { readSessionMessagesPageWithStatsAsync } from "./session-transcript-read
 const tempDirs = createTempDirTracker();
 
 afterEach(async () => {
-  vi.restoreAllMocks();
   await closeOpenClawAgentDatabasesAsync();
   closeOpenClawAgentDatabasesForTest();
   await closeOpenClawStateDatabaseAsync();
@@ -205,18 +204,19 @@ describe("runStartupSessionMaintenanceForTest", () => {
       let handedOff: ReturnType<typeof getOpenClawAgentDatabaseIfOpen>;
       let reconciled: ReturnType<typeof openOpenClawAgentDatabase> | undefined;
       const failure = new Error("projection reconciliation failed");
-      const reconcileSessionTranscriptIndexes = vi
-        .spyOn(transcriptReconcile, "reconcileSessionTranscriptIndexes")
-        .mockImplementation(async (databaseOptions: OpenClawAgentDatabaseOptions) => {
+      const reconcileSessionTranscriptIndexes = vi.fn(
+        async (databaseOptions: OpenClawAgentDatabaseOptions) => {
           handedOff = getOpenClawAgentDatabaseIfOpen(databaseOptions);
           reconciled = openOpenClawAgentDatabase(databaseOptions);
           throw failure;
-        });
+        },
+      );
       try {
         const startup = runStartupSessionMaintenanceForTest({
           cfg: { agents: { entries: { main: {} } } },
           env,
           log: makeLog(),
+          deps: { reconcileSessionTranscriptIndexes },
         });
         await expect(startup).rejects.toBe(failure);
         expect(reconcileSessionTranscriptIndexes).toHaveBeenCalledOnce();
@@ -247,13 +247,12 @@ describe("runStartupSessionMaintenanceForTest", () => {
     await closeOpenClawAgentDatabasesAsync(stateDir);
     fs.renameSync(original.path, `${original.path}.retired`);
     const successor = openOpenClawAgentDatabase(options);
-    const reconcileSessionTranscriptIndexes = vi
-      .spyOn(transcriptReconcile, "reconcileSessionTranscriptIndexes")
-      .mockResolvedValue({ reconciledSessions: 0 });
+    const reconcileSessionTranscriptIndexes = vi.fn(async () => ({ reconciledSessions: 0 }));
     await expect(
       runGatewaySessionStartupMaintenance({
         databases,
         log: makeLog(),
+        deps: { reconcileSessionTranscriptIndexes },
       }),
     ).rejects.toThrow("identity changed");
     expect(reconcileSessionTranscriptIndexes).not.toHaveBeenCalled();
@@ -263,13 +262,12 @@ describe("runStartupSessionMaintenanceForTest", () => {
   it("does not create databases for agents without durable sessions", async () => {
     const stateDir = tempDirs.make("openclaw-empty-session-startup-");
     const env = { OPENCLAW_STATE_DIR: stateDir };
-    const reconcileSessionTranscriptIndexes = vi
-      .spyOn(transcriptReconcile, "reconcileSessionTranscriptIndexes")
-      .mockResolvedValue({ reconciledSessions: 0 });
+    const reconcileSessionTranscriptIndexes = vi.fn(async () => ({ reconciledSessions: 0 }));
     await runStartupSessionMaintenanceForTest({
       cfg: { agents: { entries: { main: {}, ops: {} } } },
       env,
       log: makeLog(),
+      deps: { reconcileSessionTranscriptIndexes },
     });
     expect(reconcileSessionTranscriptIndexes).not.toHaveBeenCalled();
     for (const agentId of ["main", "ops"]) {
@@ -313,7 +311,7 @@ describe("runStartupSessionMaintenanceForTest", () => {
           touchSessionEntry: false,
         });
         const options = toDatabaseOptions(resolveSqliteReadScope(scope));
-        await transcriptReconcile.waitForSessionTranscriptIndexReconcile(options);
+        await waitForSessionTranscriptIndexReconcile(options);
         const database = openOpenClawAgentDatabase(options);
         database.db
           .prepare(
@@ -339,7 +337,7 @@ describe("runStartupSessionMaintenanceForTest", () => {
             ],
             touchSessionEntry: false,
           });
-          await transcriptReconcile.waitForSessionTranscriptIndexReconcile(peerOptions);
+          await waitForSessionTranscriptIndexReconcile(peerOptions);
           openOpenClawAgentDatabase(peerOptions)
             .db.prepare("UPDATE session_transcript_index_state SET needs_rebuild = 1")
             .run();

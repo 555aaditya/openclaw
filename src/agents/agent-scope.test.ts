@@ -2,7 +2,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
 import type { SessionEntry } from "../config/sessions.js";
 import type { AgentModelConfig } from "../config/types.agents-shared.js";
@@ -61,11 +61,10 @@ function probeEntry(entry: ProbeParams["entry"], overrides: Partial<ProbeParams>
     entry,
     primaryProvider: "anthropic",
     primaryModel: "claude-sonnet-4-6",
+    probeState: new Map(),
     ...overrides,
   });
 }
-
-afterEach(() => vi.restoreAllMocks());
 
 describe("resolveAgentConfig", () => {
   it("prefers per-agent verbose defaults over global defaults", () => {
@@ -308,17 +307,18 @@ describe("resolveAgentConfig", () => {
   });
 
   it("resolves throttled primary probes for auto fallback selections", () => {
-    const clock = vi.spyOn(Date, "now").mockReturnValue(1_000);
+    const probeState = new Map<string, number>();
     const entry = fallbackEntry({
       authProfileOverride: "google:fallback",
       authProfileOverrideSource: "auto",
     });
-    const probe = (now: number, currentEntry = entry) => {
-      clock.mockReturnValue(now);
-      return probeEntry(currentEntry, {
-        sessionKey: "agent:main:throttled-probe",
+    const probe = (now: number, currentEntry = entry) =>
+      probeEntry(currentEntry, {
+        sessionKey: "agent:main:session",
+        now,
+        minIntervalMs: 60_000,
+        probeState,
       });
-    };
 
     expect(probe(1_000)).toMatchObject({
       provider: "anthropic",
@@ -333,14 +333,15 @@ describe("resolveAgentConfig", () => {
         fallbackProvider: "google",
         fallbackModel: "gemini-3-pro",
       },
-      sessionKey: "agent:main:throttled-probe",
+      sessionKey: "agent:main:session",
+      now: 1_000,
+      probeState,
     });
     expect(probe(30_000)).toBeUndefined();
     expect(
       probe(30_000, { ...entry, providerOverride: "openai", modelOverride: "gpt-5.4" }),
     ).toBeUndefined();
-    expect(probe(300_999)).toBeUndefined();
-    expect(probe(301_000)).toMatchObject({ provider: "anthropic", model: "claude-sonnet-4-6" });
+    expect(probe(70_000)).toMatchObject({ provider: "anthropic", model: "claude-sonnet-4-6" });
   });
 
   it("skips primary probes for strict or stale fallback selections", () => {

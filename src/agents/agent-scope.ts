@@ -84,14 +84,20 @@ function autoFallbackPrimaryProbeStateKey(params: {
   ].join("\0");
 }
 
-function pruneAutoFallbackPrimaryProbeState(now: number): void {
-  const staleBefore = now - AUTO_FALLBACK_PRIMARY_PROBE_INTERVAL_MS;
-  for (const [key, lastProbeAt] of autoFallbackPrimaryProbeState) {
+function pruneAutoFallbackPrimaryProbeState(params: {
+  state: Map<string, number>;
+  now: number;
+  minIntervalMs: number;
+  maxKeys?: number;
+}): void {
+  const maxKeys = Math.max(1, Math.trunc(params.maxKeys ?? AUTO_FALLBACK_PRIMARY_PROBE_MAX_KEYS));
+  const staleBefore = params.now - params.minIntervalMs;
+  for (const [key, lastProbeAt] of params.state) {
     if (lastProbeAt < staleBefore) {
-      autoFallbackPrimaryProbeState.delete(key);
+      params.state.delete(key);
     }
   }
-  pruneMapToMaxSize(autoFallbackPrimaryProbeState, AUTO_FALLBACK_PRIMARY_PROBE_MAX_KEYS);
+  pruneMapToMaxSize(params.state, maxKeys || 0);
 }
 
 export type AutoFallbackPrimaryProbe = {
@@ -143,6 +149,10 @@ export function resolveAutoFallbackPrimaryProbe(params: {
   sessionKey?: string | null;
   primaryProvider: string;
   primaryModel: string;
+  now?: number;
+  minIntervalMs?: number;
+  maxTrackedProbeKeys?: number;
+  probeState?: Map<string, number>;
 }): AutoFallbackPrimaryProbe | undefined {
   const entry = params.entry;
   if (!entry) {
@@ -173,15 +183,22 @@ export function resolveAutoFallbackPrimaryProbe(params: {
     return undefined;
   }
 
-  const now = Date.now();
-  pruneAutoFallbackPrimaryProbeState(now);
+  const now = params.now ?? Date.now();
+  const minIntervalMs = params.minIntervalMs ?? AUTO_FALLBACK_PRIMARY_PROBE_INTERVAL_MS;
+  const state = params.probeState ?? autoFallbackPrimaryProbeState;
+  pruneAutoFallbackPrimaryProbeState({
+    state,
+    now,
+    minIntervalMs,
+    maxKeys: params.maxTrackedProbeKeys,
+  });
   const key = autoFallbackPrimaryProbeStateKey({
     sessionKey: params.sessionKey,
     primaryProvider: originProvider,
     primaryModel: originModel,
   });
-  const lastProbeAt = autoFallbackPrimaryProbeState.get(key);
-  if (lastProbeAt !== undefined && now - lastProbeAt < AUTO_FALLBACK_PRIMARY_PROBE_INTERVAL_MS) {
+  const lastProbeAt = state.get(key);
+  if (lastProbeAt !== undefined && now - lastProbeAt < minIntervalMs) {
     return undefined;
   }
   const fallbackAuthProfileId = normalizeOptionalString(entry.authProfileOverride);
@@ -203,15 +220,26 @@ export function resolveAutoFallbackPrimaryProbe(params: {
 export function markAutoFallbackPrimaryProbe(params: {
   probe: AutoFallbackPrimaryProbe;
   sessionKey?: string | null;
+  now?: number;
+  minIntervalMs?: number;
+  maxTrackedProbeKeys?: number;
+  probeState?: Map<string, number>;
 }): void {
-  const now = Date.now();
+  const now = params.now ?? Date.now();
+  const minIntervalMs = params.minIntervalMs ?? AUTO_FALLBACK_PRIMARY_PROBE_INTERVAL_MS;
+  const state = params.probeState ?? autoFallbackPrimaryProbeState;
   const key = autoFallbackPrimaryProbeStateKey({
     sessionKey: params.sessionKey,
     primaryProvider: params.probe.provider,
     primaryModel: params.probe.model,
   });
-  autoFallbackPrimaryProbeState.set(key, now);
-  pruneAutoFallbackPrimaryProbeState(now);
+  state.set(key, now);
+  pruneAutoFallbackPrimaryProbeState({
+    state,
+    now,
+    minIntervalMs,
+    maxKeys: params.maxTrackedProbeKeys,
+  });
 }
 
 export function entryMatchesAutoFallbackPrimaryProbe(

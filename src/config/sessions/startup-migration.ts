@@ -36,6 +36,7 @@ import {
 import { runTasksWithConcurrency } from "../../utils/run-with-concurrency.js";
 import { cloneEnvWithPlatformSemantics } from "../config-env-vars.js";
 import type { OpenClawConfig } from "../types.openclaw.js";
+import type { migrateLegacyMainSessionKeys } from "./legacy-main-session-migration.js";
 import {
   isLegacySessionRecordOwnedByTarget,
   listLegacySessionTranscriptFiles,
@@ -221,6 +222,10 @@ export async function runSessionStartupMigration(params: {
   assertCurrent?: () => void;
   log: SessionStartupMigrationLogger;
   handoffDatabase?: (database: OpenClawAgentDatabaseOptions) => Promise<void>;
+  deps?: {
+    migrateLegacyMainSessionKeys?: typeof migrateLegacyMainSessionKeys;
+    resolveAllAgentSessionStoreTargetsSync?: typeof resolveAllAgentSessionStoreTargetsSync;
+  };
 }): Promise<void> {
   params.assertCurrent?.();
   const env = cloneEnvWithPlatformSemantics(params.env ?? process.env);
@@ -228,15 +233,19 @@ export async function runSessionStartupMigration(params: {
   params.assertCurrent?.();
   const deletionRead = prepareAgentDatabaseDeletionSnapshotRead({ env }, "runtime");
   let deletionSnapshot: ReturnType<typeof deletionRead.read> | undefined;
-  const targets = resolveAllAgentSessionStoreTargetsSync(params.cfg, {
-    env,
-    agentIds: params.agentIds,
-    registeredDatabases: registeredDatabaseRows,
-  }).filter(
-    (target) =>
-      (!params.agentIds || params.agentIds.has(target.agentId)) &&
-      !readAgentDatabaseAdmissionRefusal(target.agentId, { env }),
-  );
+  const resolveTargets =
+    params.deps?.resolveAllAgentSessionStoreTargetsSync ?? resolveAllAgentSessionStoreTargetsSync;
+  const admittedTargets = () =>
+    resolveTargets(params.cfg, {
+      env,
+      agentIds: params.agentIds,
+      registeredDatabases: registeredDatabaseRows,
+    }).filter(
+      (target) =>
+        (!params.agentIds || params.agentIds.has(target.agentId)) &&
+        !readAgentDatabaseAdmissionRefusal(target.agentId, { env }),
+    );
+  const targets = admittedTargets();
   // Stable installations may still have file-backed history. Only Doctor imports it;
   // do not serve an empty SQLite history or rewrite those files during startup.
   withEngineStoreAdmission(() =>
@@ -249,7 +258,9 @@ export async function runSessionStartupMigration(params: {
   );
   const { assertAcpSessionKeysMigratedForStartup, assertEmbeddedAcpMetadataMigratedForStartup } =
     await import("../../acp/runtime/session-meta-startup.js");
-  const { migrateLegacyMainSessionKeys } = await import("./legacy-main-session-migration.js");
+  const migrateLegacyMain =
+    params.deps?.migrateLegacyMainSessionKeys ??
+    (await import("./legacy-main-session-migration.js")).migrateLegacyMainSessionKeys;
   // Both inspections are read-only; join them before repair, including on refusal.
   const [, result] = await settleCurrentReadPreparations([
     params.agentIds
@@ -261,7 +272,7 @@ export async function runSessionStartupMigration(params: {
           undefined,
           params.assertCurrent,
         ),
-    migrateLegacyMainSessionKeys({ cfg: params.cfg, env, mode: "detect" }),
+    migrateLegacyMain({ cfg: params.cfg, env, mode: "detect" }),
   ] as const);
   params.assertCurrent?.();
   if (result.warnings.length > 0) {

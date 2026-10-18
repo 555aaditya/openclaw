@@ -58,13 +58,14 @@ export async function applyLinkUnderstandingIfNeeded(params: {
   ctx: MsgContext;
   cfg: OpenClawConfig;
   signal?: AbortSignal;
-}): Promise<void> {
+}): Promise<boolean> {
   if (!hasLinkCandidate(params.ctx)) {
-    return;
+    return false;
   }
   try {
     const { applyLinkUnderstanding } = await linkUnderstandingApplyRuntimeLoader.load();
     await applyLinkUnderstanding(params);
+    return true;
   } catch (err) {
     if (isAbortError(err)) {
       throw err;
@@ -72,6 +73,7 @@ export async function applyLinkUnderstandingIfNeeded(params: {
     logVerbose(
       `link understanding failed, proceeding with raw content: ${formatErrorMessage(err)}`,
     );
+    return false;
   }
 }
 

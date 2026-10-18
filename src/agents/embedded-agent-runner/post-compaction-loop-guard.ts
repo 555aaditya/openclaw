@@ -22,9 +22,11 @@ type PostCompactionGuardObservation = {
 };
 
 type PostCompactionGuardVerdict =
-  | { shouldAbort: false }
+  | { shouldAbort: false; armed: boolean; remainingAttempts: number }
   | {
       shouldAbort: true;
+      armed: boolean;
+      remainingAttempts: number;
       detector: "compaction_loop_persisted";
       count: number;
       toolName: string;
@@ -58,19 +60,21 @@ export function createPostCompactionLoopGuard(options?: { enabled?: boolean }) {
 
   const observe = (call: PostCompactionGuardObservation): PostCompactionGuardVerdict => {
     if (!enabled) {
-      return { shouldAbort: false };
+      return { shouldAbort: false, armed: false, remainingAttempts: 0 };
     }
     recentCalls.push(call);
     if (recentCalls.length > BASELINE_WINDOW_SIZE) {
       recentCalls.shift();
     }
     if (!history || history.length >= DEFAULT_WINDOW_SIZE) {
-      return { shouldAbort: false };
+      return { shouldAbort: false, armed: false, remainingAttempts: 0 };
     }
+    const remainingAttempts = DEFAULT_WINDOW_SIZE - history.length - 1;
     if (baselineSignatures?.has(observationSignature(call))) {
       repeatedToolNames.push(call.toolName);
     }
     history.push(call);
+    const armedAfter = remainingAttempts > 0;
 
     // Compare full tool name + args + result. Repeated args alone can be legitimate polling;
     // identical results after compaction prove the compression did not change the loop.
@@ -87,6 +91,8 @@ export function createPostCompactionLoopGuard(options?: { enabled?: boolean }) {
       );
       return {
         shouldAbort: true,
+        armed: armedAfter,
+        remainingAttempts,
         detector: "compaction_loop_persisted",
         count: matches.length,
         toolName: call.toolName,
@@ -94,7 +100,7 @@ export function createPostCompactionLoopGuard(options?: { enabled?: boolean }) {
       };
     }
 
-    if (history.length === DEFAULT_WINDOW_SIZE) {
+    if (!armedAfter) {
       const tools = [...new Set(repeatedToolNames)].toSorted().join(",");
       log.info(
         `post-compaction window closed: toolCalls=${history.length} ` +
@@ -104,7 +110,7 @@ export function createPostCompactionLoopGuard(options?: { enabled?: boolean }) {
       repeatedToolNames = [];
     }
 
-    return { shouldAbort: false };
+    return { shouldAbort: false, armed: armedAfter, remainingAttempts };
   };
 
   return { armPostCompaction, observe };

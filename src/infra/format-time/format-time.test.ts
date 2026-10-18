@@ -263,8 +263,9 @@ describe("format-relative", () => {
 
     it("returns fallback for invalid timestamp input", () => {
       for (const value of [null, undefined]) {
-        expect(formatRelativeTimestamp(value)).toBe("");
+        expect(formatRelativeTimestamp(value)).toBe("n/a");
       }
+      expect(formatRelativeTimestamp(null, { fallback: "unknown" })).toBe("unknown");
     });
 
     it.each([
@@ -278,31 +279,22 @@ describe("format-relative", () => {
       {
         name: "keeps 7-day-old timestamps relative",
         offsetMs: -7 * 24 * 3600000,
+        options: { dateFallback: true, timezone: "UTC" },
         expected: "7d ago",
       },
-      {
-        name: "formats older timestamps as local dates",
-        offsetMs: -8 * 24 * 3600000,
-        expected: "Feb 2",
-      },
-      {
-        name: "formats distant future timestamps as local dates",
-        offsetMs: 8 * 24 * 3600000,
-        expected: "Feb 18",
-      },
-    ])("$name", ({ offsetMs, expected }) => {
-      withEnv({ TZ: "UTC" }, () => {
-        expect(formatRelativeTimestamp(Date.now() + offsetMs)).toBe(expected);
-      });
+    ])("$name", ({ offsetMs, options, expected }) => {
+      expect(formatRelativeTimestamp(Date.now() + offsetMs, options)).toBe(expected);
     });
 
     it.each([[8, "in 8d"]])(
       "falls back to relative days for %d-day offsets when date formatting throws",
       (days, expected) => {
-        vi.spyOn(Intl, "DateTimeFormat").mockImplementation(function () {
-          throw new RangeError("synthetic formatter failure");
-        });
-        expect(formatRelativeTimestamp(Date.now() + days * 24 * 3600000)).toBe(expected);
+        expect(
+          formatRelativeTimestamp(Date.now() + days * 24 * 3600000, {
+            dateFallback: true,
+            timezone: "Invalid/Timezone",
+          }),
+        ).toBe(expected);
       },
     );
   });

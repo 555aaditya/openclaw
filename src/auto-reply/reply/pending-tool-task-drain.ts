@@ -1,8 +1,12 @@
 /** Waits for asynchronous tool tasks before final reply delivery. */
 const DEFAULT_PENDING_TOOL_DRAIN_IDLE_TIMEOUT_MS = 30_000;
 
+/** Result from waiting for pending tool tasks before final delivery. */
+type PendingToolTaskDrainResult = { kind: "settled" } | { kind: "timeout"; remaining: number };
+
 type DrainOptions = {
   tasks: Set<Promise<void>>;
+  idleTimeoutMs?: number;
   onTimeout?: (message: string) => void;
 };
 
@@ -16,9 +20,16 @@ function observePendingTask(task: Promise<void>, observer: PendingTaskObserver):
 }
 
 /** Waits for pending tool tasks to settle or times out to avoid session deadlock. */
-export async function drainPendingToolTasks({ tasks, onTimeout }: DrainOptions): Promise<void> {
+export async function drainPendingToolTasks({
+  tasks,
+  idleTimeoutMs = DEFAULT_PENDING_TOOL_DRAIN_IDLE_TIMEOUT_MS,
+  onTimeout,
+}: DrainOptions): Promise<PendingToolTaskDrainResult> {
   if (tasks.size === 0) {
-    return;
+    return { kind: "settled" };
+  }
+  if (idleTimeoutMs <= 0) {
+    return { kind: "timeout", remaining: tasks.size };
   }
 
   const observed = new WeakSet<Promise<void>>();
@@ -29,7 +40,7 @@ export async function drainPendingToolTasks({ tasks, onTimeout }: DrainOptions):
       clearTimeout(timeout);
       resolve(result);
     };
-    const timeout = setTimeout(() => finish("timeout"), DEFAULT_PENDING_TOOL_DRAIN_IDLE_TIMEOUT_MS);
+    const timeout = setTimeout(() => finish("timeout"), idleTimeoutMs);
     timeout.unref?.();
     const observeNewTasks = () => {
       for (const task of tasks) {
@@ -54,7 +65,10 @@ export async function drainPendingToolTasks({ tasks, onTimeout }: DrainOptions):
   if (outcome === "timeout") {
     const remaining = tasks.size;
     onTimeout?.(
-      `pending tool tasks made no progress within ${DEFAULT_PENDING_TOOL_DRAIN_IDLE_TIMEOUT_MS}ms; proceeding with ${remaining} task(s) still pending to avoid session deadlock`,
+      `pending tool tasks made no progress within ${idleTimeoutMs}ms; proceeding with ${remaining} task(s) still pending to avoid session deadlock`,
     );
+    return { kind: "timeout", remaining };
   }
+
+  return { kind: "settled" };
 }

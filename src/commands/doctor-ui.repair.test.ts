@@ -51,7 +51,7 @@ describe("Control UI doctor repair owner", () => {
     await fs.writeFile(path.join(mocks.root, "ui", "package.json"), "{}");
     mocks.ensureControlUiAssetsBuilt.mockImplementation(async (_runtime, opts) => {
       opts.onBuildStart?.();
-      return { ok: true };
+      return { ok: true, built: true };
     });
     mocks.runCommandWithTimeout.mockResolvedValue({
       stdout: "abc123 protocol schema changed\n",
@@ -171,6 +171,7 @@ describe("Control UI doctor repair owner", () => {
   it("reports owner-normalized build failures instead of claiming repair success", async () => {
     mocks.ensureControlUiAssetsBuilt.mockResolvedValueOnce({
       ok: false,
+      built: false,
       message: "Control UI build failed: spawn ENOENT",
     });
 

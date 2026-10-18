@@ -16,7 +16,6 @@ import {
   syncManagedNpmRootPeerDependencies,
   upsertManagedNpmRootDependency,
 } from "./npm-managed-root.js";
-import * as openclawRoot from "./openclaw-root.js";
 
 const fixtureRootTracker = createSuiteTempRootTracker({
   prefix: "openclaw-npm-managed-root-",
@@ -52,7 +51,6 @@ beforeAll(async () => {
 });
 
 afterEach(async () => {
-  vi.restoreAllMocks();
   await Promise.all(tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
 });
 
@@ -327,15 +325,12 @@ describe("managed npm root", () => {
       "overrides:\n  axios: 1.18.0\n",
     );
 
-    const resolvePackageRoot = openclawRoot.resolveOpenClawPackageRootSync;
-    vi.spyOn(openclawRoot, "resolveOpenClawPackageRootSync").mockImplementation((params) =>
-      resolvePackageRoot({
-        ...params,
+    await expect(
+      readOpenClawManagedNpmRootOverrides({
         moduleUrl: pathToFileURL(path.join(packageRoot, "dist", "install-AbCdEf.js")).toString(),
         cwd: path.join(packageRoot, "dist"),
       }),
-    );
-    await expect(readOpenClawManagedNpmRootOverrides()).resolves.toEqual({
+    ).resolves.toEqual({
       axios: "1.18.0",
     });
   });
@@ -373,8 +368,7 @@ describe("managed npm root", () => {
       ].join("\n"),
     );
 
-    vi.spyOn(openclawRoot, "resolveOpenClawPackageRootSync").mockReturnValue(packageRoot);
-    await expect(readOpenClawManagedNpmRootOverrides()).resolves.toEqual({
+    await expect(readOpenClawManagedNpmRootOverrides({ packageRoot })).resolves.toEqual({
       "range-target@>1": "2.0.0",
       "managed-runtime": "3.1024.0",
       nested: {

@@ -4,15 +4,12 @@ import {
   resetGatewayWorkAdmission,
   tryBeginGatewayRootWorkAdmission,
 } from "../process/gateway-work-admission.js";
-import * as gatewayActiveWork from "./gateway-active-work.js";
 import {
   createSafeGatewayRestartPreflight,
   scheduleSafeGatewayRestart,
 } from "./restart-coordinator.js";
 
 const scheduleGatewayRestart = vi.hoisted(() => vi.fn());
-const createSnapshot = gatewayActiveWork.createGatewayActiveWorkSnapshot;
-let inspectors: Partial<gatewayActiveWork.GatewayActiveWorkInspectors> = {};
 
 vi.mock("./restart.js", () => ({
   scheduleGatewayRestart: (opts: unknown) => scheduleGatewayRestart(opts),
@@ -31,14 +28,9 @@ const restart = {
 beforeEach(() => {
   resetGatewayWorkAdmission();
   scheduleGatewayRestart.mockReset().mockReturnValue(restart);
-  inspectors = { ...idleInspect };
-  vi.spyOn(gatewayActiveWork, "createGatewayActiveWorkSnapshot").mockImplementation(
-    (defaults, options) => createSnapshot({ ...defaults, ...inspectors }, options),
-  );
 });
 
 afterEach(() => {
-  vi.restoreAllMocks();
   resetGatewayWorkAdmission();
 });
 
@@ -53,10 +45,9 @@ const idleInspect = {
 };
 
 describe("safe gateway restart coordinator", () => {
-  const requestPreflight = (inspect: Partial<gatewayActiveWork.GatewayActiveWorkInspectors>) => {
-    Object.assign(inspectors, inspect);
-    return createSafeGatewayRestartPreflight();
-  };
+  const requestPreflight = (
+    inspect: NonNullable<Parameters<typeof scheduleSafeGatewayRestart>[0]>["inspect"],
+  ) => createSafeGatewayRestartPreflight({ ...idleInspect, ...inspect });
 
   it("reports safe when no restart blockers are active", () => {
     const preflight = requestPreflight({
@@ -159,9 +150,12 @@ describe("safe gateway restart coordinator", () => {
   });
 
   it("schedules one restart request and marks active work as deferred", () => {
-    inspectors.getQueueSize = () => 1;
     const result = scheduleSafeGatewayRestart({
       reason: "test.safe",
+      inspect: {
+        ...idleInspect,
+        getQueueSize: () => 1,
+      },
     });
 
     expect(result.status).toBe("deferred");
@@ -178,16 +172,23 @@ describe("safe gateway restart coordinator", () => {
       coalesced: true,
     });
 
-    const result = scheduleSafeGatewayRestart();
+    const result = scheduleSafeGatewayRestart({
+      inspect: {
+        ...idleInspect,
+      },
+    });
 
     expect(result.status).toBe("coalesced");
   });
 
   it("forwards skipDeferral to scheduleGatewayRestart and marks status scheduled", () => {
-    inspectors.getQueueSize = () => 1;
     const result = scheduleSafeGatewayRestart({
       reason: "test.skip-deferral",
       skipDeferral: true,
+      inspect: {
+        ...idleInspect,
+        getQueueSize: () => 1,
+      },
     });
 
     expect(result.status).toBe("scheduled");

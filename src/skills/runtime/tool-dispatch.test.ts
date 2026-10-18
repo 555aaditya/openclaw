@@ -1,7 +1,7 @@
 // Skill tool dispatch tests cover policy-filtered tool surfaces.
 import path from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import * as openClawTools from "../../agents/openclaw-tools.js";
+import { createOpenClawToolsAsync } from "../../agents/openclaw-tools.js";
 import {
   clearRuntimeConfigSnapshot,
   setRuntimeConfigSnapshot,
@@ -12,7 +12,7 @@ import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { listKnownProviderAuthEnvVarNamesCore } from "../../secrets/provider-env-vars.js";
 import { GATEWAY_OWNER_ONLY_CORE_TOOLS } from "../../security/dangerous-tools.js";
 import { useSessionStoreTempDirs } from "../../test-utils/session-state-cleanup.js";
-import { resolveSkillDispatchTools } from "./tool-dispatch.js";
+import { resolveSkillDispatchTools, type SkillToolDispatchDependencies } from "./tool-dispatch.js";
 
 function makeTool(name: string) {
   return {
@@ -24,14 +24,17 @@ function makeTool(name: string) {
   };
 }
 
-const createOpenClawToolsAsyncMock = vi.fn<typeof openClawTools.createOpenClawToolsAsync>(
-  async () => [
-    makeTool("read"),
-    makeTool("cron"),
-    makeTool("exec"),
-    makeTool("conversations_send"),
-  ],
-);
+const createOpenClawToolsAsyncMock = vi.fn<
+  SkillToolDispatchDependencies["createOpenClawToolsAsync"]
+>(async () => [
+  makeTool("read"),
+  makeTool("cron"),
+  makeTool("exec"),
+  makeTool("conversations_send"),
+]);
+const dependencies: SkillToolDispatchDependencies = {
+  createOpenClawToolsAsync: createOpenClawToolsAsyncMock,
+};
 const sessionDirs = useSessionStoreTempDirs(
   (cleanup) =>
     afterAll(async () => {
@@ -58,10 +61,7 @@ beforeEach(() => {
     vi.stubEnv(name, undefined);
   }
 });
-afterEach(() => {
-  vi.unstubAllEnvs();
-  vi.restoreAllMocks();
-});
+afterEach(() => vi.unstubAllEnvs());
 
 describe("resolveSkillDispatchTools", () => {
   it.each([
@@ -81,7 +81,10 @@ describe("resolveSkillDispatchTools", () => {
         tools: { allow: ["ask_user"], deny: deny ? ["ask_user"] : [] },
       };
       setRuntimeConfigSnapshot(cfg);
-      const tools = await resolveSkillDispatchTools({ ...dispatchDefaults, message, cfg });
+      const tools = await resolveSkillDispatchTools(
+        { ...dispatchDefaults, message, cfg },
+        { createOpenClawToolsAsync },
+      );
       expect(tools.some((tool) => tool.name === "ask_user")).toBe(available);
     },
   );
@@ -101,16 +104,19 @@ describe("resolveSkillDispatchTools", () => {
     async ({ tools: toolPolicy, actions }) => {
       const config: OpenClawConfig = { plugins: { enabled: false }, tools: toolPolicy };
       setRuntimeConfigSnapshot(config);
-      const tools = await resolveSkillDispatchTools({
-        message: { surface: "webchat" },
-        cfg: config,
-        agentId: "main",
-        sessionKey: "agent:main:main",
-        workspaceDir: "/tmp/openclaw-skill-tool-dispatch-test",
-        provider: "openai",
-        model: "gpt-5.5",
-        senderIsOwner: true,
-      });
+      const tools = await resolveSkillDispatchTools(
+        {
+          message: { surface: "webchat" },
+          cfg: config,
+          agentId: "main",
+          sessionKey: "agent:main:main",
+          workspaceDir: "/tmp/openclaw-skill-tool-dispatch-test",
+          provider: "openai",
+          model: "gpt-5.5",
+          senderIsOwner: true,
+        },
+        { createOpenClawToolsAsync },
+      );
 
       expect(tools.find((tool) => tool.name === "gateway")?.parameters).toHaveProperty(
         "properties.action.enum",
@@ -118,14 +124,6 @@ describe("resolveSkillDispatchTools", () => {
       );
     },
   );
-});
-
-describe("resolveSkillDispatchTools with a fixed tool inventory", () => {
-  beforeEach(() => {
-    vi.spyOn(openClawTools, "createOpenClawToolsAsync").mockImplementation(
-      createOpenClawToolsAsyncMock,
-    );
-  });
 
   it.each([
     { agentId: "isolated", expectedTools: ["read"] },
@@ -133,43 +131,49 @@ describe("resolveSkillDispatchTools with a fixed tool inventory", () => {
   ])(
     "applies $agentId sandbox policy to global skill dispatch",
     async ({ agentId, expectedTools }) => {
-      const tools = await resolveSkillDispatchTools({
-        ...dispatchDefaults,
-        message: { surface: "webchat" },
-        cfg: {
-          session: { scope: "global" },
-          agents: {
-            entries: {
-              isolated: {
-                sandbox: { mode: "all" },
-                tools: { sandbox: { tools: { allow: ["read"] } } },
+      const tools = await resolveSkillDispatchTools(
+        {
+          ...dispatchDefaults,
+          message: { surface: "webchat" },
+          cfg: {
+            session: { scope: "global" },
+            agents: {
+              entries: {
+                isolated: {
+                  sandbox: { mode: "all" },
+                  tools: { sandbox: { tools: { allow: ["read"] } } },
+                },
+                direct: { sandbox: { mode: "off" } },
               },
-              direct: { sandbox: { mode: "off" } },
             },
           },
+          agentId,
+          sessionKey: "global",
+          model: "gpt-5.6-luna",
         },
-        agentId,
-        sessionKey: "global",
-        model: "gpt-5.6-luna",
-      });
+        dependencies,
+      );
 
       expect(tools.map((tool) => tool.name)).toEqual(expectedTools);
     },
   );
 
   it("passes final filtered tool surface to cron jobs", async () => {
-    const tools = await resolveSkillDispatchTools({
-      ...dispatchDefaults,
-      message: {
-        surface: "telegram",
-        senderId: "user-1",
-        nativeChannelId: "native-room-1",
+    const tools = await resolveSkillDispatchTools(
+      {
+        ...dispatchDefaults,
+        message: {
+          surface: "telegram",
+          senderId: "user-1",
+          nativeChannelId: "native-room-1",
+        },
+        cfg: {
+          tools: { allow: ["read", "cron"] },
+        },
+        sessionKey: "agent:main:telegram:group:restricted-room",
       },
-      cfg: {
-        tools: { allow: ["read", "cron"] },
-      },
-      sessionKey: "agent:main:telegram:group:restricted-room",
-    });
+      dependencies,
+    );
 
     const args = createOpenClawToolsAsyncMock.mock.calls.at(-1)?.[0];
     expect(tools.map((tool) => tool.name)).toEqual(["read", "cron"]);
@@ -179,16 +183,19 @@ describe("resolveSkillDispatchTools with a fixed tool inventory", () => {
   });
 
   it("carries command skill file identity into tool diagnostics", async () => {
-    await resolveSkillDispatchTools({
-      ...dispatchDefaults,
-      skillCommand: {
-        name: "daily-brief",
-        skillFile: "/workspace/skills/daily-brief/SKILL.md",
-        skillName: "Daily Brief",
-        skillSource: "workspace",
-        toolName: "read",
+    await resolveSkillDispatchTools(
+      {
+        ...dispatchDefaults,
+        skillCommand: {
+          name: "daily-brief",
+          skillFile: "/workspace/skills/daily-brief/SKILL.md",
+          skillName: "Daily Brief",
+          skillSource: "workspace",
+          toolName: "read",
+        },
       },
-    });
+      dependencies,
+    );
 
     const args = createOpenClawToolsAsyncMock.mock.calls.at(-1)?.[0];
     expect(args?.beforeToolCallHookContext?.skillCommand?.skillFile).toBe(
@@ -220,12 +227,15 @@ describe("resolveSkillDispatchTools with a fixed tool inventory", () => {
       inheritedToolPolicyVersion: 1,
     } as SessionEntry);
 
-    const tools = await resolveSkillDispatchTools({
-      ...dispatchDefaults,
-      message: { surface: "telegram" },
-      cfg: config,
-      sessionKey,
-    });
+    const tools = await resolveSkillDispatchTools(
+      {
+        ...dispatchDefaults,
+        message: { surface: "telegram" },
+        cfg: config,
+        sessionKey,
+      },
+      dependencies,
+    );
 
     expect(tools.map((tool) => tool.name)).toEqual(expect.arrayContaining(["read", "exec"]));
   });
@@ -237,10 +247,13 @@ describe("resolveSkillDispatchTools with a fixed tool inventory", () => {
       sessionKey: "agent:main:telegram:direct:allowed-user",
     };
 
-    const nonOwnerTools = await resolveSkillDispatchTools({
-      ...common,
-      senderIsOwner: false,
-    });
+    const nonOwnerTools = await resolveSkillDispatchTools(
+      {
+        ...common,
+        senderIsOwner: false,
+      },
+      dependencies,
+    );
     const nonOwnerArgs = createOpenClawToolsAsyncMock.mock.calls.at(-1)?.[0];
     expect(nonOwnerTools.map((tool) => tool.name)).not.toContain("conversations_send");
     expect(nonOwnerArgs?.senderIsOwner).toBe(false);
@@ -248,10 +261,13 @@ describe("resolveSkillDispatchTools with a fixed tool inventory", () => {
       expect.arrayContaining([...GATEWAY_OWNER_ONLY_CORE_TOOLS]),
     );
 
-    const ownerTools = await resolveSkillDispatchTools({
-      ...common,
-      senderIsOwner: true,
-    });
+    const ownerTools = await resolveSkillDispatchTools(
+      {
+        ...common,
+        senderIsOwner: true,
+      },
+      dependencies,
+    );
     const ownerArgs = createOpenClawToolsAsyncMock.mock.calls.at(-1)?.[0];
     expect(ownerTools.map((tool) => tool.name)).toContain("conversations_send");
     expect(ownerArgs?.senderIsOwner).toBe(true);

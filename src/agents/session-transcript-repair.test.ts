@@ -127,6 +127,7 @@ describe("sanitizeToolUseResultPairing", () => {
       { toolCallId: "call_search" },
       { toolCallId: "call_status" },
     ]);
+    expect(result.moved).toBe(true);
   });
 
   it("moves late real results ahead of newer assistant tool calls instead of synthesizing", () => {
@@ -144,6 +145,7 @@ describe("sanitizeToolUseResultPairing", () => {
     expect(result.messages[1]).toMatchObject({ toolCallId: "call_read", isError: false });
     expect(result.messages[3]).toMatchObject({ toolCallId: "call_exec" });
     expect(JSON.stringify(result.messages)).not.toContain("missing tool result");
+    expect(result.moved).toBe(true);
   });
 
   it("drops orphan tool results that do not match any tool call", () => {
@@ -166,6 +168,7 @@ describe("sanitizeToolUseResultPairing", () => {
 
     const result = repairToolUseResultPairing(input);
 
+    expect(result.droppedOrphanCount).toBe(0);
     expect(roles(result.messages)).toEqual(["assistant", "toolResult", "user"]);
     expect(result.added).toHaveLength(0);
   });
@@ -199,6 +202,7 @@ describe("repairToolUseResultPairing repeated per-turn ids", () => {
 
     expect(result.messages).toBe(input);
     expect(result.added).toHaveLength(0);
+    expect(result.droppedDuplicateCount).toBe(0);
     expect(resultTexts(result.messages)).toEqual(["first", "second"]);
   });
 
@@ -220,6 +224,7 @@ describe("repairToolUseResultPairing repeated per-turn ids", () => {
 
     expect(result.messages).toBe(input);
     expect(result.added).toHaveLength(0);
+    expect(result.droppedDuplicateCount).toBe(0);
     expect(resultTexts(result.messages)).toEqual(["first", "second"]);
   });
 
@@ -270,6 +275,7 @@ describe("repairToolUseResultPairing repeated per-turn ids", () => {
     const result = repairToolUseResultPairing(input);
 
     expect(result.added).toHaveLength(1);
+    expect(result.droppedDuplicateCount).toBe(1);
     expect(resultTexts(result.messages)).toEqual([
       DEFAULT_MISSING_TOOL_RESULT_TEXT,
       "locally first",
@@ -289,6 +295,7 @@ describe("repairToolUseResultPairing repeated per-turn ids", () => {
       erroredAssistantResultPolicy: "drop",
     });
 
+    expect(result.droppedOrphanCount).toBe(1);
     expect(roles(result.messages)).toEqual(["assistant", "toolResult", "assistant", "toolResult"]);
     expect(resultTexts(result.messages)).toEqual([
       DEFAULT_MISSING_TOOL_RESULT_TEXT,
@@ -332,6 +339,19 @@ describe("repairToolUseResultPairing prefers real result over synthetic error", 
     return sparseAssistant([toolCall(toolCallId)]);
   }
 
+  it("returns discarded results in transcript order", () => {
+    const input = castAgentMessages([
+      makeAssistant("call_1"),
+      makeSyntheticResult("call_1"),
+      makeRealResult("call_orphan", "orphan"),
+      makeRealResult("call_1"),
+    ]);
+
+    const result = repairToolUseResultPairing(input);
+
+    expect(result.discarded).toEqual([input[1], input[2]]);
+  });
+
   it("late real result after another assistant turn replaces prior synthetic", () => {
     const input = castAgentMessages([
       makeAssistant("call_1"),
@@ -349,6 +369,7 @@ describe("repairToolUseResultPairing prefers real result over synthetic error", 
       { toolCallId: "call_2", content: [{ text: "second output" }] },
     ]);
     expect(toolResults[0]?.isError).not.toBe(true);
+    expect(result.discarded).toEqual([input[1]]);
   });
 });
 

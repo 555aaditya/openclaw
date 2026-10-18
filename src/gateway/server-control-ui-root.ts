@@ -187,6 +187,7 @@ function resolveAutoRoot(): string | null {
   return resolveControlUiRootSync({
     moduleUrl: import.meta.url,
     argv1: process.argv[1],
+    cwd: process.cwd(),
   });
 }
 
@@ -207,6 +208,7 @@ function prepareResolvedRootState({
       isPackageProvenControlUiRootSync(root, {
         moduleUrl: import.meta.url,
         argv1: process.argv[1],
+        cwd: process.cwd(),
       });
     const resolvedRoot = { path: root, realPath: fs.realpathSync(root) };
     return bundled
