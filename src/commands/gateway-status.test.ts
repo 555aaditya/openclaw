@@ -179,7 +179,7 @@ function requireSshForwardCall(index = 0): Record<string, unknown> {
   return call as Record<string, unknown>;
 }
 
-function makeRemoteGatewayConfig(url: string, token = "rtok", localToken = "ltok") {
+function makeRemoteGatewayConfig(url: string, token = "rtok", localToken = "ltok"): OpenClawConfig {
   return {
     gateway: {
       mode: "remote",
