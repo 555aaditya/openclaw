@@ -93,7 +93,8 @@ export function isRequesterSettleWakeForRun(params: {
       (runId) => params.runsById.get(runId)?.completionTarget === "parent",
     ),
   });
-  return params.runId === identity.runId || params.runId === identity.retainedRunId;
+  // Pending backoff still belongs to the last admitted attempt, not its next retry.
+  return params.runId === (identity.retainedRunId ?? identity.runId);
 }
 
 /** Kill, suppression, and session retirement each end a row's completion obligation. */

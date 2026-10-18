@@ -85,7 +85,14 @@ async function executeClaim(
   const adopt = async () => {
     // Accepted collection consumes every source even when an ingress ack fails.
     detachSessionControllerSources(sources);
-    await Promise.all(sources.map((item) => admitFollowupRunLifecycle(item)));
+    const admissions = sources.map((item) => admitFollowupRunLifecycle(item));
+    try {
+      await Promise.all(admissions);
+    } catch (error) {
+      // Retry eligibility depends on every source's final adoption outcome.
+      await Promise.allSettled(admissions);
+      throw error;
+    }
     cancellation.admit();
     for (const item of sources) {
       if (item !== aggregateOwner) {

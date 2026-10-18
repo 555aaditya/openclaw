@@ -2245,44 +2245,79 @@ describe("followup queue collect routing", () => {
     },
   );
 
-  it("does not replay an adopted source when a later collected admission rejects", async () => {
-    const q = createQueueCase({ mode: "collect", debounceMs: 0 }, 1);
-    const firstComplete = vi.fn();
-    const secondComplete = vi.fn();
-    const first = createRun({ prompt: "first" });
-    first.turnAdoptionLifecycle = {
-      admission: "cancel-only",
-      onAdopted: vi.fn(async () => {}),
-      onSettled: firstComplete,
-    };
-    const second = createRun({ prompt: "second" });
-    second.turnAdoptionLifecycle = {
-      admission: "cancel-only",
-      onAdopted: vi
-        .fn<() => Promise<void>>()
-        .mockRejectedValueOnce(new Error("second admission failed"))
-        .mockResolvedValueOnce(),
-      onSettled: secondComplete,
-    };
-    q.add(first);
-    q.add(second);
-    q.start(async (run) => {
-      q.calls.push(run);
-      await admitFollowupRunLifecycle(run);
-      q.done.resolve();
-    });
+  it.for(["before", "after"] as const)(
+    "does not replay a collected source admitted %s a sibling rejects",
+    async (admittedWhen, { signal }) => {
+      vi.useFakeTimers();
+      const q = createQueueCase({ mode: "collect", debounceMs: 0 }, 1);
+      const releaseFirstAdmission = createDeferred();
+      const secondRejected = createDeferred();
+      const failure = new Error("second admission failed");
+      const errors: unknown[] = [];
+      const firstComplete = vi.fn();
+      const secondComplete = vi.fn();
+      const first = createRun({ prompt: "first" });
+      first.turnAdoptionLifecycle = {
+        admission: "cancel-only",
+        onAdopted: vi.fn(async () => {
+          if (admittedWhen === "after") {
+            await releaseFirstAdmission.promise;
+          }
+        }),
+        onSettled: firstComplete,
+      };
+      const second = createRun({ prompt: "second" });
+      second.turnAdoptionLifecycle = {
+        admission: "cancel-only",
+        onAdopted: vi
+          .fn<() => Promise<void>>()
+          .mockImplementationOnce(async () => {
+            secondRejected.resolve();
+            throw failure;
+          })
+          .mockResolvedValueOnce(),
+        onSettled: secondComplete,
+      };
+      q.add(first);
+      q.add(second);
+      const settlements = [first, second].map(
+        (source) => source.controllerInput!.settlement.promise,
+      );
+      try {
+        q.start(async (run) => {
+          q.calls.push(run);
+          try {
+            await admitFollowupRunLifecycle(run);
+          } catch (error) {
+            errors.push(error);
+            throw error;
+          }
+        });
+        await withinTest(secondRejected.promise, signal);
+        // Drain the first rejection while a late successful admission remains blocked.
+        await vi.advanceTimersByTimeAsync(0);
+        releaseFirstAdmission.resolve();
+        await withinTest(Promise.all(settlements), signal);
 
-    await q.done.promise;
-    expect(q.calls).toHaveLength(2);
-    expect(q.calls[0]?.prompt).toContain("first");
-    expect(q.calls[0]?.prompt).toContain("second");
-    expect(q.calls[1]?.prompt).not.toContain("first");
-    expect(q.calls[1]?.prompt).toContain("second");
-    expect(first.turnAdoptionLifecycle.onAdopted).toHaveBeenCalledTimes(1);
-    expect(second.turnAdoptionLifecycle.onAdopted).toHaveBeenCalledTimes(2);
-    await vi.waitFor(() => expect(secondComplete).toHaveBeenCalledOnce());
-    expect(firstComplete).toHaveBeenCalledOnce();
-  });
+        expect(errors).toHaveLength(1);
+        expect(errors[0]).toBe(failure);
+        expect(q.calls).toHaveLength(2);
+        expect(q.calls[0]?.prompt).toContain("first");
+        expect(q.calls[0]?.prompt).toContain("second");
+        expect(q.calls[1]?.prompt).not.toContain("first");
+        expect(q.calls[1]?.prompt).toBe("second");
+        expect(first.turnAdoptionLifecycle.onAdopted).toHaveBeenCalledTimes(1);
+        expect(second.turnAdoptionLifecycle.onAdopted).toHaveBeenCalledTimes(2);
+        expect(firstComplete).toHaveBeenCalledOnce();
+        expect(secondComplete).toHaveBeenCalledOnce();
+      } finally {
+        releaseFirstAdmission.resolve();
+        clearFollowupQueue(q.key);
+        await Promise.allSettled(settlements);
+        vi.useRealTimers();
+      }
+    },
+  );
 
   it("does not treat an undefined callback rejection as an adoption refusal", async () => {
     const q = createQueueCase({ mode: "followup", debounceMs: 0 }, 1);

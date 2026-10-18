@@ -129,6 +129,7 @@ describe("requester settle wake identity", () => {
       expect(recognizes(persistedRunId)).toBe(matched);
       entry.requesterSettleWake!.nextAttemptAt = 30_000;
       expect(recognizes(persistedRunId)).toBe(matched);
+      expect(recognizes(nextRunId)).toBe(false);
       entry.requesterSettleWake!.status = "dispatching";
       entry.requesterSettleWake!.nextAttemptAt = undefined;
       entry.requesterSettleWake!.attemptCount = 3;
