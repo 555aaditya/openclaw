@@ -585,6 +585,20 @@ describe("runDaemonRestart health checks", () => {
     expect(resolveGatewayPort).not.toHaveBeenCalled();
   });
 
+  it("names Gateway next steps for stop and uninstall failures", async () => {
+    await runDaemonStop({ json: true });
+    await runDaemonUninstall({ json: true });
+
+    const stopHints = runServiceStop.mock.calls[0]![0].renderFailureHints();
+    expect(stopHints).toEqual([expect.stringContaining("openclaw gateway status --deep")]);
+    expect(runServiceUninstall.mock.calls[0]![0].renderFailureHints()).toEqual([
+      ...stopHints,
+      expect.stringContaining(
+        "https://docs.openclaw.ai/install/uninstall#manual-service-removal-cli-not-installed",
+      ),
+    ]);
+  });
+
   it("stops a running disabled systemd unit through the service manager", async () => {
     vi.spyOn(process, "platform", "get").mockReturnValue("linux");
     service.readRuntime.mockResolvedValue({ status: "running" });
