@@ -6,7 +6,6 @@ import type {
   WorkerEnvironmentProfileSummary,
 } from "../../../../packages/gateway-protocol/src/index.js";
 import type { GatewaySessionRow } from "../../api/types.ts";
-import type { SessionCapability } from "../../lib/sessions/index.ts";
 import { createSessionsListResult } from "../../test-helpers/chat-model.ts";
 import { gatewayHelloForMethods } from "../../test-helpers/gateway-methods.ts";
 import {
@@ -25,7 +24,6 @@ import {
   offlineDeviceSession,
   createTestChatPane,
   createGatewayBrowserClientFixture,
-  createSessionCapabilityFixture,
 } from "./chat-pane.test-support.ts";
 
 function activePlacementSession() {
