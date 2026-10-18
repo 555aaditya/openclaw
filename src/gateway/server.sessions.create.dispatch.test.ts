@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { expect, test, vi, onTestFinished } from "vitest";
+import type WebSocket from "ws";
 import { closeGatewayTestWebSocket } from "../../test/helpers/gateway-websocket.js";
 import { withinTest } from "../../test/helpers/promise.js";
 import { getRuntimeConfig } from "../config/io.js";
@@ -59,6 +60,50 @@ const {
   createSelectedGlobalSessionStore,
   resetConfiguredGlobalAgentSessionStore,
 } = setupSessionCreateTestHarness();
+
+type CreatedSessionPayload = {
+  key?: string;
+  sessionId?: string;
+  entry?: SessionEntry;
+  runStarted?: boolean;
+  runId?: string;
+};
+
+async function createDashboard(ws: WebSocket, key: string) {
+  const created = await rpcReq<CreatedSessionPayload>(ws, "sessions.create", {
+    agentId: "main",
+    key,
+  });
+  expect(created.ok, JSON.stringify(created.error)).toBe(true);
+  return created;
+}
+
+async function sendTitleTurn(ws: WebSocket, sessionKey: string, idempotencyKey: string) {
+  const sent = await rpcReq(ws, "chat.send", {
+    sessionKey,
+    message: "Help me plan the release",
+    idempotencyKey,
+  });
+  expect(sent.ok, JSON.stringify(sent.error)).toBe(true);
+}
+
+function observeTitle(storePath: string, key: string, persisted: { resolve: () => void }) {
+  return sessionChanges.subscribe((change) => {
+    if (
+      "sessionKey" in change &&
+      change.sessionKey === key &&
+      loadSessionEntry({ agentId: "main", sessionKey: key, storePath })?.displayName
+    ) {
+      persisted.resolve();
+    }
+  });
+}
+
+function resetSelectedStore() {
+  testState.sessionStorePath = undefined;
+  testState.sessionConfig = undefined;
+  testState.agentsConfig = undefined;
+}
 
 test("sessions.create publishes repository metadata before the next socket read", async () => {
   const { storePath } = await createSessionStoreDir();
@@ -143,19 +188,10 @@ test("chat.send deletes a session before its pending dashboard title finishes", 
     };
   });
   try {
-    const created = await rpcReq<{ key: string; sessionId: string }>(ws, "sessions.create", {
-      agentId: "main",
-      key: "agent:main:dashboard:title-order",
-    });
-    expect(created.ok, JSON.stringify(created.error)).toBe(true);
+    const created = await createDashboard(ws, "agent:main:dashboard:title-order");
     const sessionKey = requireNonEmptyString(created.payload?.key, "created session key");
 
-    const sent = await rpcReq(ws, "chat.send", {
-      sessionKey,
-      message: "Help me plan the release",
-      idempotencyKey: "post-dispatch-dashboard-title",
-    });
-    expect(sent.ok, JSON.stringify(sent.error)).toBe(true);
+    await sendTitleTurn(ws, sessionKey, "post-dispatch-dashboard-title");
     await Promise.all([dispatchStarted.promise, titleStarted]);
     titleCompletion = sessionTitleRequests.get({
       storePath,
@@ -227,27 +263,10 @@ test.for(["reply", "empty", "error"])(
       };
     });
     try {
-      const created = await rpcReq<{ key: string }>(ws, "sessions.create", {
-        agentId: "main",
-        key: `agent:main:dashboard:title-before-${outcome}`,
-      });
-      expect(created.ok, JSON.stringify(created.error)).toBe(true);
+      const created = await createDashboard(ws, `agent:main:dashboard:title-before-${outcome}`);
       sessionKey = requireNonEmptyString(created.payload?.key, "created session key");
-      stopTitleObserver = sessionChanges.subscribe((change) => {
-        if (
-          "sessionKey" in change &&
-          change.sessionKey === sessionKey &&
-          loadSessionEntry({ agentId: "main", sessionKey, storePath })?.displayName
-        ) {
-          titlePersisted.resolve();
-        }
-      });
-      const sent = await rpcReq(ws, "chat.send", {
-        sessionKey,
-        message: "Help me plan the release",
-        idempotencyKey: `dashboard-title-before-${outcome}`,
-      });
-      expect(sent.ok, JSON.stringify(sent.error)).toBe(true);
+      stopTitleObserver = observeTitle(storePath, sessionKey, titlePersisted);
+      await sendTitleTurn(ws, sessionKey, `dashboard-title-before-${outcome}`);
       await dispatchStarted.promise;
       await withinTest(titlePersisted.promise, signal);
       expect(dispatchFinished).toBe(false);
@@ -303,27 +322,9 @@ test("chat.send retries a title that failed during its turn once that turn settl
     };
   });
   try {
-    const created = await rpcReq<{ key: string }>(ws, "sessions.create", {
-      agentId: "main",
-      key: sessionKey,
-    });
-    expect(created.ok, JSON.stringify(created.error)).toBe(true);
-    stopTitleObserver = sessionChanges.subscribe((change) => {
-      if (
-        "sessionKey" in change &&
-        change.sessionKey === sessionKey &&
-        loadSessionEntry({ agentId: "main", sessionKey, storePath })?.displayName
-      ) {
-        titlePersisted.resolve();
-      }
-    });
-
-    const sent = await rpcReq(ws, "chat.send", {
-      sessionKey,
-      message: "Help me plan the release",
-      idempotencyKey: "dashboard-title-retry-after-turn",
-    });
-    expect(sent.ok, JSON.stringify(sent.error)).toBe(true);
+    await createDashboard(ws, sessionKey);
+    stopTitleObserver = observeTitle(storePath, sessionKey, titlePersisted);
+    await sendTitleTurn(ws, sessionKey, "dashboard-title-retry-after-turn");
     await Promise.all([dispatchStarted.promise, firstLabelFailed.promise]);
     finishDispatch();
     await titlePersisted.promise;
@@ -470,8 +471,6 @@ test("sessions.create forwards an attachment-only first turn", async () => {
     chatSend.mockRestore();
   }
 });
-
-type CreatedSessionPayload = { key?: string; sessionId?: string; entry?: SessionEntry };
 
 test.each(["generated key", "junction"])(
   "publishes a selected-agent session before socket reads: %s",
@@ -622,10 +621,12 @@ test("sessions.create loads selected global parent from the requested agent stor
 
     expect(created.ok).toBe(true);
     expect(created.payload?.key).toMatch(/^agent:work:dashboard:/);
-    expect(created.payload?.entry?.parentSessionKey).toBe("global");
-    expect(created.payload?.entry?.providerOverride).toBe("openai");
-    expect(created.payload?.entry?.modelOverride).toBe("work-model");
-    expect(created.payload?.entry?.thinkingLevel).toBe("high");
+    expect(created.payload?.entry).toMatchObject({
+      parentSessionKey: "global",
+      providerOverride: "openai",
+      modelOverride: "work-model",
+      thinkingLevel: "high",
+    });
 
     const commandNewEvent = sessionHookMocks.triggerInternalHook.mock.calls
       .map(([event]) => event)
@@ -646,9 +647,7 @@ test("sessions.create loads selected global parent from the requested agent stor
       sessionKey: "global",
     });
   } finally {
-    testState.sessionStorePath = undefined;
-    testState.sessionConfig = undefined;
-    testState.agentsConfig = undefined;
+    resetSelectedStore();
   }
 });
 
@@ -705,9 +704,7 @@ test("sessions.get reads selected global messages from the requested agent store
     expect(renderedMessages).toContain("work global");
     expect(renderedMessages).not.toContain("main global");
   } finally {
-    testState.sessionStorePath = undefined;
-    testState.sessionConfig = undefined;
-    testState.agentsConfig = undefined;
+    resetSelectedStore();
   }
 });
 
@@ -778,9 +775,7 @@ test("sessions.create checks selected global initialization in the requested age
       },
     });
   } finally {
-    testState.sessionStorePath = undefined;
-    testState.sessionConfig = undefined;
-    testState.agentsConfig = undefined;
+    resetSelectedStore();
   }
 });
 
@@ -794,11 +789,7 @@ test("sessions.create sends selected global initial tasks to the requested agent
   );
   const { ws } = await openClient();
 
-  const created = await rpcReq<{
-    key?: string;
-    runStarted?: boolean;
-    runId?: string;
-  }>(ws, "sessions.create", {
+  const created = await rpcReq<CreatedSessionPayload>(ws, "sessions.create", {
     key: "global",
     agentId: "work",
     task: "hello selected global",
@@ -832,62 +823,49 @@ test("sessions.create sends selected global initial tasks to the requested agent
   expect(
     loadSessionEntry({ agentId: "main", sessionKey: "global", storePath: mainStorePath }),
   ).toBeUndefined();
-  testState.sessionStorePath = undefined;
-  testState.sessionConfig = undefined;
-  testState.agentsConfig = undefined;
+  resetSelectedStore();
   ws.close();
 });
 
+const parentTargetDefaults: {
+  explicit: boolean;
+  defaultAgent: boolean;
+  agentId?: string;
+  key?: string;
+  expectedAgent: string;
+  fork: boolean;
+} = {
+  explicit: false,
+  defaultAgent: false,
+  agentId: undefined,
+  key: undefined,
+  expectedAgent: "main",
+  fork: true,
+};
 test.each([
+  { ...parentTargetDefaults, name: "legacy explicit target", agentId: "main" },
+  { ...parentTargetDefaults, name: "legacy ambient target" },
   {
-    name: "legacy explicit target",
-    explicit: false,
-    defaultAgent: false,
-    agentId: "main",
-    key: undefined,
-    expectedAgent: "main",
-  },
-  {
-    name: "legacy ambient target",
-    explicit: false,
-    defaultAgent: false,
-    agentId: undefined,
-    key: undefined,
-    expectedAgent: "main",
-  },
-  {
+    ...parentTargetDefaults,
     name: "explicit fleet without default",
     fork: false,
     explicit: true,
-    defaultAgent: false,
-    agentId: undefined,
-    key: undefined,
     expectedAgent: "work",
   },
   {
+    ...parentTargetDefaults,
     name: "explicit fleet with another default",
     fork: false,
     explicit: true,
     defaultAgent: true,
-    agentId: undefined,
-    key: undefined,
     expectedAgent: "work",
   },
+  { ...parentTargetDefaults, name: "explicit cross-agent target", explicit: true, agentId: "main" },
   {
-    name: "explicit cross-agent target",
-    explicit: true,
-    defaultAgent: false,
-    agentId: "main",
-    key: undefined,
-    expectedAgent: "main",
-  },
-  {
+    ...parentTargetDefaults,
     name: "explicit child key",
     explicit: true,
-    defaultAgent: false,
-    agentId: undefined,
     key: "agent:main:dashboard:child-target",
-    expectedAgent: "main",
   },
 ])(
   "sessions.create resolves an agent-qualified parent from its own store: $name",
@@ -926,16 +904,7 @@ test.each([
         ],
       });
 
-      const created = await rpcReq<{
-        key?: string;
-        sessionId?: string;
-        entry?: {
-          parentSessionKey?: string;
-          sessionFile?: string;
-          forkSource?: { sessionKey: string; sessionId: string };
-          forkedFromParent?: boolean;
-        };
-      }>(ws, "sessions.create", {
+      const created = await rpcReq<CreatedSessionPayload>(ws, "sessions.create", {
         ...(agentId ? { agentId } : {}),
         ...(key ? { key } : {}),
         parentSessionKey: "agent:work:main",
@@ -1001,9 +970,7 @@ test.each([
     } finally {
       await closeGatewayTestWebSocket(ws);
       testState.agentConfig = undefined;
-      testState.sessionStorePath = undefined;
-      testState.sessionConfig = undefined;
-      testState.agentsConfig = undefined;
+      resetSelectedStore();
     }
   },
 );
