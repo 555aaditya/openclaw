@@ -411,9 +411,10 @@ export function adoptSessionControllerSource(
   }
 }
 
-function resolveSourceTarget(key: string, source: FollowupRun): SessionTarget {
+function resolveSourceTarget(key: string, source: FollowupRun, storePath?: string): SessionTarget {
   return captureSessionTarget({
     storeScope:
+      storePath ??
       resolveExplicitSessionStorePathForScope({ agentId: source.run.agentId, sessionKey: key }) ??
       resolveSessionStorePathCore(source.run.config.session?.store, {
         agentId: source.run.agentId,
@@ -425,10 +426,14 @@ function resolveSourceTarget(key: string, source: FollowupRun): SessionTarget {
 }
 
 /** Read source-scoped history without creating a mailbox for a rejected redelivery. */
-export function findSessionControllerSourceMailbox(key: string, source: FollowupRun) {
+export function findSessionControllerSourceMailbox(
+  key: string,
+  source: FollowupRun,
+  storePath?: string,
+) {
   return (
     source.controllerInput?.mailbox ??
-    getExistingSessionControllerMailbox(key, resolveSourceTarget(key, source))
+    getExistingSessionControllerMailbox(key, resolveSourceTarget(key, source, storePath))
   );
 }
 
@@ -437,7 +442,7 @@ export function submitSessionControllerInput(
   key: string,
   source: FollowupRun,
   policy: QueueSettings,
-  protocolRunId?: string,
+  options?: { protocolRunId?: string; storePath?: string },
 ): SessionControllerInput {
   if (source.controllerInput) {
     if (!source.controllerInput.mailbox.owner.aliases.has(key.trim())) {
@@ -450,9 +455,9 @@ export function submitSessionControllerInput(
   }
   const input = reserveSessionControllerSource(key, {
     sourceTurnId: source.sourceTurnId,
-    protocolRunId,
+    protocolRunId: options?.protocolRunId,
     policy,
-    target: resolveSourceTarget(key, source),
+    target: resolveSourceTarget(key, source, options?.storePath),
   });
   bindSessionControllerSource(input, source);
   return input;

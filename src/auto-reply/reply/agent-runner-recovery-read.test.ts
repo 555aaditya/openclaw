@@ -30,7 +30,7 @@ it("queues non-steering input while recovery metadata is unavailable", async () 
     .mockRejectedValueOnce(new Error("Recovery metadata is unavailable"));
   vi.mocked(enqueueFollowupRun).mockReturnValueOnce(true);
   const state: ReplyOperationRunState = {};
-  const { run } = createBaseRun({
+  const { run, resolvedQueue } = createBaseRun({
     context: { Provider: "webchat" },
     reply: {
       sessionKey: "main",
@@ -43,6 +43,7 @@ it("queues non-steering input while recovery metadata is unavailable", async () 
     },
   });
 
+  resolvedQueue.mode = "followup";
   await run();
 
   expect(state.admission).toEqual({ status: "accepted", mode: "followup" });

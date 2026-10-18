@@ -28,7 +28,7 @@ type ReplyQuestionInputParams = Pick<
 >;
 
 type ReplyQuestionInputResult =
-  | { handled: false; refusedNotice?: ReplyPayload }
+  | { handled: false }
   | { handled: true; payload: ReplyPayload | undefined };
 
 /** Question-only runtimes accept answers without exposing ordinary steering. */
@@ -119,25 +119,14 @@ export async function runReplyQuestionInput(
         return { handled: false };
       }
       if (error instanceof QuestionDispatchRefusedError) {
-        // A source still current is ordinary input the caller queues, never steers.
-        try {
-          assertSourceCurrent();
-        } catch {
-          if (state) {
-            state.admission = { status: "skipped", reason: "question-response-refused" };
-          }
-          return {
-            handled: true,
-            payload: markReplyPayloadForSourceSuppressionDelivery({
-              text: `The answer was not sent: ${error.message}. Use the question controls in the Control UI, or check the active run and your permissions before retrying.`,
-              isError: true,
-            }),
-          };
+        if (state) {
+          state.admission = { status: "skipped", reason: "question-response-refused" };
         }
         return {
-          handled: false,
-          refusedNotice: markReplyPayloadForSourceSuppressionDelivery({
-            text: `Your message was not used as the answer to the pending question (${error.message}). It was queued and runs after the current turn finishes, which can take until that question times out.`,
+          handled: true,
+          payload: markReplyPayloadForSourceSuppressionDelivery({
+            text: `The answer was not sent: ${error.message}. Use the question controls in the Control UI, or check the active run and your permissions before retrying.`,
+            isError: true,
           }),
         };
       }

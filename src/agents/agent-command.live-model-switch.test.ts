@@ -5,7 +5,11 @@ import path from "node:path";
 import { expectDefined, toStringifiedError } from "@openclaw/normalization-core";
 import { createRequireRecord } from "openclaw/plugin-sdk/test-fixtures";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { createDeferred } from "../../test/helpers/promise.js";
+import {
+  awaitGateBeforeSettlement,
+  createDeferred,
+  withinTest,
+} from "../../test/helpers/promise.js";
 import { setReplyPayloadMetadata } from "../auto-reply/reply-payload.js";
 import type { SessionEntry } from "../config/sessions.js";
 import { resolveInternalSessionEffectsIdentity } from "../config/sessions/internal-session-key.js";
@@ -3524,13 +3528,15 @@ describe("agentCommand – LiveSessionModelSwitchError retry", () => {
     },
   );
 
-  it.each([
+  it.for([
     ["Stop", () => new Error("QA stopped the run")],
     ["restart", createAgentRunRestartAbortError],
   ] as const)(
     "preserves the controller %s reason through command interruption",
-    async (_source, createReason) => {
+    async ([_source, createReason], { signal: testSignal }) => {
+      setupStoredSession();
       setupAcpSession();
+      const cleanup = new AbortController();
       const entered = createDeferred();
       let commandSignal: AbortSignal | undefined;
       state.acpRunTurnMock.mockImplementation(async (params: unknown) => {
@@ -3558,21 +3564,30 @@ describe("agentCommand – LiveSessionModelSwitchError retry", () => {
       const command = agentCommand({
         message: "hello",
         sessionKey: "agent:main:main",
-        sessionEffects: "internal",
+        abortSignal: cleanup.signal,
       });
       const rejection = command.catch((error: unknown) => error);
-      await entered.promise;
-      const interruption = startSessionControllerInterruption({
-        scope: "agent:default",
-        identities: ["agent:main:main", "session-1"],
-        reason,
-      });
-
+      let interruption: ReturnType<typeof startSessionControllerInterruption> | undefined;
       try {
+        await withinTest(
+          awaitGateBeforeSettlement(
+            entered.promise,
+            command,
+            "ACP command never reached its runtime",
+          ),
+          testSignal,
+        );
+        interruption = startSessionControllerInterruption({
+          scope: commandPaths.sessions,
+          agentId: "default",
+          identities: ["agent:main:main", "session-1"],
+          reason,
+        });
         expect(commandSignal?.reason).toBe(reason);
-        expect(await rejection).toBe(reason);
+        expect(await withinTest(rejection, testSignal)).toBe(reason);
       } finally {
-        await Promise.allSettled([command, interruption.released]);
+        cleanup.abort(new Error("Command interruption fixture cleanup"));
+        await Promise.allSettled([command, interruption?.released]);
       }
     },
   );

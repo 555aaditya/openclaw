@@ -250,6 +250,7 @@ describe("runReplyAgent stranded message_tool_only finals (#85714)", () => {
     return {
       ...(await execute(followupRun, createRunResult())),
       followupRun,
+      storePath,
       executeRetry: (queuedRun: FollowupRun, delivered: boolean, retryText?: string) =>
         execute(queuedRun, createRunResult(delivered, retryText)),
     };
@@ -367,7 +368,10 @@ describe("runReplyAgent stranded message_tool_only finals (#85714)", () => {
       });
       expect(vi.mocked(enqueueFollowupRun).mock.calls[0]?.[3]).toBe("none");
       expect(vi.mocked(enqueueFollowupRun).mock.calls[0]?.[5]).toBe(false);
-      expect(vi.mocked(enqueueFollowupRun).mock.calls[0]?.[6]).toEqual({ position: "front" });
+      expect(vi.mocked(enqueueFollowupRun).mock.calls[0]?.[6]).toEqual({
+        position: "front",
+        storePath: initial.storePath,
+      });
 
       const retry = await initial.executeRetry(
         retryRun,

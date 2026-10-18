@@ -207,6 +207,7 @@ export async function enqueueGoalContinuation(params: {
     "message-id",
     params.runFollowup,
     false,
+    { storePath: params.storePath },
   );
   if (enqueued) {
     // Model completion precedes source delivery. A later terminal handling failure

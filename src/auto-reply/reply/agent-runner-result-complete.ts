@@ -195,7 +195,7 @@ export async function completeReplyAgentRun(input: {
         "none",
         runFollowupTurn,
         false,
-        { position: "front" },
+        { position: "front", storePath },
       );
       if (!retryEnqueued) {
         finalPayloads = [...finalPayloads, createMissingReplyNotice()];

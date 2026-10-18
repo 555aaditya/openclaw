@@ -115,7 +115,10 @@ export async function runReplyAgent(
   followupRun.turnAdoptionLifecycle ??= opts?.turnAdoptionLifecycle;
   bindReplySourceToFollowup(opts, followupRun);
   const runId = opts?.runId ?? randomUUID();
-  const controllerInput = submitSessionControllerInput(queueKey, followupRun, resolvedQueue, runId);
+  const controllerInput = submitSessionControllerInput(queueKey, followupRun, resolvedQueue, {
+    protocolRunId: runId,
+    storePath,
+  });
   let immediateClaim: SessionControllerMailboxClaim | undefined;
   const upstreamSignals = [
     controllerInput.abortSignal,
@@ -349,7 +352,6 @@ export async function runReplyAgent(
     }
 
     if (
-      !questionInput.refusedNotice &&
       effectiveShouldSteer &&
       isActive &&
       !shouldQueueProvidedSteer &&
@@ -377,16 +379,14 @@ export async function runReplyAgent(
       return result === "handled" ? undefined : result;
     }
 
-    const activeRunQueueAction = questionInput.refusedNotice
-      ? "enqueue-followup"
-      : resolveActiveRunQueueAction({
-          hasQueuedFollowups,
-          interrupt: resolvedQueue.mode === "interrupt",
-          isActive,
-          isHeartbeat,
-          shouldFollowup: effectiveShouldFollowup || shouldQueueProvidedSteer,
-          resetTriggered,
-        });
+    const activeRunQueueAction = resolveActiveRunQueueAction({
+      hasQueuedFollowups,
+      interrupt: resolvedQueue.mode === "interrupt",
+      isActive,
+      isHeartbeat,
+      shouldFollowup: effectiveShouldFollowup || shouldQueueProvidedSteer,
+      resetTriggered,
+    });
     if (activeRunQueueAction === "drop") {
       if (replyOperationRunState) {
         replyOperationRunState.admission = { status: "skipped", reason: "active-run" };
@@ -451,7 +451,7 @@ export async function runReplyAgent(
       } else {
         typing.cleanup();
       }
-      return questionInput.refusedNotice;
+      return undefined;
     }
 
     const replySessionKey = sessionKey ?? followupRun.run.sessionKey;

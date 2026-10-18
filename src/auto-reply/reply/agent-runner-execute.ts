@@ -95,7 +95,10 @@ export function continueStalledReplyTurn({
     "none",
     runFollowupTurn,
     false,
-    { position: "front" },
+    {
+      position: "front",
+      storePath: followupRun.controllerInput?.mailbox.owner.target?.storeScope,
+    },
   );
   if (enqueued) {
     followupRun.stalledTurnRecovery = true;

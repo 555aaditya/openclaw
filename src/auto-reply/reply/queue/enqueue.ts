@@ -139,11 +139,14 @@ export function enqueueFollowupRun(
   const recentMessageIdKey = dedupeMode !== "none" ? buildRecentMessageIdKey(run, key) : undefined;
   if (
     recentMessageIdKey &&
-    peekRecentQueueMessageId(recentMessageIdKey, findSessionControllerSourceMailbox(key, run))
+    peekRecentQueueMessageId(
+      recentMessageIdKey,
+      findSessionControllerSourceMailbox(key, run, options.storePath),
+    )
   ) {
     return false;
   }
-  const input = submitSessionControllerInput(key, run, settings);
+  const input = submitSessionControllerInput(key, run, settings, { storePath: options.storePath });
   if (
     input.phase === "consumed" ||
     input.claim ||

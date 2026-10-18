@@ -656,7 +656,10 @@ export async function deliverFollowupDecision(params: {
         "none",
         params.runFollowup,
         false,
-        { position: "front" },
+        {
+          position: "front",
+          storePath: turn.session.kind === "session" ? turn.session.storePath : undefined,
+        },
       );
     if (enqueued) {
       return { kind: "source-retry" };

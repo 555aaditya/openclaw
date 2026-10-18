@@ -4,7 +4,7 @@ import { expectDefined } from "@openclaw/normalization-core";
 // Tests miscellaneous run-reply-agent behaviors and artifact output.
 import { createRequireRecord } from "openclaw/plugin-sdk/test-fixtures";
 import { describe, expect, it, vi } from "vitest";
-import { createDeferred } from "../../../test/helpers/promise.js";
+import { awaitGateBeforeSettlement, createDeferred } from "../../../test/helpers/promise.js";
 import { parseCliOutput } from "../../agents/cli-output.js";
 import type { RunEmbeddedAgentInternalParams } from "../../agents/embedded-agent-runner/run/internal-params.js";
 import { registerPendingAgentQuestion } from "../../agents/harness/gateway-question.js";
@@ -700,7 +700,11 @@ describe("runReplyAgent auto-compaction token update", () => {
 
       try {
         const pending = baseRun.run();
-        await candidateSettled;
+        await awaitGateBeforeSettlement(
+          candidateSettled,
+          pending,
+          "Reply settled before the fallback candidate completed",
+        );
         const replyOperation = expectDefined(
           onReplyOperationOwned.mock.calls[0]?.[0],
           "admitted reply operation",
@@ -1155,7 +1159,6 @@ describe("runReplyAgent Active Memory inline debug", () => {
   it("appends raw trace payloads when trace raw is enabled", async () => {
     const tmp = tempDirs.make("openclaw-trace-raw-usage-");
     const storePath = path.join(tmp, "sessions.json");
-    const sessionFile = path.join(tmp, "session.jsonl");
     const sessionKey = "main";
     const sessionEntry: SessionEntry = {
       sessionId: "session",
@@ -1165,25 +1168,25 @@ describe("runReplyAgent Active Memory inline debug", () => {
     };
 
     await replaceSessionEntry({ storePath, sessionKey }, sessionEntry);
-    await fs.writeFile(
-      sessionFile,
-      [
-        JSON.stringify({
-          message: {
-            role: "user",
-            content: "Earlier turn",
-            usage: { input: 400, output: 20, cacheRead: 100, cacheWrite: 50, total: 570 },
-          },
-        }),
-        JSON.stringify({
-          message: {
-            role: "assistant",
-            content: "Earlier reply",
-            usage: { input: 200, output: 10, cacheRead: 20, cacheWrite: 5, total: 235 },
-          },
-        }),
-      ].join("\n"),
-      "utf-8",
+    const transcript = await SessionManager.openAsync(
+      { agentId: "main", sessionId: sessionEntry.sessionId, sessionKey, storePath },
+      tmp,
+    );
+    await transcript.appendMessageAsync({ role: "user", content: "Earlier turn", timestamp: 0 });
+    await transcript.appendMessageAsync(
+      makeAssistantMessageFixture({
+        content: [{ type: "text", text: "Earlier reply" }],
+        stopReason: "stop",
+        errorMessage: undefined,
+        usage: {
+          input: 200,
+          output: 10,
+          cacheRead: 20,
+          cacheWrite: 5,
+          totalTokens: 235,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+      }),
     );
 
     runWithModelFallbackMock.mockImplementationOnce(async (params: RunWithModelFallbackParams) => ({
@@ -1270,7 +1273,7 @@ describe("runReplyAgent Active Memory inline debug", () => {
       commandBody: "/trace raw show me everything",
       reasoningLevel: "on",
       sessionEntry,
-      sessionFile,
+      sessionFile: sessionKey,
       storePath,
       thinkLevel: "low",
       traceAuthorized: true,
@@ -1810,7 +1813,7 @@ describe("runReplyAgent response usage footer", () => {
         model: params.model ?? "claude",
         thinkLevel: "low",
       },
-      reply: { queueKey: "main", sessionEntry, sessionKey: params.sessionKey },
+      reply: { queueKey: params.sessionKey, sessionEntry, sessionKey: params.sessionKey },
     }).run();
   }
 
