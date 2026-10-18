@@ -75,7 +75,7 @@ describe("nested tool activity ownership", () => {
   });
 
   it.each(["current", "aborted", "replacement", "cancelled", "committed-abort"] as const)(
-    "admits nested tool transcript writes only for the current attempt (%s)",
+    "admits nested tool writes at the effect and retains committed activity (%s)",
     async (owner) => {
       await withStateDirEnv("openclaw-nested-tool-admission-", async () => {
         const target = {
@@ -170,9 +170,10 @@ describe("nested tool activity ownership", () => {
             await Promise.all([held, execution]);
           }
           await parent.release();
-          expect(await prepared.readActivities()).toHaveLength(owner === "current" ? 1 : 0);
+          const committed = owner === "current" || owner === "committed-abort";
+          expect(await prepared.readActivities()).toHaveLength(committed ? 1 : 0);
           expect(SessionManager.open(target).getEntries()).toHaveLength(
-            originalEntries.length + (owner === "current" || owner === "committed-abort" ? 1 : 0),
+            originalEntries.length + (committed ? 1 : 0),
           );
         } finally {
           release.resolve();

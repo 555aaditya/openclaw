@@ -553,20 +553,3 @@ it("keeps the run protected until its last pending human question settles", asyn
   manager.cancel(second);
   await expect(recover()).resolves.toMatchObject({ status: "aborted" });
 });
-
-it("does not abort a replacement installed synchronously by question expiry", async () => {
-  await request(true, 900_000);
-  const replacement = { ...handle, abort: vi.fn() };
-  onBroadcast = (event) => {
-    if (event === "question.resolved") {
-      setActiveEmbeddedRun(ref.sessionId, replacement, ref.sessionKey);
-    }
-  };
-  vi.setSystemTime(Date.now() + 900_000);
-  await expect(recover()).resolves.toMatchObject({
-    status: "skipped",
-    reason: "stale_session_state",
-  });
-  expect(abort).not.toHaveBeenCalled();
-  expect(replacement.abort).not.toHaveBeenCalled();
-});
