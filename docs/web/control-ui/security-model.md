@@ -133,7 +133,11 @@ filesystem setting.
 Assistant `MEDIA:` attachments in local project chats resolve relative paths
 inside the session workspace, including managed worktrees. Absolute paths in
 that workspace are staged for delivery under the same file-access checks.
-Selecting a project does not grant access to sibling worktrees.
+For a managed project running in a local Docker or Podman sandbox, absolute
+container-workspace references (such as `/workspace/screenshots/result.png`)
+resolve through that session's worktree after pending workspace changes settle.
+The preview still belongs to the original message and uses the same containment
+and current-access checks. Selecting a project does not grant access to sibling worktrees.
 
 Trusted audio attachments use the same session workspace boundary during playback.
 Mixed replies retain a separate failure card for each rejected attachment alongside

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
 import { Socket } from "node:net";
@@ -9,6 +10,8 @@ import {
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import * as avatarFile from "../agents/identity-avatar-file.js";
+import { requireGit } from "../agents/worktrees/git.js";
+import { insertRegistryWorktree } from "../agents/worktrees/registry.js";
 import { setRuntimeConfigSnapshot } from "../config/runtime-snapshot.js";
 import {
   stageSessionPendingInput,
@@ -40,6 +43,8 @@ import {
   handleControlUiHttpRequest,
 } from "./control-ui.js";
 import { invalidateOperatorRolePolicy } from "./operator-role-policy.js";
+import { withLocalWorkspaceProjection } from "./worker-environments/local-workspace-projection.js";
+import type { LocalWorkspaceOwner } from "./worker-environments/local-workspace-types.js";
 
 const REAL_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
@@ -295,9 +300,12 @@ describe("saved message attachment response authority", () => {
   let origin: string;
   const ordinary = "media://inbound/notes.txt";
   let config: OpenClawConfig;
+  let workspaceDir: string;
+  let projection: string;
+  let owner: LocalWorkspaceOwner;
 
   async function seed(commentSource = source) {
-    const directive = `MEDIA:${path.join(state.workspaceDir, "report.txt")}`;
+    const directive = `MEDIA:${path.join(workspaceDir, "report.txt")}`;
     let parentId: string | null = null;
     function message(id: string, content: unknown, extra: Record<string, unknown> = {}) {
       const event = { type: "message", id, parentId, message: { role: "user", content, ...extra } };
@@ -314,6 +322,12 @@ describe("saved message attachment response authority", () => {
         role: "assistant",
       }),
       message("legacy-media", `Saved report\n${directive}`, { role: "assistant" }),
+      message("sandbox-screenshot", "MEDIA:/workspace/.artifacts/proof/screenshot.png", {
+        role: "assistant",
+      }),
+      message("relative-screenshot", "MEDIA:.artifacts/proof/screenshot.png", {
+        role: "assistant",
+      }),
       message("user-directive", directive),
       message("text-only", source),
       message("hidden", "Internal coordination", {
@@ -330,9 +344,39 @@ describe("saved message attachment response authority", () => {
 
   beforeAll(async () => {
     state = await createOpenClawTestState({ scenario: "minimal", label: "message-attachments" });
+    const repo = state.workspaceDir;
+    workspaceDir = path.join(state.root, "checkout");
+    await requireGit(repo, ["init", "--quiet", "-b", "main"]);
+    await requireGit(repo, ["config", "user.name", "Test"]);
+    await requireGit(repo, ["config", "user.email", "test@example.invalid"]);
+    await fs.writeFile(path.join(repo, ".gitignore"), ".artifacts/\n");
+    await requireGit(repo, ["add", ".gitignore"]);
+    await requireGit(repo, ["commit", "--quiet", "-m", "base"]);
+    await requireGit(repo, ["worktree", "add", "--quiet", "-b", "screenshot", workspaceDir]);
+    owner = {
+      agentId: scope.agentId,
+      sessionKey: scope.sessionKey,
+      sessionId: scope.sessionId,
+      lifecycleRevision: null,
+      assertCurrent() {},
+      worktree: {
+        id: randomUUID(),
+        name: "screenshots",
+        repoFingerprint: "test",
+        repoRoot: repo,
+        path: workspaceDir,
+        branch: "screenshot",
+        baseRef: "main",
+        ownerKind: "session",
+        ownerId: scope.sessionKey,
+        createdAt: 0,
+        lastActiveAt: 0,
+      },
+    };
+    await insertRegistryWorktree(process.env, owner.worktree);
     const trustedProxy = { userHeader: "x-forwarded-user", allowLoopback: true };
     config = {
-      agents: { entries: { main: { workspace: state.workspaceDir } } },
+      agents: { entries: { main: { workspace: workspaceDir } } },
       tools: { fs: { workspaceOnly: true } },
       gateway: {
         auth: { mode: "trusted-proxy", trustedProxy },
@@ -362,12 +406,23 @@ describe("saved message attachment response authority", () => {
       updatedAt: 1,
       createdActor: { type: "human", source: "profile", id: profileId },
       visibility: "shared",
+      sandbox: "required",
+      spawnedCwd: workspaceDir,
+      spawnedWorkspaceDir: workspaceDir,
+      worktree: {
+        id: owner.worktree.id,
+        branch: owner.worktree.branch,
+        repoRoot: owner.worktree.repoRoot,
+      },
     });
     await seed();
     await fs.mkdir(state.statePath("media", "inbound"), { recursive: true });
     await fs.writeFile(state.statePath("media", "inbound", "selection-comment.txt"), text);
     await fs.writeFile(state.statePath("media", "inbound", "notes.txt"), "Ordinary attachment");
-    await fs.writeFile(path.join(state.workspaceDir, "report.txt"), "Saved assistant report");
+    await fs.writeFile(path.join(workspaceDir, "report.txt"), "Saved assistant report");
+    projection = await withLocalWorkspaceProjection(owner, (current) => current.prepare());
+    await fs.mkdir(path.join(projection, ".artifacts", "proof"), { recursive: true });
+    await fs.writeFile(path.join(projection, ".artifacts", "proof", "screenshot.png"), REAL_PNG);
     listener = await reserveTestPortListener({
       offsets: [0],
       createListener: () =>
@@ -503,9 +558,33 @@ describe("saved message attachment response authority", () => {
     }
   });
 
+  it("previews unsynchronized sandbox screenshots with their original message and ticket identity", async () => {
+    await expect(
+      fs.stat(path.join(workspaceDir, ".artifacts", "proof", "screenshot.png")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    for (const [messageId, imageSource] of [
+      ["sandbox-screenshot", "/workspace/.artifacts/proof/screenshot.png"],
+      ["relative-screenshot", ".artifacts/proof/screenshot.png"],
+    ] as const) {
+      const query = { source: imageSource, messageId };
+      const mediaTicket = await metadata(query);
+      if (messageId === "sandbox-screenshot") {
+        const payload = Buffer.from(mediaTicket.split(".")[1]!, "base64url").toString("utf8");
+        expect(JSON.parse(payload)).toMatchObject({
+          source: "/workspace/.artifacts/proof/screenshot.png",
+        });
+        expect(payload).not.toContain(workspaceDir);
+      }
+      const preview = await request({ ...query, mediaTicket }, { ticketOnly: true });
+      expect(preview.status).toBe(200);
+      expect(preview.headers.get("content-type")).toBe("image/png");
+      expect(Buffer.from(await preview.arrayBuffer())).toEqual(REAL_PNG);
+    }
+  });
+
   it("reads saved assistant media directives without treating user text as an attachment", async () => {
     const query = {
-      source: path.join(state.workspaceDir, "report.txt"),
+      source: path.join(workspaceDir, "report.txt"),
       messageId: "legacy-media",
     };
     const mediaTicket = await metadata(query);

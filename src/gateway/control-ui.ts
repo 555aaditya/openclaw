@@ -37,6 +37,7 @@ import {
 } from "./assistant-media-content-disposition.js";
 import {
   resolveAssistantMediaPolicy,
+  resolveAssistantMediaWorkspaceTicketKey,
   assertAssistantMediaPolicyCurrent,
   verifyAssistantMediaTicket,
 } from "./assistant-media-policy.js";
@@ -256,7 +257,8 @@ export async function handleControlUiAssistantMediaRequest(
     ticket.session?.sessionKey === policy.session?.sessionKey &&
     ticket.session?.agentId === policy.session?.agentId &&
     ticket.session?.sessionId === policy.session?.sessionId &&
-    ticket.messageId === policy.messageId;
+    ticket.messageId === policy.messageId &&
+    ticket.workspaceKey === resolveAssistantMediaWorkspaceTicketKey(source, policy);
   if (!isMetaRequest && url.searchParams.has("mediaTicket") && (!ticket || !sameSession)) {
     respondControlUiNotFound(res);
     return true;
@@ -321,7 +323,7 @@ export async function handleControlUiAssistantMediaRequest(
 
   let byteStream: ReturnType<typeof createGatewayByteStream> | undefined;
   try {
-    const media = await openAssistantMedia(source, policy, allowance);
+    const media = await openAssistantMedia(source, policy, allowance, assertCurrentPolicy);
     let opened = media.opened;
     byteStream = createGatewayByteStream(res, opened.handle, () => respondControlUiNotFound(res));
     const mime = media.mimeType;

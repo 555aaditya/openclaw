@@ -602,3 +602,33 @@ it("preserves legacy Full Access PDF attachments under the configured agent work
   await fs.writeFile(outside, content);
   expect((await request(outside, { bytes: true })).res.statusCode).toBe(404);
 });
+
+it("contains mapped managed sandbox images and revokes tickets when the workspace changes", async () => {
+  entry.sandbox = "required";
+  entry.worktree = { id: "managed-worktree", branch: "screenshots", repoRoot: temp };
+  cfg.agents!.defaults = { sandbox: { backend: "podman", docker: { workdir: "/project" } } };
+  entry.spawnedCwd = path.join(project, "nested");
+  await fs.mkdir(entry.spawnedCwd);
+  const local = await image("screenshot.png");
+  const source = "/project/screenshot.png";
+  const ticket = await mediaTicket(source);
+  await expectBytes(source, { ticket });
+  await expectWithheld(local, { ticket, bytes: true });
+  const outside = await image("outside.png", temp);
+  await fs.symlink(outside, path.join(project, "escape.png"));
+  for (const denied of ["/project/escape.png", "/project/../outside.png"]) {
+    await expectMetadata(denied, { available: false });
+    await expectWithheld(denied, { bytes: true });
+  }
+  {
+    using _ = onOpen(local, () => {
+      entry.worktree = { ...entry.worktree!, id: "replacement-worktree" };
+    });
+    await expectWithheld(source, { ticket, bytes: true });
+  }
+  await expectWithheld(source, { ticket, bytes: true });
+  const renewed = await mediaTicket(source);
+  await expectBytes(source, { ticket: renewed });
+  cfg.agents!.defaults!.sandbox!.docker!.workdir = "/renamed";
+  await expectWithheld(source, { ticket: renewed, bytes: true });
+});

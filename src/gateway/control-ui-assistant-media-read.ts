@@ -1,7 +1,9 @@
 import { readFileWindowFully, safeFileURLToPath } from "@openclaw/fs-safe/advanced";
 import { detectMime, kindFromMime } from "@openclaw/media-core/mime";
 import { startsWithSvgRootElement } from "../../packages/gateway-protocol/src/svg-image.js";
+import { resolveSandboxPathMapping } from "../agents/path-policy.js";
 import { openLocalFileSafely } from "../infra/fs-safe.js";
+import { isPathInside } from "../infra/path-guards.js";
 import { assertLocalMediaAllowed, LocalMediaAccessError } from "../media/local-media-access.js";
 import { resolveMediaReferenceLocalPathInfo } from "../media/media-reference.js";
 import { resolvePlaybackMetadataForSource } from "../media/playback-transcode.js";
@@ -12,6 +14,7 @@ import {
 } from "./assistant-media-errors.js";
 import {
   createAssistantMediaTicket,
+  resolveAssistantMediaWorkspaceTicketKey,
   type resolveAssistantMediaPolicy,
   type AssistantMediaTicketPayload,
 } from "./assistant-media-policy.js";
@@ -49,10 +52,20 @@ export async function openAssistantMedia(
   source: string,
   policy: AssistantMediaPolicy,
   allowance: true | AssistantMediaFile | undefined,
+  assertCurrent: () => void,
 ) {
-  const reference = await resolveMediaReferenceLocalPathInfo(source);
+  const sandbox = policy.sandboxWorkspace;
+  const mapped = !policy.remote && sandbox ? resolveSandboxPathMapping([sandbox], source) : null;
+  const reference = await resolveMediaReferenceLocalPathInfo(mapped?.hostPath ?? source);
   if (policy.remote && reference.kind === "local") {
     throw new LocalMediaAccessError("invalid-path", "File is on another computer");
+  }
+  if (sandbox && reference.kind === "local" && isPathInside(sandbox.hostRoot, reference.path)) {
+    const { withSettledLocalWorkspacePath } =
+      await import("./worker-environments/local-workspace-projection.js");
+    assertCurrent();
+    await withSettledLocalWorkspacePath({ cwd: sandbox.hostRoot, assertCurrent }, async () => {});
+    assertCurrent();
   }
   let outsideRoots = false;
   try {
@@ -116,7 +129,12 @@ export async function resolveAssistantMediaAvailability(
 ): Promise<AssistantMediaAvailability & { mediaTicket?: string; mediaTicketExpiresAt?: string }> {
   try {
     assertCurrent();
-    const { opened, mimeType, file } = await openAssistantMedia(source, policy, allowance);
+    const { opened, mimeType, file } = await openAssistantMedia(
+      source,
+      policy,
+      allowance,
+      assertCurrent,
+    );
     // The inspection owner reopens and verifies this identity after queue admission.
     await opened[Symbol.asyncDispose]();
     const mediaKind = kindFromMime(mimeType);
@@ -144,6 +162,7 @@ export async function resolveAssistantMediaAvailability(
       ...playbackMetadata,
       ...createAssistantMediaTicket({
         source,
+        workspaceKey: resolveAssistantMediaWorkspaceTicketKey(source, policy),
         agentId,
         session: policy.session,
         ...(policy.messageId ? { messageId: policy.messageId } : {}),
