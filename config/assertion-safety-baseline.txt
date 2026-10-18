@@ -432,7 +432,6 @@ extensions/matrix/src/matrix/monitor/context-summary.ts	2
 extensions/matrix/src/matrix/monitor/events.ts	3
 extensions/matrix/src/matrix/monitor/handler-context.ts	1
 extensions/matrix/src/matrix/monitor/handler-helpers.ts	2
-extensions/matrix/src/matrix/monitor/handler-ingress-prefix.ts	3
 extensions/matrix/src/matrix/monitor/handler-state.ts	1
 extensions/matrix/src/matrix/monitor/handler.ts	2
 extensions/matrix/src/matrix/monitor/inbound-dedupe-migration.ts	1
@@ -1590,7 +1589,6 @@ src/cli/program/action-reparse.ts	1
 src/cli/program/command-tree.ts	1
 src/cli/program/json-mode.ts	2
 src/cli/program/message/helpers.ts	1
-src/cli/program/message/register.permissions-search.ts	2
 src/cli/program/preaction.ts	1
 src/cli/program/program-context.ts	2
 src/cli/program/register.agent-turn.ts	1
