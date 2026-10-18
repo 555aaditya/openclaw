@@ -1,6 +1,9 @@
 import type { ProviderDefaultThinkingPolicyContext } from "openclaw/plugin-sdk/core";
 import type { ProviderNormalizeResolvedModelContext } from "openclaw/plugin-sdk/plugin-entry";
-import { supportsOpenAIResponsesFastMode } from "openclaw/plugin-sdk/provider-model-metadata";
+import {
+  normalizeModelCatalog,
+  supportsOpenAIResponsesFastMode,
+} from "openclaw/plugin-sdk/provider-model-metadata";
 import type {
   ModelApi,
   ModelProviderConfig,
@@ -55,6 +58,9 @@ const OPENAI_RESPONSES_API = "openai-responses";
 const OPENAI_COMPLETIONS_API = "openai-completions";
 const OPENAI_CHATGPT_RESPONSES_API = "openai-chatgpt-responses";
 const OPENAI_PROVIDER_ID = "openai";
+const OPENAI_MODEL_CATALOG = normalizeModelCatalog(manifest.modelCatalog, {
+  ownedProviders: new Set([OPENAI_PROVIDER_ID]),
+});
 const OPENAI_AGENT_RUNTIME_ID = "openclaw";
 const CODEX_AGENT_RUNTIME_ID = "codex";
 const OPENCLAW_RUNTIME_COMPATIBLE_IDS = [OPENAI_AGENT_RUNTIME_ID] as const;
@@ -616,7 +622,7 @@ export function resolveModelRoutes(
       firstRouteBaseUrl((context.env ?? process.env).OPENAI_BASE_URL) ??
       OPENAI_API_BASE_URL;
     const kind = classifyOpenAIBaseUrl(baseUrl);
-    const model = manifest.modelCatalog.providers.openai.models.find(
+    const model = OPENAI_MODEL_CATALOG?.providers?.openai?.models.find(
       (entry) => entry.id === context.modelId,
     );
     if (
@@ -643,8 +649,7 @@ export function resolveModelRoutes(
               : concreteBaseUrl(baseUrl, OPENAI_API_BASE_URL),
           authRequirement: "api-key",
           requestTransportOverrides: context.requestTransportOverrides ?? "none",
-          // JSON widens literals; the manifest's canonical inference schema owns validation.
-          inference: model.inference as ProviderModelRouteCandidate["inference"],
+          inference: model.inference,
         },
       ],
     };

@@ -174,8 +174,11 @@ The provider selects the Decisions route before credential resolution. A model-l
 `baseUrl` takes precedence over the provider URL, then `OPENAI_BASE_URL`, then
 the Platform default. A custom Platform-compatible endpoint must implement
 the native `POST /decisions` question and image contract; route metadata does not
-validate a custom endpoint's implementation. ChatGPT backend URLs are rejected. Prepared provider, model
-and request headers retain their normal precedence. An explicit `@profile`
+validate a custom endpoint's implementation. Declare the supported model under
+`models.providers.openai.models` when using a custom provider URL; implicit
+native model discovery does not advertise models for arbitrary endpoints.
+ChatGPT backend URLs are rejected. Prepared provider, model and request headers
+retain their normal precedence. An explicit `@profile`
 selection remains locked; an incompatible subscription profile does not fall
 through to a different account.
 

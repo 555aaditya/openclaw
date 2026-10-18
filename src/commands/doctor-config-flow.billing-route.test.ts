@@ -16,6 +16,7 @@ import { closeOpenClawStateDatabaseForTest } from "../state/openclaw-state-db.js
 import { withEnvAsync } from "../test-utils/env.js";
 import { prepareDoctorContext } from "./doctor-config-flow.test-support.js";
 import { useDoctorConfigPreflightHome } from "./doctor-config-preflight.test-support.js";
+import { collectModelBillingRouteMigrationWarnings } from "./doctor/shared/model-billing-route-migration.js";
 
 const withDoctorConfigPreflightHome = useDoctorConfigPreflightHome("billing-route");
 const retirementStep = "finalize:doctor:model-retirement";
@@ -37,7 +38,7 @@ async function writeBillingFixture(
       expires: Date.now() + 3_600_000,
     },
   };
-  const configPath = await writeOpenClawConfig(home, {
+  const config: OpenClawConfig = {
     models: {
       providers: {
         openai: {
@@ -49,14 +50,15 @@ async function writeBillingFixture(
     },
     agents,
     gateway: { mode: "local" },
-  });
+  };
+  const configPath = await writeOpenClawConfig(home, config);
   const agentDir = path.join(path.dirname(configPath), "agents", "main", "agent");
   await fs.mkdir(agentDir, { recursive: true });
   await fs.writeFile(
     path.join(agentDir, "auth-profiles.json"),
     JSON.stringify({ version: 1, profiles }),
   );
-  return { configPath, agentDir };
+  return { configPath, agentDir, config };
 }
 
 function billingDefaults(model: string, retired: string) {
@@ -66,6 +68,36 @@ function billingDefaults(model: string, retired: string) {
     heartbeat: { model: `openai/${retired}` },
   };
 }
+
+it("does not compare Decision selectors through conversational billing routes", async () => {
+  await withDoctorConfigPreflightHome(async (home) => {
+    const { config: before, configPath } = await writeBillingFixture(home, "gpt-4o-mini", {
+      defaults: billingDefaults("gpt-5.4", "gpt-4o-mini"),
+      entries: { main: { decisionModel: "openai/gpt-4o-mini" } },
+    });
+    const after: OpenClawConfig = {
+      ...before,
+      agents: { ...before.agents, entries: { main: { decisionModel: "openai/gpt-5.6-luna" } } },
+    };
+    await using ctx = await prepareDoctorContext(configPath);
+    expect(ctx.sourceConfigValid).toBe(true);
+    expect(collectModelBillingRouteMigrationWarnings({ before, after })).toEqual([]);
+    const withChatSelection = (config: OpenClawConfig, model: string): OpenClawConfig => ({
+      ...config,
+      agents: {
+        ...config.agents,
+        entries: { main: { ...config.agents?.entries?.main, model } },
+      },
+    });
+    const warnings = collectModelBillingRouteMigrationWarnings({
+      before: withChatSelection(before, "openai/gpt-4o-mini"),
+      after: withChatSelection(after, "openai/gpt-5.6-luna"),
+    });
+    expect(warnings).toEqual([
+      expect.stringContaining("Billing route changed for agents.entries.main.model"),
+    ]);
+  });
+});
 
 it.each([
   [false, "gpt-5.6-luna"],

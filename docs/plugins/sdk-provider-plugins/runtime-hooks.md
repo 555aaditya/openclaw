@@ -61,6 +61,11 @@ A changed route needs a fresh capability claim. The host validates input against
 the selected route before selecting credentials and does not normalize that
 route a second time. Do not copy chat costs or credentials into route facts.
 
+`normalizeModelCatalog` from `openclaw/plugin-sdk/provider-model-metadata` accepts
+raw manifest data and an `ownedProviders` set. Use it once when loading static
+route metadata to validate the canonical capability shape, rather than asserting
+JSON types or maintaining a separate capability definition.
+
 ## Credential lookup cancellation
 
 Credential consumers using `resolveApiKeyForProvider` from

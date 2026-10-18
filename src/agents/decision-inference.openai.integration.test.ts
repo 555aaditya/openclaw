@@ -102,6 +102,7 @@ it.each([
           models: {
             providers: {
               openai: {
+                baseUrl,
                 headers: { "X-Provider": "provider", "X-Precedence": "provider" },
                 request: {
                   ...(privateRoute && route !== "private denied"
@@ -132,9 +133,11 @@ it.each([
                 ...(route === "mixed profiles" || route === "locked subscription"
                   ? {}
                   : { apiKey: "synthetic-openai-key" }),
-                ...(route === "configured model"
+                ...(route === "configured model" || privateRoute
                   ? {
-                      baseUrl: "https://provider.fixture.invalid/v1",
+                      ...(route === "configured model"
+                        ? { baseUrl: "https://provider.fixture.invalid/v1" }
+                        : {}),
                       models: [
                         {
                           id: "gpt-6-luna",
@@ -148,7 +151,7 @@ it.each([
                         },
                       ],
                     }
-                  : { ...(privateRoute ? { baseUrl } : {}), models: [] }),
+                  : { models: [] }),
               },
             },
           },
@@ -187,10 +190,13 @@ it.each([
               if (!url.endsWith("/decisions")) {
                 throw new Error("Unexpected OpenAI fixture request");
               }
+              if (typeof init?.body !== "string") {
+                throw new Error("Expected a serialized Decision request");
+              }
               requests.push({
                 url,
                 headers: new Headers(init?.headers),
-                body: JSON.parse(String(init?.body)),
+                body: JSON.parse(init.body),
               });
               return Response.json(response);
             }),
@@ -229,30 +235,39 @@ it.each([
             });
             expect(registry.diagnostics.filter((item) => item.level === "error")).toEqual([]);
             const agentId = resolveDefaultAgentId(config);
-            await using prepared = await acquireAgentRunPreparedModelRuntime(
-              {
-                config,
-                agentId,
-                agentDir: resolveAgentDir(config, agentId),
-                workspaceDir,
-                loadRuntimePlugins: true,
-                runtimePluginSelections: [{ provider: "openai", modelId: "gpt-6-luna", agentId }],
-              },
-              { catalogMode: "static" },
-            );
-            expect(
-              prepared.snapshot.pluginRegistry?.providers.find(
-                (entry) => entry.provider.id === "openai",
-              )?.pluginId,
-            ).toBe("openai");
+            // Unresolved config must fail through the public host, including preparation.
+            // Successful cases retain the same prepared generation across timed dispatch.
+            await using prepared =
+              route === "unresolved header"
+                ? undefined
+                : await acquireAgentRunPreparedModelRuntime(
+                    {
+                      config,
+                      agentId,
+                      agentDir: resolveAgentDir(config, agentId),
+                      workspaceDir,
+                      loadRuntimePlugins: true,
+                      runtimePluginSelections: [
+                        { provider: "openai", modelId: "gpt-6-luna", agentId },
+                      ],
+                    },
+                    { catalogMode: "static" },
+                  );
             expect(registry.providers.find((entry) => entry.provider.id === "openai")?.source).toBe(
               path.join(pluginRoot, "index.ts"),
             );
-            expect(
-              prepared.snapshot.modelCatalog.entries.some(
-                (entry) => entry.provider === "openai" && entry.id === "gpt-6-luna",
-              ),
-            ).toBe(true);
+            if (prepared) {
+              expect(
+                prepared.snapshot.pluginRegistry?.providers.find(
+                  (entry) => entry.provider.id === "openai",
+                )?.pluginId,
+              ).toBe("openai");
+              expect(
+                prepared.snapshot.modelCatalog.entries.some(
+                  (entry) => entry.provider === "openai" && entry.id === "gpt-6-luna",
+                ),
+              ).toBe(true);
+            }
             const events: Array<Extract<DiagnosticEventPayload, { type: "model.usage" }>> = [];
             onTestFinished(
               onTrustedInternalDiagnosticEvent(
@@ -265,8 +280,8 @@ it.each([
             );
             const credentialRead = vi.spyOn(authProfiles, "resolveApiKeyForProfile");
             const dataUri = "data:image/png;base64,AA==";
-            const entered = createDeferredCore<void>();
-            const release = createDeferredCore<void>();
+            const entered = createDeferredCore();
+            const release = createDeferredCore();
             let finalAdmission = false;
             if (route === "private retired") {
               // Pause actual DNS preparation, preserving the provider's original final guard.

@@ -1,5 +1,5 @@
 import type { ModelCatalogRef } from "@openclaw/model-catalog-core/model-catalog-refs";
-import type { ModelInferenceCapabilities } from "@openclaw/model-catalog-core/model-inference-capabilities";
+import type { ModelInferenceCapabilities } from "@openclaw/model-catalog-core/model-catalog-types";
 import type { ModelApi } from "../config/types.models.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 
