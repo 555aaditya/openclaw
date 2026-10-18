@@ -361,17 +361,19 @@ describe("typed restart recovery operator admission", () => {
     async ({ source, operator, requester, expected }) => {
       await withRecovery(async (fixture) => {
         const { target, context, entry, profileId } = fixture;
-        if (requester !== "absent") {
+        const queued = source.startsWith("native queued");
+        const requesterOrigin = {
+          sessionKey: target.sessionKey,
+          operatorProfileId: requester === "matching" ? profileId : "another-requester",
+        };
+        if (requester !== "absent" && !queued) {
           await replaceSessionEntry(target, {
             ...entry,
             restartRecoveryRequesterSource: expectDefined(
               createRestartRecoveryRequesterSource({
                 ...target,
                 entry,
-                requesterOrigin: {
-                  sessionKey: target.sessionKey,
-                  operatorProfileId: requester === "matching" ? profileId : "another-requester",
-                },
+                requesterOrigin,
               }),
               "host-captured requester source",
             ),
@@ -400,7 +402,6 @@ describe("typed restart recovery operator admission", () => {
               : [true, { runId: target.recoveryRunId, status: "ok" }, undefined],
           );
         });
-        const queued = source.startsWith("native queued");
         const retained = queued
           ? expectDefined(await fixture.restore(), "queued source authority")
           : undefined;
@@ -410,10 +411,7 @@ describe("typed restart recovery operator admission", () => {
               agentToolCaller: {
                 agentId: "main",
                 sessionKey: target.sessionKey,
-                requesterOrigin: {
-                  sessionKey: target.sessionKey,
-                  operatorProfileId: requester === "matching" ? profileId : "another-requester",
-                },
+                requesterOrigin,
               },
             }
           : {
