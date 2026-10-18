@@ -516,7 +516,7 @@ function renderWhatsAppConfigForm(
 
   const container = document.createElement("div");
   renderChannelView(
-    (props: ChannelsProps) => <ChannelConfig channelId="whatsapp" props={props} />,
+    (viewProps: ChannelsProps) => <ChannelConfig channelId="whatsapp" props={viewProps} />,
     props,
     container,
   );
