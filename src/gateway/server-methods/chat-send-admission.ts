@@ -52,6 +52,7 @@ import {
 } from "./chat-send-admission-cleanup.js";
 import { prepareChatSendAdmissionContext } from "./chat-send-admission-context.js";
 import { respondChatSessionRoutingChanged } from "./chat-send-admission-errors.js";
+import { isWorkerGoalChatAdmission } from "./chat-send-goal-admission.js";
 import { prepareGoalChatSendRetry } from "./chat-send-goal-retry.js";
 import { prepareChatSendInterruptAdmission } from "./chat-send-interrupt-admission.js";
 import {
@@ -169,6 +170,7 @@ export async function admitChatSend(params: ChatSendAdmissionParams) {
   let replyTargetsCaptured = false;
   let gatewayWorkAdmission: Awaited<ReturnType<typeof beginSessionEffect>> | undefined;
   let restartSafeAdmission: ReturnType<typeof resolveRestartSafeChatAdmission>;
+  let workerGoalAdmission = false;
   let initialSessionEntry: SessionEntry | undefined;
   let admittedSessionEntry: SessionEntry | undefined;
   let admittedSessionSettings: ReturnType<typeof captureAdmittedChatSendSessionSettings>;
@@ -394,9 +396,10 @@ export async function admitChatSend(params: ChatSendAdmissionParams) {
           sessionKey: latestSession.canonicalKey,
           storePath: latestSession.storePath,
         });
-        if (request.goalOperation && !restartSafeAdmission) {
+        workerGoalAdmission = isWorkerGoalChatAdmission(params, latestSession, placement, acpMeta);
+        if (request.goalOperation && !restartSafeAdmission && !workerGoalAdmission) {
           throw new Error(
-            "Goal start or resume requires the built-in OpenClaw runtime and an idle local session with recoverable history. This action is unavailable for native Codex and other external runtimes.",
+            "Goal start or resume requires an idle built-in local session with recoverable history or a supported Codex cloud-worker session.",
           );
         }
         if (retryableClaim && !restartSafeAdmission) {
@@ -473,6 +476,9 @@ export async function admitChatSend(params: ChatSendAdmissionParams) {
         }
       },
     });
+    if (workerGoalAdmission && !capturedOperator.authority) {
+      throw new Error("Worker Goals require a current authenticated operator request.");
+    }
     admittedRunAbort.initializeTiming({ now: Date.now(), timeoutMs });
     workPhase?.finish();
     if (
@@ -630,11 +636,9 @@ export async function admitChatSend(params: ChatSendAdmissionParams) {
       currentRegistration: () => (isRpcSourceRegistered(sourceRef) ? sourceRef : undefined),
     },
   });
-  // Prepared inbound media has no transcript reference until the user turn
-  // persists; every abandonment exit funnels through cleanupAdmittedRun, so
-  // the armed discard here is the single custody owner for that window. The
-  // handler disarms it once the media becomes referenced (durable admission
-  // or ACK handing ownership to dispatch, which persists on all paths).
+  // Abandoned preparation discards media only while no transcript or pending
+  // input retains it. Dispatch disarms this cleanup before taking custody, so
+  // admission cleanup cannot race its persistence or final media disposal.
   const admittedCleanup = createAdmittedChatSendCleanup({
     cleanupAbort: () => {
       sessionPreparationActive = false;
@@ -648,16 +652,6 @@ export async function admitChatSend(params: ChatSendAdmissionParams) {
     clearAgentRunContext(clientRunId, lifecycleGeneration);
     respondChatSessionRoutingChanged(respond);
   };
-  const finishAbortedChatSend = () =>
-    publishAbortedChatSend({
-      context,
-      respond,
-      runId: clientRunId,
-      lifecycleGeneration,
-      stopReason: admittedRunAbort.entry?.adapter.abortStopReason,
-      sourceRef,
-      cleanup: cleanupAdmittedRun,
-    });
   claimAgentRunContext(clientRunId, {
     agentId: selectedAgent.agentId ?? agentId,
     sessionKey,
@@ -683,7 +677,16 @@ export async function admitChatSend(params: ChatSendAdmissionParams) {
       chatSendTraceAttributes,
       assertInitialSkillSelection,
       cleanupAdmittedRun,
-      finishAbortedChatSend,
+      finishAbortedChatSend: () =>
+        publishAbortedChatSend({
+          context,
+          respond,
+          runId: clientRunId,
+          lifecycleGeneration,
+          stopReason: admittedRunAbort.entry?.adapter.abortStopReason,
+          sourceRef,
+          cleanup: cleanupAdmittedRun,
+        }),
       gatewayWorkAdmission,
       lifecycleGeneration,
       markInputAccepted: reservation.markInputAccepted,
@@ -707,6 +710,7 @@ export async function admitChatSend(params: ChatSendAdmissionParams) {
           sourceRef,
         }),
       restartSafeAdmission,
+      workerGoalAdmission,
       setDiscardAbandonedPreparedMedia: setDiscardPreparedMedia,
     },
   };

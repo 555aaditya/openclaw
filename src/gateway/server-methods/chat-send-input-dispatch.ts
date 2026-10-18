@@ -19,6 +19,7 @@ import { isProgressCardRefreshInputProvenance } from "../../sessions/input-prove
 import { recordSessionCreated } from "../../sessions/session-created.js";
 import type { PersistedUserTurnMessage } from "../../sessions/user-turn-transcript.js";
 import { extractTextFromChatContent } from "../../shared/chat-content.js";
+import { createDeferredCore } from "../../shared/deferred.js";
 import { createLazyImportLoader } from "../../shared/lazy-promise.js";
 import { resolveChatAbortDiagnosticReason } from "../chat-abort-diagnostics.js";
 import { runOutsideOperatorToolGatewayAuthority } from "../operator-tool-gateway-authority.js";
@@ -34,6 +35,7 @@ import { createChatSendDashboardAuthority } from "./chat-send-dashboard-authorit
 import { readChatSendDiagnostics, startChatSendDiagnostics } from "./chat-send-diagnostics.js";
 import { handleChatSendSetupError } from "./chat-send-dispatch-errors.js";
 import type { ChatSendExternalAuthorityAdmission } from "./chat-send-external-authority-contract.js";
+import { acknowledgeWorkerGoal } from "./chat-send-goal-ack.js";
 import {
   createChatSendMessageInjectionStarter,
   settleChatSendPreAckMessageInjection,
@@ -216,7 +218,9 @@ export async function handleChatSendWithStorage(
           sessionMutationCommitGuard,
         })
       : undefined;
+    const workerGoalCommitted = admission.workerGoalAdmission ? createDeferredCore() : undefined;
     const userTurn = createGatewayChatUserTurnController({
+      onMessagePersisted: workerGoalCommitted?.resolve,
       ...setup,
       client,
       transcript: options?.transcript,
@@ -311,17 +315,19 @@ export async function handleChatSendWithStorage(
     });
     phase?.mark("persist");
     let approvedInput: PersistedUserTurnMessage | undefined;
-    let stageInput = Boolean(
-      entry?.sessionId &&
-      (userTurn.baseInput.display !== false || request.restartResume) &&
-      (!systemInputProvenance ||
-        systemInputProvenance.kind === "external_user" ||
-        options?.stageCreatedInput === true) &&
-      !isInternalTextSlashCommandTurn &&
-      !request.goalOperation &&
-      !restartSafeAdmission?.retryExpectedState &&
-      !commitInitialInput,
-    );
+    let stageInput =
+      admission.workerGoalAdmission ||
+      Boolean(
+        entry?.sessionId &&
+        (userTurn.baseInput.display !== false || request.restartResume) &&
+        (!systemInputProvenance ||
+          systemInputProvenance.kind === "external_user" ||
+          options?.stageCreatedInput === true) &&
+        !isInternalTextSlashCommandTurn &&
+        !request.goalOperation &&
+        !restartSafeAdmission?.retryExpectedState &&
+        !commitInitialInput,
+      );
     if (stageInput && restartSafeAdmission && !request.restartResume) {
       inputAdmissionAttempted = true;
       const input = await admission.acquireInputActor();
@@ -612,7 +618,9 @@ export async function handleChatSendWithStorage(
     admission.setDiscardAbandonedPreparedMedia(undefined);
     phase?.mark("response");
     admission.markInputAccepted();
-    respond(true, ackPayload, undefined, { runId: clientRunId });
+    if (!admission.workerGoalAdmission) {
+      respond(true, ackPayload, undefined, { runId: clientRunId });
+    }
     phase?.finish();
     diagnostics.acknowledge(messageInjectionAttempt ? "steer" : "startup");
     context.recordClientActivity?.(client);
@@ -674,10 +682,19 @@ export async function handleChatSendWithStorage(
     };
     // Accepted work retains its source authority; the spawning tool and turn no longer
     // own reply preparation while the new runtime establishes its own caller context.
-    withoutGatewayToolCallerIdentity(() =>
+    const dispatched = withoutGatewayToolCallerIdentity(() =>
       runOutsideOperatorToolGatewayAuthority(() => startChatDispatch(dispatch)),
     );
     admittedCleanup.dispatched = true;
+    if (workerGoalCommitted) {
+      await acknowledgeWorkerGoal({
+        dispatch,
+        committed: workerGoalCommitted.promise,
+        dispatched,
+        ackPayload,
+        respond,
+      });
+    }
   } catch (err) {
     dashboardAuthority?.release();
     releaseBeforeDispatch?.();

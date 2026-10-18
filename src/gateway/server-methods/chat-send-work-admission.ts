@@ -12,6 +12,7 @@ import {
 } from "../../config/sessions/session-actor-storage-binding.js";
 import { acquireSessionInputActor } from "../../config/sessions/session-input-actor.js";
 import { withSessionPendingInputAuthorityGuard } from "../../config/sessions/session-pending-input-authority.js";
+import { composeSessionSourceAssertion } from "../../config/sessions/session-source-authority.js";
 import { withSessionTranscriptSourcePublication } from "../../config/sessions/transcript-write-context.js";
 import type { SessionEntry } from "../../config/sessions/types.js";
 import { getAgentEventLifecycleGeneration } from "../../infra/agent-events.js";
@@ -623,6 +624,7 @@ export function createChatSendGoalCommitGuard(
   > & {
     admission: {
       initialSessionEntry?: SessionEntry;
+      workerGoalAdmission?: boolean;
       assertInitialSkillSelection?: () => void;
       activeRunAbort: Pick<ReturnType<typeof registerChatAbortController>, "controller">;
       lifecycleGeneration: ReturnType<typeof getAgentEventLifecycleGeneration>;
@@ -657,9 +659,8 @@ export function createChatSendGoalCommitGuard(
         canonicalKey: session.sessionKey,
       }
     : undefined;
-  const assertCurrent = () => {
-    sessionMutationCommitGuard?.();
-    sessionMutationAuthorization?.assertCurrent();
+  const check = (assertSource: () => void) => {
+    assertSource();
     const currentConfig = context.getRuntimeConfig();
     const initialEntry = admission.initialSessionEntry;
     if (initialEntry) {
@@ -692,5 +693,9 @@ export function createChatSendGoalCommitGuard(
       throw new Error("Goal admission changed before commit; refresh and retry.");
     }
   };
+  const sources = [sessionMutationCommitGuard, sessionMutationAuthorization?.assertCurrent];
+  const assertCurrent = admission.workerGoalAdmission
+    ? composeSessionSourceAssertion(sources, check)
+    : () => check(() => sources.forEach((source) => source?.()));
   return { assertCurrent, routingPredicate };
 }

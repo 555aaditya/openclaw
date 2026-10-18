@@ -282,6 +282,9 @@ export function getSessionControllerWorkCount(): number {
     (entry) =>
       entry.active ||
       entry.mailbox?.claim ||
+      entry.mailbox?.preparing ||
+      // Idle dedupe-expiry timers do not own runnable work.
+      (entry.mailbox?.dispatchEnabled && entry.mailbox.timer) ||
       entry.lifecycle?.operations.size ||
       [...(entry.lifecycle?.effects ?? [])].some(
         (effect) => effect.phase === "acquired" || effect.phase === "writer",
