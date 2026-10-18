@@ -6,6 +6,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import type { ConsoleMessage, Frame, Locator, Page } from "playwright";
 import { expect } from "vitest";
+import type { GatewayHelloOk } from "../api/gateway.ts";
 
 const require = createRequire(import.meta.url);
 
@@ -215,16 +216,16 @@ window.mcpConformanceUnmount = async () => {
         start(): void;
         request(method: string, params: unknown): Promise<unknown>;
       };
-      let resolveHello!: () => void;
+      let resolveHello!: (hello: GatewayHelloOk) => void;
       let rejectHello!: (error: Error) => void;
-      const connected = new Promise<void>((resolve, reject) => {
+      const connected = new Promise<GatewayHelloOk>((resolve, reject) => {
         resolveHello = resolve;
         rejectHello = reject;
       });
       const client = new GatewayBrowserClient({
         url: params.gatewayUrl,
         token: params.authValue,
-        onHello: () => resolveHello(),
+        onHello: resolveHello,
         onClose: (info: { code: number; reason: string; error?: unknown; willRetry: boolean }) => {
           if (!info.willRetry) {
             rejectHello(new Error(`Gateway connection closed: ${JSON.stringify(info)}`));
@@ -232,9 +233,9 @@ window.mcpConformanceUnmount = async () => {
         },
       });
       client.start();
-      await Promise.race([
+      const hello = await Promise.race([
         connected,
-        new Promise((_, reject) => {
+        new Promise<never>((_, reject) => {
           setTimeout(() => reject(new Error("Gateway connection timed out")), 60_000);
         }),
       ]);
@@ -252,7 +253,7 @@ window.mcpConformanceUnmount = async () => {
       setTheme("dark");
       const context = {
         gateway: {
-          snapshot: { client, phase: "connected" },
+          snapshot: { client, phase: "connected", hello },
           connection: { gatewayUrl: params.gatewayUrl },
           subscribe: () => () => {},
         },
