@@ -14,7 +14,7 @@ import { copySubagentRunRuntimeOwner } from "./subagent-run-generation.js";
 
 let entry: SubagentRunRecord;
 let context: SubagentLifecycleWakeContext;
-let warn: ReturnType<typeof vi.fn>;
+const warn = vi.fn<(message: string, meta?: Record<string, unknown>) => void>();
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -27,7 +27,7 @@ beforeEach(() => {
     expectsCompletionMessage: true,
     requesterSettleWake: { status: "dispatching", attemptCount: 3 },
   });
-  warn = vi.fn();
+  warn.mockReset();
   context = createRequesterWakeContextFixture(new Map([[entry.runId, entry]]), warn);
 });
 

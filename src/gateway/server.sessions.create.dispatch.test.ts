@@ -869,7 +869,7 @@ test.each([
   },
 ])(
   "sessions.create resolves an agent-qualified parent from its own store: $name",
-  async ({ explicit, defaultAgent, agentId, key, expectedAgent, fork = true }) => {
+  async ({ explicit, defaultAgent, agentId, key, expectedAgent, fork }) => {
     const { dir } = await createSessionStoreDir();
     const storeTemplate = path.join(dir, "{agentId}", "sessions.json");
     const mainStorePath = storeTemplate.replace("{agentId}", "main");

@@ -32,7 +32,7 @@ const requesterIdentity = {
   requesterTurnRunId: REQUESTER_TURN,
 };
 const pendingWake = { status: "pending", attemptCount: 0 } as const;
-const yieldedWake = { ...pendingWake, requesterYieldBatch: true, rearmGeneration: 1 };
+const yieldedWake = { ...pendingWake, requesterYieldBatch: true, rearmGeneration: 1 } as const;
 const running = { status: "running", startedAt: 1_000 } as const;
 type RunOverrides = Partial<SubagentRunRecord>;
 type SettleOptions = Partial<Parameters<typeof settleRequesterTurnAfterSessionSpawns>[0]> & {

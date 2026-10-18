@@ -122,7 +122,7 @@ const participantView = (
 type ParticipantScope = Parameters<typeof recordSessionParticipant>[0];
 const listEntries = (scope: Parameters<typeof listSessionEntriesCore>[0]) =>
   listSessionEntriesCore({ ...scope, projection: "list" });
-const readEntry = (scope: ParticipantScope) =>
+const readEntry = (scope: ParticipantScope & Parameters<typeof listEntries>[0]) =>
   listEntries(scope).find((row) => row.sessionKey === scope.sessionKey)?.entry;
 const readParticipants = (scope: ParticipantScope) =>
   listSessionParticipantsReadOnly(scope).get(scope.sessionKey);
