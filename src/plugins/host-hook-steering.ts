@@ -1,5 +1,8 @@
 import { resolveSessionAgentId } from "../agents/agent-scope.js";
-import { resolveSessionStorePathCore } from "../config/sessions/paths.js";
+import {
+  resolveExplicitSessionStorePathForScope,
+  resolveSessionStorePathCore,
+} from "../config/sessions/paths.js";
 import { readSessionSubmittedInput } from "../config/sessions/session-accessor.pending-inputs.js";
 import { resolveSessionTranscriptRuntimeTarget } from "../config/sessions/session-accessor.transcript-target.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
@@ -25,7 +28,9 @@ export async function steerPluginActiveRun(params: {
   const operation = getSessionControllerOperation(
     sessionKey,
     captureSessionTarget({
-      storeScope: resolveSessionStorePathCore(params.cfg.session?.store, { agentId }),
+      storeScope:
+        resolveExplicitSessionStorePathForScope({ agentId, sessionKey }) ??
+        resolveSessionStorePathCore(params.cfg.session?.store, { agentId }),
       sessionKey,
       agentId,
     }),

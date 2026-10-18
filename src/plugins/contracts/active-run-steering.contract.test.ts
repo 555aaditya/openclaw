@@ -15,6 +15,7 @@ import {
   readTranscriptMessages,
 } from "../../sessions/user-turn-transcript.test-support.js";
 import { createDeferredCore } from "../../shared/deferred.js";
+import { resolveIncognitoOpenClawAgentSqlitePath } from "../../state/openclaw-agent-db.paths.js";
 import { useSessionStoreTempDirs } from "../../test-utils/session-state-cleanup.js";
 import { getPluginInstance } from "../plugin-instance-scope.js";
 import { createPluginRegistry } from "../registry.js";
@@ -48,6 +49,7 @@ function startRun(
   available = true,
   runId = "steered-run",
   storeScope?: string,
+  runSessionKey = sessionKey,
 ) {
   const claimPendingUserInputAnswer = vi.fn(async () => true);
   setActiveEmbeddedRun(
@@ -61,7 +63,7 @@ function startRun(
         claimPendingUserInputAnswer,
       },
     },
-    sessionKey,
+    runSessionKey,
     undefined,
     "main",
     undefined,
@@ -141,6 +143,29 @@ describe("plugin active-run steering", () => {
       expect(queueMessage).toHaveBeenCalledOnce();
     },
   );
+
+  it("steers the active incognito run through its memory session owner", async () => {
+    const incognitoSessionKey = "agent:main:dashboard:incognito-steering-test";
+    const { api } = createApi();
+    const modelInput: string[] = [];
+    const queueMessage = vi.fn(async (text: string) => {
+      modelInput.push(text);
+    });
+    startRun(
+      queueMessage,
+      true,
+      "incognito-steered-run",
+      resolveIncognitoOpenClawAgentSqlitePath({ agentId: "main" }),
+      incognitoSessionKey,
+    );
+    const input = { sessionKey: incognitoSessionKey, text: "Check the current result." };
+    await expect(api.session.workflow.steerActiveRun(input)).resolves.toEqual({
+      steered: true,
+      runId: "incognito-steered-run",
+    });
+    expect(modelInput).toEqual([input.text]);
+    expect(queueMessage).toHaveBeenCalledOnce();
+  });
 
   it("retries the same idempotency key after queue rejection", async () => {
     const { api } = createApi();
