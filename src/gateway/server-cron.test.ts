@@ -258,7 +258,8 @@ vi.mock("../agents/embedded-agent.js", () => ({
   abortAndDrainEmbeddedAgentRun: abortAndDrainEmbeddedAgentRunMock,
 }));
 
-vi.mock("../agents/agent-bundle-mcp-manager-api.js", () => ({
+vi.mock("../agents/agent-bundle-mcp-manager-api.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../agents/agent-bundle-mcp-manager-api.js")>()),
   captureSessionMcpRuntimeRetirement: captureSessionMcpRuntimeRetirementMock,
 }));
 

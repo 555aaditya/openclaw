@@ -17,9 +17,17 @@ vi.mock("./reply-tool-authority.js", async (importOriginal) => ({
 }));
 import { expectDefined } from "@openclaw/normalization-core";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { awaitGateBeforeSettlement, createDeferred } from "../../../test/helpers/promise.js";
+import {
+  awaitGateBeforeSettlement,
+  createDeferred,
+  withinTest,
+} from "../../../test/helpers/promise.js";
 import { createAdmittedRunOperatorAuthority } from "../../agents/admitted-run-context.js";
 import { createTestAdmittedRunContext } from "../../agents/admitted-run-context.test-support.js";
+import {
+  attachActiveEmbeddedRun,
+  detachActiveEmbeddedRun,
+} from "../../agents/embedded-agent-runner/runs.js";
 import { createCronTool } from "../../agents/tools/cron-tool.js";
 import {
   getGatewayToolCallerIdentity,
@@ -46,7 +54,6 @@ import {
 } from "../../infra/system-events.js";
 import { MESSAGE_TOOL_ONLY_DELIVERY_HINT } from "../../plugin-sdk/message-tool-delivery-hints.js";
 import {
-  REPLY_RUN_IDLE_SETTLE_TIMEOUT_MS,
   createReplyOperation,
   listActiveReplyRunSessionKeys,
 } from "../../sessions/session-controller.js";
@@ -54,7 +61,10 @@ import {
   beginSessionEffect,
   captureSessionTarget,
 } from "../../sessions/session-controller.lifecycle.js";
-import { reserveSessionControllerSource } from "../../sessions/session-controller.mailbox.js";
+import {
+  reserveSessionControllerSource,
+  retireSessionControllerInput,
+} from "../../sessions/session-controller.mailbox.js";
 import * as sessionNativeRuntime from "../../sessions/session-controller.native-runtime.js";
 import * as sessionQueries from "../../sessions/session-controller.queries.js";
 import { testing as controllerTesting } from "../../sessions/session-controller.test-support.js";
@@ -1702,92 +1712,47 @@ describe("runPreparedReply media-only handling", () => {
     expect(sessionNativeRuntime.waitForSessionRunEnd).not.toHaveBeenCalled();
     expect(vi.mocked(runReplyAgent)).toHaveBeenCalledOnce();
   });
-  it("interrupts an embedded-only heartbeat before running a visible Telegram turn", async () => {
-    const queueSettings = await import("./queue/settings-runtime.js");
-    const embeddedAgentRuntime = await import("../../agents/embedded-agent.runtime.js");
-    let embeddedRunActive = true;
-    vi.mocked(queueSettings.resolveQueueSettings).mockReturnValueOnce({ mode: "steer" });
-    vi.mocked(sessionQueries.resolveActiveSessionRunId).mockImplementation(() =>
-      embeddedRunActive ? "session-embedded-heartbeat" : undefined,
-    );
-    vi.mocked(embeddedAgentRuntime.preemptAndDrainEmbeddedHeartbeatRun).mockImplementation(
-      async (sessionId) => {
-        if (sessionId !== "session-embedded-heartbeat") {
-          return "not-heartbeat";
-        }
-        embeddedRunActive = false;
-        return "drained";
-      },
-    );
-    vi.mocked(sessionQueries.isSessionRunActive).mockImplementation(() => embeddedRunActive);
-    vi.mocked(sessionNativeRuntime.waitForSessionRunEnd).mockImplementation(async () => {
-      embeddedRunActive = false;
-      return true;
-    });
-
-    try {
-      await expect(
-        runPrepared({
-          isNewSession: false,
-          sessionId: "session-embedded-heartbeat",
-          ctx: {
-            ...createInboundTurn("answer this now", "telegram", "direct"),
-            OriginatingChannel: "telegram",
-            OriginatingTo: "user:1",
-          },
-          sessionCtx: {
-            ...createSessionTurn("answer this now", "telegram", "direct"),
-            OriginatingChannel: "telegram",
-            OriginatingTo: "user:1",
-          },
+  it.for(["keyed", "reserved source"] as const)(
+    "drains a native heartbeat before running a visible Telegram turn (%s)",
+    async (admission, { signal }) => {
+      await useQueueMode("steer");
+      vi.useFakeTimers();
+      const sessionId = "session-embedded-heartbeat";
+      const target = preparedTarget(sessionId);
+      const heartbeat = createOperation(sessionId, { target, turnKind: "heartbeat" });
+      const preempted = createDeferred();
+      const cleanup = createDeferred();
+      const native = {
+        queueMessage: vi.fn(async () => {}),
+        isStreaming: () => true,
+        isCompacting: () => false,
+        preemptByVisibleTurn: vi.fn(() => {
+          preempted.resolve();
+          return true;
         }),
-      ).resolves.toEqual({ text: "ok" });
-    } finally {
-      vi.mocked(sessionQueries.resolveActiveSessionRunId).mockReturnValue(undefined);
-      vi.mocked(sessionQueries.isSessionRunActive).mockReturnValue(false);
-      vi.mocked(embeddedAgentRuntime.preemptAndDrainEmbeddedHeartbeatRun).mockResolvedValue(
-        "not-heartbeat",
+        abort: vi.fn(),
+      };
+      const attachment = attachActiveEmbeddedRun(
+        sessionId,
+        native,
+        target.sessionKey,
+        undefined,
+        target.agentId,
+        heartbeat,
       );
-      vi.mocked(sessionNativeRuntime.waitForSessionRunEnd).mockResolvedValue(true);
-    }
-
-    expect(embeddedAgentRuntime.preemptAndDrainEmbeddedHeartbeatRun).toHaveBeenCalledWith(
-      "session-embedded-heartbeat",
-      REPLY_RUN_IDLE_SETTLE_TIMEOUT_MS,
-    );
-    expect(embeddedAgentRuntime.abortEmbeddedAgentRun).not.toHaveBeenCalled();
-    expect(sessionNativeRuntime.waitForSessionRunEnd).not.toHaveBeenCalled();
-    expect(vi.mocked(runReplyAgent)).toHaveBeenCalledOnce();
-  });
-  it("drains an embedded heartbeat hidden by the visible pre-dispatch operation", async () => {
-    const runtime = await embeddedRuntime();
-    const operation = createOperation("session-pre-dispatch-heartbeat", { turnKind: "visible" });
-    let embeddedRunActive = true;
-    let releaseDrain: (() => void) | undefined;
-    const drainBarrier = new Promise<void>((resolve) => {
-      releaseDrain = resolve;
-    });
-    await useQueueMode("steer");
-    vi.mocked(sessionQueries.resolveActiveSessionRunId).mockImplementation(() =>
-      embeddedRunActive ? "session-pre-dispatch-heartbeat" : undefined,
-    );
-    vi.mocked(runtime.preemptAndDrainEmbeddedHeartbeatRun).mockImplementation(async () => {
-      await drainBarrier;
-      embeddedRunActive = false;
-      return "drained";
-    });
-    vi.mocked(sessionQueries.isSessionRunActive).mockImplementation(() => embeddedRunActive);
-    vi.mocked(sessionNativeRuntime.waitForSessionRunEnd).mockImplementation(async () => {
-      await drainBarrier;
-      embeddedRunActive = false;
-      return true;
-    });
-
-    try {
-      const runPromise = runPrepared({
+      if (!attachment) {
+        throw new Error("Expected an admitted heartbeat attachment");
+      }
+      attachment.runCleanupSettlement = cleanup.promise;
+      // A visible ingress reserves an input; it cannot own a second operation beside the heartbeat.
+      const source =
+        admission === "reserved source"
+          ? reserveSessionControllerSource(target.sessionKey, { target, policy: { mode: "steer" } })
+          : undefined;
+      const running = runPrepared({
         isNewSession: false,
-        sessionId: "session-pre-dispatch-heartbeat",
-        opts: { replyOperation: operation } as never,
+        sessionId,
+        opts: source ? bindReplySourceInput({}, source) : undefined,
         ...turn("answer this now", {
           ...createProviderSurface("telegram"),
           ChatType: "direct",
@@ -1795,34 +1760,44 @@ describe("runPreparedReply media-only handling", () => {
           OriginatingTo: "user:1",
         }),
       });
+      try {
+        await withinTest(
+          awaitGateBeforeSettlement(
+            preempted.promise,
+            running,
+            "Visible turn bypassed the heartbeat",
+          ),
+          signal,
+        );
+        expect(runReplyAgent).not.toHaveBeenCalled();
+        detachActiveEmbeddedRun(sessionId, native, target.sessionKey);
+        heartbeat.complete();
+        await withinTest(heartbeat.ownerSettlement, signal);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(runReplyAgent).not.toHaveBeenCalled();
 
-      await vi.waitFor(
-        () => {
-          expect(runtime.preemptAndDrainEmbeddedHeartbeatRun).toHaveBeenCalledWith(
-            "session-pre-dispatch-heartbeat",
-            REPLY_RUN_IDLE_SETTLE_TIMEOUT_MS,
-          );
-        },
-        { timeout: 1_000 },
-      );
-      expect(vi.mocked(runReplyAgent)).not.toHaveBeenCalled();
-      expect(sessionNativeRuntime.waitForSessionRunEnd).not.toHaveBeenCalled();
-
-      releaseDrain?.();
-      await expect(runPromise).resolves.toEqual({ text: "ok" });
-    } finally {
-      releaseDrain?.();
-      operation.complete();
-      vi.mocked(sessionQueries.resolveActiveSessionRunId).mockReset().mockReturnValue(undefined);
-      vi.mocked(runtime.preemptAndDrainEmbeddedHeartbeatRun)
-        .mockReset()
-        .mockResolvedValue("not-heartbeat");
-      vi.mocked(sessionQueries.isSessionRunActive).mockReset().mockReturnValue(false);
-      vi.mocked(sessionNativeRuntime.waitForSessionRunEnd).mockReset().mockResolvedValue(true);
-    }
-
-    expect(vi.mocked(runReplyAgent)).toHaveBeenCalledOnce();
-  });
+        cleanup.resolve();
+        await expect(withinTest(running, signal)).resolves.toEqual({ text: "ok" });
+        expect(native.preemptByVisibleTurn).toHaveBeenCalledOnce();
+        expect(native.abort).not.toHaveBeenCalled();
+        expect(runReplyAgent).toHaveBeenCalledOnce();
+        expect(requireRunReplyAgentCall()).toMatchObject({
+          shouldSteer: false,
+          shouldFollowup: false,
+          isActive: false,
+        });
+      } finally {
+        cleanup.resolve();
+        detachActiveEmbeddedRun(sessionId, native, target.sessionKey);
+        heartbeat.complete();
+        if (source) {
+          retireSessionControllerInput(source);
+        }
+        await running.catch(() => {});
+        vi.useRealTimers();
+      }
+    },
+  );
   it("refreshes goal context after interrupt admission waits", async () => {
     const inboundMeta = await import("./inbound-meta.js");
     const activeEntry: SessionEntry = {

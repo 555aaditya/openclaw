@@ -400,6 +400,9 @@ describe("session controller executable pilot", () => {
     await expect(joined).resolves.toBeUndefined();
     expect(resend.retirementRequested).toBeUndefined();
     expect(resend.mailbox.entries).toContain(resend);
+    // The aborted foreground caller releases its custody before the resend starts.
+    releaseSessionControllerClaim(foregroundClaim);
+    await foregroundClaim.settlement.promise;
 
     const turns: string[] = [];
     const resendClaim = await claimSessionControllerTask(resend, () => {
@@ -408,8 +411,6 @@ describe("session controller executable pilot", () => {
     releaseSessionControllerClaim(resendClaim);
     await resend.settlement.promise;
     expect(turns).toEqual(["resend"]);
-    releaseSessionControllerClaim(foregroundClaim);
-    await foregroundClaim.settlement.promise;
   });
 
   it("replays 2048 state-aware sequences with delayed receipts (48 generated steps each)", async () => {
