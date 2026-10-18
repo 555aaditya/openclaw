@@ -6,6 +6,7 @@ import {
   WorkerLiveEventParamsSchema,
   type WorkerLiveEventParams,
 } from "../../../packages/gateway-protocol/src/schema/worker-admission.js";
+import { awaitGateBeforeSettlement } from "../../../test/helpers/promise.js";
 import { makeTextToolResult } from "../../../test/helpers/text-tool-result.js";
 import type { AgentRunTerminalReplySnapshot } from "../../agents/agent-run-terminal-reply.types.js";
 import { runEmbeddedAgentEntry } from "../../agents/embedded-agent-runner/run-entry.js";
@@ -56,6 +57,10 @@ import {
   WorkerTurnExecutionError,
   WorkerWorkspaceReconciliationError,
 } from "./worker-turn-failure.js";
+import {
+  completedWorkerMessage,
+  environmentForTunnel,
+} from "./worker-turn-launcher-flow.test-support.js";
 import {
   createWorkerTurnTunnel,
   reconcileUnchangedLocalWorkspace,
@@ -118,12 +123,6 @@ describe("worker finishing admission", () => {
 describe("worker turn launcher terminal results", () => {
   beforeEach(setupWorkerTurnLauncherTest);
   afterEach(() => cleanupWorkerTurnLauncherTest({ reuseReadWorkers: true }));
-
-  const completedWorkerMessage = () =>
-    makeAgentAssistantMessage({
-      content: [{ type: "text", text: "Remote work completed" }],
-      timestamp: 21,
-    });
 
   it.each<{
     stopReason: "stop" | "error";
@@ -658,6 +657,7 @@ describe("worker turn launcher terminal results", () => {
     const barrierEntered = createDeferredCore();
     const startBarrier = createDeferredCore();
     const claimWaitEntered = createDeferredCore();
+    const interruptionEntered = createDeferredCore();
     const targetedAdmission = createDeferredCore();
     const recoverySettled = createDeferredCore();
     const workspaceOperations = createWorkerWorkspaceOperationCoordinator();
@@ -706,7 +706,7 @@ describe("worker turn launcher terminal results", () => {
     const moveBarrier = createGatewayWorkerPlacementMoveBarrier({
       placements,
       loadSessionRuntime,
-      revokeSessionAuthority: () => {},
+      revokeSessionAuthority: () => interruptionEntered.resolve(),
     });
     const moveService = createWorkerPlacementMoveService({
       placements,
@@ -801,7 +801,11 @@ describe("worker turn launcher terminal results", () => {
     try {
       await barrierEntered.promise;
       startBarrier.resolve();
-      await claimWaitEntered.promise;
+      await awaitGateBeforeSettlement(
+        interruptionEntered.promise,
+        moving,
+        "Move settled before entering controller interruption",
+      );
       expect(admittedOperation?.abortSignal.aborted).toBe(false);
       failTransfer.resolve();
       await targetedAdmission.promise;
@@ -809,6 +813,11 @@ describe("worker turn launcher terminal results", () => {
       expect(recoveryEntered).toHaveBeenCalledOnce();
       expect(recoveryEntered).toHaveBeenCalledWith("results-only");
       await recoverySettled.promise;
+      await awaitGateBeforeSettlement(
+        claimWaitEntered.promise,
+        moving,
+        "Move settled before reaching the durable turn-claim wait",
+      );
       expect(completeResult).toHaveBeenCalledOnce();
       expect(placements.get(SESSION_ID)?.turnClaim).toBeNull();
       await expect(moving).resolves.toMatchObject({
@@ -910,10 +919,7 @@ describe("worker turn launcher terminal results", () => {
       costs = { first: 0, last: 0, total: 0 },
     }) => {
       await seedActivePlacement();
-      const environments: WorkerTurnEnvironmentService = {
-        get: vi.fn(() => attachedEnvironment()),
-        acquireTurnCredential: vi.fn(async () => credential()),
-        acknowledgeCredentialDelivery: vi.fn(async () => true),
+      const environments = environmentForTunnel({
         startTunnel: vi.fn(async () =>
           createWorkerTurnTunnel({
             launchTurn: vi.fn(async (request): Promise<SpawnResult> => {
@@ -965,9 +971,7 @@ describe("worker turn launcher terminal results", () => {
             reconcileWorkspace: vi.fn(reconcileUnchangedLocalWorkspace),
           }),
         ),
-        stopTunnel: vi.fn(async () => {}),
-        destroy: vi.fn(async () => attachedEnvironment()),
-      };
+      });
       const provider = createWorkerSessionTurnPlacementProvider({ environments, placements });
 
       const result = await provider.executeTurn(
