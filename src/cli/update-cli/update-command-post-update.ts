@@ -50,6 +50,7 @@ import {
   captureUpdateFinalization,
   createPostUpdateFailureResult,
   publishSettledUpdateCommandResult,
+  prepareSettledUpdateCommandResult,
   bindUpdateFinalizationFailure,
   withUpdateProgressSettlement,
 } from "./update-command-terminal-publication.js";
@@ -59,6 +60,7 @@ import {
 } from "./update-command-terminal-record.js";
 import {
   deferUpdateCommandTerminalResult,
+  deferUpdateCommandTerminalPreparation,
   recordUpdatePackageCompletion,
 } from "./update-command-terminal.js";
 
@@ -135,26 +137,28 @@ async function finishSettledUpdate(
   let pendingNotify = true;
   const writeRestartSentinel = (result: UpdateRunResult) =>
     writeControlPlaneUpdateRestartSentinelBestEffort({ ...sentinelOptions, result });
+  const reportingState = (failure?: unknown) => ({
+    pendingResult,
+    failure,
+    terminalRecord,
+    readReportingState: () => ({
+      notify: pendingNotify ? writeRestartSentinel : undefined,
+      rolledBack,
+      pendingRestartAtMs,
+      completedDowntimeMs,
+    }),
+  });
   const publishFinalResult = (
     failure?: unknown,
     onTerminalRecord?: (record: UpdateCommandTerminalRecord["record"]) => void,
-  ) =>
-    publishSettledUpdateCommandResult(
-      params,
-      {
-        pendingResult,
-        failure,
-        terminalRecord,
-        readReportingState: () => ({
-          notify: pendingNotify ? writeRestartSentinel : undefined,
-          rolledBack,
-          pendingRestartAtMs,
-          completedDowntimeMs,
-        }),
-      },
-      onTerminalRecord,
-    );
-  const deferredTerminal = deferUpdateCommandTerminalResult(params.opts.run, publishFinalResult);
+  ) => publishSettledUpdateCommandResult(params, reportingState(failure), onTerminalRecord);
+  const deferredTerminal =
+    deferUpdateCommandTerminalPreparation(
+      params.opts.run,
+      (failure) =>
+        prepareSettledUpdateCommandResult(params, reportingState(failure), assertCurrent),
+      () => pendingResult,
+    ) || deferUpdateCommandTerminalResult(params.opts.run, publishFinalResult);
   const recoverFailedResult = async (
     initialResult: UpdateRunResult,
     initialRecoverService: boolean,
