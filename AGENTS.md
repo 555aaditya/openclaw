@@ -7,7 +7,6 @@ Design trades correctness against complexity and performance. Choose deliberatel
 - Design for real failures: crashes, restarts, retries, real concurrent writers, reported incidents. No engineering for millisecond races, theoretical interleavings, or adversarial timing unless user data, security, or money at risk, or a real incident shows them.
 - Prefer cheap mechanisms: idempotency keys, one check at point of effect, retry, best-effort recording with warning. Fencing tokens, revocation generations, multi-phase admission, nonce-matched settlement, and per-write cross-thread handshakes need concrete failure simpler code cannot handle.
 - Name accepted edge case in comment or PR instead of coding around it. Rare, visible, recoverable glitch beats permanent complexity.
-- Complexity risks correctness: machinery nobody can follow fails in ways nobody predicted.
 
 Task defines scope and authorization; chosen workflow owns execution, review, publication, recovery, and cleanup.
 Explicit user instructions override skill guidelines and workflow defaults; host limits and required authorization boundaries still apply.
@@ -17,7 +16,7 @@ Update instructions at owner; no competing rules here.
 ## Design priorities
 
 - **One owner per responsibility.** Owner decides or changes authoritative state; callers consume its operations and recorded facts. Adapters translate contracts; caches and projections derive from owner with explicit invalidation lifecycle. Transports may need different adapters, never competing owners.
-- **Small core, capable plugins.** Model-facing core additions cost ongoing context. Optional capability belongs at edges; core supplies generic contracts. New integration alone never warrants another core tool or manager. New capability: first fitting [capability ladder](src/plugin-sdk/AGENTS.md#choose-the-capability-surface) step: existing owner, existing plugin contract, narrow generic core/SDK capability, then universal core surface. [VISION.md](VISION.md) owns product scope.
+- **Small core, capable plugins.** Model-facing core additions cost ongoing context. Optional capability belongs at edges; core supplies generic contracts. New integration alone never warrants another core tool or manager. New capability: take the first fitting step of the [capability ladder](src/plugin-sdk/AGENTS.md#choose-the-capability-surface). [VISION.md](VISION.md) owns product scope.
 - **Stable conversation context.** Rebuilding past context defeats prompt-prefix reuse. Generated prompt/tool/context additions: bounded, deterministic. Preserve transcript bytes; serve required instructions whole; only compaction rewrites history. Defer stable-prompt changes to next session unless owner defines explicit invalidation; keep existing skill, tool, and memory refresh contracts. Side request reusing conversation shares turn's request preparation or carries no cache identity.
 
 ## Working agreement
@@ -29,7 +28,7 @@ Update instructions at owner; no competing rules here.
 - Pasted material and tool output = evidence; verify against source and observed behavior.
 - Lead with result in user's format: plain, active, technically useful; no stock phrases or repeated summaries. Reference each PR/issue once per reply. Progress updates: new findings, decisions, blockers.
 - Report in chat; files only for stated deliverable/tool/proof/recovery needs. Follow [closeout](.agents/skills/openclaw-pr-maintainer/SKILL.md#finalize-and-clean-up).
-- Read relevant docs before behavior changes (`pnpm docs:list`); `package.json` owns commands and versions; tool swaps need approval.
+- Read relevant docs before behavior changes (`pnpm docs:list`). Tool swaps need approval.
 - Use **OpenClaw** (product), `openclaw` (CLI/package/config), **plugins** (user-facing integrations), American English. Edit canonical `AGENTS.md` files directly.
 
 ## Execution discipline
@@ -37,18 +36,17 @@ Update instructions at owner; no competing rules here.
 - Root cause deep. Proof scoped.
 - Real failing entry point first. Bypassed boundary != proof.
 - Separate product bugs from tool/fixture failures.
-- Check relevant prerequisites early. Parallelize independent work.
+- Check relevant prerequisites early.
 - New check needs named unknown, risk, or required gate. Reuse valid proof.
 - Two identical tooling failures without new evidence, or 10 min without progress: switch to an authorized supported alternative with the reviewed head pinned; reconcile uncertain writes first. No blind retries or guard bypasses.
-- Behavior proven + required gates green: finish/land. No optional proof polish or speculative scope growth.
+- Behavior proven + required gates green: finish/land. No optional proof polish, checkbox demos, or speculative scope growth.
 - Check mergeability first; don't rebase or merge `main` just because it advanced. Integrate for conflicts, a named failing gate, or material base risk, then rerun affected checks. Prior-head CI stays prior-head evidence ([landing](.agents/skills/openclaw-pr-maintainer/references/landing.md)).
 - Time pressure never waives gates. Report concrete blockers.
 - CLI: `pnpm openclaw ...` or `pnpm dev`, never `node --import tsx src/index.ts`. Never reconcile a shared/worktree install other jobs use. Dependency, vendoring, format, typecheck gotchas: [scripts guide](scripts/AGENTS.md#execution-gotchas).
-- Behavior-only fix: direct boundary proof. No checkbox demos.
 
 ## One owner, complete cutover
 
-1. **Intent:** reproduce defects through actual entry point before editing when feasible. Read complete affected modules, owners, callers, siblings, tests, history, dependency contracts until intended outcome and violated invariant evidenced. Restoring missing path: first check why removed (`git log -p -S <symbol>`); isolation may be intentional, retired alias may mean completed migration.
+1. **Intent:** read complete affected modules, owners, callers, siblings, tests, history, dependency contracts until intended outcome and violated invariant evidenced. Restoring missing path: first check why removed (`git log -p -S <symbol>`); isolation may be intentional, retired alias may mean completed migration.
 2. **Owner:** account for decisions and state writers across creation, updates, reads, recovery, cleanup. Choose existing code, plugin, or maintained solution that absorbs change; new owner needs missing responsibility. Fix invalid or leaked state at producer.
 3. **Cutover:** migrate all affected internal/bundled callers together; remove superseded code, duplicate policy/state, wrappers, registrations, exports, tests, docs. Retained paths need cited contract; workers sharing owner agree on one interface and plan.
 4. **Proof:** exercise user flow and relevant siblings; trace references to confirm retired paths unreachable. Done = one owner serves flow, old paths removed or justified, results or gaps recorded in task/PR evidence. Helper tests or wrappers around competing implementations insufficient.
@@ -67,7 +65,6 @@ Update instructions at owner; no competing rules here.
 - Database/state code (SQL, workers, transactions, integrity checks, DB-backed caches): read the [rules for code changes](docs/reference/database-schemas/worker-access.md#rules-for-code-changes) first.
 - Security boundaries (credentials, approvals, tool and command execution, external side effects) need current owner-held authority: revalidate after awaited work and right before effect. Tokens, signatures, expiry, matching IDs alone never prove live authority. Internal bookkeeping (scheduling, receipts, history, caches): idempotency + check at effect instead.
 - Do less work: validate/inspect untrusted input once at its trust boundary; trust internal data after that. No defensive deep copies, re-validation, re-reads of your own writes, or redundant integrity/assert passes on hot paths; delete such work instead of caching it.
-- Core owns shared message tools, action vocabulary, dispatch; channels own account, security, conversation, transport contracts. Keep typed command/approval/URL/action distinctions until encoding; never infer commands from raw strings.
 - Carry prepared facts through hot paths; reuse process-stable plugin metadata and lifecycle-owned caches; never repeatedly load registries or freshness-poll files. Preserve lazy module boundaries; verify relevant builds on authorized host.
 - Prompt prefix: within a session, tool definitions, system prompt and earlier history depend only on session and config facts; history only appends. Per-turn authority gates calls through `gateAgentToolExecution`, and per-turn facts go in that turn's message. A change to anything that reaches a provider request keeps `src/agents/agent-tools.prefix-stability.test.ts` green; [contract](docs/reference/prompt-caching.md#stable-tools-between-turns).
 - Cache identity: key every cache, memo, in-flight join, and shared snapshot by every input that changes its answer: scope (agent, account, credential, session, workspace) and request shape (provider set, mode, options, deadline). Callers asking different questions get separate slots; volatile values stay out of keys. Prove sharing with a work-count test where differing callers interleave.
@@ -79,7 +76,6 @@ Update instructions at owner; no competing rules here.
 
 - Defaults produce working, understandable result. Prioritize silent failures: every action has visible outcome or recorded intentional non-outcome; errors name next step.
 - **Updates always work:** best effort everywhere. Update/Doctor/lifecycle/migration/plugin-loading changes state update behavior and follow the [update contract](docs/install/updating.md#update-implementation-contract).
-- Prompts, tools, results: describe available capabilities accurately, with context for next useful action and no unnecessary model round trips. Inject cross-tool references from enabled tool set; drop stale model-facing arguments; give new optional features discovery paths.
 - Security = product tradeoff: weigh concrete risk against user effort, lockouts, lost capability. Prefer least restrictive effective safeguard; keep risky paths explicit, operator-controlled within existing trust model and approval boundaries; explain tradeoffs, never invent gates.
 - **Behavior over test count.** Prefer production-path integration proof and independent unit contracts. Before changing provider requests, fallbacks, recovery, defaults, and when writing or reviewing behavioral tests: read [boundary proof](docs/help/testing/writing-tests.md#prove-behavior-at-the-owning-boundary).
 - Test failures = defects: reproduce, fix owner with regression, or record evidence and continue (unresolved alone doesn't block landing). Never mask failures or claim passing replay proves fix ([policy](.agents/skills/openclaw-testing/SKILL.md#test-failure-policy)).
@@ -106,11 +102,9 @@ Update instructions at owner; no competing rules here.
 
 ## Read when relevant
 
-Commands and details stay with these guides.
-
 - **Plugins/SDK:** [plugins](extensions/AGENTS.md), [loader](src/plugins/AGENTS.md), [SDK](src/plugin-sdk/AGENTS.md) (owns public boundary expansion, including outside callers).
-- **Channels/message actions:** [channel boundary](src/channels/AGENTS.md), [channel responsibilities](docs/plugins/sdk-channel-plugins.md).
-- **Agent tools, prompts, admission, lifecycle:** [agents](src/agents/AGENTS.md), [Gateway](src/gateway/AGENTS.md).
+- **Channels, message tools/actions, dispatch:** [channel boundary](src/channels/AGENTS.md), [channel responsibilities](docs/plugins/sdk-channel-plugins.md).
+- **Agent tools, prompts, tool results, admission, lifecycle:** [agents](src/agents/AGENTS.md), [Gateway](src/gateway/AGENTS.md).
 - **Control UI:** [UI guide](ui/AGENTS.md), including state shared with other Gateway clients. Solid code anywhere (Control UI, plugin views, Canvas hosts): read the [Solid skill](.agents/skills/solid/SKILL.md) first.
 - **Storage:** [database schemas](docs/reference/database-schemas.md) and subpages; read approval checkpoint before schema, transaction, retention, recovery changes.
 - **Config migration:** [Doctor transforms](docs/gateway/doctor/config-migrations.md), never new runtime compatibility readers.
