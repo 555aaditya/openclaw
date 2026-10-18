@@ -1,6 +1,6 @@
 # AGENTS.md
 
-CI caps this file at 20,000 characters, the size OpenClaw loads whole. Put long rules in the owning guide and leave a one-line pointer here.
+Keep this file under 20,000 characters, the size OpenClaw loads whole. Put long rules in the owning guide and leave a one-line pointer here.
 
 ## Choose good compromises
 
