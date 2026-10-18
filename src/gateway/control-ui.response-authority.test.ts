@@ -7,9 +7,10 @@ import {
   createPluginRegistryFixture,
   registerVirtualTestPlugin,
 } from "openclaw/plugin-sdk/plugin-test-contracts";
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import * as avatarFile from "../agents/identity-avatar-file.js";
+import { mockStoppedWorkspaceContainer } from "../agents/sandbox/mount-plan.test-helpers.js";
 import { requireGit } from "../agents/worktrees/git.js";
 import { insertRegistryWorktree } from "../agents/worktrees/registry.js";
 import { setRuntimeConfigSnapshot } from "../config/runtime-snapshot.js";
@@ -281,6 +282,7 @@ describe("saved message attachment response authority", () => {
   const email = "attachment-reader@example.test";
   const adminEmail = "attachment-admin@example.test";
   const viewerEmail = "attachment-viewer@example.test";
+  const unrelatedEmail = "attachment-unrelated@example.test";
   const scope = {
     agentId: "main",
     sessionKey: "agent:main:dashboard:attachments",
@@ -303,6 +305,10 @@ describe("saved message attachment response authority", () => {
   let workspaceDir: string;
   let projection: string;
   let owner: LocalWorkspaceOwner;
+
+  beforeEach(async () => {
+    await mockStoppedWorkspaceContainer(projection);
+  });
 
   async function seed(commentSource = source) {
     const directive = `MEDIA:${path.join(workspaceDir, "report.txt")}`;
@@ -394,6 +400,7 @@ describe("saved message attachment response authority", () => {
     await state.writeConfig(config);
     setRuntimeConfigSnapshot(config, config);
     const profileId = (await ensureCanonicalUserProfileForEmail(email)).id;
+    await ensureCanonicalUserProfileForEmail(unrelatedEmail);
     for (const [address, role] of [
       [viewerEmail, "viewer"],
       [adminEmail, "admin"],
@@ -461,6 +468,7 @@ describe("saved message attachment response authority", () => {
       ticketOnly?: boolean;
       admin?: boolean;
       viewer?: boolean;
+      unrelated?: boolean;
       method?: string;
       range?: string;
     } = {},
@@ -478,7 +486,13 @@ describe("saved message attachment response authority", () => {
         ...(options.ticketOnly
           ? {}
           : {
-              "x-forwarded-user": options.admin ? adminEmail : options.viewer ? viewerEmail : email,
+              "x-forwarded-user": options.unrelated
+                ? unrelatedEmail
+                : options.admin
+                  ? adminEmail
+                  : options.viewer
+                    ? viewerEmail
+                    : email,
               "x-forwarded-for": "203.0.113.42",
               "x-openclaw-scopes": options.admin ? "operator.admin" : "operator.sessions.read",
             }),
@@ -593,6 +607,32 @@ describe("saved message attachment response authority", () => {
     expect((await request({ ...query, messageId: "user-directive", meta: "1" })).status).toBe(404);
   });
 
+  it("withholds mapped image bytes from unrelated readers and after workspace reassignment", async () => {
+    const query = {
+      source: "/workspace/.artifacts/proof/screenshot.png",
+      messageId: "sandbox-screenshot",
+    };
+    const mediaTicket = await metadata(query);
+    for (const selection of [query, { ...query, meta: "1" }]) {
+      const unrelated = await request(selection, { unrelated: true });
+      expect(unrelated.status).toBe(404);
+      expect(Buffer.from(await unrelated.arrayBuffer())).not.toEqual(REAL_PNG);
+    }
+    const worktree = {
+      id: owner.worktree.id,
+      branch: owner.worktree.branch,
+      repoRoot: owner.worktree.repoRoot,
+    };
+    await upsertSessionEntryCore(scope, { worktree: { ...worktree, id: randomUUID() } });
+    try {
+      const denied = await request({ ...query, mediaTicket }, { ticketOnly: true });
+      expect(denied.status).toBe(404);
+      expect(Buffer.from(await denied.arrayBuffer())).not.toEqual(REAL_PNG);
+    } finally {
+      await upsertSessionEntryCore(scope, { worktree });
+    }
+  });
+
   it.each(["queued", "stopped", "forwarded", "saved"] as const)(
     "rechecks the %s attachment association after preparing bytes",
     async (kind) => {
@@ -662,26 +702,37 @@ describe("saved message attachment response authority", () => {
     },
   );
 
-  it("rechecks session and role access for issued tickets and metadata refresh", async () => {
-    const mediaTicket = await metadata({}, { viewer: true });
-    await upsertSessionEntryCore(scope, { visibility: "draft" });
-    try {
-      expect((await request({ mediaTicket }, { ticketOnly: true })).status).toBe(404);
-      expect((await request({ mediaTicket, meta: "1" }, { viewer: true })).status).toBe(404);
-    } finally {
-      await upsertSessionEntryCore(scope, { visibility: "shared" });
-    }
-    const ownTicket = await metadata();
-    const before = config;
-    config = structuredClone(config);
-    config.gateway!.roles!.definitions.guest = readerRole("none", []);
-    setRuntimeConfigSnapshot(config, config);
-    try {
-      expect((await request({ mediaTicket: ownTicket }, { ticketOnly: true })).status).toBe(404);
-      expect((await request({ mediaTicket: ownTicket, meta: "1" })).status).toBe(403);
-    } finally {
-      config = before;
+  const ticketSources: Record<string, string>[] = [
+    {},
+    { source: "/workspace/.artifacts/proof/screenshot.png", messageId: "sandbox-screenshot" },
+  ];
+  it.each(ticketSources)(
+    "rechecks session and role access for issued tickets and metadata refresh (%j)",
+    async (query) => {
+      const mediaTicket = await metadata(query, { viewer: true });
+      await upsertSessionEntryCore(scope, { visibility: "draft" });
+      try {
+        expect((await request({ ...query, mediaTicket }, { ticketOnly: true })).status).toBe(404);
+        expect((await request({ ...query, mediaTicket, meta: "1" }, { viewer: true })).status).toBe(
+          404,
+        );
+      } finally {
+        await upsertSessionEntryCore(scope, { visibility: "shared" });
+      }
+      const ownTicket = await metadata(query);
+      const before = config;
+      config = structuredClone(config);
+      config.gateway!.roles!.definitions.guest = readerRole("none", []);
       setRuntimeConfigSnapshot(config, config);
-    }
-  });
+      try {
+        expect(
+          (await request({ ...query, mediaTicket: ownTicket }, { ticketOnly: true })).status,
+        ).toBe(404);
+        expect((await request({ ...query, mediaTicket: ownTicket, meta: "1" })).status).toBe(403);
+      } finally {
+        config = before;
+        setRuntimeConfigSnapshot(config, config);
+      }
+    },
+  );
 });

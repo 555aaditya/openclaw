@@ -294,7 +294,7 @@ export async function handleControlUiAssistantMediaRequest(
       publish();
     });
   if (isMetaRequest) {
-    const availability = await resolveAssistantMediaAvailability(
+    const { assertSourceCurrent, ...availability } = await resolveAssistantMediaAvailability(
       source,
       policy,
       allowance,
@@ -306,15 +306,16 @@ export async function handleControlUiAssistantMediaRequest(
       return true;
     }
     try {
-      await publishResponse(() =>
+      await publishResponse(() => {
+        assertSourceCurrent?.();
         sendJson(
           res,
           200,
           !availability.available && availability.code === "outside-allowed-folders"
             ? { ...availability, retryable: false, ...(policy.canAllow ? { canAllow: true } : {}) }
             : availability,
-        ),
-      );
+        );
+      });
     } catch {
       respondControlUiNotFound(res);
     }
@@ -412,6 +413,7 @@ export async function handleControlUiAssistantMediaRequest(
     let delivery: Promise<void> | undefined;
     const stream = byteStream;
     await publishResponse(() => {
+      media.assertSourceCurrent();
       if (media.outsideRoots && mediaKind === "image") {
         applyHttpImageContentSecurityPolicy(res);
       }

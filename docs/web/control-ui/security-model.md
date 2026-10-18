@@ -136,6 +136,9 @@ that workspace are staged for delivery under the same file-access checks.
 For a managed project running in a local Docker or Podman sandbox, absolute
 container-workspace references (such as `/workspace/screenshots/result.png`)
 resolve through that session's worktree after pending workspace changes settle.
+The existing sandbox must identify the same visible workspace bind; container-only,
+obscured, or unverifiable backing stays unavailable. Stopped containers retain
+previews when their saved mount metadata still establishes that workspace bind.
 The preview still belongs to the original message and uses the same containment
 and current-access checks. Selecting a project does not grant access to sibling worktrees.
 

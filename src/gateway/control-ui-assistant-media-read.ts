@@ -1,3 +1,4 @@
+import path from "node:path";
 import { readFileWindowFully, safeFileURLToPath } from "@openclaw/fs-safe/advanced";
 import { detectMime, kindFromMime } from "@openclaw/media-core/mime";
 import { startsWithSvgRootElement } from "../../packages/gateway-protocol/src/svg-image.js";
@@ -57,6 +58,7 @@ export async function openAssistantMedia(
   const sandbox = policy.sandboxWorkspace;
   const mapped = !policy.remote && sandbox ? resolveSandboxPathMapping([sandbox], source) : null;
   const reference = await resolveMediaReferenceLocalPathInfo(mapped?.hostPath ?? source);
+  let workspaceDir = sandbox?.hostRoot;
   if (policy.remote && reference.kind === "local") {
     throw new LocalMediaAccessError("invalid-path", "File is on another computer");
   }
@@ -64,7 +66,15 @@ export async function openAssistantMedia(
     const { withSettledLocalWorkspacePath } =
       await import("./worker-environments/local-workspace-projection.js");
     assertCurrent();
-    await withSettledLocalWorkspacePath({ cwd: sandbox.hostRoot, assertCurrent }, async () => {});
+    workspaceDir = await withSettledLocalWorkspacePath(
+      { cwd: sandbox.hostRoot, assertCurrent },
+      async (custody) => {
+        if (mapped && custody?.worktreeId !== sandbox.worktreeId) {
+          throw new LocalMediaAccessError("invalid-path", "Sandbox image backing is unavailable");
+        }
+        return custody?.projectionPath ?? sandbox.hostRoot;
+      },
+    );
     assertCurrent();
   }
   let outsideRoots = false;
@@ -81,6 +91,26 @@ export async function openAssistantMedia(
   }
   const opened = await openLocalFileSafely({ filePath: reference.path });
   try {
+    let assertSourceCurrent = assertCurrent;
+    if (mapped && sandbox && workspaceDir) {
+      if (!isPathInside(sandbox.hostRoot, opened.realPath)) {
+        throw new LocalMediaAccessError("invalid-path", "Sandbox image backing is unavailable");
+      }
+      const { prepareLocalWorkspaceImageRead } =
+        await import("../agents/sandbox/local-workspace-quiescence.js");
+      assertSourceCurrent = await prepareLocalWorkspaceImageRead({
+        workspaceDir,
+        containerRoot: sandbox.containerRoot,
+        targets: [
+          source,
+          path.posix.join(
+            sandbox.containerRoot,
+            ...path.relative(sandbox.hostRoot, opened.realPath).split(path.sep),
+          ),
+        ],
+        assertCurrent,
+      });
+    }
     let file: AssistantMediaFile | undefined;
     if (outsideRoots && allowance) {
       const identity = await opened.handle.stat({ bigint: true });
@@ -112,7 +142,8 @@ export async function openAssistantMedia(
     if (outsideRoots && kindFromMime(mimeType) !== "image") {
       throw new LocalMediaAccessError("unsupported-media-type", "Not an image");
     }
-    return { opened, reference, mimeType, outsideRoots, file };
+    assertSourceCurrent();
+    return { opened, reference, mimeType, outsideRoots, file, assertSourceCurrent };
   } catch (error) {
     await opened.handle.close().catch(() => {});
     throw error;
@@ -126,10 +157,16 @@ export async function resolveAssistantMediaAvailability(
   agentId: string | undefined,
   signal: AbortSignal,
   assertCurrent: () => void,
-): Promise<AssistantMediaAvailability & { mediaTicket?: string; mediaTicketExpiresAt?: string }> {
+): Promise<
+  AssistantMediaAvailability & {
+    mediaTicket?: string;
+    mediaTicketExpiresAt?: string;
+    assertSourceCurrent?: () => void;
+  }
+> {
   try {
     assertCurrent();
-    const { opened, mimeType, file } = await openAssistantMedia(
+    const { opened, mimeType, file, assertSourceCurrent } = await openAssistantMedia(
       source,
       policy,
       allowance,
@@ -151,12 +188,13 @@ export async function resolveAssistantMediaAvailability(
             mimeType,
             kind: mediaKind,
             signal,
-            assertCurrent,
+            assertCurrent: assertSourceCurrent,
           })
         : undefined;
-    assertCurrent();
+    assertSourceCurrent();
     return {
       available: true,
+      assertSourceCurrent,
       ...(mimeType ? { mimeType } : {}),
       sizeBytes: opened.stat.size,
       ...playbackMetadata,
