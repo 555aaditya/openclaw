@@ -3,11 +3,14 @@ import { awaitGateBeforeSettlement, createDeferred } from "../../../test/helpers
 import {
   isEmbeddedAgentRunHandleActive,
   resolveActiveEmbeddedRunOwner,
+  resolveActiveEmbeddedRunOwnerForOperation,
 } from "../../agents/embedded-agent-runner/runs.js";
-import { steerTestSessionTurn } from "../../agents/embedded-agent-runner/runs.test-support.js";
 import { resolveSessionPlacementTurnSettlementAssertion } from "../../agents/session-placement-forced-terminal-settlement.js";
 import { withGatewayToolCallerIdentity } from "../../agents/tools/gateway-caller-context.js";
-import { rotateAgentEventLifecycleGeneration } from "../../infra/agent-events.js";
+import {
+  onAgentEventForRun,
+  rotateAgentEventLifecycleGeneration,
+} from "../../infra/agent-events.js";
 import { registerAgentRunContext } from "../../infra/agent-run-registry.js";
 import {
   areDiagnosticsEnabledForProcess,
@@ -17,7 +20,9 @@ import { getDiagnosticSessionActivitySnapshot } from "../../logging/diagnostic-r
 import { logSessionStateChange } from "../../logging/diagnostic.js";
 import type { ReplyToolAuthorityOverlay } from "../../sessions/session-controller.contracts.js";
 import { createReplyOperation } from "../../sessions/session-controller.js";
+import { captureSessionTarget } from "../../sessions/session-controller.lifecycle.js";
 import { isReplyRunEvidenceStale } from "../../sessions/session-controller.state.js";
+import { steerSessionControllerOperation } from "../../sessions/session-controller.steer.js";
 import { closeStateDatabaseForTest } from "../../test-utils/database-cleanup.js";
 import type { WorkerConnectionIdentity } from "./connection-identity.js";
 import { createWorkerLiveEventReceiver } from "./live-events.js";
@@ -36,6 +41,7 @@ import {
   readLaunchToolNames,
   placements,
   seedActivePlacement,
+  sessionTarget,
   setupWorkerTurnLauncherTest,
   turn,
   unusedEnvironments,
@@ -49,11 +55,11 @@ describe("cloud worker run ownership", () => {
   afterEach(() => cleanupWorkerTurnLauncherTest({ reuseReadWorkers: true }));
 
   it.each([
-    { cancellation: "user", firstToolDelayMs: 0 },
-    { cancellation: "deadline", firstToolDelayMs: 10 * 60_000 },
+    { cancellation: "user", firstToolDelayMs: 0, collisionAt: "cancellation" },
+    { cancellation: "deadline", firstToolDelayMs: 10 * 60_000, collisionAt: "progress" },
   ] as const)(
-    "keeps a bounded remote tool alive until $cancellation cancellation after a $firstToolDelayMs ms tool-start delay",
-    async ({ cancellation, firstToolDelayMs }) => {
+    "keeps a bounded remote tool alive until $cancellation cancellation with a shared session ID at $collisionAt",
+    async ({ cancellation, firstToolDelayMs, collisionAt }) => {
       let now = Date.UTC(2026, 7, 29);
       const turnStartedAtMs = now;
       const clock = vi.spyOn(Date, "now").mockImplementation(() => now);
@@ -86,6 +92,10 @@ describe("cloud worker run ownership", () => {
                 request.signal?.addEventListener("abort", () => resolve(), { once: true });
               }),
             ]);
+            if (cancellation === "user") {
+              // Keep producer custody until its final worker receipt has been acknowledged.
+              await finishLaunch.promise;
+            }
             throw new Error("worker turn cancelled");
           },
         }),
@@ -96,8 +106,26 @@ describe("cloud worker run ownership", () => {
       const operation = createReplyOperation({
         sessionId: SESSION_ID,
         sessionKey: SESSION_KEY,
+        target: captureSessionTarget({
+          storeScope: sessionTarget.storePath,
+          sessionKey: SESSION_KEY,
+          incarnation: SESSION_ID,
+        }),
         resetTriggered: false,
       });
+      let otherOperation: ReturnType<typeof createReplyOperation> | undefined;
+      const collideSessionId = () => {
+        otherOperation = createReplyOperation({
+          sessionId: SESSION_ID,
+          sessionKey: SESSION_KEY,
+          target: captureSessionTarget({
+            storeScope: `${sessionTarget.storePath}.other`,
+            sessionKey: SESSION_KEY,
+            incarnation: SESSION_ID,
+          }),
+          resetTriggered: false,
+        });
+      };
       operation.setPhase("running");
       const runId = "run-bounded-worker-tool";
       registerAgentRunContext(runId, {
@@ -154,6 +182,9 @@ describe("cloud worker run ownership", () => {
         state: "processing",
       });
       try {
+        if (collisionAt === "progress") {
+          collideSessionId();
+        }
         expect(
           await receiver.apply({
             readAckedSeq: () => 0,
@@ -187,14 +218,50 @@ describe("cloud worker run ownership", () => {
           activeToolName: "sessions_spawn",
           hasActiveEmbeddedRun: true,
         });
-        await expect(steerTestSessionTurn(SESSION_ID, "follow up")).resolves.toMatchObject({
+        await expect(
+          steerSessionControllerOperation({ operation, text: "follow up", options: {} }),
+        ).resolves.toMatchObject({
           status: "rejected",
           reason: "injection_unavailable",
         });
         if (cancellation === "user") {
-          expect(resolveActiveEmbeddedRunOwner(SESSION_ID)?.abort()).toBe(true);
+          collideSessionId();
+          expect(resolveActiveEmbeddedRunOwnerForOperation(operation)?.abort()).toBe(true);
           expect(placements.validateTurnClaim(turnClaim)).toBe(true);
           await expect(turnCapability.run(async () => "late effect")).rejects.toThrow();
+          const finishing = {
+            runEpoch: OWNER_EPOCH,
+            lastAckedSeq: 1,
+            seq: 2,
+            runId,
+            event: {
+              kind: "lifecycle" as const,
+              payload: { phase: "finishing" as const, aborted: true, endedAt: now },
+            },
+          };
+          const lateEvent = vi.fn();
+          const unsubscribe = onAgentEventForRun(runId, lateEvent);
+          try {
+            expect(
+              await receiver.apply({
+                readAckedSeq: () => 0,
+                source: turnCapability,
+                identity: { ...identity, turnClaim: { ...turnClaim, claimId: "foreign-claim" } },
+                request: finishing,
+              }),
+            ).toEqual({ ok: false, details: { reason: "invalid-event" } });
+            expect(
+              await receiver.apply({
+                readAckedSeq: () => 0,
+                source: turnCapability,
+                identity,
+                request: finishing,
+              }),
+            ).toEqual({ ok: true, result: { ackedSeq: 2 } });
+            expect(lateEvent).not.toHaveBeenCalled();
+          } finally {
+            unsubscribe();
+          }
         } else {
           expect(
             await receiver.apply({
@@ -226,6 +293,8 @@ describe("cloud worker run ownership", () => {
           expect(operation.result).toMatchObject({ kind: "failed", code: "run_stalled" });
         }
         expect(workerSignal?.aborted).toBe(true);
+        expect(otherOperation?.abortSignal.aborted).toBe(false);
+        finishLaunch.resolve();
         await attempt;
         operation.complete();
         await operation.ownerSettlement;
@@ -241,6 +310,7 @@ describe("cloud worker run ownership", () => {
         operation.abortByUser();
         await attempt;
         operation.complete();
+        otherOperation?.complete();
         receiver.clear();
         clock.mockRestore();
       }
@@ -276,6 +346,9 @@ describe("cloud worker run ownership", () => {
       isReplyDelivered: () => false,
     });
     const owner = captureWorkerTurnLiveEventOwner({ sessionId: SESSION_ID, turnClaim: claim });
+    expect(
+      captureWorkerTurnLiveEventOwner({ sessionId: "different-session", turnClaim: claim }),
+    ).toBeUndefined();
     let pending = true;
     const expiresAtMs = now + 12 * 60_000;
     const wait = owner?.beginApprovalWait(expiresAtMs, () => pending);

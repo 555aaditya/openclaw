@@ -32,7 +32,7 @@ import {
 import {
   assertSessionControllerOperation,
   isCurrentSessionControllerOperation,
-  resolveReplyRunForCurrentSessionId,
+  activeSessionOperations,
 } from "../../sessions/session-controller.state.js";
 import type { SessionWatchdogWait } from "../../sessions/session-controller.watchdog.js";
 import { createDeferredCore } from "../../shared/deferred.js";
@@ -339,14 +339,21 @@ export async function createWorkerTurnRunOwner(params: {
 export function captureWorkerTurnLiveEventOwner(
   identity: Pick<WorkerConnectionIdentity, "sessionId" | "turnClaim">,
 ): WorkerTurnLiveEventOwner | undefined {
-  const resolved = identity.sessionId
-    ? resolveReplyRunForCurrentSessionId(identity.sessionId)
-    : undefined;
-  // An ambiguous session id selects no owner.
-  const owner = resolved?.kind === "one" ? activeOwners.get(resolved.operation) : undefined;
-  return owner &&
-    identity.turnClaim?.owner.kind === "worker" &&
-    sameWorkerSessionTurnClaim(owner.claim, identity.turnClaim)
-    ? owner
-    : undefined;
+  const claim = identity.turnClaim;
+  if (!claim || claim.owner.kind !== "worker" || identity.sessionId !== claim.sessionId) {
+    return undefined;
+  }
+  let owner: WorkerRunOwner | undefined;
+  // Physical stores can share a session ID; the admitted claim selects its exact operation.
+  for (const operation of activeSessionOperations()) {
+    const candidate = activeOwners.get(operation);
+    if (!candidate || !sameWorkerSessionTurnClaim(candidate.claim, claim)) {
+      continue;
+    }
+    if (owner) {
+      return undefined;
+    }
+    owner = candidate;
+  }
+  return owner;
 }
