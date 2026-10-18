@@ -1,6 +1,5 @@
 import { EventEmitter } from "node:events";
 // Discord tests cover provider plugin behavior.
-import { expectDefined } from "@openclaw/normalization-core";
 import { IncognitoSessionSyncAccessError } from "openclaw/plugin-sdk/acp-runtime";
 import type { ChannelRuntimeSurface } from "openclaw/plugin-sdk/channel-contract";
 import { createPluginRuntimeMock } from "openclaw/plugin-sdk/channel-test-helpers";
@@ -345,11 +344,11 @@ describe("monitorDiscordProvider", () => {
     const bindingEntered = createDeferred<void>();
     const failure = new Error("message-handler cleanup failed");
     const stop = vi.spyOn(DiscordGuildJoinIntroductionListener.prototype, "stop");
-    const stopIntroduction = expectDefined(stop.getMockImplementation(), "original listener stop");
     stop.mockImplementationOnce(async function (this: DiscordGuildJoinIntroductionListener) {
       entered.resolve();
       await ready.promise;
-      await stopIntroduction.call(this);
+      stop.mockRestore();
+      await this.stop();
     });
     const deactivate = vi.fn(async () => {
       expect(stop).toHaveBeenCalledOnce();
