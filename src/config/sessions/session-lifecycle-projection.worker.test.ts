@@ -1,7 +1,8 @@
-import { afterEach, expect, it as baseIt, vi } from "vitest";
+import { afterEach, beforeEach, expect, vi } from "vitest";
 import { observeHostDataSql } from "../../../test/helpers/sqlite-statement-execution-counter.js";
 import * as admission from "../../infra/sqlite-worker-operation-admission.js";
 import { sqliteWorkerOwnerProbe as probe } from "../../infra/sqlite-worker-owner-probe.test-support.js";
+import * as workerStore from "../../infra/sqlite-worker-store.js";
 import {
   beginSessionWorkAdmission,
   isSessionLifecycleMutationActive,
@@ -11,10 +12,6 @@ import { onSessionIdentityMutation } from "../../sessions/session-lifecycle-even
 import { sessionChanges } from "../../sessions/session-row-changes.js";
 import { createDeferredCore } from "../../shared/deferred.js";
 import { openOpenClawAgentDatabase } from "../../state/openclaw-agent-db.js";
-import {
-  withOpenClawTestState,
-  type OpenClawTestState,
-} from "../../test-utils/openclaw-test-state.js";
 import type { SessionEntryLifecycleUpsert } from "./session-accessor.lifecycle-types.js";
 import {
   commitReplySessionInitialization,
@@ -30,14 +27,9 @@ import {
   SessionEntryLifecycleUpsertConflictError,
   SqliteSessionMutationConflictError,
 } from "./session-mutation-conflict-error.js";
+import { it } from "./session-worker-state.test-support.js";
 import { registerSessionMaintenancePreserveKeysProvider } from "./store-maintenance-preserve.js";
 
-const it = baseIt.extend<{ state: OpenClawTestState }>({
-  state: [
-    async ({ task: _task }, use) => withOpenClawTestState({ scenario: "minimal" }, use),
-    { auto: true },
-  ],
-});
 const counts = (beforeCount: number, afterCount: number, archived: number, removedEntries = 0) => ({
   beforeCount,
   afterCount,
@@ -57,48 +49,39 @@ vi.mock("./session-history-eviction.js", async (importOriginal) => ({
   kickSessionHistoryDiskBudgetMaintenance() {},
 }));
 
-const delivery = vi.hoisted(() => ({
+const delivery = {
   currentCommand: "",
   beforeCommand: undefined as ((type: string) => Promise<void>) | undefined,
   afterCommit: undefined as ((type: string) => void) | undefined,
-}));
-vi.mock("../../state/openclaw-agent-execution.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../state/openclaw-agent-execution.js")>();
-  return {
-    ...actual,
-    captureOpenClawAgentDatabaseExecution: (
-      ...args: Parameters<typeof actual.captureOpenClawAgentDatabaseExecution>
-    ): ReturnType<typeof actual.captureOpenClawAgentDatabaseExecution> => {
-      const owner = actual.captureOpenClawAgentDatabaseExecution(...args);
-      return {
-        ...owner,
-        get fileIdentity() {
-          return owner.fileIdentity;
-        },
-        runExisting: (source, operation, options) =>
-          owner.runExisting(
-            source,
-            (worker) =>
-              operation({
-                execute: async (command, commandOptions) => {
-                  delivery.currentCommand = command.type;
-                  try {
-                    if (delivery.beforeCommand) {
-                      await delivery.beforeCommand(command.type);
-                    }
-                    const result = await worker.execute(command, commandOptions);
-                    delivery.afterCommit?.(command.type);
-                    return result;
-                  } finally {
-                    delivery.currentCommand = "";
-                  }
-                },
-              }),
-            options,
-          ),
-      };
-    },
-  };
+};
+beforeEach(() => {
+  const run = workerStore.runSqliteWorkerStoreOperation;
+  vi.spyOn(workerStore, "runSqliteWorkerStoreOperation").mockImplementation(
+    (store, operation, context, current, admit) =>
+      run(
+        store,
+        (worker) =>
+          operation({
+            execute: async (command, options) => {
+              if (command.type !== "session.lifecycle.project") {
+                return worker.execute(command, options);
+              }
+              delivery.currentCommand = command.type;
+              try {
+                await delivery.beforeCommand?.(command.type);
+                const result = await worker.execute(command, options);
+                delivery.afterCommit?.(command.type);
+                return result;
+              } finally {
+                delivery.currentCommand = "";
+              }
+            },
+          }),
+        context,
+        current,
+        admit,
+      ),
+  );
 });
 
 afterEach(() => {
