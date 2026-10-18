@@ -1,4 +1,5 @@
-import { lookup } from "node:dns/promises";
+import dns from "node:dns/promises";
+import { syncBuiltinESMExports } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, expect, it, onTestFinished, vi } from "vitest";
@@ -12,7 +13,7 @@ import {
   type DiagnosticEventPayload,
 } from "../infra/diagnostic-events.js";
 import { markTrustedOtelDiagnosticListener } from "../infra/diagnostic-otel-listener-provenance.js";
-import * as providerHttp from "../plugin-sdk/provider-http.js";
+import { withGuardedFetchRequestAuthority } from "../infra/net/fetch-request-authority.js";
 import { withServer } from "../plugin-sdk/test-helpers/http-test-server.js";
 import { loadAndActivateRootPluginRegistry } from "../plugins/loader.js";
 import { resetPluginLoaderTestStateForTest } from "../plugins/loader.test-fixtures.js";
@@ -40,6 +41,7 @@ afterEach(async () => {
   resetDiagnosticEventsForTest();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+  syncBuiltinESMExports();
 });
 
 it.each([
@@ -283,42 +285,52 @@ it.each([
             const entered = createDeferredCore();
             const release = createDeferredCore();
             let finalAdmission = false;
+            let dnsLookups = 0;
+            let restoreDns: (() => void) | undefined;
             if (route === "private retired") {
-              // Pause actual DNS preparation, preserving the provider's original final guard.
-              const guardedFetch = providerHttp.fetchWithProviderHttpGuard;
-              vi.spyOn(providerHttp, "fetchWithProviderHttpGuard").mockImplementation((request) => {
-                expect(request.url).toBe(baseUrl + "/decisions");
-                expect(request.beforeRequest).toBeTypeOf("function");
-                return guardedFetch({
-                  ...request,
-                  lookupFn: async (hostname, options) => {
-                    entered.resolve();
-                    await release.promise;
-                    return lookup(hostname, options);
-                  },
-                  beforeRequest: () => {
-                    request.beforeRequest!();
-                    finalAdmission = true;
-                  },
-                });
+              const lookup = dns.lookup;
+              const hostname = new URL(baseUrl).hostname;
+              const spy = vi.spyOn(dns, "lookup").mockImplementation(async (...args) => {
+                if (args[0] === hostname) {
+                  dnsLookups++;
+                  entered.resolve();
+                  await release.promise;
+                }
+                return lookup(...args);
               });
+              // Loaded plugin SDK transports use native modules, outside Vitest's facade.
+              // Pause their real DNS boundary without replacing the provider's final guard.
+              syncBuiltinESMExports();
+              restoreDns = () => {
+                spy.mockRestore();
+                syncBuiltinESMExports();
+              };
             }
             const signal = new AbortController().signal;
-            const pending = evaluateDecisionV2InRegistry(
-              {
-                state: { type: "image", dataUri, text: "Synthetic image evidence" },
-                questions: { visible: { type: "boolean", instructions: "Is the object visible?" } },
+            const pending = withGuardedFetchRequestAuthority(
+              undefined,
+              () =>
+                evaluateDecisionV2InRegistry(
+                  {
+                    state: { type: "image", dataUri, text: "Synthetic image evidence" },
+                    questions: {
+                      visible: { type: "boolean", instructions: "Is the object visible?" },
+                    },
+                  },
+                  {
+                    agentId,
+                    purpose: "openai-route-fixture",
+                    rubricVersion: "1",
+                    timeoutMs: 5000,
+                    reasoning: "auto",
+                    signal,
+                  },
+                  registry,
+                  config,
+                ),
+              () => {
+                finalAdmission = true;
               },
-              {
-                agentId,
-                purpose: "openai-route-fixture",
-                rubricVersion: "1",
-                timeoutMs: 5000,
-                reasoning: "auto",
-                signal,
-              },
-              registry,
-              config,
             );
             if (route === "private retired") {
               const settled = pending.then(
@@ -327,10 +339,34 @@ it.each([
               );
               try {
                 const first = await Promise.race([
-                  entered.promise.then(() => "dns"),
-                  settled.then(() => "settled"),
+                  entered.promise.then(() => ({ phase: "dns" })),
+                  settled.then((result) => ({
+                    phase: "settled",
+                    ...("outcome" in result
+                      ? {
+                          status: result.outcome.status,
+                          reason:
+                            result.outcome.status === "unavailable"
+                              ? result.outcome.reason
+                              : undefined,
+                        }
+                      : {
+                          errorName:
+                            result.error instanceof Error ? result.error.name : "non-error",
+                        }),
+                  })),
                 ]);
-                expect(first).toBe("dns");
+                // Report only phase, contract outcome and counts; never request or auth bytes.
+                expect(
+                  first,
+                  JSON.stringify({
+                    first,
+                    dnsLookups,
+                    requestCount: requests.length,
+                    finalAdmission,
+                  }),
+                ).toEqual({ phase: "dns" });
+                expect(dnsLookups).toBe(1);
                 expect(requests).toEqual([]);
                 const revision = getActiveSecretsRuntimeSnapshotRevision();
                 clearSecretsRuntimeSnapshot();
@@ -348,6 +384,7 @@ it.each([
               } finally {
                 release.resolve();
                 await settled;
+                restoreDns?.();
               }
               return;
             }
@@ -389,6 +426,7 @@ it.each([
               },
             });
             expect(requests).toHaveLength(1);
+            expect(finalAdmission).toBe(true);
             expect(requests[0]?.url).toBe(baseUrl + "/decisions");
             expect(requests[0]?.headers.get("authorization")).toBe(
               route === "configured model" ? null : "Bearer synthetic-openai-key",

@@ -44,7 +44,16 @@ async function writeBillingFixture(
         openai: {
           baseUrl: "https://api.openai.com/v1",
           api: "openai-completions",
-          models: [{ id: retiredModel, name: "Heartbeat", input: ["text"] }],
+          models: [
+            {
+              id: retiredModel,
+              name: "Heartbeat",
+              reasoning: false,
+              input: ["text"],
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+              maxTokens: 4096,
+            },
+          ],
         },
       },
     },
@@ -94,7 +103,12 @@ it("does not compare Decision selectors through conversational billing routes", 
       after: withChatSelection(after, "openai/gpt-5.6-luna"),
     });
     expect(warnings).toEqual([
-      expect.stringContaining("Billing route changed for agents.entries.main.model"),
+      expect.stringContaining(
+        "Billing route changed for agents.entries.main.model.primary (agent main):",
+      ),
+      expect.stringContaining(
+        "Billing route changed for agents.entries.main.subagents.model (agent main):",
+      ),
     ]);
   });
 });
