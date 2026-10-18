@@ -11,10 +11,10 @@ import { createRequesterWakeContextFixture } from "./subagent-registry-requester
 import type { SubagentRunRecord } from "./subagent-registry.types.js";
 import { copySubagentRunRuntimeOwner } from "./subagent-run-generation.js";
 
-function makeRetainedChild(runId = "run-a"): SubagentRunRecord {
-  return {
-    runId,
-    childSessionKey: `agent:main:subagent:${runId}`,
+function makeContext() {
+  const entry: SubagentRunRecord = {
+    runId: "run-a",
+    childSessionKey: "agent:main:subagent:run-a",
     requesterSessionKey: "agent:main:main",
     requesterDisplayKey: "main",
     task: "investigate",
@@ -25,11 +25,8 @@ function makeRetainedChild(runId = "run-a"): SubagentRunRecord {
     delivery: { status: "pending" },
     requesterSettleWake: { status: "dispatching", attemptCount: 3 },
   };
-}
-
-function makeContext(entry = makeRetainedChild(), siblings: SubagentRunRecord[] = []) {
   const warn = vi.fn();
-  const runs = new Map([entry, ...siblings].map((child) => [child.runId, child]));
+  const runs = new Map([[entry.runId, entry]]);
   const context = createRequesterWakeContextFixture(runs, warn);
   return { entry, context, warn };
 }
@@ -42,6 +39,12 @@ function makeDeferredCommit() {
     return result.promise;
   });
   return { commit, started: started.promise, release: result.resolve };
+}
+
+function sustainedWarnings(warn: ReturnType<typeof vi.fn>) {
+  return warn.mock.calls.filter(
+    ([message]) => message === "requester settle wake commit still failing; retries continue",
+  );
 }
 
 async function sweep(
@@ -172,9 +175,7 @@ describe("requester settle wake commit retry", () => {
     expect(commit.mock.calls.length).toBeGreaterThan(700);
     expect(entry).toEqual(before);
     expect(entry.requesterSettleWake).toBe(wakeBefore);
-    const sustained = warn.mock.calls.filter(
-      ([message]) => message === "requester settle wake commit still failing; retries continue",
-    );
+    const sustained = sustainedWarnings(warn);
     expect(sustained).toHaveLength(1);
     expect(sustained[0]?.[1]).toMatchObject({ runIds: expect.any(Array) });
 
@@ -197,9 +198,7 @@ describe("requester settle wake commit retry", () => {
       await retryPendingWakeCommit(context, pending).catch(() => {});
     }
 
-    const sustained = warn.mock.calls.filter(
-      ([message]) => message === "requester settle wake commit still failing; retries continue",
-    );
+    const sustained = sustainedWarnings(warn);
     expect(sustained).toHaveLength(1);
     expect(sustained[0]?.[1]).toMatchObject({
       failures: 5,
@@ -241,35 +240,30 @@ const READONLY_FAULT = { name: "SqliteError", message: "attempt to write a reado
 const MALFORMED_FAULT = { name: "SqliteError", message: "database disk image is malformed" };
 
 describe("requester settle wake failure reporting", () => {
-  it.each([{ repeats: 40, reports: 5, suppressed: 35 }])(
-    "reports new faults and accounts for $suppressed suppressed repeats on recovery",
-    async ({ repeats, reports, suppressed }) => {
-      const { entry, context, warn } = makeContext();
-      expect(getPendingWakeCommit(context, entry)).toBeUndefined();
-      expect(shouldReportRequesterSettleWakeFailure(context, entry, READONLY_FAULT)).toBe(true);
+  it("reports new faults and accounts for suppressed repeats on recovery", async () => {
+    const { entry, context, warn } = makeContext();
+    expect(getPendingWakeCommit(context, entry)).toBeUndefined();
+    expect(shouldReportRequesterSettleWakeFailure(context, entry, READONLY_FAULT)).toBe(true);
 
-      let writable = false;
-      await commitRequesterWake(context, [entry], undefined, () => writable, true);
-      // Reporting, rather than another failed commit, spends the repeat budget.
-      const decisions = Array.from({ length: repeats }, () =>
-        shouldReportRequesterSettleWakeFailure(context, entry, READONLY_FAULT),
-      );
-      expect(decisions.filter(Boolean)).toHaveLength(reports);
-      expect(decisions.slice(0, reports).every(Boolean)).toBe(true);
-      expect(getPendingWakeCommit(context, entry)?.suppressedFailureLogs ?? 0).toBe(suppressed);
-      expect(shouldReportRequesterSettleWakeFailure(context, entry, MALFORMED_FAULT)).toBe(true);
-      expect(shouldReportRequesterSettleWakeFailure(context, entry, MALFORMED_FAULT)).toBe(true);
+    let writable = false;
+    await commitRequesterWake(context, [entry], undefined, () => writable, true);
+    // Reporting, rather than another failed commit, spends the repeat budget.
+    const decisions = Array.from({ length: 40 }, () =>
+      shouldReportRequesterSettleWakeFailure(context, entry, READONLY_FAULT),
+    );
+    expect(decisions.filter(Boolean)).toHaveLength(5);
+    expect(decisions.slice(0, 5).every(Boolean)).toBe(true);
+    expect(getPendingWakeCommit(context, entry)?.suppressedFailureLogs ?? 0).toBe(35);
+    expect(shouldReportRequesterSettleWakeFailure(context, entry, MALFORMED_FAULT)).toBe(true);
+    expect(shouldReportRequesterSettleWakeFailure(context, entry, MALFORMED_FAULT)).toBe(true);
 
-      writable = true;
-      await sweep(context, entry, 5);
-      expect(getPendingWakeCommit(context, entry)).toBeUndefined();
-      const recovered = warn.mock.calls.filter(
-        ([message]) => message === "requester settle wake commit recovered",
-      );
-      expect(recovered).toHaveLength(suppressed > 0 ? 1 : 0);
-      if (suppressed > 0) {
-        expect(recovered[0]?.[1]).toMatchObject({ suppressedFailureLogs: suppressed });
-      }
-    },
-  );
+    writable = true;
+    await sweep(context, entry, 5);
+    expect(getPendingWakeCommit(context, entry)).toBeUndefined();
+    const recovered = warn.mock.calls.filter(
+      ([message]) => message === "requester settle wake commit recovered",
+    );
+    expect(recovered).toHaveLength(1);
+    expect(recovered[0]?.[1]).toMatchObject({ suppressedFailureLogs: 35 });
+  });
 });
