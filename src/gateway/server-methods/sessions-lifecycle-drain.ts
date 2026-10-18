@@ -228,6 +228,7 @@ export async function prepareSessionLifecycleDrain(
           stopReason: params.action,
           stopSource: "mutation",
           requester: { isAdmin: true },
+          cascadeDescendants: true,
           includeProtectedRuns: true,
           assertCurrent: params.authorize,
           onControllerTargets: (targets) => {
@@ -258,6 +259,9 @@ export async function prepareSessionLifecycleDrain(
     const abortResult = await prepared.cancellation;
     if (abortResult.unauthorized) {
       throw new Error("Session cancellation lost ownership");
+    }
+    if (abortResult.error) {
+      throw new Error(abortResult.error.message);
     }
     // Start the captured producers' drain deadline before later placement reads.
     const controllerDrain = prepared.controllerDrain();
