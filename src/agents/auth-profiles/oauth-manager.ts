@@ -178,7 +178,7 @@ export function createOAuthManager(adapter: OAuthManagerAdapter) {
     return null;
   }
 
-  const refreshQueue = new KeyedAsyncQueue();
+  let refreshQueue = new KeyedAsyncQueue();
 
   class OAuthSettlementCredentialValidationError extends Error {
     constructor(cause: unknown, cleanupErrors: readonly unknown[] = []) {
@@ -1134,8 +1134,13 @@ export function createOAuthManager(adapter: OAuthManagerAdapter) {
     }
   }
 
+  function resetRefreshQueuesForTest(): void {
+    refreshQueue = new KeyedAsyncQueue();
+  }
+
   return {
     resolveOAuthAccess,
+    resetRefreshQueuesForTest,
   };
 }
 /* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */

@@ -74,9 +74,12 @@ type AnthropicPayloadLogger = {
 };
 
 export function createAnthropicPayloadLogger(
-  params: AgentTraceBase,
+  params: AgentTraceBase & {
+    env?: NodeJS.ProcessEnv;
+    writer?: QueuedFileWriter;
+  },
 ): AnthropicPayloadLogger | null {
-  const env = process.env;
+  const env = params.env ?? process.env;
   const enabled = parseBooleanValue(env.OPENCLAW_ANTHROPIC_PAYLOAD_LOG) ?? false;
   const fileOverride = env.OPENCLAW_ANTHROPIC_PAYLOAD_LOG_FILE?.trim();
   const filePath = fileOverride
@@ -86,7 +89,7 @@ export function createAnthropicPayloadLogger(
     return null;
   }
 
-  const writer = getQueuedFileWriter(writers, filePath);
+  const writer = params.writer ?? getQueuedFileWriter(writers, filePath);
   const base = buildAgentTraceBase(params);
 
   const record = (event: PayloadLogEvent) => {

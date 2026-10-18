@@ -49,7 +49,7 @@ export async function withProjectedSessionTranscriptWriteLock<
   run: (context: TContext) => Promise<T> | T,
   projectContext: (
     context: InternalSessionTranscriptWriteLockContext,
-    appendMessageWithMessageSequence: SessionTranscriptWriteLockAccessorContext["appendMessageWithMessageSequence"],
+    locked: SessionTranscriptWriteLockAccessorContext,
   ) => TContext,
   mode: "lock" | "sequence" = "lock",
   legacyMethod:
@@ -91,6 +91,17 @@ export async function withProjectedSessionTranscriptWriteLock<
     }
     return operation();
   };
+  const guardProjectedContext = (
+    locked: SessionTranscriptWriteLockAccessorContext,
+  ): SessionTranscriptWriteLockAccessorContext => ({
+    publishUpdate: (update) => whileOpen(() => locked.publishUpdate(update)),
+    readEvents: () => whileOpen(locked.readEvents),
+    readMessageFacts: (query) => whileOpen(() => locked.readMessageFacts(query)),
+    replaceEvents: (events) => whileOpen(() => locked.replaceEvents(events)),
+    appendMessage: (options) => whileOpen(() => locked.appendMessage(options)),
+    appendMessageWithMessageSequence: (options) =>
+      whileOpen(() => locked.appendMessageWithMessageSequence(options)),
+  });
   const runOpen = async (context: TContext) => {
     try {
       const result = run(context);
@@ -122,7 +133,7 @@ export async function withProjectedSessionTranscriptWriteLock<
               queuedUpdates.push(update ? { ...update } : undefined);
             }),
         },
-        (options) => whileOpen(() => locked.appendMessageWithMessageSequence(options)),
+        guardProjectedContext(locked),
       ),
     );
     for (const update of queuedUpdates) {

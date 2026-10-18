@@ -14,14 +14,15 @@ import {
 } from "./quota-reset.test-support.js";
 
 describe.each([
-  ["wham", false, false, false],
-  ["codex_rate_limits", false, false, false],
-  ["wham", true, false, false],
-  ["codex_rate_limits", false, true, false],
-  ["codex_rate_limits", false, true, true],
+  ["wham", false, false, false, false],
+  ["codex_rate_limits", false, false, false, false],
+  ["wham", true, false, false, false],
+  ["codex_rate_limits", false, true, false, false],
+  ["codex_rate_limits", false, true, true, false],
+  ["codex_rate_limits", false, true, false, true],
 ] as const)(
-  "Gateway quota reset (%s, expired=%s, scoped=%s, available=%s)",
-  (source, expiresDuringBlock, scopedCooldown, availableProbeCooldown) => {
+  "Gateway quota reset (%s, expired=%s, scoped=%s, available=%s, stale-success=%s)",
+  (source, expiresDuringBlock, scopedCooldown, availableProbeCooldown, staleUsageAfterSuccess) => {
     it(
       "recovers the next chat after upstream capacity returns without admitting exhausted or revoked auth",
       { timeout: 600_000 },
@@ -43,6 +44,80 @@ describe.each([
           scopedCooldown,
         });
         expect(await turn(), evidence()).toEqual({ status: "ok", output: [MARKER] });
+        if (staleUsageAfterSuccess) {
+          const companionSessionKey = `agent:main:quota-companion-${randomUUID()}`;
+          expect(await turn(companionSessionKey), evidence()).toEqual({
+            status: "ok",
+            output: [MARKER],
+          });
+          const warmCompanion = await client.request<{ answer: string }>(
+            "sessions.companion.ask",
+            { sessionKey: companionSessionKey, question: `Return ${MARKER}.` },
+            { timeoutMs: 100_000 },
+          );
+          turns.push({ warmCompanion });
+          expect(warmCompanion.answer, evidence()).toBe(MARKER);
+          const beforeOverlap = stats();
+          turns.push({ beforeOverlap });
+          expect(beforeOverlap?.blockedUntil, evidence()).toBeUndefined();
+          expect(beforeOverlap?.blockedReason, evidence()).toBeUndefined();
+
+          provider.setPhase("ordinary-rate-limit-with-exhausted-usage");
+          const hold = provider.holdNextUsage();
+          const olderCompanion = client
+            .request(
+              "sessions.companion.ask",
+              { sessionKey: companionSessionKey, question: "Return the older request's answer." },
+              { timeoutMs: 100_000 },
+            )
+            .then(
+              (result) => ({ status: "ok", result }),
+              (error: unknown) => ({ status: "error", error: String(error) }),
+            );
+          try {
+            await expect
+              .poll(() => provider.heldUsageResponses.length, { timeout: 2800, interval: 10 })
+              .toBe(1);
+            const captured = await hold.arrived;
+            expect(captured.status, evidence()).toBe(200);
+            expect(JSON.parse(captured.body), evidence()).toMatchObject({
+              rate_limit: {
+                allowed: false,
+                limit_reached: true,
+                primary_window: { used_percent: 100 },
+                secondary_window: { used_percent: 100 },
+              },
+            });
+            provider.setPhase("healthy");
+            expect(await turn(), evidence()).toEqual({ status: "ok", output: [MARKER] });
+            const newerSuccessCompletedAt = Date.now();
+            const beforeRelease = stats();
+            turns.push({ newerSuccessCompletedAt, beforeRelease });
+            expect(captured.releaseReason, evidence()).toBeUndefined();
+            expect(beforeRelease?.blockedUntil, evidence()).toBeUndefined();
+            expect(newerSuccessCompletedAt, evidence()).toBeGreaterThanOrEqual(captured.capturedAt);
+            hold.release();
+            const olderResult = await olderCompanion;
+            const afterRelease = stats();
+            turns.push({ olderResult, afterRelease });
+            expect(olderResult.status, evidence()).toBe("error");
+            expect(captured.releaseReason, evidence()).toBe("explicit");
+            expect(captured.releasedAt, evidence()).toBeGreaterThanOrEqual(newerSuccessCompletedAt);
+            expect(await turn(), evidence()).toEqual({ status: "ok", output: [MARKER] });
+            expect(afterRelease?.blockedUntil, evidence()).toBeUndefined();
+            expect(afterRelease?.blockedReason, evidence()).toBeUndefined();
+            for (const request of provider.requests.filter(
+              (entry) => entry.path.endsWith("/responses") || entry.path === "/core-wham/usage",
+            )) {
+              expect(request.authorization, evidence()).toBe(`Bearer ${access}`);
+            }
+            expect(provider.errors, evidence()).toEqual([]);
+          } finally {
+            hold.release();
+            await olderCompanion;
+          }
+          return;
+        }
         const quotaSessions =
           source === "codex_rate_limits"
             ? [sessionKey, `agent:main:quota-${randomUUID()}`, `agent:main:quota-${randomUUID()}`]

@@ -15,6 +15,10 @@ import { resolveOpenClawStateSqlitePath } from "../state/openclaw-state-db.paths
 import { captureOpenClawStateReadContext } from "../state/openclaw-state-worker-context.js";
 import { measureStartup, type GatewayStartupTrace } from "./server-startup-trace.js";
 
+type SessionMigrationDeps = Parameters<typeof runSessionStartupMigration>[0]["deps"] & {
+  reconcileSessionTranscriptIndexes?: typeof import("../config/sessions/session-transcript-reconcile.js").reconcileSessionTranscriptIndexes;
+};
+
 export type PreparedStartupSessionDatabase = {
   database: OpenClawAgentDatabaseOptions & { path: string };
   assertCurrent: () => void;
@@ -27,6 +31,7 @@ export async function prepareGatewayStartupSessions(params: {
   agentIds?: ReadonlySet<string>;
   assertCurrent?: () => void;
   log: SessionStartupMigrationLogger;
+  deps?: SessionMigrationDeps;
 }): Promise<PreparedStartupSessionDatabase[]> {
   const databases: PreparedStartupSessionDatabase[] = [];
   await runSessionStartupMigration({
@@ -55,11 +60,10 @@ export async function runGatewaySessionStartupMaintenance(params: {
   assertCurrent?: () => void;
   signal?: AbortSignal;
   log: SessionStartupMigrationLogger;
+  deps?: Pick<SessionMigrationDeps, "reconcileSessionTranscriptIndexes">;
   startupTrace?: GatewayStartupTrace;
 }): Promise<void> {
-  let reconcile:
-    | typeof import("../config/sessions/session-transcript-reconcile.js").reconcileSessionTranscriptIndexes
-    | undefined;
+  let reconcile = params.deps?.reconcileSessionTranscriptIndexes;
   let reconciledSessions = 0;
   // One worker-backed repair at a time leaves admission and foreground writers capacity.
   for (const { database, assertCurrent: assertDatabaseCurrent } of params.databases) {

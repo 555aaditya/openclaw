@@ -642,7 +642,15 @@ describe("published Gateway plugin services", () => {
           await runGatewayStartupObservers({
             registry: initial.pluginRegistry,
             resolveGatewayContext: () => undefined,
-            restartSentinelEnv: state.env,
+            loadSubagentRegistryActivation: async () =>
+              (await import("../agents/subagents/registry/subagent-registry.js"))
+                .activateSubagentRegistry,
+            createHookRunner: async (...args) =>
+              (await import("../plugins/hooks.js")).createHookRunner(...args),
+            refreshLatestUpdateRestartSentinel: async () =>
+              (await import("./server-update-sentinel.js")).prepareLatestUpdateRestartSentinel(
+                state.env,
+              ),
             signal: runtime.requestEntryLifetime.signal,
             port: 0,
             config,

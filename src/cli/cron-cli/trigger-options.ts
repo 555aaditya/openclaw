@@ -20,9 +20,10 @@ function decodeCronInput(bytes: Buffer, label: string): string {
 
 async function readCronInput(
   source: string,
+  stdin: AsyncIterable<unknown> | undefined,
   options: ReadByteStreamWithLimitOptions,
 ): Promise<Buffer> {
-  const stream = source === "-" ? process.stdin : createReadStream(source);
+  const stream = source === "-" ? (stdin ?? process.stdin) : createReadStream(source);
   try {
     return await readByteStreamWithLimit(stream, options);
   } catch (error) {
@@ -40,8 +41,12 @@ async function readCronInput(
   }
 }
 
-async function readScriptStream(source: string, label: string): Promise<string> {
-  const bytes = await readCronInput(source, {
+async function readScriptStream(
+  source: string,
+  stdin: AsyncIterable<unknown> | undefined,
+  label: string,
+): Promise<string> {
+  const bytes = await readCronInput(source, stdin, {
     maxBytes: MAX_CRON_TRIGGER_SCRIPT_BYTES,
     onOverflow: () => new CronCliError(`${label} exceeds ${MAX_CRON_TRIGGER_SCRIPT_BYTES} bytes`),
   });
@@ -53,18 +58,29 @@ async function readScriptStream(source: string, label: string): Promise<string> 
 }
 
 /** Reads a trigger script locally before sending the cron RPC. */
-export async function readCronTriggerScript(source: string): Promise<string> {
-  return await readScriptStream(source, "Trigger script");
+export async function readCronTriggerScript(
+  source: string,
+  deps?: {
+    stdin?: AsyncIterable<unknown>;
+  },
+): Promise<string> {
+  return await readScriptStream(source, deps?.stdin, "Trigger script");
 }
 
 /** Reads a script payload locally before sending the cron RPC. */
-export async function readCronPayloadScript(source: string): Promise<string> {
-  return await readScriptStream(source, "Script payload");
+export async function readCronPayloadScript(
+  source: string,
+  deps?: { stdin?: AsyncIterable<unknown> },
+): Promise<string> {
+  return await readScriptStream(source, deps?.stdin, "Script payload");
 }
 
 /** Reads exact scratch content locally; empty content is a meaningful value. */
-export async function readCronScratchContent(source: string): Promise<string> {
-  const bytes = await readCronInput(source, {
+export async function readCronScratchContent(
+  source: string,
+  deps?: { stdin?: AsyncIterable<unknown> },
+): Promise<string> {
+  const bytes = await readCronInput(source, deps?.stdin, {
     maxBytes: CRON_JOB_SCRATCH_MAX_BYTES,
     onOverflow: () => new CronCliError(`Cron scratch exceeds ${CRON_JOB_SCRATCH_MAX_BYTES} bytes`),
   });

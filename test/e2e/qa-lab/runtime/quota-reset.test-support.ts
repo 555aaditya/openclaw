@@ -49,6 +49,7 @@ type Phase =
   | "initial-exhaustion"
   | "ordinary-rate-limit"
   | "ordinary-rate-limit-with-capacity"
+  | "ordinary-rate-limit-with-exhausted-usage"
   | "exhausted"
   | "additional-exhaustion"
   | "workspace-exhaustion"
@@ -166,7 +167,8 @@ export async function startQuotaProvider(
     return recorded;
   };
   const usage = () => {
-    const usageExhausted = primaryExhausted();
+    const usageExhausted =
+      primaryExhausted() || phase === "ordinary-rate-limit-with-exhausted-usage";
     const window = (seconds: number, usedPercent = usageExhausted ? 100 : 2) => ({
       used_percent: usedPercent,
       limit_window_seconds: seconds,
@@ -229,7 +231,9 @@ export async function startQuotaProvider(
               code: "invalid_api_key",
               message: "Invalid authentication token",
             }
-          : phase === "ordinary-rate-limit" || phase === "ordinary-rate-limit-with-capacity"
+          : phase === "ordinary-rate-limit" ||
+              phase === "ordinary-rate-limit-with-capacity" ||
+              phase === "ordinary-rate-limit-with-exhausted-usage"
             ? {
                 type: "rate_limit_error",
                 code: "rate_limit_exceeded",

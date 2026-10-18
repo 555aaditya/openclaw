@@ -83,7 +83,13 @@ it.each([
     const observers = runGatewayStartupObservers({
       registry,
       resolveGatewayContext: () => undefined,
-      restartSentinelEnv: {},
+      loadSubagentRegistryActivation: async () =>
+        (await import("../agents/subagents/registry/subagent-registry.js"))
+          .activateSubagentRegistry,
+      createHookRunner: async (...args) =>
+        (await import("../plugins/hooks.js")).createHookRunner(...args),
+      refreshLatestUpdateRestartSentinel: async () =>
+        (await import("./server-update-sentinel.js")).prepareLatestUpdateRestartSentinel({}),
       signal: controller.signal,
       port: 0,
       config: {},

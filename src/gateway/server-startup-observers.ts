@@ -3,6 +3,7 @@ import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { formatErrorMessageForDisplay } from "../infra/error-diagnostics.js";
 import { formatErrorMessageWithCode } from "../infra/errors.js";
 import type { PluginHookGatewayCronService } from "../plugins/hook-gateway.types.js";
+import type { createHookRunner } from "../plugins/hooks.js";
 import type { PluginRegistry } from "../plugins/registry.js";
 import {
   getGatewayRestartDrainSignal,
@@ -56,11 +57,17 @@ export async function markGatewayStartupMainSessionOrphans(
   });
 }
 
+type SubagentRegistryActivation = (
+  resolveGatewayContext: GatewayContextResolver,
+) => void | Promise<void>;
+
 /** The tracked post-ready tail owns recovery and observers until their original work settles. */
 export async function runGatewayStartupObservers(params: {
   registry: PluginRegistry;
   resolveGatewayContext: GatewayContextResolver;
-  restartSentinelEnv: NodeJS.ProcessEnv;
+  loadSubagentRegistryActivation: () =>
+    | SubagentRegistryActivation
+    | Promise<SubagentRegistryActivation>;
   signal: AbortSignal;
   port: number;
   config: OpenClawConfig;
@@ -76,6 +83,10 @@ export async function runGatewayStartupObservers(params: {
     warn: (message: string) => void;
     error: (message: string) => void;
   };
+  createHookRunner: (
+    ...args: Parameters<typeof createHookRunner>
+  ) => ReturnType<typeof createHookRunner> | Promise<ReturnType<typeof createHookRunner>>;
+  refreshLatestUpdateRestartSentinel: () => Promise<unknown>;
 }): Promise<void> {
   await params.waitForPostReadyWork?.();
   if (params.signal.aborted || params.isClosing?.()) {
@@ -134,9 +145,7 @@ export async function runGatewayStartupObservers(params: {
         const activateSubagentRegistry = await measureStartup(
           params.startupTrace,
           "sidecars.subagent-load",
-          async () =>
-            (await import("../agents/subagents/registry/subagent-registry.js"))
-              .activateSubagentRegistry,
+          params.loadSubagentRegistryActivation,
         );
         if (!params.signal.aborted && params.isClosing?.() !== true) {
           await measureStartup(params.startupTrace, "sidecars.subagent-activation", () =>
@@ -158,10 +167,7 @@ export async function runGatewayStartupObservers(params: {
     async () => {
       await measureStartup(params.startupTrace, "post-attach.update-sentinel", async () => {
         if (!params.isClosing?.()) {
-          const env = params.restartSentinelEnv;
-          const { prepareLatestUpdateRestartSentinel } =
-            await import("./server-update-sentinel.js");
-          await prepareLatestUpdateRestartSentinel(env);
+          await params.refreshLatestUpdateRestartSentinel();
         }
       });
     },
@@ -172,8 +178,7 @@ export async function runGatewayStartupObservers(params: {
   });
   try {
     await sweepSessionStateWatchNotices();
-    const { createHookRunner } = await import("../plugins/hooks.js");
-    const hookRunner = createHookRunner(params.registry, { logger: params.logHooks });
+    const hookRunner = await params.createHookRunner(params.registry, { logger: params.logHooks });
     if (params.isClosing?.() || !hookRunner.hasHooks("gateway_start")) {
       return;
     }

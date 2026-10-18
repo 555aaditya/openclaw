@@ -190,7 +190,15 @@ it("joins notice cleanup and upstream deletion after close prelude", async ({ si
     runGatewayStartupObservers({
       registry: createEmptyPluginRegistry(),
       resolveGatewayContext: () => undefined,
-      restartSentinelEnv: fixture.state.env,
+      loadSubagentRegistryActivation: async () =>
+        (await import("../agents/subagents/registry/subagent-registry.js"))
+          .activateSubagentRegistry,
+      createHookRunner: async (...args) =>
+        (await import("../plugins/hooks.js")).createHookRunner(...args),
+      refreshLatestUpdateRestartSentinel: async () =>
+        (await import("./server-update-sentinel.js")).prepareLatestUpdateRestartSentinel(
+          fixture.state.env,
+        ),
       signal: kernel.connectionWork.signal,
       port,
       config: fixture.config,

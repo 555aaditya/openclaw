@@ -277,15 +277,15 @@ async function withMirrorWrite<T>(
   return await withProjectedSessionTranscriptWriteLock(
     params,
     run,
-    (context, appendMessageWithMessageSequence) => ({
+    (context, locked) => ({
       ...context,
       appendMessageWithMessageSequence: (options) =>
-        appendMessageWithMessageSequence({
+        locked.appendMessageWithMessageSequence({
           ...options,
           ...(params.config !== undefined ? { config: params.config } : {}),
         }),
       readMessageFacts: async (factParams) => {
-        const facts = await context.readMessageFacts(factParams);
+        const facts = await locked.readMessageFacts(factParams);
         const messagesByIdempotencyKey = new Map<string, AgentMessage>();
         for (const [idempotencyKey, message] of facts.messagesByIdempotencyKey) {
           if (isAgentMessageRecord(message)) {
