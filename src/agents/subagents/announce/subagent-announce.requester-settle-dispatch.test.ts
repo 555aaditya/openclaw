@@ -126,103 +126,114 @@ describe("requester settle dispatch deadline", () => {
     },
   );
 
-  it.each(["retry pending", "stable pending", "retry settled", "retry settled claim"] as const)(
-    "keeps restored retry custody with historical receipts: %s",
-    async (scenario) => {
-      const stableRunId = "announce:requester-settle:main:agent:main:main:settled-child:yield-1";
-      const retryRunId =
-        "announce:requester-settle:main:agent:main:main:settled-child:yield-1:retry-1";
-      const pendingRunId = scenario === "stable pending" ? stableRunId : retryRunId;
-      const historicalRunId = scenario === "stable pending" ? retryRunId : stableRunId;
-      const settled = scenario.startsWith("retry settled");
-      const requesterEntry: InternalSessionEntry = {
-        sessionId: "requester-session",
-        updatedAt: 1,
-        lifecycleRunId: settled ? "recovered-retry" : "recovering-wake",
-        restartRecoveryTerminalRunIds: settled ? [historicalRunId, retryRunId] : [historicalRunId],
-        restartRecoveryTerminalDeliveryEvidence: [
-          {
-            runId: historicalRunId,
-            transcriptRunId: "historical-attempt",
-            captured: true,
-            meta: { error: true },
-          },
-          ...(settled
-            ? [
-                {
-                  runId: retryRunId,
-                  transcriptRunId: "recovered-retry",
-                  captured: true as const,
-                  payloads: [{ visible: true }],
-                  deliveryStatus: { status: "sent" as const, resultCount: 1 },
-                },
-              ]
-            : []),
-        ],
-        ...(!settled || scenario === "retry settled claim"
-          ? {
-              restartRecoveryDeliveryRunId: "recovering-wake",
-              restartRecoveryDeliverySourceRunId: pendingRunId,
-            }
-          : {}),
-      };
-      const child = settledChild();
-      child.requesterSettleWake = {
-        ...child.requesterSettleWake!,
-        status: "dispatching",
-        attemptCount: 2,
-        batchRunIds: [child.runId],
-      };
-      registryRead.listSubagentRunsForRequester.mockReturnValue([child]);
-      const readRequester = () => ({
-        cfg: {},
-        canonicalKey: REQUESTER_KEY,
-        agentId: "main",
-        storePath: REQUESTER_TARGET.storeScope,
-        entry: requesterEntry,
-      });
-      loadRequester.mockImplementation(async () => readRequester());
-      setSubagentAnnounceDeliveryDepsForTest({
-        getRuntimeConfig: () => ({}),
-        loadRequesterSessionEntry: readRequester,
-        getRequesterSessionActivity: () => ({ sessionId: "requester-session", isActive: false }),
-      });
-      deliver.mockImplementation(sendSubagentAnnounceDirectly);
-      const completeBatch = vi.fn(() => {
-        child.requesterSettleWake = undefined;
-      });
-      expect(await reserveRestoredSubagentControllerSources([child])).toEqual([]);
-      await expect(
-        maybeWakeRequesterAfterAllChildrenSettled({
-          requesterSessionKey: REQUESTER_KEY,
-          isSourceCurrent: () => true,
-          settledEntry: child,
-          transitionBatch: publishWakeTransition,
-          completeBatch,
+  it.each([
+    "retry pending",
+    "obsolete original pending",
+    "retry settled",
+    "retry settled claim",
+  ] as const)("keeps restored retry custody with historical receipts: %s", async (scenario) => {
+    const stableRunId = "announce:requester-settle:main:agent:main:main:settled-child:yield-1";
+    const retryRunId =
+      "announce:requester-settle:main:agent:main:main:settled-child:yield-1:retry-1";
+    const obsoleteOriginalPending = scenario === "obsolete original pending";
+    const pendingRunId = obsoleteOriginalPending ? stableRunId : retryRunId;
+    const historicalRunId = obsoleteOriginalPending ? retryRunId : stableRunId;
+    const settled = scenario.startsWith("retry settled");
+    const reconciled = settled || obsoleteOriginalPending;
+    const requesterEntry: InternalSessionEntry = {
+      sessionId: "requester-session",
+      updatedAt: 1,
+      lifecycleRunId: settled ? "recovered-retry" : "recovering-wake",
+      restartRecoveryTerminalRunIds: settled ? [historicalRunId, retryRunId] : [historicalRunId],
+      restartRecoveryTerminalDeliveryEvidence: [
+        {
+          runId: historicalRunId,
+          transcriptRunId: "historical-attempt",
+          captured: true,
+          ...(obsoleteOriginalPending
+            ? { meta: { error: true } }
+            : {
+                payloads: [{ visible: true }],
+                deliveryStatus: { status: "sent" as const, resultCount: 1 },
+              }),
+        },
+        ...(settled
+          ? [
+              {
+                runId: retryRunId,
+                transcriptRunId: "recovered-retry",
+                captured: true as const,
+                payloads: [{ visible: true }],
+                deliveryStatus: { status: "sent" as const, resultCount: 1 },
+              },
+            ]
+          : []),
+      ],
+      ...(!settled || scenario === "retry settled claim"
+        ? {
+            restartRecoveryDeliveryRunId: "recovering-wake",
+            restartRecoveryDeliverySourceRunId: pendingRunId,
+          }
+        : {}),
+    };
+    const child = settledChild();
+    child.requesterSettleWake = {
+      ...child.requesterSettleWake!,
+      status: "dispatching",
+      attemptCount: 2,
+      batchRunIds: [child.runId],
+    };
+    registryRead.listSubagentRunsForRequester.mockReturnValue([child]);
+    const readRequester = () => ({
+      cfg: {},
+      canonicalKey: REQUESTER_KEY,
+      agentId: "main",
+      storePath: REQUESTER_TARGET.storeScope,
+      entry: requesterEntry,
+    });
+    loadRequester.mockImplementation(async () => readRequester());
+    setSubagentAnnounceDeliveryDepsForTest({
+      getRuntimeConfig: () => ({}),
+      loadRequesterSessionEntry: readRequester,
+      getRequesterSessionActivity: () => ({ sessionId: "requester-session", isActive: false }),
+    });
+    deliver.mockImplementation(sendSubagentAnnounceDirectly);
+    const completeBatch = vi.fn(() => {
+      child.requesterSettleWake = undefined;
+    });
+    expect(await reserveRestoredSubagentControllerSources([child])).toEqual([]);
+    await expect(
+      maybeWakeRequesterAfterAllChildrenSettled({
+        requesterSessionKey: REQUESTER_KEY,
+        isSourceCurrent: () => true,
+        settledEntry: child,
+        transitionBatch: publishWakeTransition,
+        completeBatch,
+      }),
+    ).resolves.toBe(settled);
+    expect(startTurn).not.toHaveBeenCalled();
+    expect(completeBatch).toHaveBeenCalledTimes(reconciled ? 1 : 0);
+    if (reconciled) {
+      // Only the admitted retry's receipt can retire this wake; an obsolete
+      // original-key claim cannot retain it or turn its failed receipt into success.
+      expect(deliver).toHaveBeenCalledWith(
+        expect.objectContaining({
+          directIdempotencyKey: retryRunId,
         }),
-      ).resolves.toBe(settled);
-      expect(startTurn).not.toHaveBeenCalled();
-      expect(completeBatch).toHaveBeenCalledTimes(settled ? 1 : 0);
-      if (settled) {
-        expect(deliver).toHaveBeenCalledWith(
-          expect.objectContaining({
-            directIdempotencyKey: retryRunId,
-          }),
-        );
-        expect(completeBatch).toHaveBeenCalledWith(
-          [child],
-          1,
-          expect.objectContaining({ delivered: true }),
-          expect.any(Function),
-        );
-      } else {
-        expect(deliver).not.toHaveBeenCalled();
-        expect(child.requesterSettleWake).toMatchObject({ status: "dispatching", attemptCount: 2 });
-      }
-      const mailbox = getExistingSessionControllerMailbox(REQUESTER_KEY, REQUESTER_TARGET);
-      expect(mailbox?.entries ?? []).toEqual([]);
-    },
-  );
+      );
+      expect(completeBatch).toHaveBeenCalledWith(
+        [child],
+        1,
+        expect.objectContaining({ delivered: settled }),
+        expect.any(Function),
+      );
+    } else {
+      expect(deliver).not.toHaveBeenCalled();
+      expect(child.requesterSettleWake).toMatchObject({ status: "dispatching", attemptCount: 2 });
+    }
+    const mailbox = getExistingSessionControllerMailbox(REQUESTER_KEY, REQUESTER_TARGET);
+    expect(mailbox?.entries ?? []).toEqual([]);
+  });
 
   it.each([false, true])(
     "wakes a nested yielded requester once (child completed before yield=%s)",

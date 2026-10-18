@@ -42,11 +42,6 @@ import { prepareTtsPreferences, type PreparedTtsPreferences } from "../../tts/tt
 import { resolveCommandTurnTargetSessionKey } from "../command-turn-context.js";
 import type { FinalizedRuntimeMsgContext as FinalizedMsgContext } from "../templating.js";
 import { normalizeVerboseLevel } from "../thinking.js";
-import type {
-  DispatchProcessedOptions,
-  DispatchProcessedOutcome,
-  InboundMessageAuditTerminalRecorder,
-} from "./dispatch-from-config.audit.js";
 import {
   resolveBoundAcpDispatchRuntimeOwner,
   resolveBoundAcpDispatchSessionKey,
@@ -59,7 +54,12 @@ import {
   loadRuntimePlugins,
 } from "./dispatch-from-config.runtime-loaders.js";
 import { createReplyHotPathTimingTracker } from "./dispatch-from-config.timing.js";
-import type { DispatchFromConfigParams } from "./dispatch-from-config.types.js";
+import type {
+  DispatchFromConfigParams,
+  DispatchProcessedOptions,
+  DispatchProcessedOutcome,
+  InboundMessageAuditTerminalRecorder,
+} from "./dispatch-from-config.types.js";
 import { noteDispatchProcessedOutcome } from "./dispatch-processed-outcome.js";
 import { resolveEffectiveReplyRoute } from "./effective-reply-route.js";
 import type { ReplySessionBinding } from "./get-reply.types.js";

@@ -13,7 +13,9 @@ import {
 import { markStartupOrphanedMainSessionsForRecovery } from "../../agents/main-session-recovery/main-session-restart-recovery-marking.js";
 import { resolveAgentRunAbortLifecycleFields } from "../../agents/run-termination.js";
 import { subagentRuns } from "../../agents/subagents/registry/subagent-registry-memory.js";
+import { mutateSubagentRuns } from "../../agents/subagents/registry/subagent-registry-persistence.js";
 import { subscribeSubagentRunChanges } from "../../agents/subagents/registry/subagent-registry-publication.js";
+import * as subagentRegistry from "../../agents/subagents/registry/subagent-registry.js";
 import {
   retireSubagentObligations,
   markSubagentRunTerminated,
@@ -89,130 +91,160 @@ async function seedYieldedParent() {
   });
 }
 
-it.each(["unchanged", "new turn", "reset incarnation", "partial cancellation"] as const)(
-  "session Stop preserves the %s parent at its acknowledgment boundary",
-  async (race) => {
-    await seedYieldedParent();
+it.each([
+  "unchanged",
+  "new turn",
+  "reset incarnation",
+  "partial cancellation",
+  "metadata publication",
+] as const)("session Stop preserves the %s parent at its acknowledgment boundary", async (race) => {
+  await seedYieldedParent();
+  if (race === "partial cancellation") {
+    const brokenKey = "agent:broken:subagent:uncancellable";
+    const brokenStore = await writeSubagentSessionEntry({
+      stateDir: fixture.stateDir,
+      agentId: "broken",
+      sessionKey: brokenKey,
+      defaultSessionId: "broken-child-session",
+      lifecycleRevision: "broken-child-revision",
+    });
+    await registerSubagentRun({
+      runId: "broken-child-run",
+      childSessionKey: brokenKey,
+      childAgentId: "broken",
+      sessionEntry: loadSessionEntry({ agentId: "broken", sessionKey: brokenKey }),
+      requesterSessionKey: parentKey,
+      requesterAgentId: "main",
+      requesterDisplayKey: parentKey,
+      task: "Unreachable sibling",
+      cleanup: "keep",
+      expectsCompletionMessage: false,
+    });
+    const database = expectDefined(
+      listOpenClawAgentDatabasesForTest().find(
+        (item) => item.agentId === "broken" && isPathInside(fixture.stateDir, item.path),
+      ),
+      "sibling database",
+    );
+    expect(await closeOpenClawAgentDatabaseByPathAsync(database.path, "broken")).toBe(true);
+    await writeFile(database.path, "not a SQLite database");
+    expect(() =>
+      loadExactSessionEntryReadOnly({ storePath: brokenStore, sessionKey: brokenKey }),
+    ).toThrow();
+  }
+  const context = abortContext();
+  expect(listRpcSourceEntries()).toHaveLength(0);
+  expect(resolveActiveEmbeddedRunOwner(parentId)).toBeUndefined();
+  const captured = expectDefined(loadSessionEntry(target), "seeded parent");
+  const replacement = { ...captured, lifecycleRevision: "new-incarnation" };
+  let replacementPersistence: Promise<void> | undefined;
+  const childAbort = vi.fn(() => {
+    // The child signal follows the parent snapshot; replace it before Stop can persist.
+    if (race === "new turn") {
+      replacementPersistence = persistGatewaySessionLifecycleEvent({
+        ...target,
+        event: {
+          runId: "new-parent-run",
+          sessionId: parentId,
+          lifecycleGeneration: getAgentEventLifecycleGeneration(),
+          ts: Date.now(),
+          data: { phase: "start", startedAt: Date.now() },
+        },
+      });
+    } else if (race === "reset incarnation") {
+      replaceSessionEntrySync(target, replacement);
+    }
+    emitAgentEvent({
+      runId: childRunId,
+      sessionKey: childKey,
+      sessionId: childId,
+      stream: "lifecycle",
+      data: { phase: "end", ...resolveAgentRunAbortLifecycleFields(AbortSignal.abort()) },
+    });
+    clearActiveEmbeddedRun(childId, child, childKey);
+  });
+  const child = createEmbeddedRunHandle({ runId: childRunId, abort: childAbort });
+  setActiveEmbeddedRun(childId, child, childKey);
+  const acknowledgment: { entry: ReturnType<typeof loadSessionEntry> } = { entry: undefined };
+  const respond = vi.fn<RespondFn>(() => {
+    acknowledgment.entry = loadSessionEntry(target);
+  });
+  const publications = observeChildPublications();
+  const retireObligations = subagentRegistry.retireSubagentObligations;
+  let metadataPublished = false;
+  const retirement =
+    race === "metadata publication"
+      ? vi
+          .spyOn(subagentRegistry, "retireSubagentObligations")
+          .mockImplementation(async (...args) => {
+            if (args[0].runId === childRunId && !metadataPublished) {
+              metadataPublished = true;
+              // A same-owner publication must not revoke the captured retirement.
+              await mutateSubagentRuns([childRunId], (rows) => {
+                const current = expectDefined(rows.get(childRunId), "retiring child");
+                return {
+                  value: undefined,
+                  postimages: new Map([
+                    [childRunId, { ...current, label: "Updated during cancellation" }],
+                  ]),
+                };
+              });
+            }
+            return await retireObligations(...args);
+          })
+      : undefined;
+  try {
+    await stopSession(parentKey, respond, context, { clearQueued: true });
+    if (race === "metadata publication") {
+      expect(metadataPublished).toBe(true);
+    }
     if (race === "partial cancellation") {
-      const brokenKey = "agent:broken:subagent:uncancellable";
-      const brokenStore = await writeSubagentSessionEntry({
-        stateDir: fixture.stateDir,
-        agentId: "broken",
-        sessionKey: brokenKey,
-        defaultSessionId: "broken-child-session",
-        lifecycleRevision: "broken-child-revision",
-      });
-      await registerSubagentRun({
-        runId: "broken-child-run",
-        childSessionKey: brokenKey,
-        childAgentId: "broken",
-        sessionEntry: loadSessionEntry({ agentId: "broken", sessionKey: brokenKey }),
-        requesterSessionKey: parentKey,
-        requesterAgentId: "main",
-        requesterDisplayKey: parentKey,
-        task: "Unreachable sibling",
-        cleanup: "keep",
-        expectsCompletionMessage: false,
-      });
-      const database = expectDefined(
-        listOpenClawAgentDatabasesForTest().find(
-          (item) => item.agentId === "broken" && isPathInside(fixture.stateDir, item.path),
-        ),
-        "sibling database",
+      expectAbortFailure(
+        respond,
+        expect.stringContaining("descendant cancellation was incomplete"),
       );
-      expect(await closeOpenClawAgentDatabaseByPathAsync(database.path, "broken")).toBe(true);
-      await writeFile(database.path, "not a SQLite database");
-      expect(() =>
-        loadExactSessionEntryReadOnly({ storePath: brokenStore, sessionKey: brokenKey }),
-      ).toThrow();
+    } else {
+      expectStopResult(respond);
     }
-    const context = abortContext();
-    expect(listRpcSourceEntries()).toHaveLength(0);
-    expect(resolveActiveEmbeddedRunOwner(parentId)).toBeUndefined();
-    const captured = expectDefined(loadSessionEntry(target), "seeded parent");
-    const replacement = { ...captured, lifecycleRevision: "new-incarnation" };
-    let replacementPersistence: Promise<void> | undefined;
-    const childAbort = vi.fn(() => {
-      // The child signal follows the parent snapshot; replace it before Stop can persist.
-      if (race === "new turn") {
-        replacementPersistence = persistGatewaySessionLifecycleEvent({
-          ...target,
-          event: {
-            runId: "new-parent-run",
-            sessionId: parentId,
-            lifecycleGeneration: getAgentEventLifecycleGeneration(),
-            ts: Date.now(),
-            data: { phase: "start", startedAt: Date.now() },
-          },
-        });
-      } else if (race === "reset incarnation") {
-        replaceSessionEntrySync(target, replacement);
-      }
-      emitAgentEvent({
-        runId: childRunId,
-        sessionKey: childKey,
-        sessionId: childId,
-        stream: "lifecycle",
-        data: { phase: "end", ...resolveAgentRunAbortLifecycleFields(AbortSignal.abort()) },
-      });
-      clearActiveEmbeddedRun(childId, child, childKey);
-    });
-    const child = createEmbeddedRunHandle({ runId: childRunId, abort: childAbort });
-    setActiveEmbeddedRun(childId, child, childKey);
-    const acknowledgment: { entry: ReturnType<typeof loadSessionEntry> } = { entry: undefined };
-    const respond = vi.fn<RespondFn>(() => {
-      acknowledgment.entry = loadSessionEntry(target);
-    });
-    const publications = observeChildPublications();
-    try {
-      await stopSession(parentKey, respond, context, { clearQueued: true });
-      if (race === "partial cancellation") {
-        expectAbortFailure(
-          respond,
-          expect.stringContaining("descendant cancellation was incomplete"),
-        );
-      } else {
-        expectStopResult(respond);
-      }
-      expect(childAbort).toHaveBeenCalledOnce();
-      if (race === "new turn") {
-        await replacementPersistence;
-        expect(acknowledgment.entry).toMatchObject({
-          lifecycleRunId: "new-parent-run",
-          abortedLastRun: false,
-        });
-        expect(acknowledgment.entry?.status).toBeUndefined();
-        expect(acknowledgment.entry?.lastRunId).toBeUndefined();
-        return;
-      }
-      if (race === "reset incarnation") {
-        expect(acknowledgment.entry).toEqual(replacement);
-        return;
-      }
-      expect(acknowledgment.entry, JSON.stringify(respond.mock.calls[0])).toMatchObject({
-        status: "killed",
-        abortedLastRun: true,
-        lastRunId: parentRunId,
-      });
-      await fixture.settle();
-      expect(
-        publications.entries.some(
-          (entry) => entry?.killReconciliation?.suppressTaskDelivery === true,
-        ),
-      ).toBe(true);
-      expect(await getSubagentRunByChildSessionKey(childKey)).toBeNull();
-      expect(await markStartupRecovery()).toMatchObject({ marked: 0 });
-      expect(loadSessionEntry(target)).toMatchObject({
-        status: "killed",
-        abortedLastRun: true,
-      });
-    } finally {
-      publications.stop();
+    expect(childAbort).toHaveBeenCalledOnce();
+    if (race === "new turn") {
       await replacementPersistence;
-      clearActiveEmbeddedRun(childId, child, childKey);
+      expect(acknowledgment.entry).toMatchObject({
+        lifecycleRunId: "new-parent-run",
+        abortedLastRun: false,
+      });
+      expect(acknowledgment.entry?.status).toBeUndefined();
+      expect(acknowledgment.entry?.lastRunId).toBeUndefined();
+      return;
     }
-  },
-);
+    if (race === "reset incarnation") {
+      expect(acknowledgment.entry).toEqual(replacement);
+      return;
+    }
+    expect(acknowledgment.entry, JSON.stringify(respond.mock.calls[0])).toMatchObject({
+      status: "killed",
+      abortedLastRun: true,
+      lastRunId: parentRunId,
+    });
+    await fixture.settle();
+    expect(
+      publications.entries.some(
+        (entry) => entry?.killReconciliation?.suppressTaskDelivery === true,
+      ),
+    ).toBe(true);
+    expect(await getSubagentRunByChildSessionKey(childKey)).toBeNull();
+    expect(await markStartupRecovery()).toMatchObject({ marked: 0 });
+    expect(loadSessionEntry(target)).toMatchObject({
+      status: "killed",
+      abortedLastRun: true,
+    });
+  } finally {
+    retirement?.mockRestore();
+    publications.stop();
+    await replacementPersistence;
+    clearActiveEmbeddedRun(childId, child, childKey);
+  }
+});
 
 it("leaves an ownerless session without yielded work unchanged", async () => {
   await writeSubagentSessionEntry({

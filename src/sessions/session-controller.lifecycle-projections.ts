@@ -12,9 +12,9 @@ import type {
   SessionWorkRun,
   SessionControllerInput,
   SessionControllerMailboxClaim,
+  SessionMutationKind,
 } from "./session-controller.contracts.js";
 import { getSessionControllerSourceIdentity } from "./session-controller.identity.js";
-import type { SessionMutationKind } from "./session-controller.mutation-preemption.js";
 import {
   findSessionControllerEntries,
   sessionControllers,

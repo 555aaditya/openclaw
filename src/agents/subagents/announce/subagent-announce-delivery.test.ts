@@ -3,6 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { validateAgentParams } from "../../../../packages/gateway-protocol/src/index.js";
 import { formatValidationErrors } from "../../../../packages/gateway-protocol/src/validation-errors.js";
+import { awaitGateBeforeSettlement } from "../../../../test/helpers/promise.js";
 import type { SessionEntry } from "../../../config/sessions.js";
 import type { OpenClawConfig } from "../../../config/types.openclaw.js";
 import type { InternalAgentTurnDispatchOptions } from "../../../gateway/agent-turn/internal-facade.types.js";
@@ -16,6 +17,12 @@ import {
 } from "../../../infra/outbound/deliver-types.js";
 import { sendMessage as runtimeSendMessage } from "../../../infra/outbound/message.js";
 import { setActivePluginRegistry } from "../../../plugins/runtime.js";
+import { withSessionTurn } from "../../../sessions/session-controller.admission.js";
+import { captureSessionTarget } from "../../../sessions/session-controller.lifecycle.js";
+import {
+  reserveSessionControllerSource,
+  retireSessionControllerInput,
+} from "../../../sessions/session-controller.mailbox.js";
 import { createDeferredCore } from "../../../shared/deferred.js";
 import { captureOpenClawStateWorkerContext } from "../../../state/openclaw-state-worker-context.js";
 import type { OpenClawStateWorkerContext } from "../../../state/openclaw-state-worker-context.types.js";
@@ -1169,42 +1176,101 @@ describe("deliverSubagentAnnouncement completion delivery", () => {
     expect(sendMessage).not.toHaveBeenCalled();
   });
 
-  it.each([
-    [
-      "timeout",
-      "telegram late completion",
-      "requester_abandoned",
-      "requester session abandoned after timeout",
-    ],
-    [
-      "recovering_timeout",
-      "telegram recovering completion",
-      "completion_handoff_pending",
-      "requester timeout recovery is still settling",
-    ],
-  ] as const)(
-    "does not restart a requester in %s",
-    async (abandonment, taskLabel, reason, error) => {
-      const callGateway = createPayloadGatewayMock({ text: "child completion output" });
-      const sendMessage = createSendMessageMock();
-      const result = await deliverTelegramDirectMessageCompletion({
+  it("does not restart a requester after timeout", async () => {
+    const callGateway = createPayloadGatewayMock({ text: "child completion output" });
+    const sendMessage = createSendMessageMock();
+    const result = await deliverTelegramDirectMessageCompletion({
+      callGateway,
+      sendMessage,
+      requesterAbandonment: "timeout",
+      isActive: false,
+      internalEvents: taskCompletionEvents({
+        childSessionId: "child-session-id",
+        taskLabel: "telegram late completion",
+      }),
+    });
+    expectRecordFields(result, {
+      delivered: false,
+      path: "none",
+      reason: "requester_abandoned",
+      error: "requester session abandoned after timeout",
+    });
+    expect(callGateway).not.toHaveBeenCalled();
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("queues completion until the requester's timeout recovery releases its turn", async () => {
+    const route = deliveryRoutes.telegram;
+    const target = captureSessionTarget({
+      storeScope: "/synthetic/requester-timeout-recovery/sessions.db",
+      sessionKey: route.key,
+      incarnation: route.sessionId,
+      agentId: "main",
+    });
+    const recoveryEntered = createDeferredCore();
+    const releaseRecovery = createDeferredCore();
+    const recovery = withSessionTurn(
+      { target, sessionKey: route.key, sessionId: route.sessionId },
+      async (operation) => {
+        if (!operation) {
+          throw new Error("Timeout recovery requires its retained controller operation");
+        }
+        operation.setPhase("preflight_compacting");
+        recoveryEntered.resolve();
+        await releaseRecovery.promise;
+      },
+    );
+    const callGateway = createPayloadGatewayMock({ text: "child completion output" });
+    const sendMessage = createSendMessageMock();
+    let delivery: ReturnType<typeof deliverTelegramDirectMessageCompletion> | undefined;
+    let input: ReturnType<typeof reserveSessionControllerSource> | undefined;
+    try {
+      await awaitGateBeforeSettlement(
+        recoveryEntered.promise,
+        recovery,
+        "Recovery exited before retaining its controller turn",
+      );
+      input = reserveSessionControllerSource(route.key, {
+        target,
+        reservationId: "timeout-recovery-completion",
+        policy: { mode: "followup" },
+      });
+      const recoveryClaim = input.mailbox.claim;
+      expect(recoveryClaim).toBeDefined();
+      delivery = deliverTelegramDirectMessageCompletion({
         callGateway,
         sendMessage,
-        requesterAbandonment: abandonment,
+        controllerInput: input,
+        requesterAbandonment: "recovering_timeout",
         isActive: false,
-        internalEvents: taskCompletionEvents({ childSessionId: "child-session-id", taskLabel }),
+        internalEvents: taskCompletionEvents({
+          childSessionId: "child-session-id",
+          taskLabel: "telegram recovering completion",
+        }),
       });
-      expectRecordFields(result, {
-        delivered: false,
-        path: "none",
-        reason,
-        error,
-        ...(abandonment === "recovering_timeout" ? { disposition: "retryable" } : {}),
-      });
+      await awaitGateBeforeSettlement(
+        vi.waitFor(() => expect(input?.phase).toBe("waiting")),
+        delivery,
+        "Completion settled before waiting behind timeout recovery",
+      );
+      expect(input.mailbox.claim).toBe(recoveryClaim);
       expect(callGateway).not.toHaveBeenCalled();
       expect(sendMessage).not.toHaveBeenCalled();
-    },
-  );
+      releaseRecovery.resolve();
+      await recovery;
+      await expect(delivery).resolves.toMatchObject({ delivered: true, path: "direct" });
+      await input.settlement.promise;
+      expect(callGateway).toHaveBeenCalledOnce();
+      expect(sendMessage).not.toHaveBeenCalled();
+      expect(input.mailbox.entries).toEqual([]);
+    } finally {
+      releaseRecovery.resolve();
+      if (input) {
+        retireSessionControllerInput(input);
+      }
+      await Promise.allSettled([recovery, ...(delivery ? [delivery] : [])]);
+    }
+  });
 
   const generatedVideoAttachment = {
     type: "video",

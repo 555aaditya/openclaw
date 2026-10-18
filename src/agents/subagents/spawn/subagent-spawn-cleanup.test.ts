@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { registerChatAbortController } from "../../../gateway/chat-abort.js";
 import type { GatewayRequestContext } from "../../../gateway/server-methods/types.js";
+import { withPluginRuntimeGatewayContextResolver } from "../../../plugins/runtime/gateway-request-scope.js";
 import { captureSessionTarget } from "../../../sessions/session-controller.lifecycle.js";
 import { getRpcSource } from "../../../sessions/session-controller.rpc-sources.js";
 import { createDeferredCore } from "../../../shared/deferred.js";
@@ -32,26 +33,31 @@ describe("subagent spawn cleanup identity", () => {
       sessionKey: childSessionKey,
       incarnation: "child-session",
     });
+    const resolveGatewayContext = () => context;
     const register = () =>
+      withPluginRuntimeGatewayContextResolver(resolveGatewayContext, () =>
+        registerChatAbortController({
+          target,
+          runId,
+          sessionId: "child-session",
+          sessionKey: childSessionKey,
+          timeoutMs: 60_000,
+        }),
+      );
+    const original = register();
+    const foreign = withPluginRuntimeGatewayContextResolver(undefined, () =>
       registerChatAbortController({
-        target,
+        target: captureSessionTarget({ ...target, storeScope: "/synthetic/foreign-cleanup.db" }),
         runId,
         sessionId: "child-session",
         sessionKey: childSessionKey,
         timeoutMs: 60_000,
-      });
-    const original = register();
-    const foreign = registerChatAbortController({
-      target: captureSessionTarget({ ...target, storeScope: "/synthetic/foreign-cleanup.db" }),
-      runId,
-      sessionId: "child-session",
-      sessionKey: childSessionKey,
-      timeoutMs: 60_000,
-    });
+      }),
+    );
     const cleanup = bindSubagentSpawnCleanup({
       childSessionKey,
       target,
-      resolveGatewayContext: () => context,
+      resolveGatewayContext,
       isCurrent: () => true,
       canAbortAcceptedRun: () => true,
       getSessionIdentity: () => ({
@@ -68,6 +74,9 @@ describe("subagent spawn cleanup identity", () => {
     original.cleanup();
     const successor = register();
     try {
+      expect(original.registered).toBe(true);
+      expect(foreign.registered).toBe(true);
+      expect(successor.registered).toBe(true);
       expect(cleanup.isCurrent()).toBe(false);
       response.resolve({ aborted: true, runIds: [runId] });
       await expect(request).rejects.toThrow("Subagent spawn no longer owns this cleanup");
@@ -118,13 +127,16 @@ describe("subagent spawn cleanup identity", () => {
       sessionKey: childSessionKey,
       incarnation: "cancelled-cleanup-session",
     });
-    const source = registerChatAbortController({
-      target,
-      runId,
-      sessionId: "cancelled-cleanup-session",
-      sessionKey: childSessionKey,
-      timeoutMs: 60_000,
-    });
+    const resolveGatewayContext = () => context;
+    const source = withPluginRuntimeGatewayContextResolver(resolveGatewayContext, () =>
+      registerChatAbortController({
+        target,
+        runId,
+        sessionId: "cancelled-cleanup-session",
+        sessionKey: childSessionKey,
+        timeoutMs: 60_000,
+      }),
+    );
     if (!source.registered) {
       throw new Error("Cancelled cleanup proof requires a registered controller source");
     }
@@ -135,7 +147,7 @@ describe("subagent spawn cleanup identity", () => {
     const cleanup = bindSubagentSpawnCleanup({
       childSessionKey,
       target,
-      resolveGatewayContext: () => context,
+      resolveGatewayContext,
       isCurrent: () => true,
       canAbortAcceptedRun: () => true,
       getSessionIdentity: () => ({

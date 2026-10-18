@@ -134,7 +134,8 @@ export function createSubagentKillSettlementOwner(params: SubagentKillSettlement
       await retireSubagentObligations(
         current,
         () => {
-          if (getCurrentSubagentRunOwner(subagentRuns, current) !== current) {
+          const selected = getCurrentSubagentRunOwner(subagentRuns, current);
+          if (!selected || !isSubagentObligationRetired(selected)) {
             throw new Error("Killed subagent row changed before obligation retirement.");
           }
         },

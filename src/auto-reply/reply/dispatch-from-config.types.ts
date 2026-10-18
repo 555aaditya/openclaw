@@ -6,13 +6,21 @@ import type { SourceReplyDeliveryMode } from "../get-reply-options.types.js";
 import type { FinalizedMsgContext } from "../templating.js";
 import type { formatAbortReplyText, tryFastAbortFromMessage } from "./abort.js";
 import type { CommandSessionMetadataChange } from "./command-session-metadata.js";
-import type { InboundMessageAuditTerminalRecorder } from "./dispatch-from-config.audit.js";
 import type { InternalGetReplyFromConfig, InternalGetReplyOptions } from "./get-reply.types.js";
 import type {
   ReplyDispatchKind,
   ReplyDispatchReceipt,
   ReplyDispatcher,
 } from "./reply-dispatcher.types.js";
+
+export type DispatchProcessedOutcome = "completed" | "skipped" | "error";
+
+export type DispatchProcessedOptions = {
+  reason?: string;
+  error?: string;
+  userPrompt?: string;
+  finalResponse?: string;
+};
 
 export type DispatchFromConfigResult = {
   queuedFinal: boolean;
@@ -28,6 +36,13 @@ export type DispatchFromConfigResult = {
   deliberateSilentTerminalReply?: true;
   beforeAgentRunBlocked?: boolean;
   sessionMetadataChanges?: CommandSessionMetadataChange[];
+};
+
+export type InboundMessageAuditTerminalRecorder = {
+  note: (outcome: DispatchProcessedOutcome, options?: DispatchProcessedOptions) => void;
+  observeRunId: (runId: string) => void;
+  finishSuccess: (result: DispatchFromConfigResult) => void;
+  finishError: () => void;
 };
 
 export type DispatchFromConfigParams = {

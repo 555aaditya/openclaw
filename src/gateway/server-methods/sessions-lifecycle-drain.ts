@@ -217,8 +217,8 @@ export async function prepareSessionLifecycleDrain(
         const cancellation = abortChatRunsForSessionKeyWithPartials({
           context: params.context,
           ops: createChatAbortOps(params.context),
-          sessionKey: params.sessionKeys[0]!,
-          sessionKeyAliases: params.sessionKeys.slice(1),
+          sessionKey: params.sessionKey,
+          sessionKeyAliases: params.sessionKeys.filter((key) => key !== params.sessionKey),
           sessionId: params.sessionId,
           session: params.session,
           controllerTargets: [target],

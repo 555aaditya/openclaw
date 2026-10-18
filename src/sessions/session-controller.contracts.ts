@@ -447,11 +447,13 @@ export type Effect = {
   handoffs: Set<string>;
   validated: Deferred;
 };
+export type SessionMutationKind = "reset" | "delete" | "compaction";
+
 export type Mutation = {
   diagnostic?: LifecycleDiagnosticOperation;
   entries: SessionControllerEntry[];
   targets: SessionTarget[];
-  kind?: "reset" | "delete" | "compaction";
+  kind?: SessionMutationKind;
   phase: "queued" | "active" | "released";
   operations: Set<ReplyOperation>;
   ready: Deferred;

@@ -239,6 +239,12 @@ describe("host-prepared embedded tool authority", () => {
           if (authority === "current") {
             await expect(pending).resolves.toBe("entered");
             expect(run).toHaveBeenCalledOnce();
+            if (operation) {
+              // A borrowed turn stays live, but its completed attempt must release the snapshot.
+              await expect(
+                operation.bindToolAuthorityRouteAsync({ provider: "openai", model: "gpt-test" }),
+              ).rejects.toThrow("Reply operation has no active tool authority snapshot");
+            }
           } else {
             await expect(pending).rejects.toThrow("admitted run authority is no longer active");
             expect(run).not.toHaveBeenCalled();
@@ -247,9 +253,11 @@ describe("host-prepared embedded tool authority", () => {
           operation?.complete();
         }
         if (authority === "current") {
+          expect(observed?.toolAuthorityFingerprint).toBeUndefined();
+          expect(observed?.toolAuthorityRoute).toBeUndefined();
           await expect(
             observed?.bindToolAuthorityRouteAsync({ provider: "openai", model: "gpt-test" }),
-          ).rejects.toThrow("Reply operation has no active tool authority snapshot");
+          ).rejects.toThrow("Reply operation authority is no longer active");
           expect(() =>
             publishHarnessActiveEmbeddedRun(
               sessionId,

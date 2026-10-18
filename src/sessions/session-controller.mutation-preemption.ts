@@ -6,6 +6,7 @@ import {
   type CapturedSessionControllerEffect,
   type SessionControllerInput,
   type SessionStopChildrenResult,
+  type SessionMutationKind,
 } from "./session-controller.contracts.js";
 import {
   runAfterRetiringSessionSources,
@@ -17,8 +18,6 @@ import {
   type SessionControllerEntry,
 } from "./session-controller.state.js";
 import type { SessionTarget } from "./session-controller.target.js";
-
-export type SessionMutationKind = "reset" | "delete" | "compaction";
 
 export type SessionMutationPreemptOptions = Readonly<{
   activeRun: "abort" | "abort-if-abortable";
