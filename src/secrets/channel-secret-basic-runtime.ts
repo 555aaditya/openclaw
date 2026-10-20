@@ -295,7 +295,10 @@ export function resolveChannelAccountSurface(
       enabled: isChannelAccountEffectivelyEnabled(channel, account),
     });
   }
-  if (hasImplicitDefaultAccount && !hasOwnProperty(accounts, "default")) {
+  if (
+    hasImplicitDefaultAccount &&
+    !Object.keys(accounts).some((accountId) => normalizeAccountId(accountId) === "default")
+  ) {
     accountEntries.push({ accountId: "default", account: {}, enabled: channelEnabled });
   }
   return {

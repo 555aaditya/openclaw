@@ -86,6 +86,13 @@ describe("secrets runtime snapshot channel inactive variants", () => {
 
   it.each([
     { name: "explicit default", enabled: true, appToken: "xapp-default", accountId: "default" },
+    {
+      name: "case-insensitive default",
+      enabled: true,
+      appToken: "xapp-default",
+      accountId: "Default",
+    },
+    { name: "normalized default", enabled: true, appToken: "xapp-default", accountId: " default " },
     { name: "disabled channel", enabled: false, appToken: "xapp-default", accountId: "work" },
     {
       name: "incomplete socket credentials",
@@ -113,7 +120,12 @@ describe("secrets runtime snapshot channel inactive variants", () => {
       });
 
       expect(snapshot.config.channels?.slack?.botToken).toEqual(envRef("MISSING_SLACK_BOT"));
-      expect(snapshot.warnings.map(({ path }) => path)).toContain("channels.slack.botToken");
+      expect(snapshot.warnings).toContainEqual(
+        expect.objectContaining({
+          code: "SECRETS_REF_IGNORED_INACTIVE_SURFACE",
+          path: "channels.slack.botToken",
+        }),
+      );
     },
   );
 

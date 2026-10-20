@@ -1,10 +1,8 @@
-import { normalizeAccountId } from "openclaw/plugin-sdk/account-id";
 import {
   collectConditionalChannelFieldAssignments,
   createChannelSecretContract,
   hasConfiguredSecretInputValue,
   hasOwnProperty,
-  isRecord,
   normalizeSecretStringValue,
 } from "openclaw/plugin-sdk/channel-secret-basic-runtime";
 
@@ -14,10 +12,7 @@ export const channelSecrets = createChannelSecretContract({
   channel: ["appSecret", "encryptKey", "verificationToken"],
   hasImplicitDefaultAccount: ({ channel, defaults }) =>
     hasConfiguredSecretInputValue(channel.appId, defaults) &&
-    hasConfiguredSecretInputValue(channel.appSecret, defaults) &&
-    !Object.keys(isRecord(channel.accounts) ? channel.accounts : {}).some(
-      (accountId) => normalizeAccountId(accountId) === "default",
-    ),
+    hasConfiguredSecretInputValue(channel.appSecret, defaults),
   collect(params) {
     const { channel: feishu, surface } = params;
     collectConditionalChannelFieldAssignments({
