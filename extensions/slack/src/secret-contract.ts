@@ -1,4 +1,3 @@
-import { DEFAULT_ACCOUNT_ID, normalizeAccountId } from "openclaw/plugin-sdk/account-id";
 import {
   collectConditionalChannelFieldAssignments,
   collectNestedChannelFieldAssignments,
@@ -13,23 +12,10 @@ export const channelSecrets = createChannelSecretContract({
   channelKey: "slack",
   account: ["appToken", "relay.authToken", "botToken", "signingSecret", "userToken"],
   channel: ["appToken", "botToken", "relay.authToken", "signingSecret", "userToken"],
+  hasImplicitDefaultAccount: ({ context }) =>
+    hasSlackAccountCredentialsFromConfig(context.sourceConfig.channels?.slack, context.env),
   collect(params) {
     const { channel: slack, surface } = params;
-    // Account listing starts an implicit default account from top-level credentials even when
-    // named accounts exist, so it must also own the top-level refs those accounts override.
-    if (
-      surface.channelEnabled &&
-      surface.hasExplicitAccounts &&
-      !surface.accounts.some(
-        ({ accountId }) => normalizeAccountId(accountId) === DEFAULT_ACCOUNT_ID,
-      ) &&
-      hasSlackAccountCredentialsFromConfig(
-        params.context.sourceConfig.channels?.slack,
-        params.context.env,
-      )
-    ) {
-      surface.accounts.push({ accountId: DEFAULT_ACCOUNT_ID, account: {}, enabled: true });
-    }
     const resolveMode = (value: unknown) =>
       value === "http" || value === "socket" || value === "relay" ? value : undefined;
     const baseMode = resolveMode(slack.mode) ?? "socket";
