@@ -76,6 +76,8 @@ const plan = [
 const INITIAL_DELAY_MS = 1_500;
 const quiet = { toolProgress: false, label: false } as const;
 const commentary = { toolProgress: true, label: false, commentary: true } as const;
+const tools = { toolProgress: true } as const;
+const unlabeledTools = { ...tools, label: false } as const;
 const prepared = { preparedItems: true };
 const approvalRequest = {
   phase: "requested",
@@ -103,11 +105,7 @@ afterEach(() => {
 it.each(["NO_REPLY", "_NO_REPLY_", "no_reply"])(
   "forwards prepared literal commentary: %s",
   async (text) => {
-    const { progress, rendered } = createProgress({
-      toolProgress: false,
-      label: false,
-      commentary: true,
-    });
+    const { progress, rendered } = createProgress({ ...quiet, commentary: true });
     expect(await progress.pushCommentaryProgress(text)).toBe(true);
     rendered().toContain(text);
   },
@@ -312,9 +310,10 @@ it("merges reasoning deltas within a burst and separates bursts across tools", a
 });
 
 it.each([
-  ["buffers tags", ["<thin", "k>Check</think>Answer"], "Check", true],
-  ["literal code", ["```html\n<think>x</think>\n```"], "```html <think>x</think> ```", false],
-  ["snapshots", ["Thinking\n\n_A_", "Thinking\n\n_AB_"], "AB", false],
+  ["buffers tags", ["<thin", "k>Check</think>Answer"], "_Check_", true],
+  ["literal code", ["```html\n<think>x</think>\n```"], "_```html <think>x</think> ```_", false],
+  ["tilde code ownership", ["~~~html\n<think>x</think>\n~~~"], "x", false],
+  ["snapshots", ["Thinking\n\n_A_", "Thinking\n\n_AB_"], "_AB_", false],
 ] as const)("reasoning %s", async (_name, chunks, expected, firstIsBuffered) => {
   const { progress, update, rendered } = createProgress(undefined, {
     reasoningLinePrefix: "🧠 ",
@@ -327,7 +326,7 @@ it.each([
       expect(update).toHaveBeenCalledTimes(calls);
     }
   }
-  rendered().toBe(`Shelling\n\n• Exec\n🧠 _${expected}_`);
+  rendered().toBe(`Shelling\n\n• Exec\n🧠 ${expected}`);
 });
 
 it("keeps tool lines under narration while deduplicating and clearing the headline", async () => {
@@ -414,7 +413,7 @@ it("cancels expiry and ignores late status until a new turn", async () => {
 });
 
 it("holds narration behind the initial progress delay", async () => {
-  const { progress, update } = createProgress({ toolProgress: true });
+  const { progress, update } = createProgress(tools);
   await progress.pushToolProgress("Exec");
   await progress.pushNarrationProgress("Reading config");
   await vi.advanceTimersByTimeAsync(INITIAL_DELAY_MS - 1);
@@ -428,10 +427,7 @@ it("holds narration behind the initial progress delay", async () => {
 });
 
 it("renders prepared items without duplicating raw diagnostic events", async () => {
-  const { progress, lines, activity, item } = createProgress(
-    { toolProgress: true },
-    { preparedItems: true },
-  );
+  const { progress, lines, activity, item } = createProgress(tools, prepared);
   await progress.start();
   await progress.pushToolEvent({
     itemId: "tool-1",
@@ -483,21 +479,12 @@ it("renders prepared items without duplicating raw diagnostic events", async () 
 });
 
 it("projects failed message reaction progress", async () => {
-  const action = "react";
-  const status = "failed";
-  const { progress, activity, lines } = createProgress(
-    { toolProgress: true },
-    { preparedItems: true },
-  );
+  const args = { action: "react", channel: "slack", target: "C000000001" };
+  const { progress, activity, lines } = createProgress(tools, prepared);
   await progress.start();
-  await activity("message", "message-1", "start", {
-    args: { action, channel: "slack", target: "C000000001" },
-  });
+  await activity("message", "message-1", "start", { args });
   lines().toEqual([]);
-  await activity("message", "message-1", "result", {
-    args: { action, channel: "slack", target: "C000000001" },
-    status,
-  });
+  await activity("message", "message-1", "result", { args, status: "failed" });
   await activity("read", "read-1", "result", {
     args: { path: "README.md" },
     status: "completed",
@@ -538,7 +525,7 @@ it("logs timer-fired startup failures at the boundary", async () => {
 
 it("passes unformatted prepared notes to native updates", async () => {
   const tryNativeUpdate = vi.fn(async () => true);
-  const { progress } = createProgress({ label: false, toolProgress: true }, { tryNativeUpdate });
+  const { progress } = createProgress(unlabeledTools, { tryNativeUpdate });
   await progress.pushPlanProgress([], {
     explanation: "Use **literal**.",
     explanationFormat: "plain",
@@ -548,10 +535,7 @@ it("passes unformatted prepared notes to native updates", async () => {
 });
 
 it("retains plans across partial message boundaries but clears them per turn", async () => {
-  const { progress, item, update, rendered } = createProgress(
-    { label: false, toolProgress: true },
-    { mode: "partial" },
-  );
+  const { progress, item, update, rendered } = createProgress(unlabeledTools, { mode: "partial" });
   const steps = [{ step: "Patch", status: "in_progress" as const }];
   await progress.pushPlanProgress(steps, { explanation: "0/1 complete" });
   await progress.pushToolProgress("Inspecting files", { startImmediately: true });
@@ -592,10 +576,7 @@ it("retains plans across partial message boundaries but clears them per turn", a
 });
 
 it("preserves summary presentation for SDK callers", async () => {
-  const { progress, activity, rendered } = createProgress(
-    { toolProgress: true },
-    { presentation: "summary" },
-  );
+  const { progress, activity, rendered } = createProgress(tools, { presentation: "summary" });
   await activity("exec", "call-1", "start");
   await progress.noteActivity({ startImmediately: true });
   rendered().toBe("Working");

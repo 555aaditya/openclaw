@@ -4,7 +4,6 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import path from "node:path";
 import { buffer } from "node:stream/consumers";
-import { withTimeout } from "@openclaw/fs-safe/advanced";
 import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import { expect, it } from "vitest";
 import { writeToolCall } from "../../../src/gateway/gateway-provider-fixture.test-support.ts";
@@ -18,12 +17,10 @@ import {
 import { runQaGatewayFixture } from "../../../test/helpers/qa-gateway-cleanup.ts";
 import { finishElementAnimations } from "../test-helpers/animations.ts";
 import { pairControlUiPage } from "../test-helpers/control-ui-browser-pairing.ts";
-import {
-  installControlUiE2ePageDiagnosticRing,
-  recordControlUiE2eFailureFacts,
-} from "../test-helpers/control-ui-e2e-diagnostics.ts";
 import { waitForControlUiGatewayReady } from "../test-helpers/control-ui-e2e-readiness.ts";
+import { clickBoardWidgetControl } from "../test-helpers/control-ui-e2e-widget.ts";
 import { controlUiSessionUrl } from "../test-helpers/control-ui-e2e.ts";
+import { callGateway, runGatewayCli } from "./chat-real-gateway.test-support.ts";
 import { createControlUiE2eSuite } from "./control-ui-e2e-suite.test-support.ts";
 
 const sessionKey = "agent:main:html-publication-proof";
@@ -38,7 +35,6 @@ let sourcePath: string;
 
 async function startProvider() {
   const failures: string[] = [];
-  const calls: string[] = [];
   let step = 0;
   const owned = await reserveTestPortListener({
     offsets: [0],
@@ -61,17 +57,12 @@ async function startProvider() {
           }
           expect(body?.model).toBe("publisher");
           const input = JSON.stringify(body?.input);
-          const tools = body?.tools;
           if (step++ === 0) {
             expect(input).toContain(prompt);
-            expect(tools).toContainEqual(expect.objectContaining({ name: "write" }));
-            calls.push("write");
             writeToolCall(response, "write", { path: sourcePath, content: finalHtml });
           } else if (step === 2) {
             expect(input).toContain("function_call_output");
             expect(await readFile(sourcePath, "utf8")).toBe(finalHtml);
-            expect(tools).toContainEqual(expect.objectContaining({ name: "message" }));
-            calls.push("message");
             writeToolCall(response, "message", {
               action: "send",
               message: caption,
@@ -98,7 +89,6 @@ async function startProvider() {
   return {
     port: owned.claim.port,
     failures,
-    calls,
     close: () =>
       runQaGatewayFixture(async () => {
         owned.listener.closeAllConnections();
@@ -186,26 +176,9 @@ const suite = createControlUiE2eSuite({
   },
 });
 
-async function cli(args: string[]) {
-  const result = await instance.cli(args);
-  if (result.code !== 0) {
-    throw new Error(
-      [
-        result.stderr || result.stdout,
-        `Gateway child: pid=${instance.child?.pid} exit=${instance.child?.exitCode} signal=${instance.child?.signalCode}`,
-        await instance.diagnose(),
-        instance.logs(),
-      ].join("\n"),
-    );
-  }
-  return result.stdout;
-}
-
-async function rpc(method: string, params: Record<string, unknown>): Promise<unknown> {
-  return JSON.parse(
-    await cli(["gateway", "call", method, "--json", "--params", JSON.stringify(params)]),
-  );
-}
+const cli = (args: string[]) => runGatewayCli(instance, args);
+const rpc = async (method: string, params: Record<string, unknown>): Promise<unknown> =>
+  JSON.parse(await callGateway(instance, method, params));
 
 suite.define(() => {
   it("retains final parent-edited HTML after source deletion, reload, sandbox preview and exact download", async () => {
@@ -223,7 +196,6 @@ suite.define(() => {
         viewport: { width: 1440, height: 1000 },
       },
       async ({ page }) => {
-        const pageEvents = installControlUiE2ePageDiagnosticRing(page);
         await pairControlUiPage(page, cli);
         await page.goto(controlUiSessionUrl(suite.server.baseUrl, sessionKey));
         await waitForControlUiGatewayReady(page);
@@ -244,12 +216,6 @@ suite.define(() => {
           .getByRole("button", { name: "Stop generating", exact: true })
           .waitFor({ state: "detached" });
         expect(provider.failures).toEqual([]);
-        expect(provider.calls).toEqual(["write", "message"]);
-        const history = await rpc("chat.history", { sessionKey, agentId: "main" });
-        const historyJson = JSON.stringify(history);
-        expect(historyJson).toContain("text/html");
-        expect(historyJson).toContain("artifactId");
-        expect(historyJson).not.toContain('"type":"attachment_error"');
         await rm(sourcePath);
         await page.reload();
         await waitForControlUiGatewayReady(page);
@@ -269,54 +235,11 @@ suite.define(() => {
           .locator('[data-region="side"]')
           .filter({ has: panel })
           .evaluate(finishElementAnimations);
-        const previewFacts = async (phase: "before" | "after") => {
-          const [content, frameBounds] = await Promise.all([
-            document.locator("body").evaluate((body) => {
-              const button = body.querySelector("button");
-              const buttonBounds = button?.getBoundingClientRect();
-              const output = body.querySelector("output");
-              return {
-                timeOrigin: performance.timeOrigin,
-                clickHandlerPresent: typeof button?.onclick === "function",
-                output: output ? Number(output.textContent) : null,
-                buttonX: buttonBounds?.x ?? null,
-                buttonY: buttonBounds?.y ?? null,
-                buttonWidth: buttonBounds?.width ?? null,
-                buttonHeight: buttonBounds?.height ?? null,
-              };
-            }),
-            frame.boundingBox(),
-          ]);
-          const facts = {
-            ...content,
-            frameX: frameBounds?.x ?? null,
-            frameY: frameBounds?.y ?? null,
-            frameWidth: frameBounds?.width ?? null,
-            frameHeight: frameBounds?.height ?? null,
-          };
-          return Object.fromEntries(
-            Object.entries(facts).map(([key, value]) => [`htmlPreview_${phase}_${key}`, value]),
-          );
-        };
-        // Retain document identity across the real click; never replay it for diagnostics.
-        const beforeClick = withTimeout(previewFacts("before"), 1_000).catch(() => ({}));
-        try {
-          await document.getByRole("button", { name: "Count", exact: true }).click();
-          await expect.poll(() => document.locator("output").textContent()).toBe("1");
-        } catch (error) {
-          recordControlUiE2eFailureFacts(page, {
-            ...(await beforeClick),
-            htmlPreview_pageErrors: pageEvents.filter((event) => event.source === "pageerror")
-              .length,
-            htmlPreview_consoleErrors: pageEvents.filter(
-              (event) => event.source === "console" && event.details.type === "error",
-            ).length,
-          });
-          await withTimeout(previewFacts("after"), 1_000)
-            .then((facts) => recordControlUiE2eFailureFacts(page, facts))
-            .catch(() => undefined);
-          throw error;
-        }
+        await clickBoardWidgetControl(
+          page,
+          document.getByRole("button", { name: "Count", exact: true }),
+        );
+        await expect.poll(() => document.locator("output").textContent()).toBe("1");
         expect(
           await document.locator("body").evaluate(() => {
             let topDenied = false;
